@@ -1,0 +1,281 @@
+{
+  "schema": "foreign-runtimes-report/1",
+  "unknownEventResilience": "log-and-ignore",
+  "codexMultiplexing": {
+    "fakeProcessHostsMultipleThreads": true,
+    "fakeVerdict": "light",
+    "liveMultiplexes": false,
+    "liveStatus": "rpc_error",
+    "schedulingVerdict": "session-process"
+  },
+  "opencodePermission": {
+    "rule": "last-matching glob wins; a string rule matches every resource; unmatched actions ask",
+    "keys": [
+      "bash",
+      "read",
+      "edit",
+      "webfetch",
+      "websearch",
+      "external_directory",
+      "glob",
+      "grep",
+      "list"
+    ],
+    "shellAndWebDenied": {
+      "permission": {
+        "bash": {
+          "*": "deny"
+        },
+        "webfetch": "deny",
+        "websearch": "deny",
+        "external_directory": "deny"
+      }
+    },
+    "fakeEnforcement": {
+      "bash": "deny",
+      "webfetch": "deny",
+      "edit": "ask"
+    }
+  },
+  "pinnedMinimums": {
+    "acp": {
+      "protocol": {
+        "minimumProtocolVersion": 1,
+        "sdk": "2.8.0",
+        "methods": [
+          "initialize",
+          "session/new",
+          "session/prompt",
+          "session/cancel",
+          "session/update",
+          "session/request_permission"
+        ]
+      },
+      "minimumVersion": null
+    },
+    "codex": {
+      "protocol": {
+        "command": [
+          "codex",
+          "app-server"
+        ],
+        "methods": [
+          "initialize",
+          "initialized",
+          "thread/start",
+          "thread/resume",
+          "turn/start",
+          "account/rateLimits/read",
+          "item/commandExecution/requestApproval",
+          "item/fileChange/requestApproval"
+        ],
+        "wire": "newline-delimited JSON-RPC with the jsonrpc member omitted"
+      },
+      "minimumVersion": "0.169.0"
+    },
+    "copilot": {
+      "protocol": {
+        "command": [
+          "copilot",
+          "--acp",
+          "--stdio"
+        ],
+        "protocol": "acp"
+      },
+      "minimumVersion": "0.1.2"
+    },
+    "claude": {
+      "protocol": {
+        "command": [
+          "claude",
+          "-p",
+          "--output-format",
+          "stream-json",
+          "--input-format",
+          "stream-json",
+          "--permission-prompt-tool",
+          "stdio"
+        ],
+        "credential": "explicit console API key only"
+      },
+      "minimumVersion": null
+    },
+    "gemini": {
+      "protocol": {
+        "command": [
+          "gemini",
+          "--acp"
+        ],
+        "credential": "ACP handshake only; credential files are not opened"
+      },
+      "minimumVersion": null
+    },
+    "opencode": {
+      "protocol": {
+        "command": [
+          "opencode",
+          "acp"
+        ],
+        "permission": "ordered per-action rules, last glob wins, unmatched action asks"
+      },
+      "minimumVersion": "1.17.12"
+    }
+  },
+  "runtimes": {
+    "acp": {
+      "fake": {
+        "label": "fake-acp",
+        "ok": true,
+        "ignoredUnknown": [
+          "session/vendor_note"
+        ]
+      },
+      "live": {
+        "status": "fake_only",
+        "version": null
+      }
+    },
+    "codex": {
+      "fake": {
+        "label": "fake-codex/0.0.0",
+        "ok": true,
+        "ignoredUnknown": [
+          "item/futureWidget"
+        ]
+      },
+      "live": {
+        "status": "ok",
+        "version": "0.169.0",
+        "versionSource": "package-after-hung-command",
+        "handshake": "rpc_error",
+        "multiplexes": false,
+        "ignored": [
+          "remoteControl/status/changed",
+          "account/updated",
+          "mcpServer/startupStatus/updated"
+        ]
+      }
+    },
+    "copilot": {
+      "fake": {
+        "label": "fake-copilot",
+        "ok": true,
+        "ignoredUnknown": [
+          "session/vendor_note"
+        ]
+      },
+      "live": {
+        "status": "ok",
+        "version": "0.1.2",
+        "versionSource": "file-version"
+      }
+    },
+    "claude": {
+      "fake": {
+        "label": "stream-json",
+        "ok": true,
+        "ignoredUnknown": [
+          "future_event"
+        ]
+      },
+      "live": {
+        "status": "not_installed",
+        "version": null,
+        "apiKey": "not_sent"
+      }
+    },
+    "gemini": {
+      "fake": {
+        "label": "fake-gemini",
+        "ok": true,
+        "ignoredUnknown": [
+          "session/vendor_note"
+        ]
+      },
+      "live": {
+        "status": "not_installed",
+        "version": null
+      }
+    },
+    "opencode": {
+      "fake": {
+        "label": "fake-opencode",
+        "ok": true,
+        "ignoredUnknown": [
+          "session/vendor_note"
+        ]
+      },
+      "live": {
+        "status": "ok",
+        "version": "1.17.12",
+        "versionSource": "stdout"
+      }
+    }
+  },
+  "protocols": {
+    "acp": {
+      "minimumProtocolVersion": 1,
+      "sdk": "2.8.0",
+      "methods": [
+        "initialize",
+        "session/new",
+        "session/prompt",
+        "session/cancel",
+        "session/update",
+        "session/request_permission"
+      ]
+    },
+    "codex": {
+      "command": [
+        "codex",
+        "app-server"
+      ],
+      "methods": [
+        "initialize",
+        "initialized",
+        "thread/start",
+        "thread/resume",
+        "turn/start",
+        "account/rateLimits/read",
+        "item/commandExecution/requestApproval",
+        "item/fileChange/requestApproval"
+      ],
+      "wire": "newline-delimited JSON-RPC with the jsonrpc member omitted"
+    },
+    "copilot": {
+      "command": [
+        "copilot",
+        "--acp",
+        "--stdio"
+      ],
+      "protocol": "acp"
+    },
+    "claude": {
+      "command": [
+        "claude",
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--input-format",
+        "stream-json",
+        "--permission-prompt-tool",
+        "stdio"
+      ],
+      "credential": "explicit console API key only"
+    },
+    "gemini": {
+      "command": [
+        "gemini",
+        "--acp"
+      ],
+      "credential": "ACP handshake only; credential files are not opened"
+    },
+    "opencode": {
+      "command": [
+        "opencode",
+        "acp"
+      ],
+      "permission": "ordered per-action rules, last glob wins, unmatched action asks"
+    }
+  }
+}
