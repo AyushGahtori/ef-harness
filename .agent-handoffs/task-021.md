@@ -86,10 +86,10 @@ None.
 
 Ran from `C:\Users\Ayush\Desktop\ef-wt\task-021-holds-submissions-fencing`:
 
-- `pnpm --filter @ef-harness/db test -- holds` — pass. Vitest v5.1.1: 3 files, 23 tests passed (duration 1.04s). Covers user pause plus requirement hold, release of only the requirement hold, `claim_task` still refusing until `user_pause` is released, idempotent place/release, `submission_pending = 1` surviving `sweep_expired_leases` at `now = 999999999`, duplicate `(task, attempt, commit_sha)` replay, `DuplicateCandidateError`, fenced and stale-epoch submission leaving `candidates` empty, `STATIC_AUDIT` refusing `ACCEPTED`, the second `finishSubmission` throwing `SubmissionAlreadyFinishedError`, and the full 15×15 transition matrix (41 legal edges, every other pair `IllegalTaskTransitionError`, including `CODING → ACCEPTED`, `STATIC_AUDIT → ACCEPTED`, and `MERGED_TO_FEATURE → READY`).
+- `pnpm --filter @ef-harness/db test -- holds` — pass. Vitest v5.1.1: 3 files, 23 tests passed (duration 1.11s). Covers user pause plus requirement hold, release of only the requirement hold, `claim_task` still refusing until `user_pause` is released, idempotent place/release, `submission_pending = 1` surviving `sweep_expired_leases` at `now = 999999999`, duplicate `(task, attempt, commit_sha)` replay, `DuplicateCandidateError`, fenced and stale-epoch submission leaving `candidates` empty, `STATIC_AUDIT` refusing `ACCEPTED`, the second `finishSubmission` throwing `SubmissionAlreadyFinishedError`, and the full 15×15 transition matrix (41 legal edges, every other pair `IllegalTaskTransitionError`, including `CODING → ACCEPTED`, `STATIC_AUDIT → ACCEPTED`, and `MERGED_TO_FEATURE → READY`).
 - `pnpm --filter @ef-harness/db typecheck` — pass (`tsc -b --pretty false`, exit 0).
 - `pnpm --filter @ef-harness/db lint` — pass (`eslint .`, exit 0).
-- `node scripts/verify-harmony.mjs --task 021` — pass (exit 0, `harmony ok for Task-021`, about 76s). Schema tests, diagram check, full typecheck, lint, and the workspace test run all succeeded.
+- `node scripts/verify-harmony.mjs --task 021` — pass (exit 0, `harmony ok for Task-021`, about 100s). Schema tests, diagram check, full typecheck, lint, and the workspace test run all succeeded.
 
 ## Known Limitations / Follow-Ups
 
