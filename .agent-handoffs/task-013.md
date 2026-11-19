@@ -11,77 +11,95 @@ commit_only_never_merged: true
 
 # Task 013 handoff
 
-`ProjectStateDb` initializes `state.db`, holds the single writer lock, detects foreign commits with `PRAGMA data_version`, and refuses dispatch and writes in Safe Mode. Commit stays on `task/013-state-db-bootstrap-safemode`.
+`ProjectStateDb` initializes `state.db` from `schema/state.sql`, holds the single writer lock, detects foreign commits with `PRAGMA data_version`, and isolates write failures in safe mode. Commit stays on `task/013-state-db-bootstrap-safemode`.
 
 ## Exports Provided
 
 Import from `packages/db/src/state-db/index.ts` until the package barrel is wired:
 
-- `SafeModeController` arms Safe Mode, refuses dispatch and writes, and emits the high-priority status payload
 - `openProjectStateDb(options) -> ProjectStateDb`
-- `ProjectStateDb` with `mode` (`"readwrite"` | `"readonly"`), `acquireWriterLock`, `checkDataVersion`, `enterSafeMode`, `isSafeMode`, `getSafeModeStatus`, `assertCanDispatch`, `getMeta`, `setMeta`, `getOwner`, `getStreamEpoch`, `bumpStreamEpoch` (returns `resync_required`), `isIntegrityCheckDue`, `runIntegrityCheckIfDue`, `getUserVersion`, `getProjectRuntime`, `listSchemaMigrations`, `evaluateSearchText`, `close`
-- Errors: `ProjectSafeModeError`, `ReadOnlyDatabaseError`, `DatabaseVersionTooNewError`, `DatabaseSchemaVersionError`, `WalModeRequiredError`, `ClosedDatabaseError`, `WorldReadableProjectPathError`, `AttachedDatabaseForbiddenError`, `NestedWriteTransactionError`
-- `APP_SUPPORTED_SCHEMA_VERSION` is `1`
-- `StateDbLogger` is the structural logger (`info` / `warn` / `error`) accepted at open
+- `ProjectStateDb`: `close`, `mode` (`"readwrite" | "readonly"`), `databasePath`, `backupDirectory`, `acquireWriterLock`, `getMeta`, `setMeta`, `checkDataVersion`, `enterSafeMode`, `isSafeMode`, `getSafeModeStatus`, `onSafeMode`, `assertCanDispatch`, `getStreamEpoch`, `bumpStreamEpoch`, `onResyncRequired`, `isIntegrityCheckDue`, `runIntegrityCheckIfDue`, `getUserVersion`, `getProjectRuntime`, `listSchemaMigrations`, `getOwner`
+- `SafeModeController`: arms safe mode, publishes the high-priority UI payload, and refuses dispatch and writes with `ProjectSafeModeError`
+- Errors: `ProjectSafeModeError(reason, diagnostics)`, `ReadOnlyDatabaseError`, `DatabaseVersionTooNewError` (`dbVersion`, `supportedVersion`, `backupDirectory`), `DatabaseSchemaVersionError`, `ClosedDatabaseError`, `WalModeRequiredError`, `WorldReadableProjectPathError`
+- `APP_SUPPORTED_SCHEMA_VERSION` (1), `META_KEYS`
 
-Safe Mode reasons are `foreign_write`, `disk_io_error`, and `corrupt`. The status payload is `{ priority: "high", dispatchBlocked: true, writesBlocked: true, worktreesPreserved: true, checkpointsPreserved: true }`. Subscribe with `onSafeMode` or the `onSafeMode` open option. `bumpStreamEpoch("rehydrated" | "restored")` notifies `onResyncRequired`.
+`OpenProjectStateDbOptions`: `projectId`, `rootDir?`, `logger?`, `now?`, `appVersion?`, `supportedSchemaVersion?`, `beforePublish?`, `onSafeMode?`, `onResyncRequired?`.
 
-### Meta key registry
+Lifecycle:
 
-| Key | Seed | Writer |
-| --- | --- | --- |
-| `project_id` | project id | bootstrap |
-| `stream_epoch` | `1` | `bumpStreamEpoch` |
-| `last_rev` | `0` | later knowledge commits |
-| `writer_epoch` | `1` | owner reclaim increments it with `owner.epoch` |
-| `created_at` | epoch ms | bootstrap |
-| `owner` | JSON `{ pid, processStartTime, epoch, hostname, acquiredAt }` | lock acquisition |
-| `last_integrity_check_at` | absent until the first weekly run | `runIntegrityCheckIfDue` |
-| `safe_mode` | `1` while Safe Mode is persisted | `enterSafeMode` |
-| `safe_mode_reason` | reason string | `enterSafeMode` |
-| `safe_mode_diagnostics` | JSON diagnostics | `enterSafeMode` |
+1. `openProjectStateDb` resolves `%LOCALAPPDATA%\EFHarness\projects\<project-id>\` (`rootDir` overrides the harness root in tests). The same `projectId` in one process returns the existing handle.
+2. A missing `state.db` is built in `state.db.init.tmp` (schema, seeds, `PRAGMA user_version = 1`, `COMMIT`, close) and renamed into place. A crash before the rename never leaves a partial file at `state.db`.
+3. The writer keeps `state.db.lock` open under `BEGIN IMMEDIATE` (the OS exclusive lock) and writes `meta.owner` as `{ pid, processStartTime, epoch, hostname, acquiredAt }` inside `BEGIN IMMEDIATE` on `state.db`.
+4. A second process whose lock acquire is busy opens `state.db` with `query_only = ON` and `mode: "readonly"`. Writes throw `ReadOnlyDatabaseError` before SQLite is called.
+5. A stale owner (dead PID, or a live PID whose creation time differs) is reclaimed, `owner.epoch` increments, and `state_db.writer_lock.reclaimed` is logged. A live owner with a matching creation time is not stolen.
+6. After every coordinator commit the connection caches `PRAGMA data_version`. The next mutating call re-reads it. A change runs `PRAGMA quick_check` and enters safe mode.
+7. `SafeModeController` enters safe mode on a foreign `data_version` change, `SQLITE_FULL` / `SQLITE_IOERR` (`disk_io_error`), or `SQLITE_CORRUPT` / a failed `quick_check` or `integrity_check` (`corrupt`). Dispatch and writes throw `ProjectSafeModeError`. Worktrees and checkpoints are not modified. `onSafeMode` receives `{ priority: "high", dispatchBlocked: true, writesBlocked: true, reason, diagnostics }`.
+8. Every open runs `PRAGMA quick_check`. `last_integrity_check_at` is stored so the daemon can call `runIntegrityCheckIfDue` weekly at idle.
+9. `bumpStreamEpoch("rehydrated" | "restored")` increments `meta.stream_epoch` and emits `resync_required`.
 
-### Lifecycle
+`meta` keys: `project_id`, `stream_epoch` (initial 1), `last_rev` (initial 0), `writer_epoch` (initial 1), `created_at`, `owner`, `last_integrity_check_at`, `safe_mode`, `safe_mode_reason`, `safe_mode_diagnostics`.
 
-1. Resolve `%LOCALAPPDATA%\EFHarness\projects\<project-id>\` (`rootDir` overrides the EFHarness root in tests). Public and ProgramData paths are rejected.
-2. Take an exclusive lock by holding `BEGIN IMMEDIATE` on `state.db.lock` until `close`. A busy lock opens `state.db` with `query_only = ON` and `mode: "readonly"` and does not steal the lock.
-3. A missing `state.db` is built in `state.db.init.tmp` from `schema/state.sql` inside one `BEGIN IMMEDIATE`, seeded, checkpointed, closed, then renamed with `EPERM` / `EBUSY` / `EACCES` retries. A crash before rename never leaves a partial file at `state.db`.
-4. `PRAGMA user_version` is read before any query. A newer version throws `DatabaseVersionTooNewError` with `projects/<id>/backups`.
-5. The owner row is reclaimed when the recorded PID is dead, or alive with a different process creation time. Reclaim increments `owner.epoch` and logs `state_db.writer_lock.reclaimed`.
-6. `PRAGMA quick_check` runs on every open. `last_integrity_check_at` makes `runIntegrityCheckIfDue` run `PRAGMA integrity_check` once a week.
-7. Before each later write, `PRAGMA data_version` is compared with the value cached after the last coordinator commit. A foreign commit runs `quick_check` and enters Safe Mode. `SQLITE_FULL`, `SQLITE_IOERR`, and `SQLITE_CORRUPT` roll back and enter Safe Mode. No write method returns success after those failures.
-
-The same `projectId` opened twice in one process returns the existing handle.
+Bootstrap also inserts `project_runtime(id=1, state='DISCOVERY', paused=0, updated_rev=0)` and `schema_migrations` version 1 (`state-schema-v1`, `additive`). `user_version` above `APP_SUPPORTED_SCHEMA_VERSION` throws `DatabaseVersionTooNewError` and points at `<project>/backups` before any application query.
 
 ## Shared Wiring Needs (Root / Index Barrels)
 
-`packages/db/src/index.ts` is outside this task's write scope. Re-export `openProjectStateDb`, `ProjectStateDb`, the error classes, `APP_SUPPORTED_SCHEMA_VERSION`, `META_KEYS`, and `StateDbLogger` from that barrel when integrating.
+`packages/db/src/index.ts` is frozen by Task 001. Please re-export the symbols listed above from that barrel:
 
-`openProjectStateDb` should receive Task 011 `StructuredLogger` as `options.logger`. The structural `StateDbLogger` methods match `info` / `warn` / `error`.
+```ts
+export {
+  APP_SUPPORTED_SCHEMA_VERSION,
+  DatabaseVersionTooNewError,
+  META_KEYS,
+  ProjectSafeModeError,
+  ProjectStateDb,
+  ReadOnlyDatabaseError,
+  SafeModeController,
+  openProjectStateDb,
+} from "./state-db/index.js";
+```
+
+`apps/daemon` should pass Task 011 `StructuredLogger` as `options.logger` and subscribe with `onSafeMode` for the UI status payload. No root manifest or `packages/shared-contracts/src/index.ts` edit is required.
 
 ## Dependency Intents (New Packages Requested)
 
-None. No package manifest changes.
-
-Task 012 `SqliteConnection` and Task 011 `StructuredLogger` are not on `harness/integration` (base `649773097c387ae534b686ea5825f449f843aa7c`). This task opens `node:sqlite` inside `packages/db/src/state-db/` with the writer PRAGMAs (`WAL`, `synchronous = FULL`, `foreign_keys = ON`, `busy_timeout = 5000`, `secure_delete = ON`, `journal_size_limit = 67108864`, `temp_store = MEMORY`), read-only `query_only`, deterministic `ef_search_text`, `BEGIN IMMEDIATE`, and `ATTACH DATABASE` rejection. When Task 012 lands, replace `openStateConnection` with `openDatabase` / `SqliteConnection` and register Task 007 `splitSearchText` through that driver. The local `ef_search_text` matches `schema/schema-test.js` until that wiring exists.
+None. Runtime dependencies stay `@ef-harness/shared-contracts` plus Node built-ins (`node:sqlite`, `node:fs`, `node:child_process`).
 
 ## Contract Change Requests
 
-None.
+None. `schema/state.sql` is loaded verbatim and was not edited. `ef_search_text` is registered on the connection before that SQL runs, using the same camelCase / separator split as Task 007 until `SqliteConnection` from Task 012 is on this branch.
 
 ## Exact Verification Commands & Results
 
 Run from `C:\Users\Ayush\Desktop\ef-wt\task-013-state-db-bootstrap-safemode`.
 
-- `pnpm --filter @ef-harness/db typecheck` — passed (`tsc -b --pretty false`, exit 0).
-- `pnpm --filter @ef-harness/db lint` — passed (`eslint .`, exit 0).
-- `pnpm --filter @ef-harness/db test -- state-db` — passed, 17 tests, 1 file, exit 0. Covers atomic bootstrap, meta seed, `project_runtime` singleton, `user_version === 1`, partial-init discard, interrupted rename, newer and zero `user_version`, dead-PID and PID-reuse epoch reclaim, read-only inspection not entering Safe Mode, foreign commit entering Safe Mode after `quick_check`, disk-full rollback into `disk_io_error`, `stream_epoch` resync, weekly `integrity_check`, read-only and closed guards, private-path rejection, rename retry, `ATTACH` rejection, nested `BEGIN IMMEDIATE`, and the dual-process lock fallback plus stale reclaim.
-- `node scripts/verify-harmony.mjs --task 013` — passed (`harmony ok for Task-013`, exit 0). This also runs the schema suite, diagram check, `pnpm typecheck`, `pnpm lint`, and `pnpm test`.
+```text
+pnpm --filter @ef-harness/db test -- state-db
+```
+
+Result: 1 file passed, 20 tests passed. Covered atomic bootstrap from `schema/state.sql`, meta seeds, `project_runtime` id 1, `user_version === 1`, partial-init discard, read-only external inspection (no safe mode), external commit detected via `PRAGMA data_version` then `quick_check` and safe mode, disk-full rollback (`SQLITE_FULL`) into `disk_io_error`, dual-process read-only fallback, stale-lock reclaim with incremented `owner.epoch` after the holder was killed, live-owner refusal, corrupt page safe mode, `stream_epoch` `resync_required`, and weekly `integrity_check`.
+
+```text
+pnpm --filter @ef-harness/db typecheck
+```
+
+Result: exit 0.
+
+```text
+pnpm --filter @ef-harness/db lint
+```
+
+Result: exit 0.
+
+```text
+node scripts/verify-harmony.mjs --task 013
+```
+
+Result: exit 0, `harmony ok for Task-013`. The commit command runs the same check with `--require-ready`.
 
 ## Known Limitations / Follow-Ups
 
-- Safe Mode is sticky. This task does not clear it; corruption recovery and migration restore belong to later tasks.
-- `applyStorageCeiling` exists so tests can raise real `SQLITE_FULL` without filling the disk.
-- The writer lock is SQLite's reserved lock on `state.db.lock` (`BEGIN IMMEDIATE`, `busy_timeout = 0`), held until `close` or process death. That is the OS lock SQLite takes for the file.
-- A second open of the same `projectId` in-process returns the first handle even if `rootDir` differs. Use one id per open database.
-- If Safe Mode cannot persist because the disk is full, the in-memory flag still rejects writes, but a later process will not see `safe_mode` until a durable flag can be written.
+- Task 012 `SqliteConnection` is not on this branch. `state-db` opens `node:sqlite` directly, applies the writer pragmas (`WAL`, `synchronous=FULL`, `foreign_keys`, `busy_timeout=5000`, `secure_delete`, `journal_size_limit=67108864`, `temp_store=MEMORY`), registers `ef_search_text` before schema SQL, and rejects `ATTACH DATABASE`. When Task 012 lands, route these opens through `openDatabase({ role: "state" })` without changing `ProjectStateDb`'s public methods.
+- Task 011 `StructuredLogger` is not on this branch. The injected logger is structural (`info` / `warn` / `error`). The default logger writes one JSON line to stderr and does not rotate files. The daemon should inject the real logger.
+- If `state.db` is malformed, the `safe_mode` meta row may not persist (`state_db.safe_mode.persist_failed`). The open handle still refuses writes with `ProjectSafeModeError(reason: "corrupt")`. The next open detects the corruption again.
+- The exclusive lock is the SQLite reserved lock on `state.db.lock`, held by a connection that stays open for the life of the writer. Windows releases that OS lock when the process is killed.
+- Full `PRAGMA integrity_check` is exposed as `runIntegrityCheckIfDue` for the daemon's idle loop. Opening a project runs `quick_check` only.
