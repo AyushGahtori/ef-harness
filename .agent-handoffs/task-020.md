@@ -5,77 +5,33 @@ base_commit: "649773097c387ae534b686ea5825f449f843aa7c"
 owned_paths:
   - "packages/db/src/leases/**"
   - "packages/db/tests/leases/**"
-  - ".agent-handoffs/task-020.md"
 status: "ready_for_integration"
 commit_only_never_merged: true
 ---
 
 # Task 020 handoff
 
-Atomic task claiming, sweep path leases, deferred-FK attempt creation, attempt checkpoints, and sleep-skew lease sweeping. Commit stays on `task/020-task-claiming-leases-sleep-guard`.
+Atomic task claiming, deferred-FK attempt creation, sweep path leases, checkpoint storage, and sleep-skew lease sweeping. Commit stays on `task/020-task-claiming-leases-sleep-guard`.
 
 ## Exports Provided
 
-From `packages/db/src/leases/index.ts`:
+Import from `packages/db/src/leases/index.ts`.
 
-- `TaskLeaseManager` — `claimTask`, `renewLease`, `sweepExpiredLeases`, `fenceAttempts`, `onPowerResume`, `registerAttemptProcess`, `registerTaskScopes`, `openSweepIntent`, `grantSweepLease`, `releaseSweepLease`, `reconcileLiveAttempts`
-- `DualClock`, `SystemDualClock`, `ManualDualClock`, `SleepSkewGuard`, `SLEEP_SKEW_THRESHOLD_MS`
+- `TaskLeaseManager` — `claimTask`, `renewLease`, `sweepExpiredLeases`, `fenceAttempts`, `onPowerResume`, `registerTaskScopes`, `openSweepIntent`, `grantSweepLease`, `releaseSweepLease`, `reconcileLiveAttempts`, `registerAttemptProcess`
+- `DualClock`, `SystemDualClock`, `ManualDualClock`
+- `SleepSkewGuard` and `SLEEP_SKEW_THRESHOLD_MS` (30_000)
 - `AttemptCheckpointRepo`
 - `globToPathPrefix`
-- `LeaseFencedError`, `OsProcessProbe`, `AttemptProcessProbe`
-- `LeaseDatabase` — writer port (`exec`, `prepare().all/get/run`) with bare named parameters, the same shape `schema/schema-test.js` uses for `claim_task`
-- `runImmediate` — `BEGIN IMMEDIATE` with rollback on failure
-- `canonicalQuery`, `loadQueryCatalog`, `LEASE_QUERY_NAMES`
+- `LeaseFencedError`
+- `LeaseDatabase` / `runImmediate` — writer port expected from `ProjectStateDb` (Task 013); named parameters use bare keys
 
-`claimTask` runs canonical `claim_task` and `create_attempt` in one `BEGIN IMMEDIATE` transaction and returns `{ claimed: true, epoch, attemptId }` or `{ claimed: false, reason }` where `reason` is `not_ready | held | dependency_open | brief_stale | sweep_overlap | lost_race`.
+`claimTask` returns `{ claimed: true, epoch, attemptId }` or `{ claimed: false, reason }` where `reason` is `not_ready | held | dependency_open | brief_stale | sweep_overlap | lost_race`. `claim_task` and `create_attempt` run in one `BEGIN IMMEDIATE` transaction. `sweepExpiredLeases` runs `sweep_expired_leases` then `fence_attempts` in one transaction and returns `{ suspended: true, expired: [], fenced: 0 }` while the sleep-skew guard is suspended. `renewLease` throws `LeaseFencedError` when zero rows change.
 
-`ACCEPTED` and `MERGED_TO_FEATURE` have `task_states.done = 1` and satisfy `depends_on`. `CANCELLED` and `SUPERSEDED` have `done = 0`, so the claim transaction retires those active `depends_on` edges (`valid_to_rev`) before `claim_task`. The retirement rolls back when the claim is refused.
-
-`sweepExpiredLeases` runs canonical `sweep_expired_leases` then `fence_attempts` in one transaction. A wall/monotonic disagreement above 30 seconds, or `onPowerResume()`, suspends that sweeper until `reconcileLiveAttempts` extends leases whose registered process is alive and expires only dead processes. `submission_pending = 1` is never expired.
-
-Overlapping sweep intents are granted in `(created_at, id)` order so two sweeps cannot both become `granted` on the same paths. Disjoint prefixes can be granted together. Prefix inserts share the intent transaction; a failed insert leaves no `path_leases` row.
+Canonical statements executed verbatim from `schema/queries.sql`: `claim_task`, `create_attempt`, `sweep_expired_leases`, `fence_attempts`, `open_sweep_intent`, `grant_sweep_lease`.
 
 ## Shared Wiring Needs (Root / Index Barrels)
 
-`packages/db/src/index.ts` is outside this task's write scope. Please re-export the lease API from the package barrel:
-
-```ts
-export {
-  AttemptCheckpointRepo,
-  DualClock,
-  LeaseFencedError,
-  ManualDualClock,
-  OsProcessProbe,
-  SLEEP_SKEW_THRESHOLD_MS,
-  SleepSkewGuard,
-  SystemDualClock,
-  TaskLeaseManager,
-  globToPathPrefix,
-  runImmediate,
-} from "./leases/index.js";
-export type {
-  AttemptCheckpoint,
-  AttemptProcessProbe,
-  ClaimResult,
-  ClaimTaskInput,
-  DualClock,
-  LeaseDatabase,
-  ReconcileResult,
-  SweepGrantResult,
-  SweepResult,
-} from "./leases/index.js";
-```
-
-`TaskLeaseManager` should be constructed with the `ProjectStateDb` writer once Task 013 is wired:
-
-```ts
-const manager = new TaskLeaseManager({
-  db: projectStateDbWriter, // LeaseDatabase
-  clock: new SystemDualClock(),
-});
-```
-
-Task 131 should call `onPowerResume()` and `registerAttemptProcess(attemptId, pid)` for every live attempt. Task 034, Task 095, and Task 184 should import the symbols above.
+`packages/db/src/index.ts` is outside this task's write scope and still exports only `packageIdentity`. Tasks 034, 095, 131, and 184 should import the lease API from `packages/db/src/leases/index.ts` until a later wiring change re-exports it from `@ef-harness/db`.
 
 ## Dependency Intents (New Packages Requested)
 
@@ -83,19 +39,18 @@ None.
 
 ## Contract Change Requests
 
-None. Canonical statements `claim_task`, `create_attempt`, `sweep_expired_leases`, `fence_attempts`, `open_sweep_intent`, and `grant_sweep_lease` are loaded from `schema/queries.sql` and are not copied into TypeScript.
+None. No edits to `schema/queries.sql`, `schema/state.sql`, or shared contracts.
 
 ## Exact Verification Commands & Results
 
-From `C:\Users\Ayush\Desktop\ef-wt\task-020-task-claiming-leases-sleep-guard`:
+- `pnpm --filter @ef-harness/db test -- leases` — passed, 5 files, 31 tests. Covers all 6 claim refusals, deferred FK rejection at COMMIT, one-winner races, cancelled/superseded dependency retirement, glob-to-prefix boundaries, intent/granted sweep lifecycle, overlapping-sweep serialization, checkpoint round-trip, +1 hour sleep with 4 attempts (3 live extended, 1 dead fenced), and a -10 minute backward clock jump.
+- `pnpm --filter @ef-harness/db typecheck` — passed (`tsc -b`).
+- `pnpm --filter @ef-harness/db lint` — passed (`eslint .`).
+- `node scripts/verify-harmony.mjs --task 020` — passed (`harmony ok for Task-020`). Schema 67/67, diagrams, scope, root typecheck, lint, and tests were included.
 
-- `pnpm --filter @ef-harness/db test -- leases` — pass, 5 files, 31 tests.
-- `pnpm --filter @ef-harness/db typecheck` — pass, exit 0.
-- `pnpm --filter @ef-harness/db lint` — pass, exit 0.
-- `node scripts/verify-harmony.mjs --task 020` — pass, `harmony ok for Task-020`.
+A local `node:sqlite` probe on Node v24.16.0 showed `StatementSync.all({})` and `all()` with no arguments return the same rows for a statement that has no parameters. Parameterless reads in this task pass `{}`. Named statements always receive their bound object. Multi-row `RETURNING` results stayed distinct (`sweepExpiredLeases` fenced three separate tasks after wake).
 
 ## Known Limitations / Follow-Ups
 
-- Tasks 012 and 013 are not on `harness/integration`, so this branch cannot import `SqliteConnection` or `ProjectStateDb`. `LeaseDatabase` is the consumption seam. Statements must accept bare parameter names (`task`, not `:task`).
-- Process identity is an in-memory map. A missing pid is treated as live during reconciliation so an unregistered attempt is not false-expired. Dead processes must be registered with a pid the probe reports as gone, or a custom `AttemptProcessProbe`.
-- The db package barrel is intentionally unchanged until an integrator applies the wiring above.
+- An attempt with no registered pid is treated as live (`OsProcessProbe` returns true for `pid === null`) so a missing process id cannot false-expire a lease. Callers that know the OS pid should `registerAttemptProcess` before `reconcileLiveAttempts`.
+- The public package barrel does not re-export this module yet. See Shared Wiring Needs.
