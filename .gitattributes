@@ -12,3 +12,23 @@
 *.ps1 text eol=crlf
 *.svg binary
 *.png binary
+
+# Baseline blobs below were imported with their original bytes. Marking them
+# unconverted keeps every later worktree from showing a line-ending edit.
+adaptive-question-selection.mmd -text
+agent-graph-routing.md -text
+agent-graph-routing.mmd -text
+architecture-ideas.md -text
+architecture.md -text
+harness-architecture.mmd -text
+kernel-schema-and-protocol.md -text
+linked-architecture-revisions.md -text
+linked-architecture-revisions.mmd -text
+linked-graphs-design.md -text
+mid-build-messages.mmd -text
+opening-prompts.md -text
+project-discovery.md -text
+requirements-and-agent-routing.mmd -text
+resume-changer-benchmark.json -text
+routing-design.md -text
+schema/schema-test.js -text
