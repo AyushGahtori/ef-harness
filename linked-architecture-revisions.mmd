@@ -1,0 +1,20 @@
+---
+title: Publishing a rule change and recovering after interruption
+---
+flowchart TB
+  MSG["Submitted steer • move cutoff from 11:00 to 10:45"] --> R["R17 • cutoff, timezone, boundary and evidence"]
+  R -->|owned by| OWNER["Stable kitchen planner role and current epoch"]
+  R --> GRAPH["Reverse typed edges<br/>Find feature section, validation task, UI text and boundary case"]
+  GRAPH --> GAP{"Cutoff semantics and acceptance evidence complete?"}
+  GAP -->|Missing timezone or equality rule| ASK["Queue focused question after submission"] --> R
+  GAP -->|Ready| DELTA["Planner proposes delta with stable IDs<br/>Record node, edge-set and contract versions it read"]
+  OWNER --> DELTA
+  DELTA --> TX{"Kernel validates scoped read and write versions,<br/>links, evidence and lease inside one transaction"}
+  TX -->|Same rule has changed| REBASE["Compare meanings, rerun affected traversal<br/>Apply explicit correction or resolve conflict"] --> DELTA
+  TX -->|Disjoint or valid| COMMIT["Commit canonical graph, versioned task briefs,<br/>revision sequence, audit record and outbox together"]
+  COMMIT --> BRIEF["Worker reads active brief from kernel<br/>Gate tool calls and result acceptance by lease and relevant contract versions"]
+  COMMIT --> EXPORT["Generate labeled JSON, Markdown and filtered Mermaid<br/>Store verified hashes and snapshot status; retry a failed view"]
+  COMMIT --> OUT["Recover after restart from committed outbox<br/>Deduplicate by event ID and consumer, preserve distinct events"]
+  OUT --> BRIEF
+  BRIEF --> TEST["Independent check of boundary cases and matching UI policy"]
+  UNDO["Undo a published change"] --> FORWARD["Create forward revision and removal or revert tasks for merged code"] --> DELTA

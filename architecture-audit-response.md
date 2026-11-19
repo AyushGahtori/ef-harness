@@ -1,0 +1,38 @@
+# Response to the pre-implementation audit (16 November 2026)
+
+An external “deep research” audit reviewed the harness plan. The auditor states it could not fetch the repository and reconstructed the design from a description, so several findings describe a generic multi-agent framework rather than this design. Each finding was checked against the docs and against current primary sources. Valid findings changed the design; the rest are answered with the evidence.
+
+## Verdicts
+
+| # | Audit finding (severity) | Verdict | Evidence | Action |
+|---|---|---|---|---|
+| 1 | GPT-4 Turbo lacks streaming and function calling; design depends on it (Critical) | **Incorrect** | OpenAI's model page lists streaming and function calling for `gpt-4-turbo`, which is now shut down. The design never targets one model: models come from a versioned roster per connection ([planning and crew](planning-and-crew.md#crew-composition)), and each adapter declares capabilities that are verified by a conformance suite ([agent runtime adapters](agent-runtime-adapters.md#adapter-conformance-suite)). | None. Capability checks already gate model selection. |
+| 2 | Output capped at 4,096 tokens; costs unbudgeted (Critical) | **Mostly incorrect** | Atomic multi-currency budget reservations, pacing and per-task receipts exist ([coordinator](coordinator-and-recovery.md), [provider connections](provider-connections.md)). The real gap: the cost of research, architecture and planning (“paperwork”) wasn't capped. | Paperwork budget cap added ([build pipeline](build-pipeline.md#economics-paperwork-budget)). |
+| 3 | No retries, backoff or fallback for rate limits (Critical) | **Incorrect** | Bounded backoff honoring retry hints, AIMD concurrency per connection, a rule that a 429 isn't a worker failure, and a reconciliation step for unknown outcomes ([coordinator](coordinator-and-recovery.md#resource-and-retry-policy), [provider pacing](provider-connections.md#budgeting-with-allowance-instead-of-dollars)). | None. |
+| 4 | GitHub API limits ignored; parallel edits corrupt repos (Critical) | **Partly valid** | Local Git operations (worktrees, commits, merges) aren't rate-limited and parallel edits use isolated worktrees with a serialized merge queue ([workspace and Git](workspace-and-git.md), [parallel integration](parallel-feature-integration.md)). GitHub's limits (80 content-creating requests per minute, 500 per hour) do matter once the harness pushes and opens PRs, which wasn't designed yet. | Remote Git and CI loop designed with a serialized, rate-aware GitHub queue ([ship and deploy](ship-and-deploy.md)). |
+| 5 | Code execution isn't sandboxed (Critical) | **Valid** | The docs said “use OS permissions or a sandbox” without saying which. Windows Job Objects don't restrict files or network. | Full Windows sandbox design with tiers, network policy and supply-chain controls ([sandbox and security](sandbox-and-security.md)). |
+| 6 | Prompt injection unaddressed (Critical) | **Partly valid** | Many defenses existed but were scattered: transcripts, files and summaries are “quoted data” and can't grant tools ([opening prompts](opening-prompts.md)), skills can't grant permissions ([task design](task-and-skill-architecture.md)), and the kernel validates every action. No single threat model existed. | Threat model and injection defenses consolidated ([sandbox and security](sandbox-and-security.md#threat-model)); community skill vetting added ([meta-lab](meta-lab.md#community-and-custom-skills)). |
+| 7 | Failure handling unspecified (High) | **Mostly incorrect** | Bounded retries with failure fingerprints, attribution by owner, outbox delivery, fencing epochs and crash recovery ([coordinator](coordinator-and-recovery.md), [verification](verification-and-isolation.md#fencing-external-effects-and-cost)). Missing piece: one explicit state machine per task, feature and project including failure states. | State machines added ([build pipeline](build-pipeline.md#state-machines)). |
+| 8 | Race conditions on shared state (High) | **Incorrect** | One coordinator is the sole SQLite writer; leases with epochs; per-node version checks; atomic outbox ([linked graphs](linked-graphs-design.md), [revisions](linked-architecture-revisions.md)). SQLite's single writer is a deliberate choice for one desktop. | Multi-project and multi-device writers now designed ([portability and sync](projects-portability-and-sync.md)). |
+| 9 | No logging or observability (High) | **Partly valid** | User-facing observability exists (cockpit, timelines, receipts). Logs and traces for diagnosing the harness itself didn't. | Structured logs, local traces and a redacted diagnostics bundle ([desktop app](desktop-app.md#observability-and-diagnostics)). |
+| 10 | Interfaces have no schemas (High) | **Valid** | Fields were described in prose; no machine schemas. | Core message schemas defined ([build pipeline](build-pipeline.md#core-message-schemas)); all prompts given output schemas ([prompt contracts](prompt-contracts.md)). |
+| 11 | Dependency versions unpinned (High) | **Partly valid** | Provider CLIs, prompts and skills are pinned. The app's own stack wasn't chosen. | Stack and update policy ([desktop app](desktop-app.md#technology-stack)). |
+| 12 | Multi-user UI concurrency (High) | **Out of scope for v1** | v1 is one developer per project. | Team model defined: one active writer, others view ([portability and sync](projects-portability-and-sync.md#teammates)). |
+| 13 | Scope too large for an MVP (Medium) | **Valid as a build-order concern** | The vision stays, but it must be built in de-risked stages. | Milestone roadmap with exit criteria ([roadmap](roadmap.md)). |
+| 14 | No testing strategy (Medium) | **Partly valid** | Acceptance trials and fault injection already listed ([review decisions](architecture-review-decisions.md#build-order-and-failure-injection)). No plan for testing the harness's own code. | Deterministic simulation, fault injection and eval lab ([meta-lab](meta-lab.md#testing-the-harness-itself)). |
+| 15 | Server scaling, GPUs, cloud cost (Medium) | **Not applicable** | The harness is a local desktop app; models run at providers or locally under the developer's control. | Machine capacity limits already set crew width ([planning](planning-and-crew.md#choosing-how-many-workers)). |
+| 16 | Data privacy, encryption at rest (Medium) | **Valid, small** | Transcripts may contain sensitive text. | Privacy settings and storage protections ([sandbox and security](sandbox-and-security.md#data-at-rest)). |
+| 17 | README empty (Low) | **Valid** | — | [README](README.md) added. |
+| 18 | Diagrams may disagree with text (Low) | **Valid as a process risk** | The main diagram was updated in the last round; others weren't rechecked. | New pipeline diagram; diagram parse check added to the link check. |
+
+## What changed in the design because of the audit
+
+1. A real sandbox: OS-level file and network boundaries, one execution path for all shell commands, zero direct internet for coding workers, and blocked dependency install scripts.
+2. A threat model with named assets, attackers and defenses.
+3. Explicit state machines and message schemas.
+4. Harness observability and a test strategy for the harness itself.
+5. A staged roadmap so the first milestone proves the core loop before anything else is built.
+
+## What did not change
+
+The audit recommends dropping parallel agents and the UI for the first version. The vision keeps them; the [roadmap](roadmap.md) delivers them after the single-task loop is proven, which addresses the same risk without cutting the product.

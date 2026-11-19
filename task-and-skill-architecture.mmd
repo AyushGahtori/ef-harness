@@ -1,0 +1,43 @@
+---
+title: From a project plan to one worker's task and skills
+---
+flowchart TB
+  subgraph PLAN["Planning and decomposition"]
+    P["Project planner writes plan.md<br/>Goals, shared decisions, features and dependencies"] --> F["Feature owner writes one feature.md per feature<br/>User behavior, contracts, failure cases and acceptance examples"]
+    F --> T["Author task.md for one deliverable<br/>Identify owned files, inputs, observable output and scope"]
+    T --> FIT{"Can one worker implement and verify this<br/>without making another product decision?"}
+    FIT -->|Several separable deliverables| SPLIT["Keep parent task author as integration owner<br/>Check narrower scope, depth limit and acyclic dependencies"] --> T
+    FIT -->|Missing decision| DEC["Reuse the relevant project decision or resolve it with the owner"] --> T
+    FIT -->|Yes| LEAF["Published leaf brief<br/>Decision versions, contracts, owned paths, state needs,<br/>examples, real entry point and required check IDs"]
+    LEAF --> ORACLE["Planner fixes visible expected results. oracle-author writes<br/>the held-back rule cases without seeing the task split<br/>Kernel checks red-before-green and pins binding and runner"]
+  end
+  subgraph SKILLS["Skill selection and delivery"]
+    LIB["Catalog of about 20 skills, downloaded from the most-used public skills<br/>and vetted. infer-or-ask is ours. Name, trigger, stack, digest"]
+    MATCH["Feature owner selects skills for this task<br/>Filter eligible entries by task type, stack and tool access"]
+    BIND["Pin skill IDs and digests<br/>Optional skills carry a trigger"]
+    GATE{"Ready to run?<br/>Check references, skills, tool scope, context and reserved budget"}
+    LEAF --> MATCH
+    LIB --> MATCH --> BIND --> GATE
+    ORACLE --> GATE
+    GATE -->|Specific gap| T
+  end
+  subgraph RUN["Execution through the existing coordinator"]
+    W["Kernel grants a fenced attempt and isolated workspace<br/>Supply the current brief and skill references"]
+    LOAD["Load required guidance once<br/>Open an optional skill only when its trigger applies"]
+    DO["Implement, run development checks and submit candidate"]
+    RESULT{"Clean verifier collected all pinned cases?<br/>Lease and input versions still current?"}
+    FIX["Return failing rule and observation<br/>Cap repeated repair and escalate by failure type"]
+    GAP["Ask for the missing fact or flag conflicting guidance<br/>Owner amends task or changes skill assignment"]
+    DONE["Kernel accepts candidate commit and verifier receipt<br/>Wake dependent tasks once"]
+    JOIN["Parent owner checks combined child outputs<br/>and runs the feature acceptance case"]
+    GATE -->|Ready| W --> LOAD --> DO --> RESULT
+    RESULT -->|Check failed| FIX
+    FIX -->|Repair available| DO
+    FIX -->|Blocked| GAP
+    RESULT -->|Decision or dependency missing| GAP --> T
+    RESULT -->|Stale input or expired lease| STALE["Archive attempt and refresh the affected assignment"] --> T
+    RESULT -->|Disputed or unstable check| TEST["Task author or test owner resolves the case"] --> ORACLE
+    RESULT -->|Verified| DONE --> JOIN
+  end
+  classDef key fill:#dceee8,stroke:#266654,color:#143a30
+  class LEAF,BIND,W,DONE key

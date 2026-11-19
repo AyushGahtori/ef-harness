@@ -1,0 +1,60 @@
+---
+title: Folder, Git, worktrees, and an existing codebase
+---
+flowchart TB
+  GIT["Git is required, and bundled as MinGit, so nothing is installed<br/>Parallel work, checkpoints, undo, export as branches and<br/>crash recovery are Git features. Plain copies, Jujutsu and<br/>per-file editor snapshots do not replace them in v1<br/>Mercurial or Perforce: not supported. Offer Work on a copy"] --> PICK["Developer picks a folder. The checkout is their desk<br/>The harness never edits, stashes, resets or commits there<br/>without an explicit click"]
+  PICK --> STATE{"What is in the folder?"}
+  STATE -->|Empty| EMPTY["Silent git init, branch main<br/>The Phase 0 commit is scanned before it is made"]
+  STATE -->|Files, no Git| NOGIT{"Set up Git, or work on a copy?<br/>There is no continue-without-Git"}
+  NOGIT -->|Set up Git here| SCAN
+  NOGIT -->|Work on a copy| COPY["Copy into a new folder and set up Git there"]
+  STATE -->|Clean repo| CLEAN["Record HEAD and the branch as the project base"]
+  STATE -->|Uncommitted files| DIRTY{"You have uncommitted files"}
+  DIRTY -->|Include my changes| SCAN
+  DIRTY -->|Start from my last commit| LAST["Warn that landing may later need those files committed"]
+  DIRTY -->|Let me commit first| RECHECK["Wait, then recheck"]
+  STATE -->|No commits yet| UNBORN["No commits yet. The baseline is shown before it is made"]
+  UNBORN --> SCAN
+  STATE -->|Anything else| OTHER["Merge, rebase, cherry-pick or conflicts: block.<br/>Open in my editor. Never finish or abort it<br/>Detached HEAD: pick a branch, or create harness-base and the date<br/>OneDrive, Dropbox or a network folder: warn, continue or move<br/>No user.name or email: one prompt, globals prefilled<br/>Git missing from PATH: the bundled Git is used"]
+
+  SCAN["Before any baseline or snapshot: scan .env files, private keys,<br/>high-entropy tokens, files over 50 MB, node_modules, build<br/>output and OS junk. Show the .gitignore proposal and the<br/>secrets that will not be committed. Accept, edit or cancel"] --> COMMIT{"What is being recorded?"}
+  COMMIT -->|A first Git history| BASE["Show what the baseline commit includes, then make it"]
+  COMMIT -->|Uncommitted work to include| SNAP["Dirty work is snapshotted, never moved. Stash is not used<br/>Temporary index: GIT_INDEX_FILE, read-tree HEAD, add -A,<br/>write-tree, commit-tree with parent HEAD,<br/>store refs/harness/snapshots, then drop the temp index<br/>Working tree, real index and branch stay untouched<br/>The scan runs on the snapshot diff first. That commit is the workers' base<br/>A later identical developer commit merges cleanly"]
+  COPY --> SCAN
+  BASE --> REFS
+  EMPTY --> REFS
+  CLEAN --> REFS
+  LAST --> REFS
+  RECHECK --> REFS
+  OTHER --> REFS
+  SNAP --> REFS
+
+  REFS["Developer's branch: landing target, only by a visible landing<br/>harness/integration: accepted, tested work<br/>harness/f/feature: private while its tasks land<br/>harness/t/task/attempt: one leased attempt<br/>refs/harness/checkpoints: WIP, kept for resume and export<br/>Author is the role and agent id. Committer is the developer<br/>Trailers: Harness-Task, Harness-Attempt<br/>A human fix keeps the human as author"] --> WT["Worktree outside the project, under LOCALAPPDATA<br/>git worktree add --detach, then the attempt branch<br/>core.longpaths. Registered on the attempt lease<br/>Ignored files are absent, so the environment manifest supplies them<br/>Secrets: env from the vault, never files<br/>Local config: an allowlist copy. Dependencies: the lockfile,<br/>with a shared package cache. Submodules init. LFS only for<br/>the task's paths. Sparse checkout when the brief declares it<br/>After retention: remove the worktree and prune<br/>Checkpoint refs survive until the feature lands or the user deletes them"]
+  WT --> WIN["Windows: short worktree root. Optional Defender exclusion<br/>Keep .gitattributes, or the developer's autocrlf<br/>Workers never rewrite line endings<br/>Flag two paths that differ only by case<br/>Stop the attempt's Job Object before deleting a locked tree<br/>Predict a landing with git merge-tree --write-tree, before touching anything"]
+
+  WIN --> OPEN{"Existing repo, or a new one?"}
+  OPEN -->|New| DONE["Folder is ready. Discovery uses the opening prompts"]
+  OPEN -->|Existing| CARD["Opening card from a local scan. Zero tokens spent<br/>What would you like to change?"]
+  CARD --> LAYERS["Read cheaply, ask the model last<br/>L0, free: tree, languages, manifests, scripts, tests, CI,<br/>docs, schema, migrations, .env.example names, Git churn<br/>L1, free and local: tree-sitter symbols, reference graph,<br/>entry points from routes, main and bin<br/>L2, bounded and cached by blob hash: one module card<br/>per area this request touches. Show the estimate first<br/>L3, per task: exact files or spans at the pinned commit<br/>The message chooses the L2 modules. The rest stay at L0 or L1<br/>L0 and L1 never leave the machine. Mask secrets before L2<br/>A local-only project uses a local model, or skips L2"]
+  LAYERS --> PROMPTS["Five change prompts, prefilled from the scan and the message<br/>What changes. Which part, and who uses it. One done example<br/>What must not change. How you check it today<br/>A mixed message splits. Separate readiness, shared project facts<br/>Slow is not testable. Ask the page, today's number, and the target<br/>Recommended default: p95 under 300 ms on a realistic dataset<br/>Trace the route to the query. Seeded data or a sanitized dump<br/>Record EXPLAIN ANALYZE or a timing harness<br/>Acceptance: a Tier 3 benchmark, plus that page's existing tests"]
+  PROMPTS --> FACTS["Confirmation card, not a lecture. Source and confidence on each claim<br/>Tick, correct or ignore. Confirmed claims become observed facts<br/>A correction overrides the observation and links to it<br/>Unreviewed claims stay observed, unconfirmed<br/>High-confidence ones may be used. A medium one used by a task<br/>is listed in that task's assumptions<br/>Stale docs: code wins for today. Never rewrite the README<br/>unless a task includes it. Conventions node is quoted into briefs<br/>Canvas: Today in grey, Change in color, edges show what is touched"]
+  FACTS --> PERM{"Run install, build and tests<br/>in an isolated copy?"}
+  PERM -->|Yes| SUITE{"Baseline receipt"}
+  PERM -->|Skipped| SKIP["Not measured. Every later acceptance still runs<br/>a pre-change baseline for the checks it touches"]
+  SUITE -->|Healthy| H1["Targeted checks pass, and no new failures anywhere"]
+  SUITE -->|Some already failing| H2["Known failing, by name. No new failures<br/>Optional task to fix those. Workers are not blamed for them"]
+  SUITE -->|Flaky| H3["Unstable. Out of pass or fail until the owner stabilizes them"]
+  SUITE -->|No tests| H4["Safety net first. A test runner only with approval<br/>Characterization tests for the touched modules,<br/>passing before and after"]
+  SUITE -->|Build fails| H5["Stop. Offer Make the build pass. Feature work waits"]
+  H1 --> EDGE
+  H2 --> EDGE
+  H3 --> EDGE
+  H4 --> EDGE
+  H5 --> EDGE
+  SKIP --> EDGE
+  EDGE["Deleted worktree: fence it, recreate from the last checkpoint<br/>gc or prune: refs survive, missing worktrees are recreated<br/>Repo moved: relocate, then git worktree repair<br/>Huge repo: measure, then lower parallelism or use sparse checkout<br/>Shallow clone: worktrees work. Skip blame hotspots<br/>Monorepo: ask which packages, and scan those deeply<br/>Generated or vendored: out of maps and write scopes<br/>Unsupported language: L0 stays, L1 is text search,<br/>L2 uses the files the request names<br/>A request that contradicts the schema is a planned change<br/>New commits during discovery: pin the start commit,<br/>refresh changed cards before planning"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class SNAP,REFS,FACTS focus
+  class STATE,NOGIT,DIRTY,COMMIT,OPEN,PERM,SUITE decision

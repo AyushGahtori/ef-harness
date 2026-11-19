@@ -1,0 +1,40 @@
+---
+title: Planning pipeline, Phase 0, and the crew
+---
+flowchart TB
+  READY["Planning starts on its own when discovery is ready<br/>Show the token and dollar or plan-share estimate first<br/>If planning itself would pass the budget, ask first<br/>and offer a cheaper planner level"] --> S1["1 System architecture. system-architect, Manager<br/>Components, skeleton data model, inter-feature contracts,<br/>cross-cutting rules with scopes, name prefixes, conventions,<br/>pinned versions, environment manifest<br/>Code checks that every requirement maps, every contract has<br/>a producer and a consumer, and names are unique"]
+  S1 --> S2["2 Master plan. master-planner, Manager<br/>Phase 0: everything two or more features consume, plus conventions<br/>Wave order, estimates, paperwork budget per wave<br/>Each shared artifact has exactly one Phase 0 owner"]
+  S2 --> S3["3 Feature architecture and planning, just in time per wave<br/>feature-architect and feature-planner, Seniors, in parallel<br/>Flows, screen specs, tasks, visible examples, check slots, one wiring task<br/>3b oracle-author writes the held-back cases, sealed, without the task split"]
+  S3 --> S4["4 Graph compile. Kernel<br/>One DAG. No cycles. No two owners of a path or a name. Within size limits<br/>Every requirement has a task and a check. Dependencies are edges"]
+  S4 --> S5["5 Estimates. Kernel. Tokens, money or allowance, and time, with ranges<br/>Calibrated history when this developer has it"]
+  S5 --> S6["6 Crew proposal. Kernel. Three presets<br/>Each must fit the budget, the connection caps and the machine"]
+  S6 --> LIVE["Finished stages stream onto the canvas and can be opened<br/>Cancel is available. A gap reopens only its own criterion"]
+  LIVE --> P0["Phase 0 is a walking skeleton plus the shared contracts<br/>Thinking is done in synthesis, so the tasks are recipes<br/>P0.1 Scaffold runs alone. Junior, low<br/>Then, in parallel where write scopes do not overlap:<br/>P0.2 Packages, one pinned lockfile change. Junior, low<br/>P0.3 Skeleton schema, migration 0001, seed recipe. Mid, or Junior if simple<br/>Feature-only columns arrive later as additive migrations<br/>P0.4 Shared types and validators. Junior, low<br/>P0.5 Auth skeleton, only if two features need it. Mid<br/>P0.6 Test harness and a passing smoke test. Junior, low<br/>P0.7 Tokens, primitives, shell, style guide. Mid<br/>P0.8 .env.example, manifest, CI if requested. Junior, low<br/>Generators make the scaffold mechanical once the decisions exist<br/>An existing repo shrinks Phase 0 to the safety net, the baseline,<br/>shared migrations or types, and extracted conventions"]
+  P0 --> GATE{"Foundation gate on harness/integration<br/>Build, lint, smoke test, migration on an empty database,<br/>style guide page renders"}
+  GATE -->|Pass| RULES["Conventions are quoted into each brief<br/>Lint makes them executable: no new packages outside intents,<br/>no redefining a shared type, no raw colors outside tokens<br/>Shared files belong to the integrator. Workers send an intent"]
+  GATE -->|Fail| FAIL["Feature waves wait. The check goes to the Phase 0 owner<br/>Repeated failure escalates to the Manager"]
+  FAIL --> GATE
+  RULES --> CLASS["Level per task, from the planner, checked by code<br/>Rules, contracts, write-scope size, held-back cases,<br/>similar tasks, risk tier<br/>Mechanical is Junior. Standard is Mid<br/>Tricky is Senior. Integration or architecture is Manager<br/>The developer is the CEO"]
+  CLASS --> BUMP{"Critical risk, a very large context,<br/>or a past failure on a similar task?"}
+  BUMP -->|Yes| UP["Bump one level"]
+  BUMP -->|No| COST
+  UP --> COST["Compare expected cost, not the sticker price<br/>Cost per attempt, divided by the chance of passing<br/>A cheap model that often fails can be the expensive one<br/>Start from defaults. Calibrate on this developer's history<br/>Roster maps level to connection, model and effort<br/>It is versioned, because model names change. The sample roster is illustrative"]
+  COST --> WIDTH["Workers this wave = the minimum of<br/>ready tasks at once, measured machine slots,<br/>each connection's concurrency cap, the developer's maximum,<br/>and what the budget pace allows<br/>Then critical-path list scheduling: the ready task with the<br/>longest chain behind it, on the best free slot<br/>More workers than the graph's width do not help<br/>Integration cost is why width is also capped<br/>Thinking width and execution width are separate: commands share<br/>a warm pool of 2 to 4 sandboxes. Wrapped agents have a lower cap"]
+  WIDTH --> PRE{"Preset"}
+  PRE -->|Fastest| FAST["Widest. Raise the level of critical-path tasks<br/>Kitchen illustration: 7 peak, about 38 min"]
+  PRE -->|Balanced. The default| BAL["Cheapest level that still meets the pass-rate target<br/>Width limited by pacing. Illustration: 5 peak, about 55 min"]
+  PRE -->|Cheapest| CHEAP["Lowest viable levels. Narrower, to stay inside plan windows<br/>Illustration: 3 peak, about 1 hour 40 min"]
+  FAST --> PV
+  BAL --> PV
+  CHEAP --> PV["Preview: Phase 0, feature waves, crew, time range,<br/>dollar or allowance range, and tasks that rest only<br/>on choices made for you. Peak count changes by wave<br/>A single chain is one worker plus the Manager, and the preview says why<br/>A small machine limits stateful tasks. A low connection cap<br/>limits width, and is named as the reason"]
+  PV --> DO{"Developer"}
+  DO -->|Start build| GO["The first build of a project always waits for this<br/>Revisions may auto-start: at most 5 tasks, 1 dollar, 2 percent<br/>of a plan window, and no must-ask, breaking contract, destructive<br/>migration, new dependency or external effect. Daily cap 5 dollars<br/>or 10 percent. Otherwise they show a preview"]
+  DO -->|Preset, cap, or level| WIDTH
+  DO -->|Merge, split, reorder, defer| OWN["A request to the owning planner<br/>The preview updates when they republish"]
+  DO -->|Why, or can it be cheaper| PV
+  GO --> RUN["While building: the hint ladder, then up one level or back to the author<br/>Reschedule when tasks finish early or late<br/>A free worker takes the next ready task<br/>Record class, level, model, tokens, time and pass or fail<br/>A roster change applies to new attempts only"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class S4,GATE,WIDTH,GO focus
+  class BUMP,PRE,DO decision

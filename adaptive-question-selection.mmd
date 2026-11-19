@@ -1,0 +1,63 @@
+---
+title: From five opening questions to a verified build scope
+---
+flowchart TB
+    subgraph INPUT["One continuous conversation"]
+        MODES["Five prompts about product, audience, workflow, demo and constraints<br/>All together with folded examples or one at a time with examples open"]
+        DRAFT["Typing, dictation and optional graph preview<br/>Keep focused card and answer options pinned while composing"]
+        SUB["Explicit submit only<br/>Reconcile the whole turn, withdrawals and corrections"]
+        OPEN["Opening reviewer checks five rubrics<br/>Extract grounded claims and propose relevant domains"]
+        REC["Versioned decisions and evidence<br/>User turn, quote, source revision, rule and premise IDs"]
+        MODES --> DRAFT --> SUB --> OPEN --> REC
+    end
+    subgraph SELECT["Choose the next five in code"]
+        INDEX["Catalog indexes by domain and criterion<br/>Generic rubrics, prerequisites, risk and allowed rules"]
+        SNAP["Freeze scoped criteria and fact versions for this round<br/>Include project prerequisites and shared domains"]
+        POOL["Union and deduplicate eligible questions<br/>Filter settled, deferred, already-open and out-of-scope items"]
+        GAIN["Score each question by uncovered criterion IDs<br/>Break ties by blocking criteria, then stable ID"]
+        PICK{"Positive gain and room in batch?"}
+        TAKE["Take the winner and remove overlap from temporary set<br/>Keep persistent criteria open until answered"]
+        PACK["Prepare selected questions and evidence only<br/>Up to five, or two to three for a small change"]
+        CUSTOM["For a catalog gap adapt a nearby rubric or create one local question<br/>Link to an evidenced criterion, deduplicate and apply round budget"]
+        REC --> SNAP --> POOL
+        INDEX --> POOL --> GAIN --> PICK
+        PICK -->|Yes| TAKE --> GAIN
+        PICK -->|Finish selected items| PACK
+        PICK -->|Uncovered gap lacks a template| CUSTOM --> PACK
+    end
+    subgraph RESOLVE["Resolve decisions individually"]
+        MODEL["Small resolver proposes explicit, derived, partial, missing, conflict or delegation<br/>Each criterion gets its own evidence and value"]
+        CHECK["Kernel checks schema, current source spans and permitted rules<br/>Reject retractions, invalid proof chains and cycles"]
+        VERIFY["Independent meaning check on every derivation and costly explicit value<br/>Difficult choices require a stated value or a bounded delegated choice"]
+        ASK["Queue one focused question for missing detail<br/>Options, free text, recommendation or explanation"]
+        SAME["Bind reply to question and scope revision<br/>Keep siblings, reconcile obsolete cards and new steers"]
+        COMMIT["Commit supported criteria and new evidence<br/>Credit each once. A delegated but unchosen value stays open."]
+        PACK --> MODEL --> CHECK --> VERIFY
+        CHECK -->|Proof fails| ASK
+        VERIFY -->|Partial, missing, conflicting or uncertain| ASK
+        ASK -->|After explicit submit| SAME --> MODEL
+        VERIFY -->|Supported values| COMMIT
+        SAME -->|Explicit deferral with consumer| COMMIT
+    end
+    subgraph READY["Scope, progress and automatic handoff"]
+        COUNT["Show total detail and planning readiness separately<br/>Include inherited criteria and display critical open count"]
+        GATE{"Nonempty current scope fully ready?"}
+        SEAM["Explicitly deferred independent choice<br/>Show milestone and block its consuming tasks until resolved"]
+        MORE["Open known gaps in next round<br/>Cap repeated generation and ask the highest-impact unresolved question"]
+        ARCH["Construct architecture and acceptance examples<br/>Check cross-domain contracts, boundary cases and missing relations"]
+        PUBLISH["Activate validated architecture, plan, task and test revision<br/>Show the plan preview. The first build waits for Start build"]
+        COMMIT --> COUNT --> GATE
+        SNAP -->|No eligible questions left on this snapshot| COUNT
+        GATE -->|Scope unknown or repeated blocked gap| ASK
+        COMMIT -.->|Record deadline and owner| SEAM
+        SEAM -->|At task boundary| ASK
+        GATE -->|Unresolved current criteria| MORE --> SNAP
+        GATE -->|Exact count complete and zero critical open| ARCH
+        ARCH -->|New concrete gap| MORE
+        ARCH -->|Consistent snapshot| PUBLISH
+        SUB -.->|Correction invalidates dependent evidence and refreshes read sets| SNAP
+    end
+    classDef state fill:#deefe9,stroke:#266c57,color:#153d32
+    classDef focus fill:#fff0d5,stroke:#976722,color:#442b0c
+    class REC,SNAP,COMMIT,COUNT state
+    class GAIN,CHECK,VERIFY,ASK,GATE focus

@@ -1,0 +1,50 @@
+---
+title: Dictation, one composer target, and fixing a box
+---
+flowchart TB
+  LAY["Chat on the left. Canvas on the right. Divider drags<br/>The canvas can pop out. Tabs: Architecture, Plan, Tasks, App, Diff<br/>Every box is a real node with a stable id. No second diagram state<br/>React Flow, ELK layout. Dragged positions are kept<br/>Mermaid export is the shareable text view<br/>The canvas is not generated from Mermaid"] --> MIC["Mic fills an editable draft. Nothing is sent until Send<br/>Local Whisper by default. OS recognizer as fallback. Zero tokens<br/>Web Speech is not the default: Chrome sends audio to Google,<br/>and it is unreliable in Electron. Cloud transcription is not the default<br/>A ChatGPT plan token does not cover the transcription API<br/>Grey while a phrase is unstable, black when it is final<br/>3 seconds: still listening. 60 seconds: mic off, draft saved<br/>Numbers, times, money, names and negations: amber if unsure,<br/>with alternatives on hover. 'Scratch that' stays as spoken<br/>Optional one-click strike-through. The resolver, after Send,<br/>reads the whole message, including the retraction"]
+  MIC --> SEND{"Enter, or the Send button"}
+  SEND -->|Only this commits| ONCE["One resolve of the whole message<br/>Canvas: Reading your message, then highlight the diff<br/>No model graph while speaking<br/>Echo times, amounts, counts and names in bold"]
+  ONCE --> COUNTS["Readiness in words, never a lone percentage<br/>Needed before building. Everything we know<br/>Say why the total rose or fell, and link those items<br/>Hover lists them. Items that can wait say so"]
+  COUNTS --> CHIP{"Composer target. Exactly one"}
+  CHIP -->|Question| Q["Enter answers that card<br/>Recommended option is highlighted, never auto-sent<br/>Nothing is accepted on a timer"]
+  CHIP -->|Box, or an @ id| BOX["A message about that box. It does not answer a question"]
+  CHIP -->|App element| EL["A visual change for the pointed-at element"]
+  CHIP -->|Esc, or General| GEN["Normal chat routing"]
+  Q --> RULES
+  BOX --> RULES
+  EL --> RULES
+  GEN --> RULES["Selection never answers. The question card stays, dimmed,<br/>its option kept, labeled Paused. Each target has its own draft<br/>Focus is captured when typing starts. A new question waits below<br/>After a box message, return to the focused question, with a toast<br/>Lasso or Ctrl+click: the target reads N boxes, one clause each"]
+  RULES --> FIT{"Does the text fit this target's type?"}
+  FIT -->|No| ASK1["Ask once: answer the paused question, or keep it on this box"]
+  FIT -->|Yes| GO{"What kind of box message?"}
+  GO -->|Ask| RO["Read-only. Source quote and basis. No state change"]
+  GO -->|Correct a mishearing| CORR["Replace the interpretation. History: corrected transcription<br/>Dependents update as for any other change"]
+  GO -->|Change| CHG["A new user fact supersedes the old one"]
+  GO -->|Add| ADD["A new linked rule. It may open a question"]
+  GO -->|Remove or defer| REM["Show what loses its prerequisite"]
+  GO -->|Explain impact| IMP["Read-only traversal. No tokens<br/>Still works if the model allowance is used up<br/>A real change then waits as a draft"]
+  CORR --> AMB
+  CHG --> AMB{"Correct, or a new decision?<br/>And it is ambiguous"}
+  AMB -->|Speech, and nothing has consumed it yet| PRE1["Preset: I said this, it was misheard"]
+  AMB -->|Otherwise| PRE2["Preset: I changed my mind<br/>The downstream effect is the same. The history label differs"]
+  PRE1 --> PREV
+  PRE2 --> PREV
+  ADD --> PREV
+  REM --> PREV["Impact preview before anything is applied. No tokens<br/>Which tasks pause, which are not started, which keep running<br/>Apply or Cancel. Apply is a normal revision"]
+  PREV --> ST{"Project stage"}
+  ST -->|Discovery| S1["Update the decision and the readiness counts"]
+  ST -->|Plan exists, nothing running| S2["Replan the affected tasks. The estimate updates"]
+  ST -->|Building| S3["Hard or soft holds. Unaffected work continues"]
+  ST -->|Already merged| S4["A forward revision, with change or removal tasks"]
+  S1 --> BOXES
+  S2 --> BOXES
+  S3 --> BOXES
+  S4 --> BOXES
+  BOXES["A box can be an actor, feature, workflow step, rule, field,<br/>contract, external service, screen, open question, assumption,<br/>deferred item, today module, task, or edge<br/>The popover shows that type's facts and its quick actions<br/>An open question becomes the focused card<br/>Today describes current code and is not edited in place:<br/>'change this' becomes a planned change linked to that module<br/>A running task is a message to its owner, not to the worker<br/>Per-box history is in the popover and in the main chat"]
+  BOXES --> EDGE["The box changed while you typed: show both values, then ask<br/>The box was deleted: fall back to General, keep the draft<br/>Two boxes, 'make these the same': ask which value wins<br/>The message names a different box: the exact name wins, and is echoed<br/>Ctrl+Z before Enter is text undo. After apply, it is a forward revision<br/>200 or more nodes: collapse by feature, zoom from system<br/>to features to rules to tasks, plus search and filters"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class SEND,ONCE,PREV focus
+  class CHIP,FIT,GO,AMB,ST decision

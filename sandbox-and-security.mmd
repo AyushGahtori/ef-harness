@@ -1,0 +1,36 @@
+---
+title: Sandbox, network policy and what text cannot grant
+---
+flowchart TB
+  DOOR["The boundary is the OS, not tool names. Every process an attempt starts runs sandboxed<br/>Wrapped mode, the default: the whole vendor process tree runs in the sandbox<br/>and keeps its native tools. Network: its provider and loopback MCP only<br/>Logins: a client-supplied token or API key. Never a Claude subscription token<br/>Stripped mode, the fallback: vendor shell off, harness.run over MCP,<br/>file reads limited by its permission rules, subagents, hooks and web tools off<br/>Our loop: harness.run and our edit tool. Codex: its own OS-enforced sandbox<br/>Each harness.run gets its own Job Object. harness.start_service for servers<br/>Wrapped agents have their own small cap. Everyone else shares a warm run pool<br/>Conformance: .ssh unreadable by every native tool, non-provider web refused"] --> TIER{"Strongest tier this PC can use"}
+  TIER -->|A · MXC| A["Microsoft Execution Containers. No admin<br/>Writes, secret reads and network enforced. Loopback allowed"]
+  TIER -->|B · Sandbox users| B["Two low-privilege users, once, with admin<br/>ACLs plus firewall. Reads, writes and network enforced"]
+  TIER -->|C · Restricted token| C["No admin. Writes enforced. Secret reads are not<br/>Network is advisory only. Yellow badge<br/>Allowed only when the task needs no network and no untrusted code<br/>Installs and dev servers need A, B or D<br/>Foreign agents here: stripped mode only, Tier C tasks only"]
+  TIER -->|D · Container or WSL2| D["Optional. Full enforcement, and Linux parity with CI"]
+  A --> RULES
+  B --> RULES
+  C --> RULES
+  D --> RULES
+  TIER -->|None acceptable| HELD["Hold the task and explain. Never run unsandboxed in silence<br/>An explicit project override shows a red banner on every card and receipt"]
+  RULES["Writable: this attempt's worktree, temp and build output<br/>Read-only: toolchains, the package store, Git objects<br/>Denied reads: .ssh, cloud creds, browser profiles, the vault area,<br/>harness data, other worktrees, the developer's checkout<br/>Only the kernel writes .git. Environment is scrubbed. HOME is inside the attempt<br/>One Job Object: CPU, memory, process count, kill the tree<br/>Wall-clock limits. A separate desktop where Windows supports it<br/>A Job Object alone does not stop file or network access. The tier does"]
+  RULES --> NET{"Who wants the network?"}
+  NET -->|Coding worker or its command| NONE["No direct internet<br/>harness.fetch_docs and harness.read_package_source only"]
+  NET -->|Tests, verifier, dev server| LOOP["Loopback only, plus declared test hosts through an allowlisting proxy"]
+  NET -->|Kernel installer| REG["Package registries only, through the proxy"]
+  NET -->|Researcher| DOCS["No direct internet. Doc fetcher, read-only, no side effects"]
+  NET -->|Vendor process, not its commands| API["Its provider's API only"]
+  DOCS --> FETCH["Allowlisted docs and pinned READMEs. Strip scripts, hidden text<br/>and invisible Unicode. Plain Markdown, size cap, cached by URL and hash<br/>Returned as untrusted quoted material, with source and date<br/>Prefer the installed package's own types and source<br/>Workers do not browse: an injected page must not meet write access"]
+  NONE --> SUP
+  LOOP --> SUP
+  REG --> SUP
+  FETCH --> SUP
+  API --> SUP["Workers never install. They send an intent. The integrator approves<br/>The kernel installs with pnpm 10, whose scripts are blocked by default<br/>A real build step is approved once and pinned. New packages are checked<br/>for age, known vulnerabilities, typosquats and license<br/>The lockfile is the only install source. npm and Yarn: scripts off,<br/>then approved scripts run explicitly"]
+  SUP --> TEXT["Text cannot grant power. Tools, paths, network and budget come from<br/>the brief and the kernel. Context is labeled instruction, user, or data<br/>Researchers read and cannot act. Workers act and do not browse<br/>Every model output is schema-checked. Unknown actions are rejected<br/>Diffs are scope-checked. Commands are allowlisted<br/>harness.flag_blocked stops on a suspicious or contradictory instruction<br/>The meta-lab plants injections and fake secrets and checks they are not followed"]
+  TEXT --> REST["Data folder is not readable by other users<br/>Secrets stay in Credential Manager. Sandbox users cannot read DPAPI<br/>Transcripts stay local. Raw audio is kept only if the developer turns it on<br/>The redactor runs on logs, traces, diagnostics, exports and prompts<br/>BitLocker is recommended. The database is not encrypted by the app in v1"]
+  REST --> THREAT["What is protected: files outside the project, credentials, the checkout,<br/>harness state and held-back tests, other attempts, accounts, and the plan<br/>Who we assume: a confused model, injected text, a malicious package,<br/>a malicious skill, or a worker editing tests"]
+  THREAT --> EDGE["A test that needs one host: the brief names it. The proxy allows that host<br/>A network drive that cannot be ACL'd: tier A or D, or move the project<br/>A missing tool: a human step or an approved toolchain install<br/>A dev server binds loopback only, on a port for that attempt<br/>Disabling the sandbox: red banner, recorded on every receipt"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class DOOR,RULES,TEXT focus
+  class TIER,NET decision

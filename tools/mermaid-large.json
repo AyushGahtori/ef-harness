@@ -1,0 +1,5 @@
+{
+  "maxTextSize": 2000000,
+  "maxEdges": 5000,
+  "flowchart": { "htmlLabels": true, "nodeSpacing": 40, "rankSpacing": 50 }
+}

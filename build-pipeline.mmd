@@ -1,0 +1,45 @@
+---
+title: Build pipeline — from complete information to a finished app
+---
+flowchart TB
+  subgraph UP["Upfront · before Phase 0"]
+    INFO["Information complete<br/>decisions + project-wide spec items<br/>every 'asked' cell already answered"]
+    RES["Research · risk-triggered topics<br/>quotes verified against fetched sources"]
+    ARCH["System architecture<br/>data model · inter-feature contracts · cross-cutting rules · conventions"]
+    MP["Master plan<br/>Phase 0 recipes · wave order · estimates · paperwork budget"]
+    PV{"Plan preview<br/>Start build?"}
+    INFO --> RES --> ARCH --> MP --> PV
+  end
+
+  subgraph BUILD["Build · one wave at a time"]
+    P0["Phase 0 foundation<br/>P0.1 alone, then P0.2–P0.8 in parallel"]
+    G0{"Gate 0<br/>build · lint · migrate · smoke · style guide"}
+    JIT["Just in time for wave n+1<br/>feature spec · research · architecture · task files · oracles"]
+    COMPILE{"Graph compile<br/>no cycles · one owner per path<br/>every requirement has a task and a check"}
+    LEAF["Leaf tasks · harness/t/task/attempt<br/>CODING → STATIC_AUDIT → CLEAN_VERIFY → ACCEPTED"]
+    FI["Feature integrator · harness/f/feature<br/>squash each accepted task + smoke check · LEAVES_MERGED<br/>one wiring task applies all wiring needs · feature journey"]
+    MQ{"Project merge queue · one feature at a time<br/>combined gate · CAS update of harness/integration"}
+    CCR["Contract change request<br/>additive → fast path · breaking → revision"]
+    PV -->|Start build| P0 --> G0
+    G0 -->|pass| COMPILE --> LEAF --> FI --> MQ
+    MQ -->|FeatureCompleted unlocks next wave| COMPILE
+    JIT --> COMPILE
+    LEAF -.->|needs another feature's data| CCR -.-> COMPILE
+  end
+
+  subgraph END["Finish"]
+    CW["Completion wave<br/>cross-feature journeys · full regression · a11y · security"]
+    FA{"Final audit<br/>missing · stubbed · unhandled = empty?"}
+    LAND["Landing summary → land on main"]
+    MQ -->|all features DONE| CW --> FA
+    FA -->|findings become tasks| COMPILE
+    FA -->|empty| LAND
+  end
+
+  DB[("Knowledge database<br/>single writer · versioned · exports are views")]
+  DB -.- INFO & ARCH & COMPILE & LEAF & MQ & FA
+
+  classDef gate fill:#fff1ce,stroke:#947333,color:#40300b
+  classDef core fill:#daeae4,stroke:#316d5b,color:#173b30,stroke-width:2px
+  class PV,G0,COMPILE,MQ,FA gate
+  class DB,LEAF,FI core

@@ -1,0 +1,63 @@
+---
+title: EF Harness databases, files and the flows between them
+---
+flowchart LR
+  subgraph DAEMON["harnessd (single writer per file)"]
+    COORD["Project coordinator<br/>writer of state.db"]
+    BROKER["Resource broker<br/>writer of global.db"]
+    EXPORTER["Exporter<br/>git fast-import"]
+    READERS["Reader pool<br/>worker threads · time budgets"]
+  end
+
+  subgraph STATE["state.db · per project · WAL · synchronous FULL"]
+    direction TB
+    K["Knowledge<br/>nodes (nid, id, kind, version)<br/>node_versions · edges (temporal)<br/>edge_set_versions · change_sets"]
+    V["Views<br/>requirements · task_requirements<br/>check_requirements · waivers"]
+    S["Search<br/>kb_words (camelCase split)<br/>kb_ident (trigram on id, title)"]
+    R["Runtime<br/>task_runtime · task_holds · task_scopes · attempts<br/>read_sets · edge_read_sets · search_reads · candidates<br/>check_results · verification_state · attempt_checkpoints<br/>feature_runtime · project_runtime · path_leases · ship_runs"]
+    D["Discovery<br/>work_items · discovery_scopes<br/>scope_criteria · discovery_batches"]
+    L["Ledger<br/>budgets · reservations<br/>reservation_scopes · grant_receipts (integer units)"]
+    O["Outbox<br/>outbox (AUTOINCREMENT seq)<br/>outbox_deliveries"]
+    RM["Read models<br/>rollup_feature_tasks<br/>rollup_feature_requirements"]
+    X["Other<br/>names · inbox · effects · ref_leases<br/>turns · evidence · artifacts · redactions"]
+    D -->|decision nodes| K
+    K -->|triggers| S
+    K -->|triggers| V
+    R -->|triggers| RM
+  end
+
+  subgraph GLOBAL["global.db · per user"]
+    G1["grants · connections · connection_windows"]
+    G2["cas_blobs · cas_pins"]
+    G3["projects · port_leases · machine_profile<br/>footprints · research_cache · vocabulary"]
+  end
+
+  TEL[("telemetry.db<br/>lossy · 14 days")]
+  CIX[("code-index.db<br/>rebuildable")]
+  CAS[("CAS blobs<br/>sha256 · zstd / seekable zstd")]
+  BAK[("Backups<br/>hourly · daily · pre-migration")]
+  HS[("harness-state branch<br/>entity YAML + append-only history")]
+  WIN["Window<br/>snapshot + events after seq"]
+
+  COORD --> STATE
+  BROKER --> GLOBAL
+  BROKER -->|"1 issue grant"| COORD
+  COORD -->|"2 deposit (idempotent) + ack"| BROKER
+  COORD -->|"3 closure report: used, unknown"| BROKER
+  COORD -->|"pin before use"| G2
+  BAK -->|"registers pin set"| G2
+  G2 -->|"GC: delete only unpinned, after grace"| CAS
+  COORD -->|"artifacts"| CAS
+  O -->|"gap-free events"| WIN
+  TEL -.->|"ephemeral progress"| WIN
+  READERS --> STATE
+  READERS -.->|"symbol lookups (kb.code)"| CIX
+  EXPORTER -->|"dirty set since last_rev"| HS
+  STATE -->|"VACUUM INTO"| BAK
+  HS -.->|"replay after corruption or on a new laptop"| COORD
+  BAK -.->|"restore"| COORD
+
+  classDef db fill:#daeae4,stroke:#316d5b,color:#173b30
+  classDef flow fill:#fff1ce,stroke:#947333,color:#40300b
+  class STATE,GLOBAL db
+  class TEL,CIX,CAS,BAK,HS flow

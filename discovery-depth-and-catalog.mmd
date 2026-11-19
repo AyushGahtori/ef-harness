@@ -1,0 +1,37 @@
+---
+title: How many questions, Accept all, and Autopilot
+---
+flowchart TB
+  STAGE["Stage comes from opening question 4, what the demo must prove,<br/>and question 5, the constraints. Chip: Prototype, MVP, Production<br/>The developer can change it. Changing it later reopens only the<br/>criteria whose applicability changed, and says how many<br/>Running tasks continue unless a new decision affects their contract<br/>One catalog, and the stage decides what applies,<br/>the same idea as OWASP ASVS levels. The chip is the appetite<br/>Options carry consequences, in the ADR sense"] --> ST{"Stage. Honesty stays.<br/>The recommendation changes"}
+  ST -->|Prototype| PROTO["Scale, compliance, observability and multi-region<br/>collapse to one line: not in this release<br/>Simple local choices are recommended"]
+  ST -->|MVP| MVP["Basic privacy, errors, accessibility and deployment apply<br/>Pragmatic defaults"]
+  ST -->|Production| PROD["The full cross-cutting packs apply<br/>Recommendations favor durability and auditability"]
+  PROTO --> RISK
+  MVP --> RISK
+  PROD --> RISK["A risk trigger overrides the stage<br/>Payments on a prototype still ask the payments questions"]
+  RISK --> SCORE["Before a question is shown, code scores it<br/>ask value = impact times uncertainty<br/>impact = risk weight times dependents, plus one<br/>uncertainty is 0 if evidence settles it, low if one option<br/>dominates, high if the options really differ<br/>Next questions are greedy maximum coverage, then this filter"]
+  SCORE --> MUST{"Must-ask, and not already<br/>answered with evidence?"}
+  MUST -->|Yes| SHOW["Always ask, explicitly<br/>Purpose and audience. Spending money. Real personal data<br/>Identity and login provider. Hard to reverse. Legal or compliance<br/>Or it contradicts what the developer already said<br/>Autopilot never delegates one of these"]
+  MUST -->|No| MODE{"How is this batch running?"}
+  MODE -->|Autopilot, below the threshold| CHOSEN["Resolve with the recommendation<br/>List it under Chosen for you. Never drop it silently"]
+  MODE -->|Autopilot, no matching rule| SHOW
+  MODE -->|Not Autopilot, low value| GROUP["Still shown, at the end of the batch, preselected<br/>Accept all clears them"]
+  MODE -->|A normal visible question| BATCH["Show it in the batch"]
+  GROUP --> CAP
+  BATCH --> CAP["Soft cap per feature: about 10 on a Prototype,<br/>about 25 in Production. Past the cap, remaining low-tier<br/>questions go to Chosen for you. They are not dropped"]
+  CAP --> CARD["Every batch: recommended option preselected<br/>An item already settled from evidence is shown, and needs nothing"]
+  SHOW --> CARD
+  CHOSEN --> CREDIT
+  CARD --> ACT{"What the developer does"}
+  ACT -->|Accept all recommended| ALL["Accepts every highlighted option in this batch<br/>except must-ask, which stays for an explicit choice<br/>Any of them can be changed first. Basis: explicit. Full credit"]
+  ACT -->|Autopilot to ready| AUTO["Batch after batch until the architecture is complete<br/>Stops only for must-ask, and says where it stopped<br/>Opening five are must-ask, so Autopilot starts after them<br/>Basis: delegated, with the risk bound and the stage<br/>Full credit, and listed in Chosen for you"]
+  ACT -->|Pick or type one| ONE["That answer is explicit. The rest of the batch stays"]
+  ALL --> LIST
+  AUTO --> LIST
+  ONE --> LIST["Chosen for you stays visible. Any item reopens from the canvas<br/>The plan preview flags tasks whose decisions were all delegated<br/>A later explicit answer wins, and dependents are rechecked<br/>'I never chose this' opens from the list, with batch and time<br/>No matching recommend rule: the question is shown, not guessed<br/>Two readings stay a conflict until the developer picks"]
+  LIST --> CAT["Versioned YAML, shared or project. On load: unique ids,<br/>real criteria, acyclic prerequisites, real options,<br/>must_ask only on high or critical. Never change an id's meaning<br/>Lifecycle: draft, evaluated, active, deprecated<br/>Active only after it changed a build on held-out projects<br/>Promotion into the shared catalog is a reviewed edit, never automatic<br/>Packs are the union of what opening review activates. Criteria deduped<br/>Core, web, API, data and auth are deep. Payments are probe plus must-ask<br/>Extension, mobile, desktop, CLI, AI and email are probe<br/>Cross-cutting packs depend on the stage. About 200 in v1<br/>A seam between two packs asks its questions once, not once per pack<br/>Later: cloud, real-time, games, data pipelines"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class SHOW,ALL,LIST focus
+  class ST,MUST,MODE,ACT decision

@@ -1,0 +1,52 @@
+---
+title: Knowledge database — views, one writer, per-record versions
+---
+flowchart TB
+  RULES["SQLite is the source of truth. Markdown and Mermaid are views<br/>An edit of a view is a proposal. It is never applied in place<br/>Only the coordinator writes. Agents send typed requests<br/>Coding stays parallel. Recording a result is the serialized part<br/>Each record has a version. Each change set has a global revision<br/>Freshness uses the read set, never the global number"] --> EDIT{"Who changed a view?"}
+  EDIT -->|While the app is open| WATCH["Watcher on .harness/views, debounced<br/>A temp-file save counts as one edit"]
+  EDIT -->|While it was closed, or a missed event| SCAN["Hash scan against the export manifest<br/>at start, on open, and every 10 minutes"]
+  EDIT -->|A teammate, on harness-state| DIFF["Diff of views between two state-branch commits"]
+  WATCH --> MAP
+  SCAN --> MAP
+  DIFF --> MAP["Parse sections by markers: record ID, version, hash<br/>Unchanged hash: skip. Fields diff exactly. Prose diffs as text<br/>Links and ef-fields compared with stored edges<br/>Text outside a marker: doc-import proposes what it is. Shown, not applied<br/>A broken marker: match by heading. Low confidence asks which record<br/>A Mermaid edit: arrows between known nodes become relation proposals<br/>Layout-only changes are ignored"]
+  MAP --> REV["Review card. Nothing applies without Enter<br/>Impact is shown. Apply both, or discard<br/>One change set, origin markdown_edit. Then the same rules as chat"]
+  REV --> MERGE{"Database still at the marker's version?"}
+  MERGE -->|Yes| APPLY["Clean apply"]
+  MERGE -->|Moved, different fields| FIELD["Field-level merge, shown"]
+  MERGE -->|Same field, or prose, on both sides| CON["Conflict card. You choose. No automatic prose merge<br/>While pending, that file is not overwritten"]
+  APPLY --> DEL
+  FIELD --> DEL
+  CON --> DEL{"File or section removed?"}
+  DEL -->|Whole file| RESTORE["No record is deleted. Restore is the default<br/>Retire these items is explicit, with impact"]
+  DEL -->|Section| RETIRE["A proposal to retire that record. Never automatic"]
+  DEL -->|Renamed| MOVE["Recognized by ef_file. Content is imported<br/>The view is regenerated at its standard path"]
+  DEL -->|No| LIVE["Pending edits affect no agent<br/>An applied edit holds or refreshes only attempts whose read set contains it"]
+  LIVE --> WRITE["One write connection. WAL so readers do not block<br/>Workers have no database access. MCP and typed proposals only<br/>UI and exporters read a committed revision<br/>A second process is read-only: owner row, BEGIN IMMEDIATE, and a file lock<br/>Option A and hybrid writers were rejected: enforcement would sit in foreign code"]
+  WRITE --> FAST["Bookkeeping only. Model calls, Git and exports are outside the transaction<br/>Group commit every few milliseconds. One savepoint per request<br/>Heartbeats stay in memory. Token streams are not stored<br/>Bounded queues. Telemetry yields to task transitions<br/>Target: 50 simulated workers, p99 under 50 ms"]
+  FAST --> SAFE{"What could go wrong?"}
+  SAFE -->|Busy or a failed idempotent transaction| RETRY["BEGIN IMMEDIATE. Retry the whole transaction"]
+  SAFE -->|Two claim the same task| COND["One conditional update. Success is exactly one row changed. Epoch increments"]
+  SAFE -->|Submit versus expiry| EPOCH["Valid only if the epoch matches at commit<br/>A submission that arrived in time is not expired for queue delay"]
+  SAFE -->|Retry after an unknown result| OP["Operation ID, persisted before send. A repeat returns the stored receipt<br/>Candidates are also unique by task, attempt and commit<br/>No receipt means not recorded"]
+  SAFE -->|Disk or I/O error| MODE["Roll back. Safe mode: stop dispatch, keep worktrees and checkpoints"]
+  SAFE -->|Someone else committed, sqlite3 included| FOREIGN["data_version changed. Integrity check, then safe mode"]
+  MODE --> VER
+  RETRY --> VER
+  COND --> VER
+  EPOCH --> VER
+  OP --> VER
+  FOREIGN --> VER["Record version and content hash. Edge-set version. History is immutable<br/>Global revision labels snapshots and exports. It does not decide freshness<br/>A change set stores origin, what it read, old and new versions, and a class<br/>Cosmetic: non-normative prose. Clarifying: consistent detail, owner plus gate<br/>Compatible: structured diff. Breaking: value, removal, or unmarked normative text"]
+  VER --> CLASS{"Class, for each dependent"}
+  CLASS -->|Cosmetic| COS["Regenerate the view. Tasks are left alone"]
+  CLASS -->|Clarifying or compatible| COMPAT["Not started: refresh the brief<br/>Running: a steer at the next boundary<br/>Submitted: verify on current checks<br/>Accepted: re-verify. A new receipt if it still passes"]
+  CLASS -->|Breaking| BRK["Not started: refresh, and the planner reviews scope<br/>Running: hold, refresh, resume or a fresh session<br/>Submitted: verify on the new checks after the planner updates them<br/>Accepted: re-verify. Rework only if a check fails, or new behavior has no task"]
+  COS --> CUT
+  COMPAT --> CUT
+  BRK --> CUT["Walk reverse edges, breadth first, bounded<br/>If a regenerated brief or check has the same hash, stop. Early cutoff<br/>Acceptance compares the read set with current versions<br/>A breaking difference cannot be accepted until current checks pass<br/>Optimistic change sets recompute if their read versions moved<br/>Disjoint sets both commit. Same record: the owner, or the developer if both are explicit<br/>Five edits of one contract: one impact run"]
+  CUT --> EX["Authentication, as specified<br/>A-021 gains Google. Breaking. CS-88, revision 215<br/>Planner publishes C-014 v2, task T-018, and updates the check only if needed<br/>T-014 is re-verified and stays accepted. A running consumer gets a steer<br/>New workers get v2. Unrelated tasks never notice"]
+  EX --> PROOF["Tests: 50 workers, no double holder, no lost receipt, no stale epoch<br/>Crash before the receipt: retry writes exactly one row<br/>Edit a view while closed, then change the same record: a conflict, nothing overwritten<br/>Delete the views folder: records stay, files regenerate<br/>An unrelated fact holds zero tasks. A compatible contract change only steers consumers"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class RULES,WRITE,VER,CUT focus
+  class EDIT,MERGE,DEL,SAFE,CLASS decision

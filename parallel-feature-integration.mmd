@@ -1,0 +1,22 @@
+---
+title: Twelve independent tasks return to the planner who wrote them
+---
+flowchart TB
+  P["Start with a ready task file at revision 7<br/>Its author owns the feature integration"]
+  P --> B["Pin common base, decision versions, schema, examples and skills<br/>Reserve shared registry edits for the wiring task"]
+  B --> Q["Kernel validates the task DAG and feeds the ready queue<br/>Four interchangeable workers claim available leaves"]
+  Q --> ATT["Each worker gets a fenced worktree and resource lease<br/>True artifact dependencies wait for accepted output"]
+  ATT --> OUT["Submit per-task candidate commit, shared-edit intents and local checks"]
+  OUT --> CK{"Clean leaf checks, input versions and lease valid?"}
+  CK -->|Valid| JOIN["Task-file author integrates accepted pieces incrementally<br/>A successor needs a new integration lease"]
+  CK -->|Implementation or stale input| FIX["Repair or replan the affected task within its budget"] --> Q
+  CK -->|Unstable or disputed check| ORACLE["Check owner resolves the evidence"] --> CK
+  JOIN --> MERGE["Wiring task mounts routes and reconciles dependencies and migrations<br/>Producer and consumer run against the same contract"]
+  MERGE --> READY{"All required pieces integrated?"}
+  READY -->|More tasks outstanding| Q
+  READY -->|Ready| VERIFY["Drive the real kitchen route and print<br/>Two soup orders produce one row with quantity two"]
+  VERIFY -->|Connection defect| MERGE
+  VERIFY -->|Contract violation| FIX
+  VERIFY -->|Pass| QUEUE["Project integrator stages feature on latest target<br/>Run journey, affected regressions and smoke check"]
+  QUEUE -->|Target advanced| QUEUE
+  QUEUE -->|Verified candidate still current| DONE["Advance target and record integrated evidence"]

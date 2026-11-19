@@ -1,0 +1,28 @@
+---
+title: Receiving a message while a build is running
+---
+flowchart TB
+  D["Always-enabled chat • unsubmitted text or speech is a draft"] -->|Explicit send| IN["Sequenced inbox, message ID, focused question and reply target"]
+  STOP["Stop control"] -->|Direct kernel command| SUSP["Fence new work and record cancellation outcome"]
+  IN --> ORDER["One durable batch of intents<br/>Order dependencies, reconcile pending corrections, deduplicate retries"]
+  ORDER --> WHAT{"Route each clause using current evidence"}
+  WHAT -->|Status or rationale| READ["Read receipts or task events, answer in chat, keep workers running"]
+  WHAT -->|Execution control| CTRL["Validate target; add or clear named pause reason,<br/>apply preference or verify a completed human task"]
+  WHAT -->|New feature| ADD["Resolve existing feature or allocate one ID<br/>Current release by default; explicit v2 goes to backlog"]
+  WHAT -->|Change or bug| EXIST["Route to task author; shared seam goes to project planner"]
+  WHAT -->|Ambiguous subject| AQ["Queue one target clarification, leave assignments running"]
+  ADD -->|Current scope| OWNER["Owner reads submitted facts, uses infer-or-ask and links disputed contracts"]
+  EXIST --> OWNER
+  OWNER --> BLAST["Trace declared contract consumers and owned paths<br/>For each plausible interpretation compute affected assignments"]
+  BLAST --> ALL["Affected under all readings: hard hold at next tool boundary"]
+  BLAST --> SOME["Affected under some: finish bounded step, quarantine result"]
+  BLAST --> NONE["Affected under none: keep running"]
+  ALL --> CP["Persist WIP, contract versions, session and action receipts"]
+  SOME --> CP
+  OWNER --> BATCH["Collect applicable decisions; prefer 2–3 items for small changes<br/>Resolve from evidence, adapt or generate project-local questions"]
+  BATCH --> GATE{"Scope ready and semantic conflicts closed?"}
+  GATE -->|Gap or decision now needed| ARB["One focused card; workers ask via task author<br/>Bind reply to live item IDs"] --> BATCH
+  GATE -->|Yes| REV["Publish scoped graph and briefs with version checks and outbox<br/>Update architecture sections, master and task plans, UI and tests"]
+  REV --> RUN["Clear only this steer hold; check other reasons<br/>Additive change can reuse context; contradicting change gets fresh brief and session"]
+  CP --> RUN
+  RUN --> ACCEPT["Run independent checks against current contracts; integrate verified changes"]

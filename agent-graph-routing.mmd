@@ -1,0 +1,24 @@
+---
+title: How a submitted message finds its current owner
+---
+flowchart TB
+  D["Typing or dictating • remember the focused question ID<br/>Silence changes nothing"] -->|Send or explicit finish-and-send| I["Kernel records message ID, chat sequence and reply target"]
+  STOP["Stop button or explicit stop command"] --> CANCEL["Kernel fences dispatch and cancels scoped active work"]
+  I --> Q{"Answer to an open question?"}
+  Q -->|Live ID and unambiguous item| ARB["Question queue binds reply, resolves evidence and notifies subscribed owners"]
+  Q -->|Other text or retired question| SEED["Resolve explicit feature or selected node<br/>Else search project aliases, referenced turns and pending routes"]
+  SEED --> CARD["Small read-only router receives short candidate cards<br/>Returns clause intents, candidate IDs and supporting evidence"]
+  CARD --> VALID{"Kernel validates current IDs, permissions and reference evidence"}
+  VALID -->|Ambiguous subject| ASK["Widen by one typed neighborhood<br/>If unresolved, queue a named question"]
+  ASK --> Q
+  VALID -->|General question| READ["Read assignment, test or action receipts with timestamps<br/>Reply while workers continue"]
+  VALID -->|Feature change or addition| OWNER["Look up stable owner role, then current leased planner<br/>Unowned or shared scope goes to project planner"]
+  VALID -->|Control| CTRL["Kernel checks target and command before changing run state"]
+  OWNER --> MAIL["Deliver to role inbox at next turn boundary<br/>Recheck role and epoch before writes"]
+  subgraph RECORDS["Indexed project records"]
+    ROLE["Planner role for kitchen orders"] -->|held by| A["A0007 • leased session"]
+    ROLE -->|authored| B["T08 brief and contract versions"]
+    B -->|executed as| W["A0014 • assignment, epoch and checkpoint"]
+  end
+  ROLE -.-> OWNER
+  W -.-> READ

@@ -1,0 +1,39 @@
+---
+title: Spec expansion — every cell filled, then checked
+---
+flowchart TB
+  SIT["After discovery, before research, architecture and planning<br/>Project-wide now. Feature detail just in time<br/>Size is computed from the entities, roles, screens, endpoints and rules<br/>A line count is an output, never a target"] --> GEN["Generators are code. Most cells cost no tokens<br/>They emit only what exists<br/>Permission: entity, action, role. Fields: type, limits, who sets them<br/>Lifecycle: states, transitions, who, side effects<br/>Screen states. Every control: action, disabled, feedback<br/>Endpoint failures. Boundaries: before, at, after. Zero, one, many, max<br/>Concurrency of two actors. Lists: sort, page, search, empty, huge<br/>Deletion and retention. Notifications. Formatting of dates and money<br/>Thousands of identical cells collapse to one scoped rule"]
+  GEN --> FILL{"Where does this cell's value come from?"}
+  FILL -->|A developer statement| EX["explicit. Full credit"]
+  FILL -->|An allowlisted rule| DER["derived. Full credit"]
+  FILL -->|An elaboration of the chosen option, or a universal policy| DEF["defaulted. Full credit. Listed in Chosen for you<br/>Code fills these before any model sees the cell"]
+  FILL -->|Judgement, and the checks pass| PROP["proposed by spec-expander. Full credit if risk is low<br/>Medium risk goes to review"]
+  FILL -->|High impact, no safe default| ASK["Status asked, not a basis. Through the interrogation guard"]
+  EX --> EARS
+  DER --> EARS
+  DEF --> EARS
+  PROP --> EARS
+  ASK --> EARS["Each cell is one EARS item: ID, pattern, text, basis,<br/>source decisions, risk, and an oracle sketch<br/>Ubiquitous: the system shall. Event: when. State: while<br/>Unwanted: if, then. Optional: where the feature is included<br/>The planner later turns the oracle into a check"]
+  EARS --> LAY{"Contradiction check. Code first"}
+  LAY -->|1 Compatibility rules| L1["conflicts_with and requires on catalog values"]
+  LAY -->|2 Constraint solver| L2["Find combinations that are impossible together,<br/>and the smallest set of decisions to change"]
+  LAY -->|3 Cross-matrix| L3["The same IDs, compared. A denied permission with a visible button"]
+  LAY -->|4 Numbers and time| L4["Intervals and order. A cutoff after the kitchen already needs the list"]
+  LAY -->|5 Semantic pairs| L5["A cheap model, only for pairs that share an entity, rule or screen<br/>and that layers 1 to 4 did not decide. Conflict, compatible, or unclear"]
+  L1 --> RES
+  L2 --> RES
+  L3 --> RES
+  L4 --> RES
+  L5 --> RES{"How were the two items chosen?"}
+  RES -->|Both delegated or defaulted| MGR["The Manager keeps the option that preserves more explicit decisions<br/>Reason recorded. Listed in Chosen for you"]
+  RES -->|One explicit| WIN["The explicit one wins. The other changes. Dependents are rechecked"]
+  RES -->|Both explicit| DEV["Ask the developer, with both quotes"]
+  MGR --> READY
+  WIN --> READY
+  DEV --> READY["100 percent info: every required cell has a valid basis,<br/>no unresolved contradiction, no critical question open<br/>The screen counts explicit, derived, defaulted, proposed and asked<br/>Proposed items can be accepted, edited or rejected<br/>Generators and layers 1 to 4 are free. The expander is Mid, per feature,<br/>only for cells that need judgement. This spends the paperwork budget"]
+  READY --> EDGE["A later decision regenerates only the cells that cited it<br/>A proposed value stays labeled, including in the brief and the plan preview<br/>No elaboration or policy: propose or ask, and log the gap for the meta-lab"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class GEN,EARS,READY focus
+  class FILL,LAY,RES decision

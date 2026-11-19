@@ -1,0 +1,27 @@
+---
+title: From a submitted requirement to the workers it affects
+---
+flowchart TB
+  subgraph INPUT["One user conversation"]
+    D["Draft speech or text and optional local preview"] -->|Send or explicit finish-and-send| I["Durable message ID, chat sequence, reply-to and focus at input start"]
+    I --> B["Bind explicit question answers or split into ordered intents<br/>Later corrections amend pending work"]
+    B --> ROUTER["Router reads compact indexed graph cards and quoted context<br/>No tools that can edit assignments or files"]
+    ROUTER --> CHECK{"Kernel validates target and evidence"}
+    STOP["Stop button or explicit stop command"] --> HALT["Kernel fences new turns and records current effects"]
+  end
+  CHECK -->|General question| STATUS["Read task, test or push receipts<br/>Answer in the same chat"]
+  CHECK -->|Execution control| CTL["Kernel changes named pause, priority or preference<br/>Verify receipts for a completed human action"]
+  CHECK -->|New feature| NEW["Deduplicate against project feature records<br/>Current release unless explicitly deferred"]
+  CHECK -->|Target unclear| Q["One named focused question card, queued by criterion"]
+  CHECK -->|Existing change| OWNER["Task author or leased successor<br/>Shared scope goes to project planner"]
+  NEW -->|Assigned current scope| OWNER
+  OWNER --> HOLD["Infer-or-ask traces affected contracts for each reading<br/>All: hard hold. Some: soft hold. None: continue."]
+  HOLD --> S["Select general questions by uncovered scope<br/>2–3 for small changes, up to 5 otherwise; fill gaps locally"]
+  S --> E{"Current-scope decisions and material dependencies ready?"}
+  E -->|Can resolve next decisions from grounded facts| S
+  E -->|Missing detail, conflict or deferred choice now needed| Q
+  Q -->|Explicitly submitted evidence| I
+  E -->|Yes, including zero user questions| P["Show behavioral delta and acceptance example<br/>Planner drafts affected rule, contract, task, UI and test revisions"]
+  P --> TX["Kernel validates node and edge versions, then commits graph,<br/>briefs, versioned records and notification outbox atomically"]
+  TX --> DIS["Deliver to current role and assignment epoch<br/>Changed contract: fresh brief and WIP diff when old context conflicts"]
+  DIS --> V["Kernel verifies against locked acceptance cases and contract versions<br/>Task author integrates into production path"]

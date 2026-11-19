@@ -1,0 +1,33 @@
+---
+title: Meta-lab — promote only what the benchmarks prove
+---
+flowchart TB
+  BENCH["Frozen benchmarks. Hidden spec, gold decisions, hidden suite<br/>Nothing in a harness prompt ever sees those answers<br/>Kitchen app. resume-changer at a pinned commit. Expense CLI. Booking API<br/>Ten seeded bugs. A rename and a framework upgrade<br/>A red-team set of injections and malicious packages"] --> WHO{"Who plays the developer?"}
+  WHO -->|Scripted| SCR["Fixed answers by question ID. Unknown questions: I don't know"]
+  WHO -->|Persona| PER["A model, from the hidden spec, in a style. Answers only what was asked"]
+  WHO -->|Recorded| REC["Replay a real session, anonymized, with consent"]
+  SCR --> LEVEL
+  PER --> LEVEL
+  REC --> LEVEL{"Which eval?"}
+  LEVEL -->|Every change| UNIT["One prompt on labeled inputs. Cents<br/>Example: false confirmations and missed negations"]
+  LEVEL -->|Nightly| COMP["One stage on frozen inputs. Dollars<br/>Coverage, task sizes, gold decisions, contradictions introduced"]
+  LEVEL -->|Weekly, and before release| E2E["The whole harness. Hidden-suite pass rate, cost, time,<br/>questions asked, interventions"]
+  UNIT --> PROMO
+  COMP --> PROMO
+  E2E --> PROMO{"Paired against the active version<br/>Same tasks, seeds and models. Several runs"}
+  PROMO -->|Schema and safety, unit evals run| EV["draft becomes evaluated"]
+  PROMO -->|Better, or as good and at least 15 percent cheaper<br/>95 percent interval excludes zero. No category regresses| ACT["evaluated becomes active"]
+  PROMO -->|A newer version is active, or real use regresses| DEP["active becomes deprecated"]
+  ACT --> COST["Responses cached by exact input. Unchanged reruns are free<br/>The lab has its own budget and uses the cheapest allowed connection<br/>Hidden text is scanned for inside candidate content<br/>A held-out benchmark rotates each quarter<br/>Same-name model drift: nightly evals flag the roster entry"]
+  COST --> SKILL{"Where did the skill come from?"}
+  SKILL -->|Catalog, by ID| OK["Kernel rules and the brief override skill text<br/>An approved skill is pinned by digest. An update starts at draft<br/>A project question promoted to a pack takes the same path"]
+  SKILL -->|Community or custom| GATE["Manifest: purpose, triggers, tools, size. It cannot add tools<br/>Reject bundled scripts by default. Reject obfuscation, hidden Unicode,<br/>ignore-previous, and instructions aimed at config or credentials<br/>Over the token cap: reject, do not truncate<br/>Quarantine with canary secrets and honeytoken URLs<br/>A hit rejects the skill. Selection is by catalog ID, not by wording<br/>An unvetted skill is allowed per project with a red warning,<br/>still sandboxed, still size-limited, still unable to add tools"]
+  GATE --> RED
+  OK --> RED["Red team must produce no harmful action<br/>A README that says curl a script. Test output that says edit the tests<br/>An install script that reads .ssh. Hidden text that plants a false fact<br/>A skill that appends to the global instruction file<br/>A canary secret that must never appear in a prompt, log, commit or request"]
+  RED --> SELF["Kernel: unit tests and properties. No double-spend. One lease<br/>Accepted means every linked check passed<br/>The daemon: fake clock, fake models, fake Git, fake sandbox. One seed<br/>Faults at every boundary: crash, 429, bad JSON, conflict, disk full,<br/>sandbox failure, vendor CLI exit<br/>Adapters: conformance. UI: Playwright against simulation<br/>A release must not regress the end-to-end run"]
+  SELF --> EDGE["A benchmark that becomes too easy moves to the regression set<br/>A harder one is added"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class BENCH,ACT,RED focus
+  class WHO,LEVEL,PROMO,SKILL decision

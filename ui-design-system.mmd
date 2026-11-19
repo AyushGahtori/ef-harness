@@ -1,0 +1,30 @@
+---
+title: Tokens, one kit, and point-to-fix
+---
+flowchart TB
+  ASK["Web frontend pack. Every question has a recommended answer,<br/>so Accept all works<br/>A reference site: none, use a clean neutral<br/>Brand: slate, with one indigo accent. Density: balanced<br/>Theme: both, following the system. Font: the system stack<br/>Kit: shadcn/ui on Tailwind, source copied into the repo<br/>An existing repo extracts Tailwind, CSS variables and the<br/>component folder, and shows them for confirmation instead of asking"] --> TOK["Phase 0, before any screen worker<br/>tokens.json, W3C design tokens. Color roles, six type steps,<br/>4 px spacing, radii, shadows, motion. Light and dark<br/>CSS variables and the Tailwind theme are generated, not hand-edited"]
+  TOK --> KIT["One kit. Button, Card, Input, Table, Dialog, Toast, page header<br/>Each has variants and the states default, hover, focus,<br/>disabled, loading and error<br/>Templates: app shell, page header with an actions slot,<br/>list/detail, form, empty, error"]
+  KIT --> GUIDE["/__styleguide renders every primitive, variant, state<br/>and template, in light and dark<br/>Screenshots at desktop, tablet and phone are the reference crops<br/>when the developer supplied none<br/>Conventions are quoted into briefs: page header for titles,<br/>primary actions in the header slot, Table rather than a custom grid"]
+  GUIDE --> SPEC["A screen task gets a spec, not a picture<br/>Route, template, regions, states, density, and which crops to match<br/>The accessible names are also the test contract<br/>A box-and-label wireframe can be approved in the plan preview<br/>Workers compose the kit. They do not invent look-alikes<br/>They may only use tokens"]
+  SPEC --> CHECK["After the task<br/>Block: raw colors, arbitrary pixels, new fonts, look-alike components<br/>Block serious axe-core issues: labels, roles, contrast, focus<br/>Block layout at three widths: no overflow, overlap or clipping,<br/>tap targets at least 24 px<br/>Warn: header height, page padding and spacing rhythm<br/>Advise only: a Senior vision review against the crops<br/>Pixel diff blocks only after the developer approves a baseline"]
+  CHECK --> APP["App tab runs harness/integration, or a chosen feature branch,<br/>in its own browser port and profile"]
+  APP --> POINT["Point mode. Hover outlines. A click captures<br/>route, role, accessible name, DOM path,<br/>component and source file and line from the dev-only plugin,<br/>a highlighted crop, computed spacing and type,<br/>and the owning task from path ownership<br/>The composer target becomes that element<br/>A dragged box can point at a gap between elements"]
+  POINT --> SPLIT{"What was asked?"}
+  SPLIT -->|Tighter, or a spacing change| VIS["A visual change for that feature's owner<br/>Example: KitchenCard padding down one spacing step"]
+  SPLIT -->|Move a named control| MOVE["A change to the screen spec<br/>Example: Print moves into the page-header actions slot<br/>Tests find it by role and name, so the journey still passes"]
+  VIS --> OWN
+  MOVE --> OWN{"Who owns the file?"}
+  OWN -->|A feature's screen| FEAT["That feature's owner. A normal change"]
+  OWN -->|A kit primitive or a token| DS["The design-system owner<br/>Preview the affected screens before applying"]
+  OWN -->|A third-party component| OVR["The owning feature, as an override inside tokens"]
+  OWN -->|Not in any task| PLAN["The project planner. Brownfield code outside the plan"]
+  FEAT --> BA["When it finishes: before and after, side by side<br/>Accepting updates the approved baseline<br/>Anything still off is another message"]
+  DS --> BA
+  OVR --> BA
+  PLAN --> BA
+  BA --> EDGE["A screenshot mid-build becomes a crop for the screens it covers<br/>The design owner checks tokens and previews the effect first<br/>Two workers want the same new primitive: one is built, both use it<br/>'Make this red' uses a token role or a named variant. Raw values stay blocked<br/>If the preview will not start: show the error and the owning task,<br/>and offer the last good build<br/>No design system yet: extract what exists, offer to consolidate tokens,<br/>never restyle the whole app unasked"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class TOK,GUIDE,POINT focus
+  class SPLIT,OWN decision

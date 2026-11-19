@@ -1,0 +1,35 @@
+---
+title: Push, CI, deploy and live migrations
+---
+flowchart TB
+  RULE["Nothing leaves the laptop without a rule<br/>Push, PR, deploy, migration, env sync, DNS and webhooks are effects:<br/>intent, approval, idempotency key and receipt<br/>The harness pushes harness branches and opens PRs<br/>It does not push main unless the developer turns that on<br/>for a repo with no branch protection<br/>Production deploy, live migration and DNS need approval each time<br/>Preview and staging can be automatic"] --> REMOTE["Detect origin. GitHub first. GitLab later<br/>Device OAuth, or an existing gh login, in the vault<br/>Read branch protection and required checks<br/>Default is PR mode. Direct mode pushes a branch the developer names"]
+  REMOTE --> DONE{"Feature reaches DONE<br/>Each PR, CI run and deploy is a ship_runs row"}
+  DONE --> PUSH["One push of harness/f/feature. Not one push per task<br/>Open a draft PR from the graph: requirements, checks, migrations,<br/>new dependencies, choices made for them, links to the plan<br/>The structure needs no model. A summary paragraph is optional"]
+  PUSH --> CI{"GitHub Actions"}
+  CI -->|Green| READY["Mark the PR ready. Land as settings say<br/>Required reviewers: wait. Never bypass them"]
+  CI -->|Red| TRIAGE["Read failed logs. Patterns first, then a small model<br/>Platform difference: repair, and reproduce in the Tier D container<br/>Missing secret: a human step. Never paste it into code<br/>Flaky: re-run once, then the test owner<br/>Real regression: repair task to the owning feature<br/>Runner or quota: wait. No repair task<br/>The worker sees the failing lines. Same fingerprint, 3 pushes, then the developer<br/>Phase 0's CI workflow runs the same gates on Linux and Windows"]
+  TRIAGE -->|Repair pushed| PUSH
+  PUSH --> QUEUE["One GitHub queue per account<br/>Content-creating calls stay under 80 a minute and 500 an hour<br/>Polling is conditional and backs off from 30 seconds to 5 minutes<br/>retry-after and x-ratelimit-reset are obeyed<br/>Repeated secondary limits pause the queue and show in the cockpit"]
+  READY --> DEPLOY{"Which environment?"}
+  QUEUE --> DEPLOY
+  DEPLOY -->|Preview, per PR| PREV["Automatic. Test secrets. A disposable or branched database"]
+  DEPLOY -->|Staging| STG["Automatic after the PR is ready, if staging is configured"]
+  DEPLOY -->|Production| PROD["Explicit approval, with the plan shown"]
+  PREV --> ADAPT
+  STG --> ADAPT
+  PROD --> ADAPT["One adapter interface: probe, plan, deploy, status, logs,<br/>promote, rollback, syncEnv<br/>v1: Vercel and Docker over SSH<br/>Railway, Fly.io, Render and AWS come later. No hosting yet is a discovery question. Nothing is created unasked"]
+  ADAPT --> ENV["Vault holds values per environment<br/>syncEnv shows names only, and production needs approval<br/>Production values are never pulled back for tests"]
+  ENV --> MIG["0 Rehearse on a copy or a restored staging backup. Automatic<br/>1 Backup or point-in-time recovery. Must succeed<br/>2 Expand only: new tables, nullable columns, concurrent indexes<br/>3 Deploy the app, which can read old and new<br/>4 Batched backfill, with progress and pause<br/>5 Contract in a later release, separately approved, export offered<br/>A destructive migration cannot skip rehearsal and backup<br/>A long lock switches to an online plan, or asks for a window"]
+  MIG --> CHECK{"After deploy"}
+  CHECK --> HEALTH["Health and build ID. Smoke journeys with a test account<br/>Watch errors for 10 minutes"]
+  HEALTH --> RESULT{"Result"}
+  RESULT -->|Good| REL["Mark released. Tag the commit. Notes from the graph"]
+  RESULT -->|Smoke fails or errors rise| ROLL["Preview and staging roll the app back automatically<br/>Production offers rollback, and does it only if that was enabled<br/>The database stays. Expand-only changes are still compatible<br/>A repair task gets the evidence"]
+  RESULT -->|Deploy failed| NONE2["Nothing switched. Logs attached. Repair task"]
+  REL --> EXT["Webhooks, OAuth redirects and DNS are effects with receipts<br/>An API call stores the returned ID so undo can remove it<br/>Otherwise a guided human step, confirmed by a probe"]
+  EXT --> EDGE["Developer commits on the same branch: merge, never force-push<br/>A CI hour: back off, other work continues<br/>Expired deploy token: reconnect, deployment parked"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class RULE,MIG,QUEUE focus
+  class CI,DEPLOY,RESULT decision

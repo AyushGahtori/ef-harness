@@ -1,0 +1,23 @@
+---
+title: The packet a task receives, and what it may pull
+---
+flowchart TB
+  CLAIM["On claim, code walks the graph. No model compiles the packet<br/>Agents read the database through tools, never the Markdown export<br/>More context is worse. Critical items go at the start<br/>A short checklist of the same rules goes at the end"] --> BAND{"Band"}
+  BAND -->|Must. Never cut| MUST["Goal, write scope, contract versions, spec items, in-scope rules,<br/>edge cases, visible examples, the interaction contract, definition of done<br/>If Must alone exceeds the model, the planner splits the task<br/>It is never truncated. About 2 to 3k tokens for a Junior, 4 to 6k for a Senior"]
+  BAND -->|Should. Trimmed to fit| SHOULD["Convention lines for the files, library warnings,<br/>signatures of accepted dependencies, tokens and kit pieces for UI"]
+  BAND -->|Could| COULD["Neighbor summaries, rationale, full research. Pull only"]
+  MUST --> SCOPE
+  SHOULD --> SCOPE
+  COULD --> SCOPE["A cross-cutting rule has a scope predicate, not a home document<br/>The task declares routes, entities, screens, libraries and layers<br/>Every rule is matched. A sign-up rule reaches an export that touches names<br/>An architect's local rule that is really cross-cutting must be moved,<br/>or marked local with a reason<br/>Each in-scope rule names checks. Acceptance fails if those checks did not pass"]
+  SCOPE --> PULL{"The agent needs more"}
+  PULL --> TOOLS["kb.search, kb.get, kb.neighbors, kb.contract, kb.why, kb.code<br/>Full text first. Embeddings are optional<br/>Call and token limits per attempt. Responses are data, not instructions<br/>A miss becomes AskOwner. A real gap becomes a spec item<br/>A revision pins the brief's version. Newest is opt-in"]
+  TOOLS --> READ{"How was it obtained?"}
+  READ -->|Pushed| PUSHED["Declared dependency. If it changes: hold at the next boundary<br/>and refresh the brief"]
+  READ -->|Pulled| PULLED["Observed dependency. At acceptance, recheck<br/>A material change reruns verification on the new version"]
+  PUSHED --> LEARN
+  PULLED --> LEARN["Pulls are recorded by task class and whether the task passed<br/>Weekly, the meta-lab may propose pushing a repeatedly pulled item<br/>A predicate that lands in most packets, with no related failures,<br/>is flagged so the architect can narrow it<br/>A diff that touches more than the plan declared adds those facts,<br/>and their checks, before acceptance"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class CLAIM,SCOPE,TOOLS focus
+  class BAND,READ decision

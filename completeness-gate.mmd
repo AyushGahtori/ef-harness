@@ -1,0 +1,20 @@
+---
+title: Static audit and the traceability gate
+---
+flowchart TB
+  STATE["DRAFTED, READY, LEASED, CODING, then STATIC_AUDIT, then clean verify<br/>A static failure returns to coding. It is not a verification attempt<br/>The same fingerprint three times escalates like any loop"] --> AUDIT["Deterministic scans on the diff. Seconds. No tokens. Shown to the worker<br/>TODO, FIXME, stubs, empty catch, dead controls, hard-coded records,<br/>fake names outside fixtures, mock imports in product code<br/>Edits to protected tests, skip or only, ts-ignore, as any, eslint-disable<br/>Unreachable files, unused planned fields, missing contract surface<br/>Elision placeholders, unplanned large deletions, out of scope, secrets<br/>A real deferral is TODO of an approved ID, and it appears in the final report<br/>Seeds, fixtures and declared generated paths are excluded<br/>A language with weak AST still gets text and type scans, and says so"]
+  AUDIT --> HARD{"Hard finding?"}
+  HARD -->|Yes| BACK["Reject with locations. Repeated identical failures escalate"]
+  HARD -->|No| SOFT["Soft findings stay on the receipt for high-risk review:<br/>a tiny diff, complexity far below the rules, branches on visible examples"]
+  SOFT --> MATRIX["The database holds requirements, tasks, checks, results and waivers<br/>Graph compile refuses to publish unless:<br/>every in-scope requirement has a task and a check<br/>every task has a requirement<br/>every rule-bearing requirement has a held-back or generated check<br/>A waiver is low-risk, or the developer approved it<br/>400 edge cases and 320 tasks: publish fails and lists the 80"]
+  MATRIX --> PROVE["The implementing worker does not write the checks<br/>Red before green: a new check must fail on the code before the task<br/>A surviving mutation means the check is too weak<br/>The final audit samples pairs. A Manager asks whether the check<br/>observes the requirement. Disagreement goes to the planner"]
+  PROVE --> ACCEPT{"Every linked check passed<br/>for this artifact, including in-scope rules?"}
+  ACCEPT -->|No| REJECT["Rejected. Missing checks are listed<br/>A feature stays open until every one of its requirements passes<br/>at the current versions"]
+  ACCEPT -->|Yes| OK["Accepted"]
+  PROVE --> HONEST["Tests are read-only. The verifier runs them<br/>Held-back and generated cases make hard-coding fail<br/>flag_blocked and dispute_test are the cheap honest exits<br/>The worker prompt says: disagree, stop, never special-case<br/>The hint ladder caps retries, because more feedback increases gaming<br/>A Senior review of high-risk diffs is advisory<br/>A detected shortcut lowers that model's pass-rate for the class"]
+  OK --> EDGE["I fixed it myself runs the same audit<br/>The developer may override a finding, and that override is recorded"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class AUDIT,MATRIX,PROVE focus
+  class HARD,ACCEPT decision

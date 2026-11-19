@@ -1,0 +1,450 @@
+{
+  "repository": "AyushGahtori/resume-changer",
+  "commit": "497831ec5aa7effb354bb1a8d22d2f031b17a4e0",
+  "method": "Raw committed Git blobs in docs/**/*.md. Count physical lines, including blank lines. Select plan/task subset by case-insensitive filename stem.",
+  "summary": {
+    "markdown_files": 73,
+    "plan_or_task_files": 17,
+    "plan_or_task_lines": 4906
+  },
+  "files": [
+    {
+      "path": "docs/UI_Tasks_achievement_library.md",
+      "sha256": "22330289e1a89708835f502ac53435c561cf4c5cc0725820c787e52309ba9dc0",
+      "lines": 959,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/UI_Tasks_home.md",
+      "sha256": "a50e43f292d43639a4503496200bd67ae139059574efd1e3578fadc7def95833",
+      "lines": 834,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/UI_Tasks_imagination_canvas.md",
+      "sha256": "b0856218ef61da8f7a29ff5915c025b7a315d4db3ecc229200e140c7526d59c1",
+      "lines": 307,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/UI_Tasks_resume_builder.md",
+      "sha256": "08708201942f1995885973e3d640a746b64dfe4ad44ba04f1bd584f9fe7aa69f",
+      "lines": 985,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "cab8d65f41aa89ff4e0a63ce38bd6cea0553c4c3befbc979f1a656a696401436",
+      "lines": 88,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/bugfix-resume-build-workflow-plan.md",
+      "sha256": "4c1d5e05867d42d3d4a4c8be2b145926f2aa727833b631cab3b4859f4dda3ea4",
+      "lines": 86,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/contributing.md",
+      "sha256": "2f85d421b25d4a70b4c9872508005c1016bee0a8ff6fd2bec9d130ecf579ec89",
+      "lines": 81,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-app-setup.md",
+      "sha256": "d6a3e5337d29e7cd0c6ee2756dd2d840cb0c47105a1bda8d630faa474ab9366d",
+      "lines": 52,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-context-merge-review.md",
+      "sha256": "bc012c404101911fc408b72c24d2934d8bb5d521babfa6d08b110a9127a08a38",
+      "lines": 68,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-context-quality-benchmark.md",
+      "sha256": "d923695b1f7e859a8243c7ef8f49c16d9bddc003cfc258d15f5aea73042e228e",
+      "lines": 52,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-context-redesign-implementation-plan.md",
+      "sha256": "207ddc4cffe3cef6d068010c7afbe5b5b0e8b0cb70a88ad9c2c08b2b6613613a",
+      "lines": 374,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/github-context-task-07-acceptance.md",
+      "sha256": "c69c7dfc96dc0a8d8fa3f181895670e5970f75bd59eeeb2203e867bd03f88d27",
+      "lines": 66,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/github-context-task-07-integration.md",
+      "sha256": "0cbc293d732d966c5076cc7c411f3c7dcdbed17d34dc29782d1a20551065dec8",
+      "lines": 66,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/github-hosted-runtime-plan.md",
+      "sha256": "86a2536af2580e980b6a45ed026052e344c61d7adf8cefb66e94ffc70518f34e",
+      "lines": 27,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/github-import-live-assembly.md",
+      "sha256": "425d5eb96e37d387fee4ad0b12990aaca16e38ae95432ef8c47cec14a7791c58",
+      "lines": 38,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-integration-gate-0.md",
+      "sha256": "e3c9f85e1bae7052f56f2fcf45905938cd199460df570b5d36baace991819ba0",
+      "lines": 115,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-integration-session-plan.md",
+      "sha256": "03e6127f0635d7605f01e5e60f18b4e66fd10a948ff7e77f3e7e7b4bbf065763",
+      "lines": 300,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/github-partial-evidence-fix-acceptance.md",
+      "sha256": "d93daa8b5bbdd9aba2300629fd0e93d1559d52757f8b718d3afc0afb3696aa32",
+      "lines": 48,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-partial-evidence-fix-plan.md",
+      "sha256": "4f17e916d34b0bea3078a91240a2c45f4eaf72cbfc9afb9bd9370dad536ec448",
+      "lines": 104,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/github-phase-one-gate-b.md",
+      "sha256": "b3bf2d5e752ed2cf24e1e660bc92cfe0b1575f69ea6823112147327d7e42b4a5",
+      "lines": 59,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-phase-one-gate-c.md",
+      "sha256": "8337f4638de036f3d52386ad7516356512da2f09f126dee4effdf3bab15af17e",
+      "lines": 85,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-project-bullet-pilot.md",
+      "sha256": "992748e4f7da22ab18075632a153093f5b0472062b0dc73a05bf9868e08a3c6b",
+      "lines": 26,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-session-acceptance.md",
+      "sha256": "fc8fdab05deafa140e68cd48638bae37d334f6cad02bcdddba6a3960774aaa55",
+      "lines": 45,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-session-contract.md",
+      "sha256": "fbcc661b70400ca2a40d0324dee665e1977ae65e8ad885debc8ab851ab150878",
+      "lines": 39,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/github-task-integration-review.md",
+      "sha256": "5d0147d3feeb4237a6ed85d4870f95040c91a76a8b7953574684857a418abf7c",
+      "lines": 45,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/index.md",
+      "sha256": "ba5e163999b093d47441c87547f88925a64eab4fd0aa186ac268c999b13b8e89",
+      "lines": 14,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/local-setup.md",
+      "sha256": "b484798c681443c0632503e970aebf54442c88a2b18d83ff28c738b234993f4c",
+      "lines": 132,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/production-deployment-plan.md",
+      "sha256": "2d416188110967cd912ed1a42aa774295a0fb48de3a1cb0410d96728c0cd28f3",
+      "lines": 233,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/production-runbook.md",
+      "sha256": "a709617b1fde442dbb2d02fbc22db20ea70d307b3df1906f27b19d01ec59089b",
+      "lines": 161,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/project-plan.md",
+      "sha256": "04aec8941055ff2b7bcbfd42ae24c6bb0ef975171e5cfe239b717825af6b810f",
+      "lines": 382,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/setup-guide.md",
+      "sha256": "d3f67e228ea96375bcb07c41ea4dbc76846e8fff99513599a69c2e5145f45a7c",
+      "lines": 910,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/task-15-jd-textarea.md",
+      "sha256": "55bf657b2cb13cbefc859ded613bf52fdb380b6eb30411fc7c5f13160167eb78",
+      "lines": 38,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/task-19.5-resume-studio.md",
+      "sha256": "2631947170889eaec317a1bc8d3a6ef8d4190a05916cb4a5e4112528c2bd0443",
+      "lines": 61,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/task-30-dual-audience-quality-plan.md",
+      "sha256": "ce3e064946ac148d525e8e04dc398832506c7d0f7ef045251fbe8694e756026d",
+      "lines": 39,
+      "plan_or_task": true
+    },
+    {
+      "path": "docs/ui-audit/builder-task-04/README.md",
+      "sha256": "0089f107fa7579c2792a14207b5ae790c604c3449e387b2e76ea3a6a56dc9cbe",
+      "lines": 155,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-audit/library-task-02/README.md",
+      "sha256": "0463d97ffba48e1a964fa85b310eea7ef8b2ddb20810156983ee67f7713d684e",
+      "lines": 169,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-audit/library-task-11/README.md",
+      "sha256": "a14bf4706ca70d05b7d8e07b01d35b64e659bf985c33bd9e7d721fe8c81eb2f9",
+      "lines": 123,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-audit/library-task-21/README.md",
+      "sha256": "3fb458ed8f526c17ca69fb84e38035d15c886dc351479ed66a7233128e963266",
+      "lines": 107,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-audit/library-task-28/README.md",
+      "sha256": "c8139aac4b9ebacad3f23799dd1214f95bdd3f415a3737053da9f91dd8ece1d7",
+      "lines": 199,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-audit/tasks-01-12/README.md",
+      "sha256": "ca6a9421dee04d119f3b4ca796d348d50b28dbccef60a7973a1184779afa01eb",
+      "lines": 57,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-audit/tasks-17/README.md",
+      "sha256": "9b8dad2c0c99e6394c8a184d584b59b4ece3da2b85559428818f73ed01a445b9",
+      "lines": 263,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-baseline/library-task-01/README.md",
+      "sha256": "9a31d6682b172e82955a364f808270d7bda6282743d41a9a8c41f7c9bc1967cc",
+      "lines": 28,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-baseline/library-task-01/inventory.md",
+      "sha256": "fcbb20c2cd325dd6fc24f8cfd384dda5d053e06869c32a9038d24a605ddaa6a5",
+      "lines": 279,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-baseline/resume-builder-task-01/README.md",
+      "sha256": "1831990711d0eb1132171abe8d118d3ab73e2c233fdcb7c9c53d67eee4aeb437",
+      "lines": 35,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-baseline/resume-builder-task-01/inventory.md",
+      "sha256": "81b4afb72525e06a40dc38eee7f6f7d18d4db5ac097ebb2c2945640d22f7c7c5",
+      "lines": 304,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-baseline/task-01/README.md",
+      "sha256": "125507c4305cc36da1c0ee9f9d11ff8d3aeed6eef97a7d33c3b4c4866125ec57",
+      "lines": 11,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-baseline/task-01/inventory.md",
+      "sha256": "950d843140a08801475db3479d62565f5d5a8d1b63c91fda8a49f92b37d011c3",
+      "lines": 38,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-images/achievement-library/README.md",
+      "sha256": "c8388508a057d39afcbd2bd5697a0682a1a15fdc00333e84287e78ba0f71af0f",
+      "lines": 45,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-images/home/README.md",
+      "sha256": "4a487d270448db2abb2122131a9ff377c5c2955959dab003fe8a2e42ddbbb570",
+      "lines": 38,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/HANDOFF.md",
+      "sha256": "14240eee1148ffb6c38b49983b18725a2ac28e392ead1450bb924403ac7e8946",
+      "lines": 88,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/github/gate-c/README.md",
+      "sha256": "f5eea7c3630bea670b7ffbf628fcb74664754fa33eac5774d3eec9ca427b8276",
+      "lines": 10,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/github/task-30/README.md",
+      "sha256": "42df7d81659019769bac59e025803f7381bfab303d1be0c56c68bae6dbfcaa1f",
+      "lines": 18,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/library-task-06/REVIEW.md",
+      "sha256": "c03a0058c8b55ae7e02759d363937c170004e63a31124abbd0d72c6cb93f01c0",
+      "lines": 93,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/library-task-10/REVIEW.md",
+      "sha256": "8a8ade26951b36bac608505e715b206d5e072e0bf1f93b59b7f61bd736fd03a0",
+      "lines": 120,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/library-task-15/REVIEW.md",
+      "sha256": "b56f03ed79131d478ccf69a51887b5dbbe4043bfc5b5b7ba7f6a2674b1fd19c3",
+      "lines": 158,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/library-task-20/REVIEW.md",
+      "sha256": "de59097265c15e93f94e7bfd7600c2d35cf6a342ef115335f02333e1e067545c",
+      "lines": 181,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/library-task-29/REVIEW.md",
+      "sha256": "fab77e23f2296a30ca27d5206d7ac2cecd0b12a7271320b90199c8a447142697",
+      "lines": 36,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/resume-builder-task-02/REVIEW.md",
+      "sha256": "9aafe839c76d4e996caac0e826fd84483ef1baa341b8fad9eb9083d3153b8f38",
+      "lines": 135,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/resume-builder-task-03/REVIEW.md",
+      "sha256": "654aaa16da27aa2b823e5ee33365715e23830072d974bc215435dc9a5acff9e8",
+      "lines": 243,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/resume-builder-task-10/REVIEW.md",
+      "sha256": "aa797d15c46c43548e633862596c1f4035e88e707831e8c8e3f6106738ed89bc",
+      "lines": 216,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/resume-builder-task-26/REVIEW.md",
+      "sha256": "491134aeabe295ce56808aed838916494db89f9cba308ebcf29c572d71d26786",
+      "lines": 84,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/resume-builder-task-29/REVIEW.md",
+      "sha256": "211266e5da7dc9ed3b173d097dc1d6f3b12e022fb83863554572f2565ad3e233",
+      "lines": 33,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-08-evidence-ui/REVIEW.md",
+      "sha256": "6f33b9b509e9b0676f4ba2c5519ed0d6ef32bcef8d1733d6c6896b3d2297b20a",
+      "lines": 31,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-20/REVIEW.md",
+      "sha256": "03685d7e6a26d30ab4505de0b80c8318830600148aaa0bfe72d824b7993082dd",
+      "lines": 36,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-21/REVIEW.md",
+      "sha256": "f6593d3b49fbbcd99e2a375233f5feef69a842c8b357dc04774e21c110da32ed",
+      "lines": 37,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-22/REVIEW.md",
+      "sha256": "a97fd19b12f23cff4c9f046080b61d72b2eaa562e37ed58c1c4a4d3af3826717",
+      "lines": 44,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-23/REVIEW.md",
+      "sha256": "d4d4a8aa8a3deac1ede32296abb14a99a7ec9c82a90e662b89673f67e183a201",
+      "lines": 34,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-24/REVIEW.md",
+      "sha256": "f0ca082644b0267d4cf219dbd7f3af7e7c2f4970b424aa9bddb949371f9e5a89",
+      "lines": 53,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-25/REVIEW.md",
+      "sha256": "8ba149c86f0ed158e8eb582b302b7e5d7780b3bff13940ce1fa49b58835fae08",
+      "lines": 24,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-26/REVIEW.md",
+      "sha256": "1481338041b39ddfb8bdaa423ac90264bd78f8edd6c9479a8467e4a26f717f3a",
+      "lines": 26,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-27/REVIEW.md",
+      "sha256": "f6c2c049d502ef08a9e1a5b21ae5534383f1643060e1de0bf86805d00c5a6677",
+      "lines": 28,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-28/REVIEW.md",
+      "sha256": "f1249fe562261cd740c79f7cffe502e2873785955281da5e322d420b554beefd",
+      "lines": 37,
+      "plan_or_task": false
+    },
+    {
+      "path": "docs/ui-review/task-29/REVIEW.md",
+      "sha256": "d0d6960df746b933f412c69d57161374d469554f4eea27185ba9860249c55b26",
+      "lines": 147,
+      "plan_or_task": false
+    }
+  ]
+}

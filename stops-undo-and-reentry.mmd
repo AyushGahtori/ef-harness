@@ -1,0 +1,39 @@
+---
+title: Budget stops, undo, coming back, and infer or ask
+---
+flowchart TB
+  CP["A checkpoint at every turn boundary<br/>WIP commit on refs/harness/checkpoints<br/>Attempt branch harness/t/task/attempt<br/>Session reference: Codex thread, Claude session, Cursor agent, or our transcript<br/>Handoff note written by code: brief version, steps done and left,<br/>files changed, last checks, last failing check<br/>Ledger spend and reservations, settled<br/>A limit, a crash or a closed laptop loses at most the turn in progress<br/>Resume uses the runtime's own resume when it works<br/>Otherwise a fresh session gets the brief plus the labeled diff<br/>Sleep mid-turn: treat the call as unknown, resume from the checkpoint,<br/>and reconcile an ambiguous paid call before retrying"] --> METER{"Spend"}
+  METER -->|50 or 80 percent| ALERT["Alert only. The meter turns amber. One digest item"]
+  METER -->|90 percent| WIND["Wind-down. No new attempts<br/>Running attempts finish the current step<br/>A reserve stays for checkpoints and for verifying finished candidates"]
+  METER -->|100 percent| STOP["Every attempt checkpoints and parks<br/>Office lights go to evening. This is not a failed task"]
+  METER -->|Plan window closed| WIN["Same as stopped, with the reset time when it is known<br/>Auto-resume only if the user enabled it"]
+  STOP --> CARD
+  WIN --> CARD["Stop card. Each option shows its estimate first<br/>Add budget. Use cheaper models, previewing the remainder only<br/>Switch connection. Wait for the reset. Keep parked<br/>Finish by hand: export wip branches and the feature branch<br/>of what was accepted, with the handoff in the app and<br/>optionally beside the commit. Then I fixed it myself<br/>A half-done feature is never landed. Landing with a feature<br/>flag off is an explicit option, only if it was designed that way<br/>Raising the budget resumes parked tasks in priority order<br/>Nothing starts over. A retired model uses the roster fallback"]
+  CARD --> UNDO["Undo a merged feature is a current-feature change, not a blind reset<br/>1 Inventory: commits, files, routes, exports, migrations, packages,<br/>env, config, jobs, and external effects<br/>2 Who else uses each piece: edges, imports, columns, later migrations<br/>3 Classify. Only this feature: remove<br/>Shared, including a feature mid-build: keep, and move ownership<br/>Data: keep. Dropping is an explicit choice, export first,<br/>and expand-then-contract<br/>A package: remove only if nothing else imports it<br/>An external effect cannot be undone. Show the receipts<br/>A compensating action, such as unregistering a webhook, is a task if possible"]
+  UNDO --> HOW{"How to execute the undo"}
+  HOW -->|One merge, and nothing later touched its files| FAST["Revert that merge. Run the regression<br/>Recorded as a forward revision, so it can itself be undone"]
+  HOW -->|Otherwise| TASKS["Removal tasks per area, verified like any other task,<br/>then the regression of features that shared a boundary"]
+  FAST --> BACK
+  TASKS --> BACK["On open, before anything runs, reconcile<br/>Last revision, outbox, expired leases fenced<br/>Missing worktrees recreated from checkpoints<br/>New base commits, dirty files, branch switches, edits in worktrees<br/>Lockfile and tool versions. Tokens, reset windows, prices, models<br/>A CLI version change reruns the adapter conformance suite<br/>Each open question is rechecked against the new commits and answers"]
+  BACK --> HELLO["Welcome back. Finished while away. Parked, and why<br/>Questions waiting, including one a commit may already answer<br/>Your commits, and any overlap that will refresh a task<br/>Connections. Budget left. Nothing runs until Resume<br/>Review, or open the board, still starts nothing<br/>Each question gets a recap: the decision, why it is needed,<br/>and what the new commits changed. Older than a week: re-validate<br/>Obsolete questions are retired with a note<br/>Deleted checkpoint refs: those tasks restart from the brief<br/>Finished work on integration stays. Abandoned export branches<br/>remain theirs. The feature is marked abandoned"]
+
+  HELLO --> USE["Infer or ask, when a criterion is resolved, a worker or planner<br/>meets a missing product decision, or a steer may change one<br/>The kernel rejects a break of these rules. One object per criterion<br/>Do not invent criteria. Propose a new gap separately, with its source"]
+  USE --> FOUR{"Which status is actually earned?"}
+  FOUR -->|A current, unretracted statement<br/>establishes this exact value| EXPL["explicit. Cite the exact span<br/>Your own earlier summary is not evidence"]
+  FOUR -->|A listed rule applies, and every<br/>premise is already a resolved fact| DER["derived. Name the rule and the premises<br/>No circular support. Never for a costly choice"]
+  FOUR -->|The user handed this over,<br/>inside stated limits| DEL["delegated. Pick inside those limits<br/>Record the reason. A recommendation alone is not this"]
+  FOUR -->|Anything else| MISS["missing, partial, or conflict"]
+  EXPL --> RULES
+  DER --> RULES
+  DEL --> RULES
+  MISS --> RULES["Quote, do not paraphrase. The quote must establish the value<br/>Negation and retraction win. Keep digits and negations as spoken<br/>Paid services, identity, retention, deleting data, and legal duties<br/>are explicit, or an explicit bounded delegation. Never derived<br/>One criterion at a time. Two readings is a conflict. Do not pick one<br/>In an existing repo, code is today. The request is the change"]
+  RULES --> OUT{"Must a question be asked?"}
+  OUT -->|Yes| ASK["One concrete question, in their words<br/>The decision, why it matters, the options,<br/>a recommendation when one is clearly safer, and something else<br/>If two readings change behavior, show both"]
+  OUT -->|No| OBJ["Return id, status, value, evidence, rule, premises,<br/>delegation, missing detail and question"]
+  ASK --> OBJ
+  OBJ --> SELF["Before returning: a stranger would agree each explicit quote<br/>establishes that value. Every derived value names a rule and<br/>resolved premises. No costly choice is derived<br/>Nothing is credited from a retracted or superseded span"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class CP,CARD,UNDO,RULES focus
+  class METER,HOW,FOUR,OUT decision

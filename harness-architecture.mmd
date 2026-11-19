@@ -1,0 +1,100 @@
+---
+title: Coding harness — from a spoken idea to an independently verified feature
+---
+flowchart TB
+  subgraph IN["1 · Describe the project"]
+    SETUP["Connect AI: API keys, plan sign-in or installed agent, local model<br/>Pick folder · Git set up or dirty work snapshotted"] --> MODE{"How would you like to start?"}
+    MODE --> ALL["All five at once · examples folded"]
+    MODE --> ONE["One at a time · example open"]
+    ONE & ALL --> FIVE["What are you building? Who needs it and why?<br/>Walk through one use. What must the demo prove?<br/>Which choices are fixed or delegated?"]
+    FIVE --> DRAFT["Always-enabled text or dictation<br/>One answer can cover multiple topics"]
+    DRAFT -.-> PREVIEW["Local transcript only · pauses never submit<br/>Graph updates once, after Send"]
+    DRAFT -->|Explicit submission| TURN["Sequenced, versioned user turn<br/>Record author, spans, focus and retractions"]
+    REPO["Existing project: inspect pinned repo and tests<br/>Record observations separately from desired behavior"]
+  end
+
+  subgraph DISC["2 · Discover enough to build this scope"]
+    OPEN["Opening review proposes supported answers and domains<br/>Actor, action and observable result can establish a workflow"]
+    POOL["Code selects from shared and domain question indexes<br/>Filter by prerequisites; score additional uncovered criteria<br/>Rescore after each pick, up to five; use 2–3 for a small change"]
+    CUSTOM["No suitable entry: derive one scoped project question<br/>Require a concrete gap, rubric and remaining budget"]
+    PROPOSE["Small resolver proposes one value per criterion<br/>Only relevant turns, rule and current premises"]
+    CHECK["Validate current source, quote, meaning and inference rule<br/>Unresolved siblings and delegated-but-unchosen values stay open"]
+    Q["Focused question queue · one concrete gap or conflict<br/>Explain, offer options or free text, keep the same question ID"]
+    FACTS["Code records supported facts and their dependencies<br/>Correcting one rechecks the claims that used it"]
+    READY{"Exact scoped decisions resolved, inherited prerequisites met,<br/>no critical gaps, completeness pass finished?"}
+    DEFER["Explicit milestone deferral needs an independent interface<br/>Show overall detail and which consumers remain blocked"]
+    PAUSE["Repeated gap or exhausted budget:<br/>show the blocker and wait for new evidence"]
+    TURN -->|New project discovery| OPEN
+    REPO -.-> OPEN
+    OPEN -->|Opening anchor missing| Q
+    OPEN -->|Enough to choose domains| POOL --> PROPOSE --> CHECK
+    POOL -->|Uncovered criterion| CUSTOM --> PROPOSE
+    CHECK -->|Accept supported siblings now| FACTS --> READY
+    CHECK -->|Missing or conflicting| Q
+    Q -->|Bound opening answer| OPEN
+    Q -->|Current criterion and new evidence| PROPOSE
+    CHECK -->|User defers| DEFER --> READY
+    READY -->|Useful gaps remain| POOL
+    READY -->|No progress| PAUSE
+  end
+
+  subgraph PLAN["3 · Publish a buildable plan"]
+    GRAPH["Construct architecture nodes and typed links<br/>Requirements, contracts, UI, edge cases, tests and ownership"]
+    FILES["Planner proposes master plan → feature → task → optional child<br/>Pin behavior, interfaces, paths, steps, UI states and selected skills"]
+    EX["Planner pins visible examples before implementation; oracle-author<br/>writes held-back cases for rule logic; verify red-before-green"]
+    K["Coordinator is code · sole writer to canonical SQLite state<br/>Validate authority, lease, relevant node and edge versions, budgets"]
+    SNAP["Atomic revision: graph, briefs, audit and outbox<br/>Export versioned Markdown, JSON and readable Mermaid views"]
+    PV{"Plan preview: Phase 0, tasks, crew, cost and time<br/>First build waits for Start build; small revisions may auto-start"}
+    SPEC["Spec expansion: matrices, every cell with a basis<br/>Contradictions checked by code, then model"]
+    RS["Risk-triggered research · quotes verified<br/>Feature details produced one wave ahead"]
+    READY -->|Yes, automatically| SPEC --> RS --> GRAPH --> FILES --> EX --> K --> SNAP --> PV
+    SPEC -->|Needs the developer| Q
+    GRAPH -->|New missing decision| Q
+  end
+
+  subgraph EXEC["4 · Do the work and verify the combined feature"]
+    ELIG{"Task prerequisites, human steps, authority,<br/>budget and compatible contract versions ready?"}
+    HOLD["Record reason and owner · wait only affected work"]
+    ASSIGN["Phase 0 foundation first, then feature waves<br/>Crew size and model level computed per wave; reserve resources and lease"]
+    WORK["Isolated attempt in an OS sandbox: worktree, ports, no direct internet<br/>Compiled knowledge packet in; artifact, versions and checks out"]
+    AUDIT["Static audit: no stubs, TODOs, swallowed errors,<br/>hard-coded data or test tampering"]
+    NEED["Missing context goes to original task author or successor<br/>Fetch verified handoff or queue a real product question"]
+    VERIFY["Independent verifier runs protected expectations<br/>on a clean candidate with fresh fixtures and current lease"]
+    INT["Feature integrator (the plan author's role) squashes passing tasks<br/>One wiring task wires real entry points; combined user journey runs"]
+    MERGE["Project merge queue checks current target<br/>Accept result and release dependents only on verified success"]
+    FIX["Attribute failure and route to its owner<br/>Bound repairs and stop on repeated failure"]
+    PV -->|Start build| ELIG
+    PV -->|Adjust| FILES
+    ELIG -->|Waiting| HOLD
+    HOLD -->|Relevant prerequisite or hold changes| ELIG
+    ELIG -->|Ready| ASSIGN --> WORK --> AUDIT --> VERIFY
+    AUDIT -->|Findings| WORK
+    WORK -->|Specific gap| NEED
+    NEED -->|Known evidence| WORK
+    NEED -->|Material decision missing| Q
+    VERIFY -->|Independent checks pass| INT --> MERGE
+    VERIFY -->|Fail or no required checks ran| FIX
+    INT -->|Broken seam or journey| FIX
+    MERGE -->|Combined candidate fails| FIX
+    FIX -->|Revised authorized brief or repair| ELIG
+  end
+
+  subgraph STEER["5 · Change direction while work continues"]
+    ROUTE["Bounded lookup in two linked graphs<br/>Small model proposes target and intent; code checks current ownership"]
+    READ["Read-only progress or rationale · cite receipts, no work change"]
+    CHANGE["New or changed feature · owner compares plausible meanings<br/>Trace contract consumers: hold definite, quarantine possible,<br/>continue unaffected; preserve all independent hold reasons"]
+    CTRL["Execution control · validate target and lease<br/>Stop button bypasses the model"]
+    REC["Restart: reconcile leases, outbox, pending costs and effects<br/>Unknown external outcome is reconciled before any retry"]
+    TURN -.->|During planning or building| ROUTE
+    ROUTE -->|General question| READ
+    ROUTE -->|New feature or existing feature change| CHANGE -->|Scoped interview| POOL
+    ROUTE -->|Ambiguous target| Q
+    ROUTE -->|Control| CTRL
+    CTRL --> HOLD
+    Q -->|Target clarified| ROUTE
+    REC -.-> K
+  end
+  classDef core fill:#daeae4,stroke:#316d5b,color:#173b30,stroke-width:2px
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class TURN,FACTS,K,SNAP,VERIFY,MERGE core
+  class MODE,READY,ELIG,PV decision

@@ -1,0 +1,28 @@
+---
+title: How the planner assigns work and agents reuse each other's results
+---
+flowchart TB
+  USER["Developer submits a requirement or a steer"] --> OWNER["Router resolves the feature planner<br/>Task author owns the worker's brief and questions"]
+  OWNER --> COORD["Deterministic kernel<br/>Pin inputs, reserve funds and grant a fenced attempt"]
+  GRAPH["Runtime graph<br/>Feature → planner → task → session<br/>Task consumes or produces named contracts"] --> COORD
+  COORD --> KIND{"What does this assignment need?"}
+  KIND -->|Eligible remote transformation| HOST["Optional hosted subagent<br/>Check capabilities, redact inputs and enforce project egress policy"]
+  KIND -->|Repo access or repeated turns| SESSION["Compatible adapter opens or restores a worker session<br/>Bind attempt, epoch, current brief and workspace"]
+  SESSION --> A["Worker A • order totals<br/>Brief includes requirement slice, relevant files and acceptance case"]
+  A --> SUBMIT["Submit structured candidate with epoch, read set,<br/>contract, digest and local check references"]
+  HOST --> SUBMIT
+  SUBMIT --> VERIFY{"Kernel verifies in clean state<br/>All cases passed, holder and inputs current?"}
+  VERIFY -->|Failed or superseded| REPAIR["Record reason and evidence<br/>Route bounded repair or stale assignment to task author"]
+  REPAIR -->|Funded, changed input or repair| COORD
+  VERIFY -->|Accepted| STORE["Shared project record<br/>Index verified handoffs by task, feature and contract<br/>Keep large diffs, files and logs behind stable references"]
+  STORE --> WAKE["Accept and enqueue in one transaction<br/>Deduplicate delivery by event, result and target assignment versions"]
+  WAKE --> B["Worker B • kitchen print view<br/>Resume its session; read A's totals contract and its example"]
+  B -->|Specific evidence needed| READ["Project tool reads a named artifact or excerpt at its revision<br/>Make the referenced commit available in B's workspace"] --> B
+  STORE -.-> READ
+  B -->|Artifact leaves a gap| QUESTION["Ask B's task author with a result reference<br/>Detect cycles and expired waits"]
+  QUESTION --> ANSWER["Task author consults producer about its actual work<br/>Contract owner publishes changes in meaning"] --> B
+  B -->|Print output and acceptance test| SUBMIT
+  STORE --> STATUS["Planner and status handler can read completed work,<br/>remaining dependencies and verification evidence"]
+  OWNER -->|User changes an active decision| HOLD["Queue the steer, hold affected tasks at a tool boundary<br/>Resume from a current brief and checkpoint"] --> COORD
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  class COORD,SESSION,STORE,WAKE focus

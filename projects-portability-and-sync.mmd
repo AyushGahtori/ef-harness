@@ -1,0 +1,32 @@
+---
+title: Moving a project, and sharing one plan across projects
+---
+flowchart TB
+  CARRY["Knowledge travels on an orphan branch, harness-state<br/>No shared history with the product. The product tree stays clean<br/>A .harness folder on the developer's branch is opt-in<br/>One YAML file per entity, sorted keys, stable IDs<br/>Written after each published revision, debounced<br/>SQLite itself is not committed. CRDTs are not in v1:<br/>they do not resolve two different cutoff times"] --> WHAT["Exported: decisions, quotes, research, architecture, contracts,<br/>plans, visible examples, receipts, feature progress<br/>Held-back examples: yes, encrypted with a project key in the vault<br/>Transcripts: opt-in. Secrets and tokens: never. Re-enter them per machine<br/>Leases, paths and process IDs: no. Usage: a summary per feature<br/>Checkpoint refs: optional, so a parked task can resume elsewhere<br/>History: append-only segments of change sets, versions and edges<br/>Incremental export with git fast-import. Op IDs and event numbers stay local"]
+  WHAT --> MOVE{"How does it move?"}
+  MOVE -->|Clone or reinstall| IMPORT["Opening the folder finds harness-state<br/>Import revision N rebuilds state.db<br/>Running tasks become parked. Resume from pushed checkpoints,<br/>or restart from the brief. Local backups help only if the folder was saved"]
+  MOVE -->|No remote| ZIP["Settings, Export project. The same files, as a zip"]
+  IMPORT --> LEASE
+  ZIP --> LEASE["lease.yaml beside manifest.yaml: device ID, holder, epoch,<br/>heartbeat, revision. Compared with writer_epoch on open<br/>The writer refreshes it when it pushes<br/>Another device: open read-only, or take over<br/>Take over increments the epoch. The old device's next push is rejected,<br/>it parks, and it becomes read-only<br/>A stale heartbeat can be taken without a warning<br/>Two devices offline: the second push loses and stays read-only.<br/>Its local checkpoints can be offered to the driver<br/>A force-pushed state branch: ask which revision to keep. Never overwrite"]
+  LEASE --> TEAM{"Who is at the keyboard?"}
+  TEAM -->|Driver| DRV["Interview, plan, build, land. One driver in v1"]
+  TEAM -->|Viewer| VIEW["Browse and comment. Comments sync as entities<br/>Their Git edits are treated as the developer's edits"]
+  TEAM -->|Handover| HAND["The driver hands over, or a viewer takes over. Epoch increments"]
+  DRV --> BROKER
+  VIEW --> BROKER
+  HAND --> BROKER["One daemon. Each project has its own coordinator and database<br/>The broker owns plan windows, concurrency and machine slots<br/>It grants a project a short lease: N sessions and a share, for 10 minutes<br/>The project spends that grant inside its own database<br/>Unused grants return. The broker never revokes a running slot<br/>Two projects together cannot pass the plan share the developer allowed"]
+  BROKER --> CLASS{"What kind of work?"}
+  CLASS -->|Interactive, focused project| INT["One slot per connection is always reserved. It gets the next slot"]
+  CLASS -->|Foreground build| FG["Weight 2"]
+  CLASS -->|Background build| BG["Weight 1"]
+  CLASS -->|Research, meta-lab, re-index| BATCH["Idle capacity only"]
+  INT --> FAIR
+  FG --> FAIR
+  BG --> FAIR
+  BATCH --> FAIR["Weighted fair share. A third project starts as background or batch<br/>until it is focused. The switcher shows each project's share"]
+  FAIR --> EDGE["Public repo: state push is off by default, opt-in per project<br/>Private repo: ask once on the first push<br/>Held-back checks stay encrypted either way<br/>Lost project key: regenerate held-back cases for unfinished tasks<br/>Finished tasks keep their receipts"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class CARRY,LEASE,BROKER focus
+  class MOVE,TEAM,CLASS decision

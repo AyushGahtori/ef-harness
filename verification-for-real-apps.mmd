@@ -1,0 +1,32 @@
+---
+title: Verifying screens, routes, migrations and AI features
+---
+flowchart TB
+  PLAN["The planner publishes how the product is used, not how it is built<br/>Visible to the worker: route, accessible names, landmarks,<br/>empty, loading and error text, and a test id only where no<br/>user-facing name exists<br/>The worker is free on structure, CSS, files and markup<br/>Hidden with the verifier: the seeded data and the expected results<br/>Tests find things the way a person does. Role and name, not a CSS id<br/>An ARIA snapshot checks the region. A refactor that keeps the<br/>visible behavior keeps passing"] --> DRIVE["How the verifier drives it<br/>Screen: Playwright role and label locators, on the attempt<br/>API: HTTP on the attempt's server. Path, method, schemas,<br/>error codes. Schema validation, plus the expected values<br/>Auth: routes, redirects, session properties, failure behavior.<br/>A local mock identity provider covers valid login, bad state,<br/>expired code and wrong role<br/>Job: trigger and observable output, with a fake clock<br/>CLI: command, flags, exit code and output format, in the sandbox<br/>Time rules need an injectable clock. Fake timers at the boundary<br/>instants, in the stated zone. Performance: repeated runs, a<br/>tolerance, a stated dataset size. Concurrency: two clients,<br/>assert the documented outcome"]
+  DRIVE --> MODE{"What has to be decided next?"}
+  MODE -->|A screen or route was checked| LOOK{"What failed?"}
+  MODE -->|The entry point is an internal name| POST
+  MODE -->|A migration| MIG
+  MODE -->|A model-powered feature| AI
+  LOOK -->|The named control or route is absent| MM["Contract mismatch. A plain message<br/>It does not count as a hidden-check failure<br/>The contract was already visible to the worker<br/>Renaming Print to Print list is a product revision, not a worker fault<br/>Two buttons with the same name are flagged at planning"]
+  LOOK -->|It exists, and the result is wrong| BEH["Behavior failure. The hidden-check rules apply<br/>A wrong hidden API, auth, job or CLI result uses this same ladder"]
+  POST["After submit, a separate binder sees the inputs and the code,<br/>never the expected values, and writes a small adapter<br/>The adapter may not import expectations or edit product files<br/>The trusted runner compares its observations with the hidden expectations<br/>The entry point is named in the contract before coding.<br/>Red-before-green runs against generated contract stubs, and only<br/>a behavioral failure counts as red. A compile error is a binding bug<br/>If it cannot find an entry point, that is a binding defect<br/>for the author. The brief was underspecified. Not a worker failure<br/>A user-facing entry needs no binder. The runner uses the contract"]
+  POST --> BEH
+  BEH --> SKIP{"Skip the ladder?"}
+  SKIP -->|Same fingerprint twice in a row| A3
+  SKIP -->|Two workers, same rule, same way| AUTHOR["Author review. The brief or the expectation is suspect"]
+  SKIP -->|A counterexample| DISP["The author decides the dispute"]
+  SKIP -->|No| ATT{"Which informed attempt is this?"}
+  ATT -->|First| A1["Rule id and text, plus the failure type:<br/>wrong value, missing, extra, wrong order, exception, timeout<br/>The hidden input stays hidden"]
+  ATT -->|Second| A2["A fresh example from the same rule, with expected and actual<br/>The original held-back case stays hidden<br/>A disclosed example joins the visible set. Another stays hidden<br/>Each rule keeps at least three hidden examples<br/>The ladder step lives in verification_state and survives attempts"]
+  ATT -->|Third| A3["No more retries at this level<br/>Up one level with the full history, or back to the author<br/>if the brief looks unclear"]
+  MODE -->|A screen or route was checked| LAYERS
+  LAYERS["Visual layers, from blocking to advice<br/>Structure: ARIA snapshot of landmarks and order. Blocks<br/>Geometry: three widths, no overflow or overlap, within 2 px<br/>of the template, minimum tap size. Blocks<br/>Accessibility: axe-core. Serious issues block<br/>Tokens: no raw colors or arbitrary spacing. Blocks<br/>Pixels: toHaveScreenshot, dynamic regions masked.<br/>Blocks only after an approved baseline<br/>Taste: vision review against the style guide. Advisory"]
+  MIG["Migration, on a fixture at the previous schema<br/>Synthetic edges: nulls, Unicode, max lengths, duplicates,<br/>boundary dates, orphan-looking rows. Tier 3<br/>Assert row counts, checksums of stable columns, each mapping rule,<br/>constraints, indexes, and the app's read path<br/>Run again: it is safe to repeat, or it refuses cleanly<br/>A down-migration round-trips. A slow fixture may shrink,<br/>if the smaller set still covers every rule, and that is recorded<br/>Renames, type changes and drops use expand, then contract:<br/>add new, copy, switch reads, remove old later"] --> EXT
+  AI["Split the feature<br/>Shell: exact tests with a stub model, including malformed output.<br/>Prompt, parsing, schema, retries, fallbacks, cost limits<br/>Properties: schema, required facts, length, no forbidden content<br/>Quality: a planner eval set of 10 to 30 cases. A judge different<br/>from the generator, a rubric, several samples, a stated threshold<br/>Shown as a score, never a plain green tick<br/>The developer can tighten or loosen the threshold<br/>If the judge is down: verified except quality, and dependents<br/>proceed only if the developer allows<br/>Ordinary CI replays recorded responses. Deterministic, and free"] --> EXT
+  LAYERS --> EXT["External services use that service's test mode or a local emulator<br/>Record how it differs from live. A separately authorized live<br/>check covers what remains<br/>A flaky browser test reruns in a fresh state<br/>A disagreeing run is unstable and goes to its owner"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class PLAN,POST,A2 focus
+  class MODE,LOOK,SKIP,ATT decision

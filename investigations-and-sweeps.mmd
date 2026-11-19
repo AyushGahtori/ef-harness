@@ -1,0 +1,29 @@
+---
+title: Mystery bugs and repo-wide sweeps
+---
+flowchart TB
+  KIND{"Known write scope?"}
+  KIND -->|No. A symptom, unknown files| INV
+  KIND -->|Many files, one change| SWEEP
+  INV["Investigation. Read widely. Write almost nothing<br/>1 Intake: symptom card. Ask the missing facts once<br/>2 Reproduce: tests/repro only. Fail for the reported reason,<br/>in a clean environment. Repeat to measure flakes<br/>3 Localize: temporary logs on a quarantined branch<br/>4 Prove: a second model checks the note. A minimal change<br/>flips the test, and undoing it flips it back<br/>5 Fix: a normal task, scope = the proven files<br/>6 Keep: the reproduction joins the permanent suite<br/>No reproduction, no fix. Each stage has a cap<br/>Hypotheses are logged. The same experiment is refused<br/>Past the cap: ask for a recording or HAR, or ship logging behind a flag"]
+  INV --> LOC["Choose by evidence<br/>Used to work, and a good commit exists: git bisect run<br/>One engine only: differential run, compare network, cookies, console<br/>Intermittent: many runs, jitter, traces of pass and fail<br/>Server-side: correlation ID, temporary spans<br/>Data-dependent: shrink the input to the smallest failing case"]
+  LOC --> SAFARI["Safari logout, as specified<br/>WebKit: cookie missing after the checkout redirect<br/>Chromium keeps it. SameSite=Strict is dropped on the way back<br/>Lax flips the test. Revert flips it back<br/>Fix scope is the session file. A reviewer checks the auth rules"]
+  SAFARI --> FIXOK{"Does the fix touch the proven mechanism?"}
+  FIXOK -->|Only a new guard, null check or try/catch| FLAG["Flag it. Two tests must pass: the symptom, and the mechanism<br/>Reverting the fix must fail both. reviewer asks: cause, or cover?"]
+  FIXOK -->|Yes| KEEP["Reproduction stays. Full regression runs"]
+  KIND -->|Yes, a normal task| NORMAL["Ordinary leaf task. This document does not apply"]
+  SWEEP["A sweep changes a symbol, dependency or pattern across features,<br/>or more than 15 files. It is the only owner of those paths<br/>Exclusive lease on the compiler and search result<br/>Maintenance window: drain in-flight work there, start no new work there,<br/>leave unaffected work running<br/>Branch harness/s/id from integration, landed like a feature<br/>Afterwards, briefs are rewritten from the symbol map and re-checked"]
+  SWEEP --> ASK{"Rename of code, data, or a public API?"}
+  ASK -->|Code only. Recommended| CODE["Types, files and functions. Tables and routes stay"]
+  ASK -->|Code and database| DATA["Plus expand-then-contract"]
+  ASK -->|Code, database and public API| ALIAS["Old routes stay as aliases for a deprecation period"]
+  CODE --> STEPS
+  DATA --> STEPS
+  ALIAS --> STEPS["1 Read-only research: guide, changelog, known codemods<br/>2 Official codemod, language-service rename, ts-morph, ast-grep<br/>or jscodeshift. A model may write a script that is reviewed, then run<br/>3 Checklist: type errors, tests, lint, and string hits<br/>4 Residual fixes in dependency order. One commit per batch<br/>5 Type check, full suite, journeys, leftover scan<br/>6 Senior review of the non-mechanical diff<br/>Cannot submit while an error, a failing test or an unallowlisted leftover remains<br/>Parallel only when partitions are disjoint and each compiles alone"]
+  STEPS --> RISK["1 Symptom patches are flagged. Two regression tests<br/>2 Bisect only a stable fingerprint. Exit 125 skips a broken commit<br/>Fresh sandbox per step. Confirm by reverting on current code<br/>3 Search every name form, including strings, SQL, config and docs<br/>Persisted names are keep or migrate, never a silent rename<br/>4 All-or-nothing leases. Intent mode. Tasks do not wait while holding<br/>Overlapping sweeps are serialized<br/>5 Packets fit the model. Hunks, not whole-file rewrites<br/>Elision placeholders are refused<br/>6 Behavior-preserving sweeps record characterization tests first<br/>AST flags await, defaults, ?? versus or, equality and timeouts<br/>7 Start from latest integration. Land in stages. Recompute the checklist<br/>after merging. Schema changes take the schema lease<br/>8 Workers never write the knowledge database. One test database per attempt<br/>Retry from a fresh worktree and database. Sweeps resume from the last batch<br/>9 Several projects share one broker, with an interactive lane<br/>10 SQLite is inside the app. The CLI is optional and read-only<br/>A foreign commit is seen via data_version, then integrity check and safe mode"]
+  RISK --> EDGE["Cannot reproduce: stay open, with the hypothesis log<br/>Cause is a dependency: upgrade, patch or workaround, with the upstream link<br/>The report is a missing feature: send it to discovery<br/>No compatible library version: stop, and offer pin, replace or wait<br/>The developer edits during a sweep: merge, then recompute the checklist"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class INV,STEPS,RISK focus
+  class KIND,FIXOK,ASK decision

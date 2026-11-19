@@ -1,0 +1,36 @@
+# Coordinator, budgets and recovery
+
+The proposed first implementation runs one coordinator for one developer and project on one desktop. TypeScript owns state transitions. The coordinator is the sole SQLite writer and serializes short transactions through IPC. WAL mode allows concurrent readers. Project-scoped IDs and authenticated worker sessions prevent an ID or result from one project being applied to another. Several projects share connections and machine capacity through a global resource broker, and a project moves between devices or teammates with one active writer at a time ([projects, portability and sync](projects-portability-and-sync.md)). The coordinator runs inside a per-user background daemon ([desktop app](desktop-app.md)).
+
+| Actor | Allowed responsibility |
+|---|---|
+| Router, resolver, feature planner | Propose a typed route, fact, plan edit, clarification or hold. Include project ID, source evidence, affected object IDs and expected versions. |
+| Worker | Request the current task brief, perform scoped local work, submit an artifact or request a missing input. |
+| Coordinator | Validate schemas, actor, authority, operation ID, lease generation, versions and resource limits. Record the action and receipt together. Run or dispatch verification, schedule work and deliver committed changes. |
+| Human | Supply a decision or complete a step such as connecting a provider. Record the completion against its task ID. The coordinator checks the observable prerequisite before releasing dependent work. |
+
+## Resource and retry policy
+
+Reserve estimated input, bounded output, provider cost and a parallel slot against the task, feature and project budgets before dispatch. Commit the reservation atomically so parallel workers cannot each spend the same remaining funds. Budgets have more than one currency: `usd` for pay-per-token connections, `allowance:<connection>` for a subscription plan (a share of its usage window, estimated from tokens and corrected from whatever the provider reports), and local slots for on-device models. A reservation must fit every ancestor in every currency it touches. Plan connections are paced by a per-connection concurrency controller and a burn-rate target so workers don't all hit the window at once; the controller lives in the global broker, and a project's reservations draw on the grant it deposited ([database design §3](database-design.md#3--global-and-project-databases-never-share-a-transaction)). [Provider connections](provider-connections.md#budgeting-with-allowance-instead-of-dollars) Meter CPU-heavy builds separately. Include required skills and retrieved evidence in the context estimate, with space for the answer. Split a large brief on a real task boundary or send it to a capable larger-context model. Never silently truncate an acceptance rule.
+
+Bound every discovery, repair, integration and rebase loop by a configured attempt limit, wall-time limit and available budget. Use a fingerprint of the input versions, failing case and outcome to identify repeated work. Retry only when the next attempt can change the result. For repeated identical failures, return the evidence to the responsible planner and hold that scope. A planner can amend a broken test, fix a missing requirement, or assign a stronger worker within budget. An unchanged input after exhaustion waits for a meaningful change. A user can inspect or change limits. Concrete dollar amounts and model tiers are deployment settings.
+
+Track throttling per provider/model and respect retry hints with bounded backoff. A 429 consumes elapsed time but is a scheduling issue, not evidence that the worker cannot implement the task. Validate model output against the versioned schema. On a repairable format error, allow one bounded repair using the validation message. Escalate or surface failure if the response stays invalid. Do not execute partial or unrecognized actions.
+
+Record observed usage and release unused reservations after a known outcome. For an ambiguous paid timeout, retain the reservation until a provider receipt, reconciliation or explicit resolution settles it. Where a provider cannot enforce an upper bound or report usage, disclose that uncertainty separately from a hard cap.
+
+## Effects and restart
+
+Workers see scoped files, test endpoints and attempt-specific state. The coordinator grants access based on the active task and the user's existing authorization. Structured requests for a remote push, external send, live migration or paid action include target, payload hash and operation ID. Before execution, record intent and the current lease. Reuse receipts on duplicate requests. Where available, pass an idempotency key downstream. A timeout after sending becomes outcome unknown. Reconcile with the external service before deciding whether a replay is safe. A hold can prevent future effects but cannot undo a delivered one. Keep secrets out of worktree copies, prompts and evidence summaries.
+
+On restart, restore the published revision and queued events, reacquire exclusive coordinator ownership, then reconcile pending effects, worker heartbeats and resource leases. Give reassignment a new fencing generation. A worker with an expired generation may leave a historical local artifact, but cannot publish it, activate a revision or authorize side effects. Adopt or stop only positively identified harness-owned processes. Check process identity, start time, lease and directory ownership before cleaning abandoned ports or files on Windows. If ownership cannot be established, leave the resource intact and report it.
+
+What the developer experiences when a budget runs out, a feature is undone or a project is reopened days later is designed in [stops, undo and re-entry](stops-undo-and-reentry.md). Use an outbox in the same transaction as each accepted state transition. Delivery can repeat. Apply each event once per recipient, event ID and purpose. A user pause and a requirement hold are distinct reasons. Releasing one cannot resume a task held by the other. On recovery, release budget and execution slots only when their attempts are reconciled.
+
+## First runs on existing projects
+
+The full brownfield flow (adapted opening, reading layers, test health and stale docs) is in [brownfield discovery](brownfield-discovery.md); folder states and Git setup are in [workspace and Git](workspace-and-git.md). Read a pinned repo snapshot to find current entry points, stack, interfaces, checks and documented decisions. Label these observations with path, revision and span. Existing behavior is evidence about the baseline, while user statements establish desired behavior. A mismatch can be an intended change. Trace the affected contract before treating it as a contradiction. Index relevant files on demand and preserve the commit identity on later retrieval.
+
+At scope review, check applicability of identity and data ownership, failure/retry behavior, concurrency, dates/time zones, privacy, accessibility, performance, language needs, observability and operating cost. A concrete workflow activates its applicable criteria. Record why a dimension is out of scope and reopen it when the scope changes.
+
+[Central architecture](architecture.md) · [Review decisions and acceptance scenarios](architecture-review-decisions.md)

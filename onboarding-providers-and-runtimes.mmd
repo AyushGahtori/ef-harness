@@ -1,0 +1,62 @@
+---
+title: Onboarding, plan versus API, and supervising a provider agent
+---
+flowchart TB
+  WELCOME["Welcome. More connections can be added later"] --> PAY{"How do you want to pay for AI?"}
+  PAY -->|A plan I already pay for| PLAN
+  PAY -->|API keys| KEY{"Pasted key, or OpenRouter?"}
+  PAY -->|On this computer| LOCAL["Ollama or LM Studio<br/>GET /api/tags. Flag missing tools or a small context<br/>Spends this computer's time. Our own loop<br/>Slots sized to VRAM, not money"]
+
+  PLAN["Pick a plan provider. Every tile says what it spends<br/>A plan is not an API key. ChatGPT, Copilot, Cursor<br/>and Gemini CLI spend that plan's allowance. Claude: API key only<br/>OpenRouter and pasted keys spend per token<br/>Plus is about 11 to 14 times API-equivalent. An estimate, not a quota"]
+  PLAN --> ROUTES["Official route only. No copied tokens, no pretended client, no password<br/>OpenAI: Sign in with ChatGPT, PKCE in the system browser,<br/>stable ext_agent_host_id, scope chatgpt.tokens.use.direct.<br/>Spends Plus or Pro. Our Responses loop, or Codex app-server<br/>Copilot: GitHub device code, or the existing CLI login.<br/>Premium requests. SDK or copilot --acp. getQuota shows remaining percent<br/>Cursor: browser login mints a 90-day key, or a pasted dashboard key.<br/>Plan pool, then on-demand only if the user enabled it. SDK or ACP<br/>Anthropic: no plan route in v1. Its terms forbid storing or intermediating<br/>Claude subscription tokens. Console API key, in our loop or in Claude Code<br/>Google: no third-party plan login, ever. API key, or unmodified gemini --acp.<br/>Off by default. Antigravity is not offered. Never read ~/.gemini"]
+
+  ROUTES --> MADE{"Which connection was just made?"}
+  MADE -->|Any route except ChatGPT plan| TINY
+  MADE -->|Sign in with ChatGPT| SCOPE{"Was chatgpt.tokens.use.direct granted?"}
+  SCOPE -->|No| NOSCOPE["Keep the sign-in. Plan usage stays disabled<br/>Offer retry, or an API key"]
+  SCOPE -->|Yes| TINY
+  NOSCOPE -->|Retry the sign-in| SCOPE
+  NOSCOPE -->|Use an API key| KEY
+  KEY -->|Paste| PASTE["Prefix detects the provider. Model-list call spends no tokens<br/>OS vault. Link to the provider's own spend limit"]
+  KEY -->|Continue with OpenRouter| OR["PKCE on a loopback callback mints a user key<br/>Spends credits per token. Our loop. Suggest a credit limit"]
+  PASTE --> TINY
+  OR --> TINY
+  LOCAL --> TINY
+
+  TINY["One tiny test turn. The guide shows that provider's own steps"] --> ROSTER["Suggested roster: Manager, Senior, Mid, Junior<br/>Each slot names connection, model and effort. Editable"]
+  ROSTER --> GUARD["Dollar budget for pay-per-token work<br/>Plan share per plan. Default: half the weekly allowance<br/>Paid fallback off unless set in advance, with a dollar cap<br/>Alerts at 50, 80 and 95 percent. Then the folder picker"]
+  GUARD --> SETTINGS["Settings: label, account, status, what it spends,<br/>this week's use, roles. Add, test, rename, reconnect,<br/>rotate, edit limits, disable, remove, reorder fallback.<br/>The same provider may appear twice. Roster edits hit new attempts only"]
+  SETTINGS --> DIST["Ships first as an open-source app that runs locally<br/>ChatGPT plan use is self-serve. A paid or hosted edition<br/>needs OpenAI's interest form. Gemini CLI ships in v1,<br/>off by default, with a policy warning. The Claude plan route is withdrawn<br/>Routes live in a versioned provider policy file"]
+
+  DIST --> SHAPE{"Who runs the loop?"}
+  SHAPE -->|API, OpenRouter, ChatGPT token, local| OURS["Model mode. Our worker loop executes every tool call"]
+  SHAPE -->|Copilot, Cursor, Claude Code with an API key, Gemini CLI, optional Codex| THEIRS["Agent mode. Their agent, in a worktree we create<br/>ACP, or the native protocol where it shows more, over stdio<br/>A visible terminal is only for the user's own login"]
+  THEIRS --> EV["Normalized events: session, turn, plan, tool, permission,<br/>file, question, subagent, usage, rate limit, error<br/>message.delta is display only and never decides"]
+  EV --> POL["The kernel matches events to the brief. No watching model<br/>Allow only the brief's path globs and the command list<br/>Deny push, branch switches, reset --hard, network installers,<br/>deletes outside the worktree, vault paths and credential files<br/>Stop at the reservation, the time cap, a repeated identical call,<br/>or the same failing command three times<br/>Silence for the stall window: interrupt, checkpoint, possibly stuck<br/>Defense in depth: their sandbox, our answers, the Job Object, then the diff"]
+  POL --> MCP["ACP or the native protocol is how we control them<br/>A per-attempt MCP server is how they talk to us:<br/>get_brief, read_result, ask_owner, dispute_test,<br/>report_progress, request_dependency, submit_candidate"]
+  OURS --> DIFF
+  MCP --> DIFF["Git diff is the truth. Files outside scope reject the candidate"]
+  DIFF --> VER["Clean verifier runs the locked checks, including a held-back case<br/>The agent's own 'tests passed' does not count"]
+  VER -.-> JUDGE["When our side needs a judgment: one structured turn,<br/>tools off, a JSON schema, validated like any other output"]
+
+  THEIRS --> EX["One Copilot task, as specified<br/>1 Worktree, brief, copilot --acp, harness MCP<br/>2 Send the brief. plan.updated is display only<br/>3 In-scope write: allow. curl piped to sh: deny and record<br/>4 ask_owner: the task author answers from the record<br/>5 submit_candidate: snapshot the diff<br/>6 Verifier pass accepts and unlocks dependents"]
+
+  VER --> RES["One reservation rule for two currencies<br/>Project, feature, task, attempt<br/>usd, allowance for that connection, optional local slots<br/>Must fit every ancestor, in one SQLite transaction"]
+  RES --> EST["Estimate tokens, then allowance points<br/>If used-percent is reported: k is delta percent over tokens,<br/>reserve tokens times k times 1.3<br/>ChatGPT plan rejects max_output_tokens: reserve a per-role<br/>worst case, then settle from reported usage<br/>If nothing is reported: a labeled weekly token budget.<br/>The real stop is the provider's limit error"]
+  EST --> AIMD["One controller per plan connection, in the global broker,<br/>because projects share plans. Grant, deposit, reserve, dispatch. AIMD from TCP:<br/>start at 2, add one after clean turns, halve on throttle,<br/>wait for the retry hint. User cap and plan-tier cap apply<br/>Burn rate: remaining share divided by time until reset<br/>If the share would run out early, slow that connection,<br/>move junior tasks, and show the new ETA"]
+  AIMD --> STOP{"What stopped the call?"}
+  STOP -->|Transient 429| BACK["Backoff. Not a worker failure"]
+  STOP -->|Usage limit| WAIT["Checkpoint. Waiting for allowance<br/>Resume at reset only if the user enabled it"]
+  STOP -->|Plan empty| FALL{"Paid fallback was turned on in advance?"}
+  FALL -->|Yes, inside its dollar cap| PAID["Continue on that paid connection"]
+  FALL -->|No| HOLD["Stay paused. No silent switch to paid"]
+
+  WAIT --> SHOW["Show a remainder only when that route reported it<br/>API keys: tokens, and dollars from the price table<br/>ChatGPT plan tokens: no remaining-allowance endpoint<br/>Codex rate limits: local open-source clients only<br/>Claude: full percent only near a threshold<br/>Copilot getQuota: remaining percent and reset<br/>Gemini: quota errors only. Cursor remainder: the dashboard<br/>Otherwise say estimated, and name the basis"]
+  SHOW --> VAULT["OS vault. SQLite stores a reference. Tokens stay in memory<br/>Redactor masks vault values in prompts, logs and exports<br/>A foreign agent gets credentials only from its own login,<br/>or from a per-process environment variable"]
+  VAULT --> CONF["On startup and after a CLI version change: conformance suite<br/>Denied write, allowed edit, allowed command, interrupt, resume, usage<br/>A failed step becomes observe-only or disabled<br/>Unknown events are logged and ignored. Minimum versions are pinned"]
+  CONF --> EDGE["Refresh fails, or the user disconnects the app: hold that<br/>connection, show Reconnect, keep the others running<br/>Pro downgraded to Plus: the five-hour window applies<br/>Same plan also in chat: leave headroom, trust the limit error<br/>Two machines: warn that the estimate may be low<br/>Model gone: fall back and note it. Outage: re-route only<br/>within the allowed tier and spend type. 401: rotate the key<br/>A policy change disables the route and parks its tasks"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class TINY,POL,DIFF,VER,RES focus
+  class PAY,KEY,MADE,SCOPE,SHAPE,STOP,FALL decision

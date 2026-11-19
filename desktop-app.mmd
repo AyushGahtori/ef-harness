@@ -1,0 +1,32 @@
+---
+title: Desktop shell, daemon, installer and updates
+---
+flowchart TB
+  WHY["Windows first. The window is a viewer. harnessd owns the build<br/>A utility process would die with the Electron shell, so the daemon<br/>is detached and runs the Electron binary as plain Node<br/>A named pipe for the current user, plus a session token:<br/>no localhost port, so a web page cannot reach it<br/>Not a Windows Service: Git config, the vault and plan logins<br/>belong to the user. One daemon per Windows user"] --> PROC["Window: chat, canvas, cockpit, office. A crash reopens and reconnects<br/>Electron main: tray, notifications, updates. The daemon keeps running<br/>harnessd: coordinator per project, state.db, global broker,<br/>adapters, MCP, sandbox launcher, MinGit, verifier, doc fetcher<br/>Workers and verifiers: one attempt each. A crash returns to the checkpoint"]
+  PROC --> CLOSE{"Close the window?"}
+  CLOSE -->|Idle| QUIT["The app quits. The daemon stops after a short grace period"]
+  CLOSE -->|Building| TRAY["Hide to the tray. First time: still building, N workers<br/>Tray: Open, Pause all, status, Quit"]
+  TRAY --> QUITASK{"Quit while building?"}
+  QUITASK -->|Pause and quit| PARK["Checkpoint everything, about 10 seconds, then quit"]
+  QUITASK -->|Keep building| TRAY
+  QUITASK -->|Cancel| TRAY
+  PROC --> POWER["Sleep: pause dispatch, reconcile on wake. In-flight calls are unknown<br/>Shutdown or sign-out: checkpoint inside the shutdown window<br/>Anything missed resumes from the previous turn boundary<br/>Prevent sleep while building is off by default<br/>Start at sign-in is optional, for resumes after a plan window resets<br/>A second launch focuses the existing window"]
+  POWER --> INST["Installer, about 200 MB: Electron, daemon, UI, MinGit,<br/>gitleaks, tree-sitter grammars, office art<br/>On demand, size shown, SHA-256 from a signed manifest:<br/>Whisper at first mic use. Playwright browsers at first browser tests<br/>Node, pnpm or Python if the project needs them and they are missing<br/>Ollama, LM Studio, Docker and WSL2 are never bundled<br/>A bad checksum is refused. Downloads resume. Any component can be removed"]
+  INST --> UPD{"What is updating?"}
+  UPD -->|The app| APP["Signed differential download in the background<br/>Restart to update only after every task is parked<br/>A live build says: applies after this build, or when you choose"]
+  UPD -->|The database| DB["user_version on each SQLite file<br/>1 Park work, exclusive lock, VACUUM INTO a backup<br/>2 Forward-only migrations. Additive directly; constraint changes<br/>use SQLite's 12-step rebuild, then search indexes rebuild<br/>3 quick_check and invariants. On failure, restore the backup<br/>global.db first. Each project migrates on open; a failure marks<br/>only that project needs repair. Hourly and daily backups too<br/>Corruption: salvage, or restore, then replay harness-state and Git<br/>An older app cannot open a newer database. It offers the backup"]
+  UPD -->|Parked work| OLD["Resume with the prompt and skill versions the task started with<br/>New versions apply to the next attempt<br/>Old checkpoint formats are upcast on read, never rewritten in place"]
+  UPD -->|Provider policy| POL["Signed JSON, checked daily. New dispatches use the new file<br/>Only a revoked route parks running work, at the next boundary"]
+  UPD -->|A foreign CLI| CLI["Its own installer. A new version runs the conformance suite<br/>before that runtime gets new tasks"]
+  APP --> STACK
+  DB --> STACK
+  OLD --> STACK
+  POL --> STACK
+  CLI --> STACK["Electron, React, TypeScript, React Flow, ELK, PixiJS<br/>Daemon on the bundled Node. SQLite via node:sqlite, FTS5,<br/>better-sqlite3 only as fallback. Git is MinGit, not a library<br/>ACP, MCP and vendor SDKs. Playwright. NSIS via electron-builder, signed<br/>Electron and Node versions move together, checked in CI"]
+  STACK --> DIAG["Logs, traces and crash dumps stay on this PC. Nothing is sent<br/>JSON logs for 14 days, secrets redacted before they are written<br/>A span per transaction, attempt, model call, tool, Git op and verification<br/>Health page: queues, rate limits, latency, verifier time, sandbox denials<br/>Help, Export diagnostics: a redacted bundle, previewed before it is saved"]
+  DIAG --> EDGE["Two Windows users: separate daemon, pipe, data and sandbox identities<br/>Daemon still on the old version: park, exit, start the new one<br/>Disk: warn at 15 GB, no new dispatch at 5 GB, Pause all at 2 GB<br/>Antivirus quarantine: name the file, re-download and verify<br/>Moving the data folder: park, move, repair worktree paths"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class WHY,DB,DIAG focus
+  class CLOSE,QUITASK,UPD decision

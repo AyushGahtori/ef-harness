@@ -1,0 +1,47 @@
+---
+title: Build cockpit and the office view of the same events
+---
+flowchart TB
+  EV["One normalized event stream, plus the kernel's own events"] --> VIEW{"Which view?"}
+  VIEW -->|Board| BOARD
+  VIEW -->|Office| OFFICE
+  EV --> BAR["Top bar on both: phase and wave, tasks done, spend per currency<br/>Pause all checkpoints at the next boundary<br/>Stop is a direct kernel path. The office keeps this ribbon too,<br/>so nothing important exists only as an animation"]
+
+  BOARD["Status lines are written by code, not by a model<br/>Raw logs are one click deep, behind a readable timeline<br/>Lanes: Queued, Working, Waiting on you, Held, Verifying,<br/>Integrating, Done. Done names the level and the cost<br/>Explain, only when clicked, summarizes the last 50 events"] --> HEALTH["Health, from events, with no model<br/>No events for 5 minutes: possibly stuck. Nudge, interrupt, or open<br/>Same tool or same failing command 3 times: looping<br/>Rate limit: throttled, with the retry hint. Not a failure<br/>Plan window closed: waiting for allowance, with the reset time<br/>Moved up a level, or back to the author: escalated<br/>Many workers: group cards by feature. Raw-by-default is a setting"]
+
+  HEALTH --> Q["Anything that needs the developer enters one inbox"]
+  Q --> OWN["Owner first. The task author answers from the record when they can<br/>Test disputes go to the author too. Most never reach the developer"]
+  OWN --> DEDUP["De-duplicate by criterion and scope. One item, many subscribers<br/>Group by feature. A waiting worker takes another ready task if one exists"]
+  DEDUP --> CLASS{"What kind of item?"}
+  CLASS -->|Leak, destructive or paid approval,<br/>budget exhausted, or all work blocked| NOW["Interrupt now. Banner, and a sound if enabled"]
+  CLASS -->|A product question, a human step,<br/>or a dispute that needs a product decision| BATCH["Batch. Deliver when 10 minutes close, or idle is threatened,<br/>or a blocked task is on the critical path<br/>Order: critical path, then how many tasks, then age<br/>At most one batch alert per 10 minutes<br/>Focus mode delivers only Interrupt now"]
+  CLASS -->|Finished, an assumption, a minor warning| DIGEST["FYI digest. No alert<br/>Away for an hour: unblocked work continues,<br/>the batch waits, nothing is auto-answered"]
+  NOW --> CARDS
+  BATCH --> CARDS
+  DIGEST --> CARDS["Done means checked, not assumed<br/>Decision: the answer validates<br/>Secret: probe succeeds, or a format check plus first successful use<br/>Tool: the re-probe succeeds<br/>Account: a probe, or an attestation labeled not verified<br/>Approval: approve or deny a risky action<br/>Review: plan, design baseline, or I fixed it myself"]
+
+  CARDS --> SEC["A secret is a name, a reason, the tasks, where to get it, a masked field<br/>OS vault. SQLite stores a reference and the name<br/>Injected as env into the verifier, tests and dev server that need it<br/>The brief says the name is available, never the value<br/>Redactor masks exact values and common encodings<br/>A secret in a diff or a snapshot rejects the candidate<br/>and raises Interrupt now. A secret pasted in chat is held,<br/>offered to the vault, and deleted from history<br/>A live-key prefix is refused in tests unless that task allows it<br/>Known services get a harmless read. Unknown ones: format now,<br/>verified on first success. Writing .env is off, and only if gitignored<br/>A later rejection asks for an update"]
+  SEC --> HUMAN["A human step blocks only the tasks that need it<br/>Playwright: version and a launch. Install in a visible terminal, after consent<br/>Docker: docker info, then a link, then re-probe<br/>A database: connection test. A cloud API: probe if a key or CLI exists,<br/>otherwise a checklist and an attestation"]
+
+  HUMAN --> OFFICE
+  OFFICE["Same events, drawn as a place. The toggle keeps chat, inbox and top bar<br/>It never lies: no animation without an event. Calm office, calm build<br/>CEO is the developer. Manager, Senior, Mid and Junior by clothes and props<br/>A foreign sub-agent is a small helper at the parent's desk<br/>Lab tech is the verifier. Guard is kernel policy<br/>Same character for an agent's life. Hover shows model and connection<br/>Desk color is the connection. No vendor logos"] --> ROOMS["CEO office: inbox. Open floor: attempts, in feature pods<br/>Manager offices: the task list. Records room: graph and briefs<br/>Meeting room: AskOwner, DisputeTest, planner questions<br/>Test lab: verifier. Shipping dock: merge queue<br/>Break room: rate limit, allowance, or a dependency, with the clock<br/>Front desk: a human step. Vault: secrets, and only the guard enters<br/>Server room: a local model, fans on while it generates"]
+  ROOMS --> DIR["Animation director between the stream and the characters<br/>One queue each. Bursts collapse into one loop. A new state beats a walk<br/>Over about two seconds behind: fade and reappear<br/>Dwell about a second, so states do not flicker<br/>Status icons update immediately"]
+  DIR --> MAP["session.started: elevator to a free desk in the feature pod<br/>Brief or contract read: records room and back<br/>plan.updated: notebook and sticky notes<br/>Read or search: scrolling text. Edit: typing a diff<br/>Tests: a progress bar. Permission denied: the guard<br/>AskOwner: meeting room. Answered from the record: a short meeting<br/>Escalated: the manager carries paper to the CEO<br/>Sub-agent: a helper. submit: carry a box to the lab<br/>Pass: green lamp, then the dock, and a checkmark<br/>Fail: red lamp, box back. Repeated fails: the manager's office<br/>Level up: a Senior takes the desk. Rate limit: break room<br/>Window closed: several in the break room, desks dim<br/>Hold: watch the whiteboard update. User pause: pens down<br/>Budget exhausted: evening light, folders, idle<br/>Merged: the truck leaves. Looping or stuck: an amber question mark<br/>Session ended: tidy and leave, or take the next desk"]
+  MAP --> PAPER["Paper reaches the CEO only after owner checks and batching<br/>Red is interrupt, yellow is blocking, white is FYI<br/>The pile height is the inbox count. A batch is a stapled stack<br/>Click the tray to open the inbox. Answering stamps the sheet<br/>The manager walks it back. A secret or a tool is a parcel<br/>at the front desk, not a decision sheet"]
+  PAPER --> CLICK["Hover: name, level, model, task, time, tokens<br/>Click: the same worker panel as the Board<br/>Double-click zooms into the monitor. Esc zooms out<br/>Right-click: pause, stop, message the manager, change level, fix it myself<br/>Whiteboard: that feature's plan. Records: Architecture<br/>Lab: verification. Dock: the merge queue. Tray and front desk: the inbox"]
+  CLICK --> ART["PixiJS. A Tiled map. Layered Aseprite sprites. A-star between rooms<br/>One state machine per character, so it can be tested without drawing<br/>Decided: cozy 16 px pixel art. Isometric later, as a skin<br/>Commissioned or licensed art. No vendor logos<br/>60 fps, under 5 percent CPU when idle, paused when hidden<br/>About 30 characters animate. Beyond that, a hot-desk count<br/>Reduced motion: stay seated, icons and labels only<br/>Every state has text and an icon shape, not color alone<br/>Tab cycles characters. A screen-reader list mirrors the room<br/>Sound off by default"]
+  ART --> STAGE{"Delivery stage"}
+  STAGE -->|v1 Seated| V1["Desks, rank, poses, the CEO tray, click-through panels<br/>Exit: find the waiting task faster than on the Board"]
+  STAGE -->|v2 Moving| V2["Walking, meetings, lab, dock, break room<br/>Exit: lag under 2 seconds with 10 workers"]
+  STAGE -->|v3 Yours| V3["Avatar, character editor, layout editor, naming"]
+  STAGE -->|v4 Extras| V4["Day and night, an end-of-day recap, celebrations, optional sound"]
+  V1 --> OPEN["Decided: name tags are the agent ID plus a short task title<br/>Decided: the Office is the default build view. The Board is one click away<br/>Reduced motion or memory pressure shows the Board instead<br/>Cards separate thinking, waiting for a run slot, and running"]
+  V2 --> OPEN
+  V3 --> OPEN
+  V4 --> OPEN
+  OPEN --> EDGE["Instant task change: skip the walk, update the desk sign<br/>Stream disconnect: freeze, show reconnecting, keep the last time<br/>A tall inbox is a stack with a number. Helpers past three are a count<br/>A small window zooms to the busiest pod, with a mini-map<br/>In the background, rendering stops. On return, jump to current state"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class EV,BOARD,OFFICE,SEC,DIR focus
+  class VIEW,CLASS,STAGE decision

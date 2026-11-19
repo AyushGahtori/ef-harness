@@ -1,0 +1,50 @@
+---
+title: The developer's own edits beside the harness
+---
+flowchart TB
+  RULE["The checkout is the developer's. No edit, stash, reset or commit<br/>there without an explicit click. Harness work stays in its worktrees<br/>and harness branches. harness/integration is never their checkout,<br/>so dirty files on main do not block the merge queue<br/>Nothing they wrote is discarded. A revert is a forward commit<br/>A human-owned worktree is never deleted without asking"] --> WATCH["A watcher on the checkout, ignoring dependency and build folders,<br/>plus git status and ref checks<br/>Files no active task touches: say nothing<br/>package.json or the lockfile: offer to include it<br/>A new base commit: a digest item, then a base sync<br/>A branch switch: the status bar updates. The landing target stays<br/>A rebase or merge in progress: landing waits<br/>Edits inside a running worktree: same three choices as an overlap"]
+  WATCH --> CLASS{"What did they touch?"}
+  CLASS -->|A file inside an active write scope| OVER{"Overlap"}
+  CLASS -->|An uncommitted dependency change| DEP{"Include it so workers can use it?"}
+  CLASS -->|Something else from the watch list| SYNC
+  OVER -->|Take over| TAKE["The worker stops at its next boundary<br/>WIP is a checkpoint. The task becomes human-owned"]
+  OVER -->|Keep both| BOTH["The worker continues. On landing, merge with their committed<br/>version and resolve or report the conflicts"]
+  OVER -->|Ignore| IGN["No change. Do not repeat this notice for this file, this session"]
+  DEP -->|Commit and include| INC["Commit with the developer as author. It becomes base<br/>The integrator reconciles it with open dependency intents"]
+  DEP -->|Not now| NOINC["Workers do not see the new package"]
+  BOTH --> SYNC
+  IGN --> SYNC
+  INC --> SYNC
+  NOINC --> SYNC
+  TAKE --> OWN
+
+  SYNC["A new base commit is merged into harness/integration<br/>Recheck the changed files. Refresh in-flight tasks whose inputs changed<br/>A conflict with a running task goes to its owner as a normal revision<br/>Their commits are the new truth, and are never rewritten<br/>A force-push rebuilds integration from the new base.<br/>Tasks whose base vanished resume from checkpoints<br/>Deleting a file a finished feature added is reported, and asked about<br/>Fixing an already accepted task is a normal commit, then a recheck"] --> LAND{"Bring integration onto their branch?<br/>Predict with merge-tree first. Auto-land is off"}
+  LAND -->|Not checked out, or clean| FF["Fast-forward or a merge commit, as settings chose"]
+  LAND -->|Dirty files this landing does not touch| SAFE["Git can update and leave those files<br/>Proceed only if auto-land is on. Otherwise ask once"]
+  LAND -->|Dirty files this landing does touch| CARD["Never touch the tree"]
+  LAND -->|Rebase, merge or conflicts| WAIT["Wait, and recheck when it finishes"]
+  CARD --> C2{"Explicit click"}
+  C2 -->|Commit my edits first| CMT["Show the diff. Commit with them as author. Then land"]
+  C2 -->|Land later| LATER["Leave it"]
+  C2 -->|Stash, land, restore| STASH["Say that restore may conflict. Run only on this click<br/>Never stash silently"]
+  C2 -->|Show me how| SELF["They land it themselves"]
+
+  WATCH -.->|Or they take Fix it myself, or say so in chat| FIX
+  FIX{"I fixed it myself. How did it start?"}
+  FIX -->|Card on a failed or held task| OWN
+  FIX -->|Chat: I fixed this task| OWN
+  FIX -->|A commit touches that write scope| SUG["Suggest: verify it as that task?"]
+  SUG --> OWN["Human-owned. The worker stops. WIP stays on a checkpoint ref<br/>Work in that task's worktree, or in their own checkout<br/>Editing is normal. The harness stays out of the way<br/>I'm done, or a chat message, collects the work<br/>Worktree: the harness commits, developer as author<br/>Own checkout: they pick the commits, prefilled from the scope"]
+  OWN --> VER["The same clean verifier. The same locked checks<br/>The same held-back cases"]
+  VER --> PASS{"Result"}
+  PASS -->|Pass| ACC["Accepted. Author is the developer. Dependents unlock<br/>The node records acceptedBy human, the commit and the receipt<br/>The office shows the CEO's stamp"]
+  PASS -->|Fail| FAIL{"Next"}
+  FAIL -->|Keep fixing| OWN
+  FAIL -->|This test is wrong| PROD["A product decision. Change the expectation, with an impact preview<br/>Not a quiet edit of the test"]
+  FAIL -->|Accept anyway| OVR["Record the override and the reason<br/>Dependents see a warning. It is in the final summary"]
+  ACC --> AFTER["If an export or a schema changed: compatible is done.<br/>Incompatible consumers are re-briefed, and the preview shows the impact<br/>Files outside the task's scope are listed: record them on their own,<br/>attach them to this task, or leave them unrecorded<br/>After days away, re-entry reconciliation runs before anything starts"]
+
+  classDef focus fill:#e1f1e9,stroke:#236450,color:#15392d
+  classDef decision fill:#fff1ce,stroke:#947333,color:#40300b
+  class RULE,SYNC,VER,ACC focus
+  class CLASS,OVER,DEP,LAND,C2,FIX,PASS,FAIL decision
