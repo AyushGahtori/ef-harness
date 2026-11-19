@@ -1,0 +1,446 @@
+{
+  "generatedAt": "2026-11-19T12:26:11.572Z",
+  "host": {
+    "osBuild": "26200.9974",
+    "buildNumber": 26200,
+    "revision": 9974,
+    "adminGroup": false,
+    "elevated": false
+  },
+  "mxc": {
+    "buildEligible": true,
+    "osBuild": "26200.9974",
+    "buildNumber": 26200,
+    "revision": 9974,
+    "filePresent": true,
+    "loaded": true,
+    "exportPresent": true,
+    "launcherLinked": false,
+    "detail": "Experimental_CreateProcessInSandbox is exported. The spike does not call it without a compiled SBOX FlatBuffer.",
+    "documentedChildTermination": "Remaining child processes stop when the foreground command exits.",
+    "documentedDenyReadTiming": "Deny-read globs use the files that match when each sandboxed process starts. A file created later is not in that snapshot.",
+    "empiricalChildTermination": null,
+    "empiricalDenyReadTiming": null,
+    "reason": "mxc_requires_pinned_helper"
+  },
+  "tiers": {
+    "A": {
+      "tier": "A",
+      "name": "MXC",
+      "mechanism": "Microsoft Execution Containers (Windows 11 24H2/25H2 builds that include it), the same mechanism Codex prefers",
+      "needsAdmin": "No",
+      "requiresAdmin": false,
+      "fileWrites": "Enforced",
+      "secretReads": "Enforced",
+      "network": "Enforced; loopback allowed",
+      "fileWritesEnforced": true,
+      "secretReadsDenied": true,
+      "networkEnforced": true,
+      "advisory": false,
+      "badge": null,
+      "available": false,
+      "reason": "mxc_requires_pinned_helper"
+    },
+    "B": {
+      "tier": "B",
+      "name": "Sandbox users",
+      "mechanism": "One-time setup creates two low-privilege local users (offline, online), ACLs on the worktree root, firewall rules blocking the offline user except a loopback proxy port, restricted tokens",
+      "needsAdmin": "Yes, once",
+      "requiresAdmin": true,
+      "users": [
+        "EFHarnessSandboxOffline",
+        "EFHarnessSandboxOnline"
+      ],
+      "fileWrites": "Enforced",
+      "secretReads": "Enforced",
+      "network": "Enforced",
+      "fileWritesEnforced": true,
+      "secretReadsDenied": true,
+      "networkEnforced": true,
+      "advisory": false,
+      "badge": null,
+      "setupWhenMissing": "requires one-time admin consent",
+      "available": false,
+      "reason": "requires one-time admin consent",
+      "setup": "requires one-time admin consent"
+    },
+    "C": {
+      "tier": "C",
+      "name": "Restricted token",
+      "mechanism": "Write-restricted token with a synthetic SID; ACLs grant that SID write only to the worktree",
+      "needsAdmin": "No",
+      "requiresAdmin": false,
+      "fileWrites": "Enforced",
+      "secretReads": "Not enforced for paths the user can read",
+      "network": "Advisory only (proxy environment variables)",
+      "fileWritesEnforced": true,
+      "secretReadsDenied": false,
+      "networkEnforced": false,
+      "advisory": true,
+      "badge": "weaker sandbox",
+      "eligibility": "advisory/restricted",
+      "available": true,
+      "reason": "write_restricted_token"
+    },
+    "D": {
+      "tier": "D",
+      "name": "Container / WSL2",
+      "mechanism": "Dev container or WSL2 distro per project",
+      "needsAdmin": "Docker/WSL2 installed",
+      "requiresAdmin": false,
+      "optional": true,
+      "fileWrites": "Enforced",
+      "secretReads": "Enforced",
+      "network": "Enforced; also gives Linux parity with CI",
+      "fileWritesEnforced": true,
+      "secretReadsDenied": true,
+      "networkEnforced": true,
+      "advisory": false,
+      "badge": null,
+      "available": false,
+      "reason": "wsl_installed_no_distro"
+    }
+  },
+  "tierB": {
+    "offline": false,
+    "online": false,
+    "setup": "requires one-time admin consent",
+    "firewallChanged": false,
+    "allowElevatedTierB": false
+  },
+  "tierC": {
+    "ran": true,
+    "reason": "write_restricted_token",
+    "launchApi": "CreateProcessAsUserW",
+    "exitCode": 0,
+    "inside": "wrote",
+    "temp": "wrote",
+    "outside": "EPERM",
+    "git": "EPERM",
+    "canary": "read",
+    "tcp": "CONNECTED",
+    "home": "C:\\Users\\Ayush\\AppData\\Local\\Temp\\ef-harness-task-003-5AGzLv\\work\\home",
+    "ghToken": false,
+    "httpProxy": "http://127.0.0.1:9",
+    "hardlink": "EPERM",
+    "hostWriteAfter": true,
+    "sleeperDead": true,
+    "tools": {
+      "self": {
+        "name": "node",
+        "version": "v24.16.0",
+        "role": "sandboxed-primary"
+      },
+      "node": {
+        "status": 0,
+        "code": null,
+        "stdout": "v24.16.0",
+        "stderr": ""
+      },
+      "git": {
+        "status": 0,
+        "code": null,
+        "stdout": "git version 2.54.0.windows.1",
+        "stderr": ""
+      },
+      "pnpm": {
+        "status": 0,
+        "code": null,
+        "stdout": "10.34.9",
+        "stderr": ""
+      }
+    }
+  },
+  "docker": {
+    "installed": false,
+    "running": false,
+    "reason": "docker_not_installed"
+  },
+  "wsl": {
+    "installed": true,
+    "reason": null,
+    "distros": []
+  },
+  "acl": {
+    "sid": "S-1-5-21-2800256652-2712541979-899696229-1984491460",
+    "fileCount": 10000,
+    "emptySlotMs": 13.68,
+    "recursiveMs": 13719.37,
+    "deltaMs": 13705.69,
+    "inheritedAceVisible": true,
+    "emptySlotMethod": "SetAccessControl inheritable ACE for a synthetic SID",
+    "recursiveMethod": "icacls /T",
+    "emptySlotTouchedExistingFiles": false,
+    "recursiveWalk": true,
+    "icaclsSyntheticSid": "icacls returns 1332 for an unmapped S-1-5-21 capability SID; the empty-slot grant uses the same SecurityIdentifier API as the token"
+  },
+  "hardlink": {
+    "user": "desktop-fmv2lg3\\ayush",
+    "sameFile": true,
+    "ino": 1407374888401936,
+    "nlink": 2,
+    "writeCode": "EPERM",
+    "blocked": true
+  },
+  "job": {
+    "close": {
+      "mode": "close",
+      "pids": [
+        16584,
+        15208,
+        1144
+      ],
+      "grandchild": 1144,
+      "elapsedMs": 0,
+      "withinBudget": true,
+      "orphans": [],
+      "killOnJobClose": true
+    },
+    "crash": {
+      "mode": "crash",
+      "pids": [
+        14304,
+        12572,
+        12764
+      ],
+      "grandchild": 12764,
+      "elapsedMs": 29,
+      "withinBudget": true,
+      "orphans": [],
+      "killOnJobClose": true
+    }
+  },
+  "denyReadSnapshot": {
+    "matchedEarly": true,
+    "laterFileWasOutsideSnapshot": true
+  },
+  "redteam": [
+    {
+      "tier": "A",
+      "testId": "read-secret",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: mxc_requires_pinned_helper"
+    },
+    {
+      "tier": "A",
+      "testId": "write-outside",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: mxc_requires_pinned_helper"
+    },
+    {
+      "tier": "A",
+      "testId": "mutate-git-head",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: mxc_requires_pinned_helper"
+    },
+    {
+      "tier": "A",
+      "testId": "raw-tcp",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: mxc_requires_pinned_helper"
+    },
+    {
+      "tier": "A",
+      "testId": "background-sleeper",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: mxc_requires_pinned_helper"
+    },
+    {
+      "tier": "B",
+      "testId": "read-secret",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: requires one-time admin consent"
+    },
+    {
+      "tier": "B",
+      "testId": "write-outside",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: requires one-time admin consent"
+    },
+    {
+      "tier": "B",
+      "testId": "mutate-git-head",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: requires one-time admin consent"
+    },
+    {
+      "tier": "B",
+      "testId": "raw-tcp",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: requires one-time admin consent"
+    },
+    {
+      "tier": "B",
+      "testId": "background-sleeper",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: requires one-time admin consent"
+    },
+    {
+      "tier": "C",
+      "testId": "read-secret",
+      "expectedBlocked": false,
+      "actuallyBlocked": false,
+      "exitCode": 0,
+      "detail": "read synthetic canary outside the worktree; Tier C does not deny reads the user can already perform"
+    },
+    {
+      "tier": "C",
+      "testId": "write-outside",
+      "expectedBlocked": true,
+      "actuallyBlocked": true,
+      "exitCode": 0,
+      "detail": "write outside worktree code=EPERM"
+    },
+    {
+      "tier": "C",
+      "testId": "mutate-git-head",
+      "expectedBlocked": true,
+      "actuallyBlocked": true,
+      "exitCode": 0,
+      "detail": "mutate .git/HEAD code=EPERM"
+    },
+    {
+      "tier": "C",
+      "testId": "raw-tcp",
+      "expectedBlocked": false,
+      "actuallyBlocked": false,
+      "exitCode": 0,
+      "detail": "direct net.connect 1.1.1.1:443 ignored HTTP_PROXY; code=CONNECTED"
+    },
+    {
+      "tier": "C",
+      "testId": "background-sleeper",
+      "expectedBlocked": true,
+      "actuallyBlocked": true,
+      "exitCode": 0,
+      "detail": "sleeper pid 17208 died after JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE"
+    },
+    {
+      "tier": "D",
+      "testId": "read-secret",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: wsl_installed_no_distro"
+    },
+    {
+      "tier": "D",
+      "testId": "write-outside",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: wsl_installed_no_distro"
+    },
+    {
+      "tier": "D",
+      "testId": "mutate-git-head",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: wsl_installed_no_distro"
+    },
+    {
+      "tier": "D",
+      "testId": "raw-tcp",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: wsl_installed_no_distro"
+    },
+    {
+      "tier": "D",
+      "testId": "background-sleeper",
+      "expectedBlocked": true,
+      "actuallyBlocked": false,
+      "exitCode": null,
+      "detail": "not_run: wsl_installed_no_distro"
+    }
+  ],
+  "filesystem": {
+    "workspace": {
+      "path": "C:\\Users\\Ayush\\Desktop\\ef-wt\\task-003-spike-windows-sandbox",
+      "kind": "ntfs",
+      "aclCapable": true,
+      "recommendedTiers": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "reason": null,
+      "prompt": null
+    },
+    "unc": {
+      "kind": "unc",
+      "aclCapable": false,
+      "recommendedTiers": [
+        "A",
+        "D"
+      ],
+      "reason": "UNC and network paths cannot host the Windows ACLs Tier B and Tier C require.",
+      "prompt": "Move the project to a local NTFS or Dev Drive, or use Tier A or Tier D only."
+    },
+    "fat32": {
+      "kind": "fat32",
+      "aclCapable": false,
+      "recommendedTiers": [
+        "A",
+        "D"
+      ],
+      "reason": "FAT32 cannot store Windows ACLs.",
+      "prompt": "Move the project to a local NTFS or Dev Drive, or use Tier A or Tier D only."
+    }
+  },
+  "desktop": {
+    "createDesktop": true,
+    "sendInputIsolated": false,
+    "win32": 0,
+    "detail": "CreateDesktop does not move this process off the interactive desktop. Job UI limits and a same-user token do not stop SendInput into the developer's windows. A separate window station with a DACL that excludes the sandbox identity is required, and creating that window station is often denied without extra privileges."
+  },
+  "appContainer": {
+    "selected": false
+  },
+  "refusals": [
+    {
+      "tier": "A",
+      "threw": true,
+      "name": "SandboxUnavailableError",
+      "reason": "mxc_requires_pinned_helper"
+    },
+    {
+      "tier": "B",
+      "threw": true,
+      "name": "SandboxUnavailableError",
+      "reason": "requires one-time admin consent"
+    },
+    {
+      "tier": "D",
+      "threw": true,
+      "name": "SandboxUnavailableError",
+      "reason": "wsl_installed_no_distro"
+    }
+  ],
+  "cleanup": {
+    "leftovers": []
+  }
+}
