@@ -2,12 +2,19 @@ import { spawnSync } from "node:child_process";
 import { checkoutRoot, decidePermission } from "./harmony-lib.mjs";
 
 const root = checkoutRoot();
-const result = spawnSync("opencode", ["debug", "config", "--pure"], {
-  cwd: root,
-  encoding: "utf8",
-  windowsHide: true,
-  shell: process.platform === "win32",
-});
+const result =
+  process.platform === "win32"
+    ? spawnSync("opencode debug config --pure", {
+        cwd: root,
+        encoding: "utf8",
+        windowsHide: true,
+        shell: true,
+      })
+    : spawnSync("opencode", ["debug", "config", "--pure"], {
+        cwd: root,
+        encoding: "utf8",
+        windowsHide: true,
+      });
 
 if (result.status !== 0) {
   process.stderr.write(result.stderr || result.stdout || "opencode debug config failed\n");
