@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>UI latency probe</title>
+  </head>
+  <body>
+    <script>
+      window.__arm = () =>
+        new Promise((resolve) => {
+          const onDown = (event) => {
+            const eventAt = event.timeStamp;
+            requestAnimationFrame((frameAt) => {
+              resolve(frameAt - eventAt);
+            });
+          };
+          window.addEventListener("pointerdown", onDown, { once: true });
+        });
+    </script>
+  </body>
+</html>
