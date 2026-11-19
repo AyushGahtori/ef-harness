@@ -1,0 +1,110 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/shared-contracts"
+    },
+    {
+      "path": "packages/shared-observability"
+    },
+    {
+      "path": "packages/db"
+    },
+    {
+      "path": "packages/ipc"
+    },
+    {
+      "path": "packages/sim"
+    },
+    {
+      "path": "packages/git-engine"
+    },
+    {
+      "path": "packages/sandbox"
+    },
+    {
+      "path": "packages/mcp-server"
+    },
+    {
+      "path": "packages/test-env"
+    },
+    {
+      "path": "packages/worker-loop"
+    },
+    {
+      "path": "packages/completeness-gate"
+    },
+    {
+      "path": "packages/verifier"
+    },
+    {
+      "path": "packages/discovery"
+    },
+    {
+      "path": "packages/spec-expansion"
+    },
+    {
+      "path": "packages/research-engine"
+    },
+    {
+      "path": "packages/intake"
+    },
+    {
+      "path": "packages/dictation"
+    },
+    {
+      "path": "packages/brownfield"
+    },
+    {
+      "path": "packages/planner"
+    },
+    {
+      "path": "packages/integrator"
+    },
+    {
+      "path": "packages/steering"
+    },
+    {
+      "path": "packages/governor"
+    },
+    {
+      "path": "packages/providers"
+    },
+    {
+      "path": "packages/runtime-adapters"
+    },
+    {
+      "path": "packages/ship-deploy"
+    },
+    {
+      "path": "packages/investigations"
+    },
+    {
+      "path": "packages/portability"
+    },
+    {
+      "path": "packages/meta-lab"
+    },
+    {
+      "path": "apps/daemon"
+    },
+    {
+      "path": "apps/desktop"
+    },
+    {
+      "path": "apps/renderer"
+    },
+    {
+      "path": "spikes"
+    },
+    {
+      "path": "corpus"
+    },
+    {
+      "path": "benchmarks"
+    },
+    {
+      "path": "tests/e2e"
+    }
+  ]
+}

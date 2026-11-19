@@ -1,0 +1,45 @@
+{
+  "name": "ef-harness",
+  "foundationTask": "Task-001",
+  "node": ">=22.13",
+  "pnpm": "10.x",
+  "packageManager": "pnpm@10.34.9",
+  "typescript": "5.x",
+  "eslint": "9.x",
+  "react": "19",
+  "electron": ">=42",
+  "sqlite": {
+    "minimum": "3.43.0",
+    "target": "3.53.0",
+    "features": [
+      "WAL",
+      "STRICT",
+      "WITHOUT ROWID",
+      "RETURNING",
+      "json_each",
+      "FTS5",
+      "trigram",
+      "contentless_delete"
+    ],
+    "schemaTests": "67/67"
+  },
+  "opencode": {
+    "configDialect": "permission-object",
+    "schema": "https://opencode.ai/config.json",
+    "compactionAuto": false
+  },
+  "supplyChain": {
+    "strictDepBuilds": true,
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "sharp",
+      "@parcel/watcher",
+      "embedded-postgres",
+      "@ast-grep/cli"
+    ],
+    "blockedBuildScripts": ["electron-winstaller"]
+  },
+  "libraryPackages": 28,
+  "layoutNote": "Canonical asset paths live in packages/shared-contracts. packages/db, packages/ipc, and packages/sim cover the kernel role. packages/worker-loop covers the worker role. packages/shared-observability holds the logger and redactor shell."
+}

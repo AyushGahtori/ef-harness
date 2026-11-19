@@ -1,0 +1,43 @@
+name: harmony
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - harness/integration
+      - "task/**"
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Enable long paths on Windows
+        if: runner.os == 'Windows'
+        run: git config core.longpaths true
+      - name: Install OpenCode
+        run: npm install -g opencode-ai
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - run: pnpm verify:env
+      - run: pnpm test:schema
+      - run: pnpm verify:diagrams
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm verify:harmony

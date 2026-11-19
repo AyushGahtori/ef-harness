@@ -1,0 +1,10 @@
+dist
+node_modules
+coverage
+pnpm-lock.yaml
+schema
+research
+tools
+**/*.mmd
+**/*.svg
+**/*.sql

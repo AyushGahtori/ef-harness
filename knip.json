@@ -1,0 +1,4 @@
+{
+  "ignore": ["schema/**", "research/**", "tools/**", "dist/**"],
+  "ignoreDependencies": ["*"]
+}

@@ -1,0 +1,9 @@
+export const packageName = "@ef-harness/desktop" as const;
+export const layer = 5 as const;
+
+export function packageIdentity(): {
+  readonly name: typeof packageName;
+  readonly layer: typeof layer;
+} {
+  return { name: packageName, layer };
+}

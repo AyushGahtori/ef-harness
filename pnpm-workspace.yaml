@@ -1,0 +1,32 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+  - "spikes"
+  - "corpus"
+  - "benchmarks"
+  - "tests/e2e"
+
+strictDepBuilds: true
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - sharp
+  - "@parcel/watcher"
+  - embedded-postgres
+  - "@ast-grep/cli"
+
+allowBuilds:
+  electron: true
+  esbuild: true
+  sharp: true
+  "@parcel/watcher": true
+  embedded-postgres: true
+  "@ast-grep/cli": true
+  electron-winstaller: false
+
+catalog:
+  typescript: ">=5.6.0 <6"
+  vitest: ">=3.2.0 <6"
+  eslint: ">=9.0.0 <10"
+  "@types/node": ">=22.13.0 <25"
