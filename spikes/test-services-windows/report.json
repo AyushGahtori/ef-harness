@@ -1,0 +1,202 @@
+{
+  "schema": "test-services-windows-spike@1",
+  "generatedAt": "2026-11-19T12:25:23.816Z",
+  "platform": "win32",
+  "arch": "x64",
+  "redisDecision": "garnet",
+  "postgres": {
+    "bindHost": "127.0.0.1",
+    "status": "measured",
+    "version": "17.12-1",
+    "readinessProbe": "TCP 127.0.0.1:<port> then SELECT 1 via psql",
+    "templateSql": "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'tpl_spike' AND pid <> pg_backend_pid();\nUPDATE pg_database SET datallowconn = false WHERE datname = 'tpl_spike';\nSELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'tpl_spike' AND pid <> pg_backend_pid();\nCREATE DATABASE env_1 TEMPLATE tpl_spike;\nCREATE DATABASE env_2 TEMPLATE tpl_spike",
+    "port": 46275,
+    "pid": 22092,
+    "recovered": "cleared; busyTemplateRejected=true",
+    "memoryBytes": 24485888,
+    "ipv6Refused": true,
+    "cloneMs": {
+      "env1": 997.4972000000016,
+      "env2": 814.3513000000021
+    },
+    "withinCloneTarget": true,
+    "isolationOk": true
+  },
+  "redis": {
+    "bindHost": "127.0.0.1",
+    "status": "measured",
+    "server": "garnet",
+    "version": "2.2.13",
+    "readinessProbe": "TCP 127.0.0.1:<port> then PING",
+    "commands": [
+      {
+        "command": "PING",
+        "ok": true,
+        "detail": "\"PONG\""
+      },
+      {
+        "command": "SET",
+        "ok": true,
+        "detail": "\"OK\""
+      },
+      {
+        "command": "GET",
+        "ok": true,
+        "detail": "\"alpha\""
+      },
+      {
+        "command": "HSET",
+        "ok": true,
+        "detail": "0"
+      },
+      {
+        "command": "HGET",
+        "ok": true,
+        "detail": "\"value\""
+      },
+      {
+        "command": "ZADD",
+        "ok": true,
+        "detail": "0"
+      },
+      {
+        "command": "EXPIRE",
+        "ok": true,
+        "detail": "1"
+      },
+      {
+        "command": "INCR",
+        "ok": true,
+        "detail": "2"
+      },
+      {
+        "command": "EVAL",
+        "ok": true,
+        "detail": "1"
+      },
+      {
+        "command": "EVAL",
+        "ok": true,
+        "detail": "2"
+      },
+      {
+        "command": "SELECT",
+        "ok": true,
+        "detail": "db0=\"db0\" db1=\"db1\""
+      },
+      {
+        "command": "PUBLISH",
+        "ok": true,
+        "detail": "receivers=1 payload=hello"
+      },
+      {
+        "command": "SUBSCRIBE",
+        "ok": true,
+        "detail": "spike:events"
+      }
+    ],
+    "selectIsolated": true,
+    "selectDetail": "db0=\"db0\" db1=\"db1\"",
+    "publishDetail": "receivers=1 payload=hello",
+    "task050Isolation": "One Garnet per project, database indexes 0-15, FLUSHDB per environment. Extra process only above 16 databases.",
+    "port": 42274,
+    "pid": 11976,
+    "memoryBytes": 65585152,
+    "ipv6Refused": true
+  },
+  "memurai": {
+    "executed": false,
+    "reason": "Memurai Developer is proprietary, its EULA forbids redistribution, and the current build is an installer that would register a Windows service. The spike did not launch it."
+  },
+  "mailpit": {
+    "bindHost": "127.0.0.1",
+    "status": "measured",
+    "version": "1.34.0",
+    "readinessProbe": "GET http://127.0.0.1:<httpPort>/api/v1/info",
+    "searchRoute": "/api/v1/search",
+    "ports": {
+      "smtp": 48460,
+      "http": 48024,
+      "pop3": 48944
+    },
+    "pid": 4972,
+    "memoryBytes": 27914240,
+    "ipv6Refused": true,
+    "env1Subjects": [
+      "env1"
+    ],
+    "env2Subjects": [
+      "env2"
+    ],
+    "isolated": true
+  },
+  "oauth": {
+    "bindHost": "127.0.0.1",
+    "status": "measured",
+    "readinessProbe": "GET http://127.0.0.1:<port>/env1/.well-known/openid-configuration",
+    "rejected": [
+      "bad_state",
+      "wrong_role",
+      "expired_code"
+    ],
+    "port": 41512,
+    "pid": 11912,
+    "issuerEnv1": "http://127.0.0.1:41512/env1",
+    "issuerEnv2": "http://127.0.0.1:41512/env2",
+    "validRole": "admin",
+    "memoryBytes": 74113024,
+    "ipv6Refused": true
+  },
+  "jobObject": {
+    "limit": "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE",
+    "orchestratorHardKill": "TerminateProcess",
+    "orphanPids": [],
+    "orphanCount": 0,
+    "portsReleased": true
+  },
+  "localhostCookies": {
+    "env1ResolvedToLoopback": true,
+    "env2ResolvedToLoopback": true,
+    "env1RemoteAddresses": [
+      "127.0.0.1"
+    ],
+    "env2RemoteAddresses": [
+      "127.0.0.1"
+    ],
+    "env1CookieVisibleOnEnv1": true,
+    "env1CookieVisibleOnEnv2": false,
+    "isolated": true
+  },
+  "readinessProbes": {
+    "postgres": "TCP 127.0.0.1:<port> then SELECT 1 via psql",
+    "redis": "TCP 127.0.0.1:<port> then PING",
+    "mailpit": "GET http://127.0.0.1:<httpPort>/api/v1/info",
+    "oauth": "GET http://127.0.0.1:<port>/env1/.well-known/openid-configuration"
+  },
+  "binaries": [
+    {
+      "id": "postgres-windows-x64",
+      "version": "17.12-1",
+      "url": "https://get.enterprisedb.com/postgresql/postgresql-17.12-1-windows-x64-binaries.zip",
+      "sha256": "a2cd8a774389347b70be7748ac4a37ef43cb6ee539c5fc3e85ae264b15e4a04c",
+      "sizeBytes": 386263884,
+      "license": "PostgreSQL License"
+    },
+    {
+      "id": "garnet-windows-x64",
+      "version": "2.2.13",
+      "url": "https://github.com/microsoft/garnet/releases/download/v2.2.13/win-x64-based-readytorun.zip",
+      "sha256": "cc8212d7c7a671c490e5c87967fc43025a22215922bdbdad5eccff00915c7b82",
+      "sizeBytes": 26495420,
+      "license": "MIT"
+    },
+    {
+      "id": "mailpit-windows-amd64",
+      "version": "1.34.0",
+      "url": "https://github.com/axllent/mailpit/releases/download/v1.34.0/mailpit-windows-amd64.zip",
+      "sha256": "8f080d41374bf22686606374a0a483c8563c1bf29ae078179792392ff8c911d7",
+      "sizeBytes": 11288840,
+      "license": "MIT"
+    }
+  ]
+}
