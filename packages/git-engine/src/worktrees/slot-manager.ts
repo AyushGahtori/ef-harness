@@ -388,6 +388,7 @@ export class WorktreeSlotManager {
       this.busyAttempts,
       this.busyBaseDelayMs,
     );
+    await this.ensureSlotMarker(loaded.state, slot);
     slot.baseCommit = requested;
     slot.lockfileHash = newHash;
     slot.updatedAt = this.clock();
@@ -422,6 +423,11 @@ export class WorktreeSlotManager {
   private async repairLocked(request: RepairWorktreesRequest): Promise<RepairWorktreesResult> {
     const loaded = await this.loadState(request.projectId, request.mainRepoPath, { acceptMovedRepo: true });
     const mainRepoPath = path.resolve(request.mainRepoPath);
+    const relocated = await this.relocateSlotsUnderProjectDir(loaded.dir, loaded.state);
+    for (const slot of loaded.state.slots) {
+      if (!relocated.has(slot.slotId) || !(await pathExists(slot.slotPath))) continue;
+      await this.repairMovedSlotLink(mainRepoPath, slot.slotPath);
+    }
     await gitOk(this.git, ["worktree", "repair"], mainRepoPath, this.consentToken);
     const repairedSlots: { slotId: string; slotPath: string; headCommit: string }[] = [];
     for (const slot of loaded.state.slots) {
@@ -696,7 +702,53 @@ export class WorktreeSlotManager {
     const lockfileHash = lockfileChanged
       ? await hashLockfilesAtCommit(this.git, state.mainRepoPath, slot.baseCommit, this.consentToken)
       : (slot.lockfileHash ?? (await hashLockfilesAtCommit(this.git, state.mainRepoPath, slot.baseCommit, this.consentToken)));
+    await this.ensureSlotMarker(state, slot);
     return { headCommit, lockfileHash, attemptBranchState };
+  }
+
+  private async ensureSlotMarker(state: ProjectState, slot: Pick<SlotRecord, "slotId" | "slotPath" | "kind">): Promise<void> {
+    await writeSlotOwnerMarker(slot.slotPath, {
+      v: 1,
+      projectId: state.projectId,
+      slotId: slot.slotId,
+      kind: slot.kind,
+    });
+  }
+
+  /**
+   * A moved harness data folder keeps the same `<short-id>/<slot-id>` layout under the
+   * manager's current wtRoot. Point registry entries at that directory, then `git worktree repair`
+   * reconnects the main repo. Directories without this project's marker or a worktree `.git` file
+   * are left untouched.
+   */
+  private async relocateSlotsUnderProjectDir(projectDir: string, state: ProjectState): Promise<Set<string>> {
+    const relocated = new Set<string>();
+    const root = path.resolve(projectDir);
+    for (const slot of state.slots) {
+      if (await pathExists(slot.slotPath)) continue;
+      const candidate = path.resolve(root, slot.slotId);
+      const relative = path.relative(root, candidate);
+      if (relative.length === 0 || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+      if (!(await pathExists(candidate))) continue;
+      const marker = await readSlotOwnerMarker(candidate);
+      if (marker) {
+        if (!markerMatchesProject(marker, state.projectId) || marker.slotId !== slot.slotId || marker.kind !== slot.kind) {
+          continue;
+        }
+      } else if (!(await pathExists(path.join(candidate, ".git")))) {
+        continue;
+      }
+      slot.slotPath = candidate;
+      await this.ensureSlotMarker(state, slot);
+      relocated.add(slot.slotId);
+    }
+    return relocated;
+  }
+
+  private async repairMovedSlotLink(mainRepoPath: string, slotPath: string): Promise<void> {
+    const consent = this.consentToken !== undefined ? { userExplicitConsentToken: this.consentToken } : {};
+    await this.git.execGit(["worktree", "repair"], { cwd: slotPath, ...consent });
+    await this.git.execGit(["worktree", "repair", slotPath], { cwd: mainRepoPath, ...consent });
   }
 
   private async prepareEmptySlot(slotPath: string): Promise<void> {
@@ -824,6 +876,7 @@ export class WorktreeSlotManager {
       );
     }
     await this.fetchMatchingLfs(state.mainRepoPath, slot.slotPath, commit, slot.taskPaths);
+    await this.ensureSlotMarker(state, slot);
     const headCommit = (await gitOk(this.git, ["rev-parse", "HEAD"], slot.slotPath, this.consentToken)).stdout.trim();
     this.logger.info({
       code: "worktree_fenced_and_recreated",

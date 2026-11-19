@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { GitCommandFailedError, SlotBusyError } from "./errors.js";
 import type { GitExecResult, GitRunOptions, GitRunner } from "./git-runner.js";
-import { WARM_DEPENDENCY_EXCLUDES } from "./types.js";
+import { SLOT_OWNER_MARKER_FILE, WARM_DEPENDENCY_EXCLUDES } from "./types.js";
 
 export function gitOptions(cwd: string, consentToken: string | undefined): GitRunOptions {
   if (consentToken !== undefined) {
@@ -52,7 +52,7 @@ export async function gitRetry(
 
 export function cleanArgs(extraExcludes: readonly string[]): string[] {
   const args = ["clean", "-fd"];
-  const excludes = new Set<string>([...WARM_DEPENDENCY_EXCLUDES, ...extraExcludes]);
+  const excludes = new Set<string>([SLOT_OWNER_MARKER_FILE, ...WARM_DEPENDENCY_EXCLUDES, ...extraExcludes]);
   for (const exclude of excludes) {
     if (
       exclude.length === 0 ||

@@ -121,10 +121,12 @@ describe("worktree slot pool", () => {
       expect(reused.nodeModulesPreserved).toBe(true);
       expect(reused.lockfileChanged).toBe(false);
       expect(reused.dependencySyncRequested).toBe(false);
+      expect((await readSlotOwnerMarker(reused.slotPath))?.projectId).toBe(PROJECT);
       await expect(fs.readFile(path.join(reused.slotPath, "node_modules", "pkg", "index.js"), "utf8")).resolves.toBe("warm");
       await expect(fs.access(path.join(reused.slotPath, "build-out.txt"))).rejects.toMatchObject({ code: "ENOENT" });
       const clean = fixture.git.calls.filter((call) => call[0] === "clean").at(-1) ?? [];
       expect(clean).toContain("-fd");
+      expect(clean).toContain(".ef-harness-slot-owner");
       expect(clean).toContain("node_modules");
       expect(clean).toContain(".pnpm-store");
       expect(clean).not.toContain("-x");
@@ -146,6 +148,8 @@ describe("worktree slot pool", () => {
       expect(wiped.nodeModulesPreserved).toBe(false);
       expect(wiped.dependencySyncRequested).toBe(true);
       expect(syncs).toEqual(["lockfile_changed"]);
+      expect((await readSlotOwnerMarker(wiped.slotPath))?.projectId).toBe(PROJECT);
+      expect((await readSlotOwnerMarker(wiped.slotPath))?.kind).toBe("attempt");
       await expect(fs.access(path.join(wiped.slotPath, "node_modules"))).rejects.toMatchObject({ code: "ENOENT" });
     },
     TEST_TIMEOUT_MS,

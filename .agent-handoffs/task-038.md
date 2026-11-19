@@ -33,6 +33,10 @@ Import from `packages/git-engine/src/worktrees/index.ts` (package barrel wiring 
 
 Attempt slots are created with `git worktree add --detach` plus a `harness/t/<task>/<attempt>` ref that is not checked out when that branch is already owned or checked out elsewhere. Merge worktrees are fresh detached checkouts and are never the integration worktree.
 
+`git clean -fd` always excludes `.ef-harness-slot-owner` (along with `node_modules` and `.pnpm-store`). The marker is rewritten after checkout features, warm reset, integration fast-forward, and checkpoint recreate so Disk Cleanup can still recognize the slot.
+
+`repairWorktreesAfterMove` runs `git worktree repair` after a main-repo move. If the harness data folder (`wtRoot`) moved but the `<project-short-id>/<slot-id>` layout is intact, registered slots are rebound to that layout and `git worktree repair` is run from the moved slot and from the main repo. Directories that lack this project's marker and a worktree `.git` file are not adopted.
+
 ## Shared Wiring Needs (Root / Index Barrels)
 
 `packages/git-engine/src/index.ts` is outside this task's write scope. Please re-export the worktree public API from that barrel:
@@ -56,7 +60,7 @@ Ran from `C:\Users\Ayush\Desktop\ef-wt\task-038-worktree-slot-manager`:
 
 - `pnpm --filter @ef-harness/git-engine typecheck` — passed (exit 0).
 - `pnpm --filter @ef-harness/git-engine lint` — passed (exit 0).
-- `pnpm --filter @ef-harness/git-engine test -- worktrees` — passed, 4 files, 16 tests (exit 0). Covers slot creation, `onEmptySlotCreated` before `git worktree add`, warm `node_modules` reuse, lockfile-change wipe plus dependency-sync hook, `beforeSlotReset`, EBUSY backoff, disk-lane serialization, detached branch-collision avoidance, ownership-marker refusal, allowlist copy / secret refusal, sparse-checkout recommendation, 24h failed-slot retention, integration fast-forward, stale-epoch and unauthorized rejection, dirty-integration reset warning, worker/merge-candidate exclusivity, fresh merge worktrees, cone-mode sparse checkout, submodule `update --init --reference`, LFS `--include` limited to task paths, checkpoint recreate after manual deletion, and `git worktree repair` after `fs.rename` of the main repo.
+- `pnpm --filter @ef-harness/git-engine test -- worktrees` — passed, 4 files, 17 tests (exit 0). Covers slot creation, `onEmptySlotCreated` before `git worktree add`, warm `node_modules` reuse, lockfile-change wipe plus dependency-sync hook, ownership marker surviving `git clean -fd`, `beforeSlotReset`, EBUSY backoff, disk-lane serialization, detached branch-collision avoidance, ownership-marker refusal, allowlist copy / secret refusal, sparse-checkout recommendation, 24h failed-slot retention, integration fast-forward, stale-epoch and unauthorized rejection, dirty-integration reset warning, worker/merge-candidate exclusivity, fresh merge worktrees, cone-mode sparse checkout, submodule `update --init --reference`, LFS `--include` limited to task paths, checkpoint recreate after manual deletion, `git worktree repair` after `fs.rename` of the main repo, and `git worktree repair` after `fs.rename` of the harness data folder.
 - `node scripts/verify-harmony.mjs --task 038` — passed (`harmony ok for Task-038`, exit 0).
 
 ## Known Limitations / Follow-Ups
@@ -66,3 +70,4 @@ Ran from `C:\Users\Ayush\Desktop\ef-wt\task-038-worktree-slot-manager`:
 - `setIntegrationLease` is the local epoch fence. Task 039 should replace it with `ref_leases` without changing `fastForwardIntegrationWorktree`'s proof checks (`project-merge-queue`, holder, epoch).
 - The root package barrel re-export is a wiring follow-up, not done in this commit.
 - `onEmptySlotCreated` must leave the new directory empty. Task 042 should apply one inheritable ACE to the directory itself and not create files before checkout.
+- Moving the main repo and the worktree data folder in the same step is not repaired when neither side can still resolve the other. Move one side, call `repairWorktreesAfterMove`, then move the other.

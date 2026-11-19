@@ -6,6 +6,7 @@ import {
   IntegrationWorktreeController,
   IntegrationWorktreeExclusivityError,
   WorktreeSlotManager,
+  readSlotOwnerMarker,
   type WorktreeLogEvent,
 } from "../../src/worktrees/index.js";
 import {
@@ -114,6 +115,7 @@ describe("integration and merge worktrees", () => {
         lease: { holderId: "merge-queue", epoch: 2, role: "project-merge-queue" },
       });
       expect(warnings.some((event) => event.code === "integration_worktree_dirty")).toBe(true);
+      expect((await readSlotOwnerMarker(integration.slotPath))?.kind).toBe("integration");
       await expect(fs.readFile(path.join(integration.slotPath, "README.md"), "utf8")).resolves.toBe("v3\n");
       await expect(fs.access(path.join(integration.slotPath, "stray.txt"))).rejects.toMatchObject({ code: "ENOENT" });
 
