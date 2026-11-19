@@ -154,12 +154,19 @@ async function checkScope(nnn, requireReady) {
 }
 
 function runPnpm(script) {
-  const result = spawnSync("pnpm", [script], {
-    cwd: root,
-    encoding: "utf8",
-    windowsHide: true,
-    shell: process.platform === "win32",
-  });
+  const result =
+    process.platform === "win32"
+      ? spawnSync(`pnpm ${script}`, {
+          cwd: root,
+          encoding: "utf8",
+          windowsHide: true,
+          shell: true,
+        })
+      : spawnSync("pnpm", [script], {
+          cwd: root,
+          encoding: "utf8",
+          windowsHide: true,
+        });
   if (result.status !== 0) {
     const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
     fail(`pnpm ${script} failed\n${output}`);

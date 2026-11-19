@@ -54,13 +54,29 @@ async function requireGit(args, cwd) {
   return result;
 }
 
+function quoteCmd(value) {
+  if (/[\s"&]/.test(value)) {
+    return `"${value.replaceAll('"', '""')}"`;
+  }
+  return value;
+}
+
 function runInherited(command, args, cwd, env) {
+  const direct = process.platform !== "win32" || command.toLowerCase().endsWith(".exe");
+  if (!direct) {
+    return spawnSync([command, ...args].map(quoteCmd).join(" "), {
+      cwd,
+      env,
+      stdio: "inherit",
+      windowsHide: true,
+      shell: true,
+    });
+  }
   return spawnSync(command, args, {
     cwd,
     env,
     stdio: "inherit",
     windowsHide: true,
-    shell: process.platform === "win32",
   });
 }
 
@@ -110,17 +126,21 @@ async function create(nnn, slug, base) {
   }
   const handoff = fillHandoff(fs.readFileSync(templatePath, "utf8"), nnn, branch, sha);
   fs.writeFileSync(path.join(destination, ".agent-handoffs", `task-${nnn}.md`), handoff);
-  const install = spawnSync(
-    "pnpm",
-    ["install", "--frozen-lockfile", "--prefer-offline"],
-    {
-      cwd: destination,
-      encoding: "utf8",
-      windowsHide: true,
-      shell: process.platform === "win32",
-      env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" },
-    },
-  );
+  const install =
+    process.platform === "win32"
+      ? spawnSync('pnpm install --frozen-lockfile --prefer-offline', {
+          cwd: destination,
+          encoding: "utf8",
+          windowsHide: true,
+          shell: true,
+          env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" },
+        })
+      : spawnSync("pnpm", ["install", "--frozen-lockfile", "--prefer-offline"], {
+          cwd: destination,
+          encoding: "utf8",
+          windowsHide: true,
+          env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" },
+        });
   if (install.status !== 0) {
     await git(["worktree", "remove", "--force", destination], main);
     await git(["branch", "-D", branch], main);
