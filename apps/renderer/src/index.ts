@@ -7,3 +7,17 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export {
+  M1_CONTENT_SECURITY_POLICY,
+  M1_TASK_PATH,
+  M1_VIEWER_DOCUMENT,
+  M1_VIEWER_MOUNT_ID,
+  createClientStateSyncer,
+  escapeText,
+  renderDiffText,
+} from "./m1-viewer/index.js";
+export type {
+  DomainEvent,
+  SyncApply,
+} from "./m1-viewer/index.js";

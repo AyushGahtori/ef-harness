@@ -20,7 +20,8 @@
     "worktree:check": "node scripts/agent-worktree.mjs check",
     "worktree:commit": "node scripts/agent-worktree.mjs commit",
     "sim:replay": "node --import tsx packages/sim/src/m0/replay-cli.ts",
-    "test:m0-exit": "node --import tsx packages/sim/src/m0/certify-cli.ts"
+    "test:m0-exit": "node --import tsx packages/sim/src/m0/certify-cli.ts",
+    "dev:m1": "node apps/daemon/src/bootstrap/dev-m1.mjs"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^2.8.0",
