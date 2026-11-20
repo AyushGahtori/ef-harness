@@ -7,3 +7,40 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export { AttemptMcpServer, responseText } from "./server.js";
+export { MCP_TOOL_NAMES, HARNESS_TOOL_NAMES, KB_TOOL_NAMES, resolveVisibleTools } from "./names.js";
+export type { McpToolName, HarnessToolName, KbToolName } from "./names.js";
+export { CandidateV1Schema } from "./candidate.js";
+export { LeaseFencedError, MCP_ERROR_LEASE_FENCED, NOT_FOUND, PULL_QUOTA_MESSAGE } from "./errors.js";
+export { MemoryReadSetStore, SqliteReadSetStore, openReadSetDatabase, canonicalSearchQuery, hashSearchResults } from "./read-sets.js";
+export { readGitChangedPaths, snapshotWorktreeDiff, pathInWriteScope, globMatch } from "./scope.js";
+export { generateSearchSnippet, parseIdAtVersion, pinnedVersion } from "./redaction.js";
+export { parseDataEnvelope, wrapDataEnvelope } from "./provenance.js";
+export type { AttemptMcpDependencies } from "./types.js";
+export type {
+  ArtifactManager,
+  AskOwner,
+  AttemptLease,
+  AttemptMcpServerOptions,
+  AttemptQuotas,
+  BlockedReporter,
+  CodeLookup,
+  DependencyIntentAppender,
+  DisputeTest,
+  EpochAuthority,
+  HarnessRunEngine,
+  KnowledgeNode,
+  KnowledgeSearchService,
+  LoopbackEndpoint,
+  ProgressTelemetry,
+  PullPatternLog,
+  ReadSetStore,
+  SecureDocFetcher,
+  SecurityAnomalyLog,
+  ShutdownReason,
+  StartService,
+  TaskHoldAndSubmissionRepo,
+  TaskPacketV1,
+  WorktreeSnapshotter,
+} from "./types.js";
