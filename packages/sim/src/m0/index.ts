@@ -1,0 +1,18 @@
+export { DiskCasStore, MemoryCasStore, type CasStore } from "./cas-store.js";
+export { ClientStateSyncer, type ClientSnapshot, type OutboxProjection, type TaskProjection } from "./client-sync.js";
+export { FakeDualClock } from "./clock.js";
+export { SimEventLoop } from "./event-loop.js";
+export { FakeModelAdapter, MODEL_OUTCOMES, scriptedCompletion, type ModelCompletion, type ModelOutcomeKind, type ModelRequest } from "./fake-model.js";
+export { CrashFaultInjector, CrashSignal, FAULT_POINTS, faultForSeed, type FaultPoint } from "./faults.js";
+export { checkInvariants, type InvariantInput, type LeaseInterval, type PruneRecord } from "./invariants.js";
+export { exerciseNamedPipe } from "./ipc-pipe.js";
+export { KernelSession, ReserveRefused, type DbHandle } from "./kernel-session.js";
+export { minimizeFailingSeed, type MinimizeResult } from "./minimizer.js";
+export { measureBoardQuery, measureM0Performance, measureWriteLatency, type PerfResult } from "./perf.js";
+export { M0_EXIT_REPORT_PATH, renderM0ExitReport, writeM0ExitReport } from "./report.js";
+export { runReplayCli } from "./replay-cli.js";
+export { DeterministicSeededRng } from "./rng.js";
+export { M0KernelSimulator, planFromSeed, replaySeed, runSimulation, type SimPlan, type SimRunOptions, type SimRunResult, type SimStats } from "./simulator.js";
+export { percentile } from "./stats.js";
+export { runM0ExitCertification, runSweep, summarize, type SweepOptions, type SweepReport } from "./sweep.js";
+export { SimTrace } from "./trace.js";
