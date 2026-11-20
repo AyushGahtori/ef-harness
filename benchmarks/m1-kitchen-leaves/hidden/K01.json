@@ -1,0 +1,119 @@
+{
+  "task": "K01",
+  "rule_id": "R31",
+  "cases": [
+    {
+      "id": "K01-H1",
+      "canary": "HK-K01-1",
+      "args": [
+        [
+          {
+            "dishId": "r",
+            "label": "Rice",
+            "quantity": 1
+          },
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 0
+          },
+          {
+            "dishId": "t",
+            "label": "Tea",
+            "quantity": 3
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Rice",
+          "quantity": 1
+        },
+        {
+          "label": "Tea",
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "id": "K01-H2",
+      "canary": "HK-K01-2",
+      "args": [
+        [
+          {
+            "dishId": "a",
+            "label": "Salad",
+            "quantity": 0
+          },
+          {
+            "dishId": "b",
+            "label": "Bread",
+            "quantity": -1
+          }
+        ]
+      ],
+      "expect": []
+    },
+    {
+      "id": "K01-H3",
+      "canary": "HK-K01-3",
+      "args": [
+        [
+          {
+            "dishId": "n",
+            "label": "Noodles",
+            "quantity": 2
+          },
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 2
+          },
+          {
+            "dishId": "t",
+            "label": "Tea",
+            "quantity": 0
+          },
+          {
+            "dishId": "r",
+            "label": "Rice",
+            "quantity": 4
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Noodles",
+          "quantity": 2
+        },
+        {
+          "label": "Soup",
+          "quantity": 2
+        },
+        {
+          "label": "Rice",
+          "quantity": 4
+        }
+      ]
+    },
+    {
+      "id": "K01-H4",
+      "canary": "HK-K01-4",
+      "args": [
+        [
+          {
+            "dishId": "k",
+            "label": "Knödel",
+            "quantity": 1
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Knödel",
+          "quantity": 1
+        }
+      ]
+    }
+  ]
+}

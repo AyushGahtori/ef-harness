@@ -1,0 +1,68 @@
+{
+  "schema": "task-packet@1",
+  "task": "K02",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Format one print row as a kitchen line.",
+  "write_scope": [
+    "src/kitchen/format-print-line.mjs"
+  ],
+  "must": [
+    {
+      "id": "R32",
+      "v": 1,
+      "text": "A print line is the label, a multiplication sign, and the quantity, separated by single spaces."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k02",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K02-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/format-print-line.mjs",
+    "export": "formatPrintLine"
+  },
+  "registered_names": [],
+  "rule_id": "R32",
+  "rule_text": "A print line is the label, a multiplication sign, and the quantity, separated by single spaces.",
+  "visible": [
+    {
+      "id": "K02-V1",
+      "canary": "VIS-K02-1",
+      "args": [
+        {
+          "label": "Soup",
+          "quantity": 2
+        }
+      ],
+      "expect": "Soup × 2"
+    }
+  ]
+}

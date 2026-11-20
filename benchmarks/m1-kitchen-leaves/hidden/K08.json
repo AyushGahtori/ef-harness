@@ -1,0 +1,45 @@
+{
+  "task": "K08",
+  "rule_id": "X-04",
+  "cases": [
+    {
+      "id": "K08-H1",
+      "canary": "HK-K08-1",
+      "args": [
+        1,
+        1
+      ],
+      "expect": 1
+    },
+    {
+      "id": "K08-H2",
+      "canary": "HK-K08-2",
+      "args": [
+        99,
+        0
+      ],
+      "expect": 0
+    },
+    {
+      "id": "K08-H3",
+      "canary": "HK-K08-3",
+      "args": [
+        105,
+        3
+      ],
+      "expect": 315
+    },
+    {
+      "id": "K08-H4",
+      "canary": "HK-K08-4",
+      "args": [
+        1.5,
+        2
+      ],
+      "expect": {
+        "throws": true,
+        "messageIncludes": "integer"
+      }
+    }
+  ]
+}

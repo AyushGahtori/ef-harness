@@ -1,0 +1,103 @@
+{
+  "schema": "task-packet@1",
+  "task": "K05",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Group order lines by pickup slot.",
+  "write_scope": [
+    "src/kitchen/group-orders.mjs"
+  ],
+  "must": [
+    {
+      "id": "R40",
+      "v": 1,
+      "text": "Group by pickup slot in first-seen slot order. Inside a slot, sum quantities of the same dish id and preserve the first-seen dish order. Drop non-positive quantities."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k05",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K05-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/group-orders.mjs",
+    "export": "groupOrders"
+  },
+  "registered_names": [],
+  "rule_id": "R40",
+  "rule_text": "Group by pickup slot in first-seen slot order. Inside a slot, sum quantities of the same dish id and preserve the first-seen dish order. Drop non-positive quantities.",
+  "visible": [
+    {
+      "id": "K05-V1",
+      "canary": "VIS-K05-1",
+      "args": [
+        [
+          {
+            "slot": "11:00",
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 1
+          },
+          {
+            "slot": "11:00",
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 1
+          },
+          {
+            "slot": "11:30",
+            "dishId": "t",
+            "label": "Tea",
+            "quantity": 1
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "slot": "11:00",
+          "rows": [
+            {
+              "label": "Soup",
+              "quantity": 2
+            }
+          ]
+        },
+        {
+          "slot": "11:30",
+          "rows": [
+            {
+              "label": "Tea",
+              "quantity": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

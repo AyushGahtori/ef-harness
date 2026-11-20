@@ -1,0 +1,54 @@
+{
+  "task": "K03",
+  "rule_id": "R17",
+  "cases": [
+    {
+      "id": "K03-H1",
+      "canary": "HK-K03-1",
+      "args": [
+        "2026-01-15T09:45:00.000Z",
+        {
+          "cutoff": "10:45",
+          "timeZone": "Europe/Berlin"
+        }
+      ],
+      "expect": false
+    },
+    {
+      "id": "K03-H2",
+      "canary": "HK-K03-2",
+      "args": [
+        "2026-07-15T08:44:59.000Z",
+        {
+          "cutoff": "10:45",
+          "timeZone": "Europe/Berlin"
+        }
+      ],
+      "expect": true
+    },
+    {
+      "id": "K03-H3",
+      "canary": "HK-K03-3",
+      "args": [
+        "2026-07-15T08:45:00.000Z",
+        {
+          "cutoff": "10:45",
+          "timeZone": "Europe/Berlin"
+        }
+      ],
+      "expect": false
+    },
+    {
+      "id": "K03-H4",
+      "canary": "HK-K03-4",
+      "args": [
+        "2026-03-29T08:45:00.000Z",
+        {
+          "cutoff": "10:45",
+          "timeZone": "Europe/Berlin"
+        }
+      ],
+      "expect": false
+    }
+  ]
+}

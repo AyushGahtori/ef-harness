@@ -1,0 +1,64 @@
+{
+  "task": "K20",
+  "rule_id": "X-11",
+  "cases": [
+    {
+      "id": "K20-H1",
+      "canary": "HK-K20-1",
+      "args": [
+        {
+          "error": {
+            "code": "forbidden",
+            "message": "Kitchen only"
+          }
+        }
+      ],
+      "expect": {
+        "role": "alert",
+        "text": "Kitchen only"
+      }
+    },
+    {
+      "id": "K20-H2",
+      "canary": "HK-K20-2",
+      "args": [
+        {}
+      ],
+      "expect": {
+        "throws": true,
+        "messageIncludes": "X-11"
+      }
+    },
+    {
+      "id": "K20-H3",
+      "canary": "HK-K20-3",
+      "args": [
+        {
+          "error": {
+            "message": ""
+          }
+        }
+      ],
+      "expect": {
+        "throws": true,
+        "messageIncludes": "X-11"
+      }
+    },
+    {
+      "id": "K20-H4",
+      "canary": "HK-K20-4",
+      "args": [
+        {
+          "error": {
+            "code": "conflict",
+            "message": "Already sent"
+          }
+        }
+      ],
+      "expect": {
+        "role": "alert",
+        "text": "Already sent"
+      }
+    }
+  ]
+}

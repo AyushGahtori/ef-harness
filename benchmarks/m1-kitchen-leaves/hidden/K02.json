@@ -1,0 +1,50 @@
+{
+  "task": "K02",
+  "rule_id": "R32",
+  "cases": [
+    {
+      "id": "K02-H1",
+      "canary": "HK-K02-1",
+      "args": [
+        {
+          "label": "Tea",
+          "quantity": 1
+        }
+      ],
+      "expect": "Tea × 1"
+    },
+    {
+      "id": "K02-H2",
+      "canary": "HK-K02-2",
+      "args": [
+        {
+          "label": "Rice",
+          "quantity": 12
+        }
+      ],
+      "expect": "Rice × 12"
+    },
+    {
+      "id": "K02-H3",
+      "canary": "HK-K02-3",
+      "args": [
+        {
+          "label": "Salad",
+          "quantity": 3
+        }
+      ],
+      "expect": "Salad × 3"
+    },
+    {
+      "id": "K02-H4",
+      "canary": "HK-K02-4",
+      "args": [
+        {
+          "label": "Knödel",
+          "quantity": 4
+        }
+      ],
+      "expect": "Knödel × 4"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "schema": "task-packet@1",
+  "task": "K10",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Check the caller role on kitchen actions.",
+  "write_scope": [
+    "src/api/authorize.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-01",
+      "v": 1,
+      "text": "kitchen.print allows kitchen and admin. order.create allows customer, kitchen, and admin. Every other role or action is denied."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k10",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K10-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/api/authorize.mjs",
+    "export": "authorize"
+  },
+  "registered_names": [],
+  "rule_id": "X-01",
+  "rule_text": "kitchen.print allows kitchen and admin. order.create allows customer, kitchen, and admin. Every other role or action is denied.",
+  "visible": [
+    {
+      "id": "K10-V1",
+      "canary": "VIS-K10-1",
+      "args": [
+        "customer",
+        "kitchen.print"
+      ],
+      "expect": {
+        "allowed": false,
+        "role": "customer",
+        "action": "kitchen.print"
+      }
+    }
+  ]
+}

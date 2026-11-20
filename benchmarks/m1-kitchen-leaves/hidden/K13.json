@@ -1,0 +1,110 @@
+{
+  "task": "K13",
+  "rule_id": "R50",
+  "cases": [
+    {
+      "id": "K13-H1",
+      "canary": "HK-K13-1",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 7,
+          "dish": "Salad",
+          "qty": 1
+        }
+      ],
+      "expect": {
+        "rows": [
+          {
+            "id": 7,
+            "dish": "Salad",
+            "qty": 1,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "sqlite",
+          "migrated": true
+        }
+      }
+    },
+    {
+      "id": "K13-H2",
+      "canary": "HK-K13-2",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 1,
+          "dish": "Knödel",
+          "qty": 4
+        },
+        {
+          "id": 2,
+          "dish": "Soup",
+          "qty": 1
+        }
+      ],
+      "twice": true,
+      "expect": {
+        "rows": [
+          {
+            "id": 1,
+            "dish": "Knödel",
+            "qty": 4,
+            "notes": null
+          },
+          {
+            "id": 2,
+            "dish": "Soup",
+            "qty": 1,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "sqlite",
+          "migrated": true
+        }
+      }
+    },
+    {
+      "id": "K13-H3",
+      "canary": "HK-K13-3",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 3,
+          "dish": "Rice",
+          "qty": 9
+        }
+      ],
+      "expect": {
+        "rows": [
+          {
+            "id": 3,
+            "dish": "Rice",
+            "qty": 9,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "sqlite",
+          "migrated": true
+        }
+      }
+    },
+    {
+      "id": "K13-H4",
+      "canary": "HK-K13-4",
+      "setup": "sqlite-orders-v1",
+      "fixture": [],
+      "twice": true,
+      "expect": {
+        "rows": [],
+        "result": {
+          "dialect": "sqlite",
+          "migrated": true
+        }
+      }
+    }
+  ]
+}

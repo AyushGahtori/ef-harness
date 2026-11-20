@@ -1,0 +1,96 @@
+{
+  "schema": "task-packet@1",
+  "task": "K14",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Preserve rows through the Postgres notes migration.",
+  "write_scope": [
+    "src/db/postgres-migrate.mjs",
+    "src/db/postgres-orders-v2.sql"
+  ],
+  "must": [
+    {
+      "id": "R51",
+      "v": 1,
+      "text": "The Postgres migration adds notes with IF NOT EXISTS and type text, then leaves existing rows in place. It does not use SQLite-only table rebuilds."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k14",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K14-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/db/postgres-migrate.mjs",
+    "export": "migratePostgres"
+  },
+  "registered_names": [],
+  "rule_id": "R51",
+  "rule_text": "The Postgres migration adds notes with IF NOT EXISTS and type text, then leaves existing rows in place. It does not use SQLite-only table rebuilds.",
+  "visible": [
+    {
+      "id": "K14-V1",
+      "canary": "VIS-K14-1",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 1,
+          "dish": "Soup",
+          "qty": 2
+        },
+        {
+          "id": 2,
+          "dish": "茶",
+          "qty": 3
+        }
+      ],
+      "twice": true,
+      "expect": {
+        "rows": [
+          {
+            "id": 1,
+            "dish": "Soup",
+            "qty": 2,
+            "notes": null
+          },
+          {
+            "id": 2,
+            "dish": "茶",
+            "qty": 3,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "postgres",
+          "sql": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes text;\n"
+        }
+      }
+    }
+  ]
+}

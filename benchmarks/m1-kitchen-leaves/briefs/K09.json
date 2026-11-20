@@ -1,0 +1,67 @@
+{
+  "schema": "task-packet@1",
+  "task": "K09",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Apply an integer rate with half-up rounding.",
+  "write_scope": [
+    "src/kitchen/pricing-rate.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-04",
+      "v": 1,
+      "text": "applyRateMinor(minor, numerator, denominator) returns the integer half-up value of minor times numerator over denominator. All arguments are non-negative integers and the denominator is positive."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k09",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K09-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/pricing-rate.mjs",
+    "export": "applyRateMinor"
+  },
+  "registered_names": [],
+  "rule_id": "X-04",
+  "rule_text": "applyRateMinor(minor, numerator, denominator) returns the integer half-up value of minor times numerator over denominator. All arguments are non-negative integers and the denominator is positive.",
+  "visible": [
+    {
+      "id": "K09-V1",
+      "canary": "VIS-K09-1",
+      "args": [
+        105,
+        1,
+        10
+      ],
+      "expect": 11
+    }
+  ]
+}

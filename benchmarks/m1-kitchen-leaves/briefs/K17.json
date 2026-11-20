@@ -1,0 +1,74 @@
+{
+  "schema": "task-packet@1",
+  "task": "K17",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Show the empty kitchen state.",
+  "write_scope": [
+    "src/ui/kitchen-empty.mjs"
+  ],
+  "must": [
+    {
+      "id": "UI-13",
+      "v": 1,
+      "text": "When no row has a positive quantity, the state is empty, the message is Nothing to print, and Print is disabled including aria-disabled. Otherwise the state is ready and Print is enabled."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k17",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K17-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/ui/kitchen-empty.mjs",
+    "export": "kitchenEmpty"
+  },
+  "registered_names": [],
+  "rule_id": "UI-13",
+  "rule_text": "When no row has a positive quantity, the state is empty, the message is Nothing to print, and Print is disabled including aria-disabled. Otherwise the state is ready and Print is enabled.",
+  "visible": [
+    {
+      "id": "K17-V1",
+      "canary": "VIS-K17-1",
+      "args": [
+        [
+          {
+            "quantity": 0
+          }
+        ]
+      ],
+      "expect": {
+        "state": "empty",
+        "message": "Nothing to print",
+        "printDisabled": true,
+        "ariaDisabled": true
+      }
+    }
+  ]
+}

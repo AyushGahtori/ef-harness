@@ -1,0 +1,71 @@
+{
+  "schema": "task-packet@1",
+  "task": "K18",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Show order form field errors.",
+  "write_scope": [
+    "src/ui/order-form-errors.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-02",
+      "v": 1,
+      "text": "A blank dish id sets dishId to Dish is required. A quantity that is not an integer from 1 to 99 sets quantity to Quantity must be a whole number from 1 to 99. A valid form returns an empty error object."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k18",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K18-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/ui/order-form-errors.mjs",
+    "export": "orderFieldErrors"
+  },
+  "registered_names": [],
+  "rule_id": "X-02",
+  "rule_text": "A blank dish id sets dishId to Dish is required. A quantity that is not an integer from 1 to 99 sets quantity to Quantity must be a whole number from 1 to 99. A valid form returns an empty error object.",
+  "visible": [
+    {
+      "id": "K18-V1",
+      "canary": "VIS-K18-1",
+      "args": [
+        {
+          "dishId": "",
+          "quantity": 0
+        }
+      ],
+      "expect": {
+        "dishId": "Dish is required",
+        "quantity": "Quantity must be a whole number from 1 to 99"
+      }
+    }
+  ]
+}

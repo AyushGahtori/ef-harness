@@ -1,0 +1,127 @@
+{
+  "task": "K05",
+  "rule_id": "R40",
+  "cases": [
+    {
+      "id": "K05-H1",
+      "canary": "HK-K05-1",
+      "args": [
+        [
+          {
+            "slot": "12:00",
+            "dishId": "n",
+            "label": "Noodles",
+            "quantity": 1
+          },
+          {
+            "slot": "12:00",
+            "dishId": "r",
+            "label": "Rice",
+            "quantity": 2
+          },
+          {
+            "slot": "12:00",
+            "dishId": "n",
+            "label": "Noodles",
+            "quantity": 3
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "slot": "12:00",
+          "rows": [
+            {
+              "label": "Noodles",
+              "quantity": 4
+            },
+            {
+              "label": "Rice",
+              "quantity": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K05-H2",
+      "canary": "HK-K05-2",
+      "args": [
+        [
+          {
+            "slot": "11:00",
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 0
+          }
+        ]
+      ],
+      "expect": []
+    },
+    {
+      "id": "K05-H3",
+      "canary": "HK-K05-3",
+      "args": [
+        [
+          {
+            "slot": "12:30",
+            "dishId": "b",
+            "label": "Bread",
+            "quantity": 1
+          },
+          {
+            "slot": "11:00",
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 2
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "slot": "12:30",
+          "rows": [
+            {
+              "label": "Bread",
+              "quantity": 1
+            }
+          ]
+        },
+        {
+          "slot": "11:00",
+          "rows": [
+            {
+              "label": "Soup",
+              "quantity": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K05-H4",
+      "canary": "HK-K05-4",
+      "args": [
+        [
+          {
+            "slot": "13:00",
+            "dishId": "k",
+            "label": "Knödel",
+            "quantity": 2
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "slot": "13:00",
+          "rows": [
+            {
+              "label": "Knödel",
+              "quantity": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

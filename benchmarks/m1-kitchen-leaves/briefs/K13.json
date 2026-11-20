@@ -1,0 +1,95 @@
+{
+  "schema": "task-packet@1",
+  "task": "K13",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Preserve SQLite order rows when adding notes.",
+  "write_scope": [
+    "src/db/sqlite-migrate.mjs"
+  ],
+  "must": [
+    {
+      "id": "R50",
+      "v": 1,
+      "text": "Add a nullable notes column to orders. Existing id, dish, and qty values stay unchanged. Running the migration twice is safe."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k13",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K13-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/db/sqlite-migrate.mjs",
+    "export": "migrateSqlite"
+  },
+  "registered_names": [],
+  "rule_id": "R50",
+  "rule_text": "Add a nullable notes column to orders. Existing id, dish, and qty values stay unchanged. Running the migration twice is safe.",
+  "visible": [
+    {
+      "id": "K13-V1",
+      "canary": "VIS-K13-1",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 1,
+          "dish": "Soup",
+          "qty": 2
+        },
+        {
+          "id": 2,
+          "dish": "茶",
+          "qty": 3
+        }
+      ],
+      "twice": true,
+      "expect": {
+        "rows": [
+          {
+            "id": 1,
+            "dish": "Soup",
+            "qty": 2,
+            "notes": null
+          },
+          {
+            "id": 2,
+            "dish": "茶",
+            "qty": 3,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "sqlite",
+          "migrated": true
+        }
+      }
+    }
+  ]
+}

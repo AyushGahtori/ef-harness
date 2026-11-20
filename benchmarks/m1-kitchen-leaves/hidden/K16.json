@@ -1,0 +1,117 @@
+{
+  "task": "K16",
+  "rule_id": "X-13",
+  "cases": [
+    {
+      "id": "K16-H1",
+      "canary": "HK-K16-1",
+      "args": [
+        []
+      ],
+      "expect": {
+        "button": {
+          "name": "Print",
+          "ariaLabel": "Print kitchen list",
+          "ariaControls": "kitchen-list"
+        },
+        "region": {
+          "id": "kitchen-list",
+          "role": "region",
+          "ariaLabel": "Kitchen totals",
+          "rowCount": 0
+        }
+      }
+    },
+    {
+      "id": "K16-H2",
+      "canary": "HK-K16-2",
+      "args": [
+        [
+          {
+            "label": "Tea",
+            "quantity": 1
+          },
+          {
+            "label": "Rice",
+            "quantity": 1
+          }
+        ]
+      ],
+      "expect": {
+        "button": {
+          "name": "Print",
+          "ariaLabel": "Print kitchen list",
+          "ariaControls": "kitchen-list"
+        },
+        "region": {
+          "id": "kitchen-list",
+          "role": "region",
+          "ariaLabel": "Kitchen totals",
+          "rowCount": 2
+        }
+      }
+    },
+    {
+      "id": "K16-H3",
+      "canary": "HK-K16-3",
+      "args": [
+        [
+          {
+            "label": "Salad",
+            "quantity": 4
+          }
+        ]
+      ],
+      "expect": {
+        "button": {
+          "name": "Print",
+          "ariaLabel": "Print kitchen list",
+          "ariaControls": "kitchen-list"
+        },
+        "region": {
+          "id": "kitchen-list",
+          "role": "region",
+          "ariaLabel": "Kitchen totals",
+          "rowCount": 1
+        }
+      }
+    },
+    {
+      "id": "K16-H4",
+      "canary": "HK-K16-4",
+      "args": [
+        [
+          {
+            "label": "A",
+            "quantity": 1
+          },
+          {
+            "label": "B",
+            "quantity": 1
+          },
+          {
+            "label": "C",
+            "quantity": 1
+          },
+          {
+            "label": "D",
+            "quantity": 1
+          }
+        ]
+      ],
+      "expect": {
+        "button": {
+          "name": "Print",
+          "ariaLabel": "Print kitchen list",
+          "ariaControls": "kitchen-list"
+        },
+        "region": {
+          "id": "kitchen-list",
+          "role": "region",
+          "ariaLabel": "Kitchen totals",
+          "rowCount": 4
+        }
+      }
+    }
+  ]
+}

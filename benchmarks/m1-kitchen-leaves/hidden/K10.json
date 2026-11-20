@@ -1,0 +1,58 @@
+{
+  "task": "K10",
+  "rule_id": "X-01",
+  "cases": [
+    {
+      "id": "K10-H1",
+      "canary": "HK-K10-1",
+      "args": [
+        "kitchen",
+        "kitchen.print"
+      ],
+      "expect": {
+        "allowed": true,
+        "role": "kitchen",
+        "action": "kitchen.print"
+      }
+    },
+    {
+      "id": "K10-H2",
+      "canary": "HK-K10-2",
+      "args": [
+        "admin",
+        "order.create"
+      ],
+      "expect": {
+        "allowed": true,
+        "role": "admin",
+        "action": "order.create"
+      }
+    },
+    {
+      "id": "K10-H3",
+      "canary": "HK-K10-3",
+      "args": [
+        "anonymous",
+        "kitchen.print"
+      ],
+      "expect": {
+        "allowed": false,
+        "role": "anonymous",
+        "action": "kitchen.print"
+      }
+    },
+    {
+      "id": "K10-H4",
+      "canary": "HK-K10-4",
+      "args": [
+        "customer",
+        "unknown.action"
+      ],
+      "expect": {
+        "allowed": false,
+        "role": "customer",
+        "action": "unknown.action"
+      }
+    }
+  ]
+}

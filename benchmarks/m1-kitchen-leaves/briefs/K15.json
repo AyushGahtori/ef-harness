@@ -1,0 +1,75 @@
+{
+  "schema": "task-packet@1",
+  "task": "K15",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Render the kitchen Print button.",
+  "write_scope": [
+    "src/ui/kitchen-print-button.mjs"
+  ],
+  "must": [
+    {
+      "id": "UI-12",
+      "v": 1,
+      "text": "The kitchen screen exposes a button named Print with data-action print. The returned rowCount equals the number of input rows."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k15",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K15-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/ui/kitchen-print-button.mjs",
+    "export": "kitchenPrintButton"
+  },
+  "registered_names": [],
+  "rule_id": "UI-12",
+  "rule_text": "The kitchen screen exposes a button named Print with data-action print. The returned rowCount equals the number of input rows.",
+  "visible": [
+    {
+      "id": "K15-V1",
+      "canary": "VIS-K15-1",
+      "args": [
+        [
+          {
+            "label": "Soup",
+            "quantity": 2
+          }
+        ]
+      ],
+      "expect": {
+        "type": "button",
+        "name": "Print",
+        "html": "<button type=\"button\" data-action=\"print\">Print</button>",
+        "rowCount": 1
+      }
+    }
+  ]
+}

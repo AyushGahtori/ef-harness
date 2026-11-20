@@ -1,0 +1,89 @@
+{
+  "schema": "task-packet@1",
+  "task": "K07",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Total quantities after cancellations.",
+  "write_scope": [
+    "src/kitchen/cancellation-totals.mjs"
+  ],
+  "must": [
+    {
+      "id": "R42",
+      "v": 1,
+      "text": "Cancelled lines contribute nothing. Sum remaining positive quantities per dish id and preserve the first-seen order of dishes that still have a positive quantity."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k07",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K07-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/cancellation-totals.mjs",
+    "export": "cancellationTotals"
+  },
+  "registered_names": [],
+  "rule_id": "R42",
+  "rule_text": "Cancelled lines contribute nothing. Sum remaining positive quantities per dish id and preserve the first-seen order of dishes that still have a positive quantity.",
+  "visible": [
+    {
+      "id": "K07-V1",
+      "canary": "VIS-K07-1",
+      "args": [
+        [
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 2,
+            "cancelled": false
+          },
+          {
+            "dishId": "t",
+            "label": "Tea",
+            "quantity": 1,
+            "cancelled": true
+          },
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 1,
+            "cancelled": false
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Soup",
+          "quantity": 3
+        }
+      ]
+    }
+  ]
+}

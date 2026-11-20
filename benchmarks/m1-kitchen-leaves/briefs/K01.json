@@ -1,0 +1,81 @@
+{
+  "schema": "task-packet@1",
+  "task": "K01",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Filter kitchen totals into print rows.",
+  "write_scope": [
+    "src/kitchen/to-print-rows.mjs"
+  ],
+  "must": [
+    {
+      "id": "R31",
+      "v": 1,
+      "text": "Keep rows whose quantity is a positive integer, drop the rest, and preserve input order."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k01",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K01-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/to-print-rows.mjs",
+    "export": "toPrintRows"
+  },
+  "registered_names": [],
+  "rule_id": "R31",
+  "rule_text": "Keep rows whose quantity is a positive integer, drop the rest, and preserve input order.",
+  "visible": [
+    {
+      "id": "K01-V1",
+      "canary": "VIS-K01-1",
+      "args": [
+        [
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 2
+          },
+          {
+            "dishId": "t",
+            "label": "Tea",
+            "quantity": 0
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Soup",
+          "quantity": 2
+        }
+      ]
+    }
+  ]
+}

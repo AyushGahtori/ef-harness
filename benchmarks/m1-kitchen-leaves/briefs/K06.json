@@ -1,0 +1,91 @@
+{
+  "schema": "task-packet@1",
+  "task": "K06",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Disambiguate duplicate dish labels.",
+  "write_scope": [
+    "src/kitchen/duplicate-labels.mjs"
+  ],
+  "must": [
+    {
+      "id": "R41",
+      "v": 1,
+      "text": "When a label is unique, show it unchanged. When a label collides, case-sensitively, suffix the dish id in parentheses. Preserve input order."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k06",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K06-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/duplicate-labels.mjs",
+    "export": "presentLabels"
+  },
+  "registered_names": [],
+  "rule_id": "R41",
+  "rule_text": "When a label is unique, show it unchanged. When a label collides, case-sensitively, suffix the dish id in parentheses. Preserve input order.",
+  "visible": [
+    {
+      "id": "K06-V1",
+      "canary": "VIS-K06-1",
+      "args": [
+        [
+          {
+            "dishId": "s",
+            "label": "Soup"
+          },
+          {
+            "dishId": "s2",
+            "label": "Soup"
+          },
+          {
+            "dishId": "t",
+            "label": "Tea"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "dishId": "s",
+          "label": "Soup (s)"
+        },
+        {
+          "dishId": "s2",
+          "label": "Soup (s2)"
+        },
+        {
+          "dishId": "t",
+          "label": "Tea"
+        }
+      ]
+    }
+  ]
+}

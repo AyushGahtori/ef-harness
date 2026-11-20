@@ -1,0 +1,70 @@
+{
+  "task": "K19",
+  "rule_id": "UI-14",
+  "cases": [
+    {
+      "id": "K19-H1",
+      "canary": "HK-K19-1",
+      "args": [
+        {
+          "dishId": "Soup",
+          "quantity": 0
+        }
+      ],
+      "expect": {
+        "status": "invalid",
+        "message": "",
+        "fieldErrors": {
+          "quantity": "Quantity must be a whole number from 1 to 99"
+        }
+      }
+    },
+    {
+      "id": "K19-H2",
+      "canary": "HK-K19-2",
+      "args": [
+        {
+          "dishId": "",
+          "quantity": 2
+        }
+      ],
+      "expect": {
+        "status": "invalid",
+        "message": "",
+        "fieldErrors": {
+          "dishId": "Dish is required"
+        }
+      }
+    },
+    {
+      "id": "K19-H3",
+      "canary": "HK-K19-3",
+      "args": [
+        {
+          "dishId": "Tea",
+          "quantity": 99
+        }
+      ],
+      "expect": {
+        "status": "success",
+        "message": "Order sent",
+        "fieldErrors": {}
+      }
+    },
+    {
+      "id": "K19-H4",
+      "canary": "HK-K19-4",
+      "args": [
+        {
+          "dishId": "Noodles",
+          "quantity": 1
+        }
+      ],
+      "expect": {
+        "status": "success",
+        "message": "Order sent",
+        "fieldErrors": {}
+      }
+    }
+  ]
+}

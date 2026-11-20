@@ -1,0 +1,109 @@
+{
+  "task": "K14",
+  "rule_id": "R51",
+  "cases": [
+    {
+      "id": "K14-H1",
+      "canary": "HK-K14-1",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 4,
+          "dish": "Bread",
+          "qty": 6
+        }
+      ],
+      "expect": {
+        "rows": [
+          {
+            "id": 4,
+            "dish": "Bread",
+            "qty": 6,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "postgres",
+          "sql": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes text;\n"
+        }
+      }
+    },
+    {
+      "id": "K14-H2",
+      "canary": "HK-K14-2",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 1,
+          "dish": "Soup",
+          "qty": 1
+        },
+        {
+          "id": 9,
+          "dish": "Tea",
+          "qty": 2
+        }
+      ],
+      "expect": {
+        "rows": [
+          {
+            "id": 1,
+            "dish": "Soup",
+            "qty": 1,
+            "notes": null
+          },
+          {
+            "id": 9,
+            "dish": "Tea",
+            "qty": 2,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "postgres",
+          "sql": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes text;\n"
+        }
+      }
+    },
+    {
+      "id": "K14-H3",
+      "canary": "HK-K14-3",
+      "setup": "sqlite-orders-v1",
+      "fixture": [],
+      "twice": true,
+      "expect": {
+        "rows": [],
+        "result": {
+          "dialect": "postgres",
+          "sql": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes text;\n"
+        }
+      }
+    },
+    {
+      "id": "K14-H4",
+      "canary": "HK-K14-4",
+      "setup": "sqlite-orders-v1",
+      "fixture": [
+        {
+          "id": 8,
+          "dish": "Knödel",
+          "qty": 1
+        }
+      ],
+      "expect": {
+        "rows": [
+          {
+            "id": 8,
+            "dish": "Knödel",
+            "qty": 1,
+            "notes": null
+          }
+        ],
+        "result": {
+          "dialect": "postgres",
+          "sql": "ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes text;\n"
+        }
+      }
+    }
+  ]
+}

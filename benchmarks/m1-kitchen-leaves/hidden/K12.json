@@ -1,0 +1,60 @@
+{
+  "task": "K12",
+  "rule_id": "X-11",
+  "cases": [
+    {
+      "id": "K12-H1",
+      "canary": "HK-K12-1",
+      "args": [
+        "forbidden",
+        "Kitchen only"
+      ],
+      "expect": {
+        "error": {
+          "code": "forbidden",
+          "message": "Kitchen only"
+        }
+      }
+    },
+    {
+      "id": "K12-H2",
+      "canary": "HK-K12-2",
+      "args": [
+        "",
+        "x"
+      ],
+      "expect": {
+        "throws": true,
+        "messageIncludes": "X-11"
+      }
+    },
+    {
+      "id": "K12-H3",
+      "canary": "HK-K12-3",
+      "args": [
+        "oops",
+        ""
+      ],
+      "expect": {
+        "throws": true,
+        "messageIncludes": "X-11"
+      }
+    },
+    {
+      "id": "K12-H4",
+      "canary": "HK-K12-4",
+      "args": [
+        "conflict",
+        "Already sent",
+        "order"
+      ],
+      "expect": {
+        "error": {
+          "code": "conflict",
+          "message": "Already sent",
+          "field": "order"
+        }
+      }
+    }
+  ]
+}

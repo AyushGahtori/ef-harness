@@ -1,0 +1,56 @@
+{
+  "task": "K18",
+  "rule_id": "X-02",
+  "cases": [
+    {
+      "id": "K18-H1",
+      "canary": "HK-K18-1",
+      "args": [
+        {
+          "dishId": "Soup",
+          "quantity": 2
+        }
+      ],
+      "expect": {}
+    },
+    {
+      "id": "K18-H2",
+      "canary": "HK-K18-2",
+      "args": [
+        {
+          "dishId": "  ",
+          "quantity": 2
+        }
+      ],
+      "expect": {
+        "dishId": "Dish is required"
+      }
+    },
+    {
+      "id": "K18-H3",
+      "canary": "HK-K18-3",
+      "args": [
+        {
+          "dishId": "Soup",
+          "quantity": 100
+        }
+      ],
+      "expect": {
+        "quantity": "Quantity must be a whole number from 1 to 99"
+      }
+    },
+    {
+      "id": "K18-H4",
+      "canary": "HK-K18-4",
+      "args": [
+        {
+          "dishId": "Soup",
+          "quantity": 1.5
+        }
+      ],
+      "expect": {
+        "quantity": "Quantity must be a whole number from 1 to 99"
+      }
+    }
+  ]
+}
