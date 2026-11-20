@@ -1,0 +1,215 @@
+kind: option_elaborations
+id: wave1-ai-llm
+version: 1
+title: "Wave 1 AI/LLM elaborations"
+elaborations:
+  - id: ELAB-Q-AI-01-EXTRACTION
+    question: Q-AI-01
+    option: extraction
+    cells:
+      - cell: wave1.Q-AI-01.extraction.behavior
+        value: "The model pulls structured fields from a document and does not chat."
+      - cell: wave1.Q-AI-01.extraction.failure
+        value: "If Extraction is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Extraction is interrupted, the effect is not applied twice."
+    bounds:
+      - "Extraction allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-01-CLASSIFICATION
+    question: Q-AI-01
+    option: classification
+    cells:
+      - cell: wave1.Q-AI-01.classification.behavior
+        value: "The model assigns one label from a closed list."
+      - cell: wave1.Q-AI-01.classification.failure
+        value: "If Classification is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Classification is interrupted, the effect is not applied twice."
+    bounds:
+      - "Classification allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-01-AI-CHAT-OVER-PDFS
+    question: Q-AI-01
+    option: ai_chat_over_pdfs
+    cells:
+      - cell: wave1.Q-AI-01.ai_chat_over_pdfs.behavior
+        value: "People chat with the model about PDFs they uploaded, and the pack's must-ask privacy and quota questions still apply."
+      - cell: wave1.Q-AI-01.ai_chat_over_pdfs.failure
+        value: "If AI chat over uploaded company PDFs is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If AI chat over uploaded company PDFs is interrupted, the effect is not applied twice."
+    bounds:
+      - "AI chat over uploaded company PDFs allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-01-RAG-OVER-USER-PDFS
+    question: Q-AI-01
+    option: rag_over_user_pdfs
+    cells:
+      - cell: wave1.Q-AI-01.rag_over_user_pdfs.behavior
+        value: "Answers are retrieved from the user's PDFs and cited, not answered from memory alone."
+      - cell: wave1.Q-AI-01.rag_over_user_pdfs.failure
+        value: "If RAG over user PDFs is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If RAG over user PDFs is interrupted, the effect is not applied twice."
+    bounds:
+      - "RAG over user PDFs allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-01-GENERATION
+    question: Q-AI-01
+    option: generation
+    cells:
+      - cell: wave1.Q-AI-01.generation.behavior
+        value: "The model drafts new text from a prompt and is not grounded in an upload."
+      - cell: wave1.Q-AI-01.generation.failure
+        value: "If Generation is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Generation is interrupted, the effect is not applied twice."
+    bounds:
+      - "Generation allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-02-CITE-OR-REFUSE
+    question: Q-AI-02
+    option: cite_or_refuse
+    cells:
+      - cell: wave1.Q-AI-02.cite_or_refuse.behavior
+        value: "An answer without a retrieved citation is refused."
+      - cell: wave1.Q-AI-02.cite_or_refuse.failure
+        value: "If Cite sources or refuse is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Cite sources or refuse is interrupted, the effect is not applied twice."
+    bounds:
+      - "Cite sources or refuse allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-02-BEST-EFFORT
+    question: Q-AI-02
+    option: best_effort
+    cells:
+      - cell: wave1.Q-AI-02.best_effort.behavior
+        value: "The model may answer with no citation. This option is the failure case."
+      - cell: wave1.Q-AI-02.best_effort.failure
+        value: "If Best effort with hallucinations allowed is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Best effort with hallucinations allowed is interrupted, the effect is not applied twice."
+    bounds:
+      - "Best effort with hallucinations allowed allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-03-STRUCTURED-JSON
+    question: Q-AI-03
+    option: structured_json
+    cells:
+      - cell: wave1.Q-AI-03.structured_json.behavior
+        value: "The model returns one schema-validated document. A partial stream is not success."
+      - cell: wave1.Q-AI-03.structured_json.failure
+        value: "If Structured JSON output is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Structured JSON output is interrupted, the effect is not applied twice."
+    bounds:
+      - "Structured JSON output allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-03-STREAMING-TEXT
+    question: Q-AI-03
+    option: streaming_text
+    cells:
+      - cell: wave1.Q-AI-03.streaming_text.behavior
+        value: "Tokens stream to the screen and the saved answer is the completed stream."
+      - cell: wave1.Q-AI-03.streaming_text.failure
+        value: "If Streaming text UX is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Streaming text UX is interrupted, the effect is not applied twice."
+    bounds:
+      - "Streaming text UX allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-04-PER-USER-TOKEN-QUOTA
+    question: Q-AI-04
+    option: per_user_token_quota
+    cells:
+      - cell: wave1.Q-AI-04.per_user_token_quota.behavior
+        value: "Each user has a token budget. The next call past the budget is rejected before the provider is billed."
+      - cell: wave1.Q-AI-04.per_user_token_quota.failure
+        value: "If Per-user token spend limits is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Per-user token spend limits is interrupted, the effect is not applied twice."
+    bounds:
+      - "Per-user token spend limits allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota oracle. The per-user token cap rejects the call that would exceed the budget, and a replay of the rejected call does not add a second charge."
+  - id: ELAB-Q-AI-04-UNCAPPED
+    question: Q-AI-04
+    option: uncapped
+    cells:
+      - cell: wave1.Q-AI-04.uncapped.behavior
+        value: "No per-user cap is enforced. This option is the failure case."
+      - cell: wave1.Q-AI-04.uncapped.failure
+        value: "If Uncapped provider spend is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Uncapped provider spend is interrupted, the effect is not applied twice."
+    bounds:
+      - "Uncapped provider spend allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-05-NO-RAW-PII-EGRESS
+    question: Q-AI-05
+    option: no_raw_pii_egress
+    cells:
+      - cell: wave1.Q-AI-05.no_raw_pii_egress.behavior
+        value: "Raw personal data is stripped, and uploaded text is data, not instructions, before a provider call."
+      - cell: wave1.Q-AI-05.no_raw_pii_egress.failure
+        value: "If Block raw PII and untrusted content from the provider is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Block raw PII and untrusted content from the provider is interrupted, the effect is not applied twice."
+    bounds:
+      - "Block raw PII and untrusted content from the provider allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-05-SEND-DOCUMENTS-TO-PROVIDER
+    question: Q-AI-05
+    option: send_documents_to_provider
+    cells:
+      - cell: wave1.Q-AI-05.send_documents_to_provider.behavior
+        value: "The raw upload, including personal data, is sent to the provider. This option is the failure case."
+      - cell: wave1.Q-AI-05.send_documents_to_provider.failure
+        value: "If Send uploaded documents to the model provider is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Send uploaded documents to the model provider is interrupted, the effect is not applied twice."
+    bounds:
+      - "Send uploaded documents to the model provider allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."
+  - id: ELAB-Q-AI-06-FIXTURE-FALLBACK
+    question: Q-AI-06
+    option: fixture_fallback
+    cells:
+      - cell: wave1.Q-AI-06.fixture_fallback.behavior
+        value: "Tests use a frozen fixture, and a provider outage returns that fallback instead of an error page."
+      - cell: wave1.Q-AI-06.fixture_fallback.failure
+        value: "If Offline deterministic eval fixtures and provider-down fallback is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Offline deterministic eval fixtures and provider-down fallback is interrupted, the effect is not applied twice."
+    bounds:
+      - "Offline deterministic eval fixtures and provider-down fallback allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. With the provider down, the fallback fixture returns the frozen answer and does not call the network. A replay returns the same body."
+  - id: ELAB-Q-AI-06-FAIL-CLOSED-NO-FALLBACK
+    question: Q-AI-06
+    option: fail_closed_no_fallback
+    cells:
+      - cell: wave1.Q-AI-06.fail_closed_no_fallback.behavior
+        value: "A provider outage fails the request and there is no offline fixture."
+      - cell: wave1.Q-AI-06.fail_closed_no_fallback.failure
+        value: "If Fail closed with no fixture is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Fail closed with no fixture is interrupted, the effect is not applied twice."
+    bounds:
+      - "Fail closed with no fixture allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Quota and failure oracle. The per-user token quota rejects the next call, and the offline fixture answers when the provider is down."

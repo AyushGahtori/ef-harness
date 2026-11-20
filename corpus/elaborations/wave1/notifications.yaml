@@ -1,0 +1,201 @@
+kind: option_elaborations
+id: wave1-notifications
+version: 1
+title: "Wave 1 Notifications elaborations"
+elaborations:
+  - id: ELAB-Q-NTF-01-TRANSACTIONAL-EMAIL
+    question: Q-NTF-01
+    option: transactional_email
+    cells:
+      - cell: wave1.Q-NTF-01.transactional_email.behavior
+        value: "Product messages go out as transactional email through Resend or SMTP, not as a marketing blast."
+      - cell: wave1.Q-NTF-01.transactional_email.failure
+        value: "If Transactional Email via Resend/SMTP is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Transactional Email via Resend/SMTP is interrupted, the effect is not applied twice."
+    bounds:
+      - "Transactional Email via Resend/SMTP allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-01-IN-APP-BELL
+    question: Q-NTF-01
+    option: in_app_bell
+    cells:
+      - cell: wave1.Q-NTF-01.in_app_bell.behavior
+        value: "The only channel is an in-app bell. No email or SMS is sent."
+      - cell: wave1.Q-NTF-01.in_app_bell.failure
+        value: "If In-app bell is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If In-app bell is interrupted, the effect is not applied twice."
+    bounds:
+      - "In-app bell allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-01-SMS-PUSH-SLACK
+    question: Q-NTF-01
+    option: sms_push_slack
+    cells:
+      - cell: wave1.Q-NTF-01.sms_push_slack.behavior
+        value: "SMS, mobile push, and a Slack or webhook channel are all in scope."
+      - cell: wave1.Q-NTF-01.sms_push_slack.failure
+        value: "If SMS, push, and Slack webhooks is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If SMS, push, and Slack webhooks is interrupted, the effect is not applied twice."
+    bounds:
+      - "SMS, push, and Slack webhooks allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-02-IMMEDIATE
+    question: Q-NTF-02
+    option: immediate
+    cells:
+      - cell: wave1.Q-NTF-02.immediate.behavior
+        value: "The message leaves as soon as the triggering event commits."
+      - cell: wave1.Q-NTF-02.immediate.failure
+        value: "If Immediate send is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Immediate send is interrupted, the effect is not applied twice."
+    bounds:
+      - "Immediate send allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-02-DIGEST-BATCHED
+    question: Q-NTF-02
+    option: digest_batched
+    cells:
+      - cell: wave1.Q-NTF-02.digest_batched.behavior
+        value: "Events fold into one digest per recipient for the window."
+      - cell: wave1.Q-NTF-02.digest_batched.failure
+        value: "If Digest or batched is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Digest or batched is interrupted, the effect is not applied twice."
+    bounds:
+      - "Digest or batched allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-02-SCHEDULED-TIMEZONE
+    question: Q-NTF-02
+    option: scheduled_timezone
+    cells:
+      - cell: wave1.Q-NTF-02.scheduled_timezone.behavior
+        value: "The send waits for a clock time in the recipient IANA zone."
+      - cell: wave1.Q-NTF-02.scheduled_timezone.failure
+        value: "If Scheduled timezone-aware is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Scheduled timezone-aware is interrupted, the effect is not applied twice."
+    bounds:
+      - "Scheduled timezone-aware allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-03-PER-CHANNEL-OPT-OUT
+    question: Q-NTF-03
+    option: per_channel_opt_out
+    cells:
+      - cell: wave1.Q-NTF-03.per_channel_opt_out.behavior
+        value: "Every non-security channel has an unsubscribe that suppresses the next send."
+      - cell: wave1.Q-NTF-03.per_channel_opt_out.failure
+        value: "If Per-channel opt-out and unsubscribe is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Per-channel opt-out and unsubscribe is interrupted, the effect is not applied twice."
+    bounds:
+      - "Per-channel opt-out and unsubscribe allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-03-FORCED-SEND
+    question: Q-NTF-03
+    option: forced_send
+    cells:
+      - cell: wave1.Q-NTF-03.forced_send.behavior
+        value: "Messages send even after the person asks to stop. This option is the failure case."
+      - cell: wave1.Q-NTF-03.forced_send.failure
+        value: "If Send with no unsubscribe is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Send with no unsubscribe is interrupted, the effect is not applied twice."
+    bounds:
+      - "Send with no unsubscribe allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-04-RETRY-THEN-DEAD-LETTER
+    question: Q-NTF-04
+    option: retry_then_dead_letter
+    cells:
+      - cell: wave1.Q-NTF-04.retry_then_dead_letter.behavior
+        value: "Transient failures retry with backoff. Exhaustion writes one dead-letter row."
+      - cell: wave1.Q-NTF-04.retry_then_dead_letter.failure
+        value: "If Retry then dead-letter is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Retry then dead-letter is interrupted, the effect is not applied twice."
+    bounds:
+      - "Retry then dead-letter allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-04-DROP-ON-FAILURE
+    question: Q-NTF-04
+    option: drop_on_failure
+    cells:
+      - cell: wave1.Q-NTF-04.drop_on_failure.behavior
+        value: "The first provider error deletes the message. This option is the failure case."
+      - cell: wave1.Q-NTF-04.drop_on_failure.failure
+        value: "If Drop on first failure is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Drop on first failure is interrupted, the effect is not applied twice."
+    bounds:
+      - "Drop on first failure allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-05-LOCALIZED-TEMPLATES
+    question: Q-NTF-05
+    option: localized_templates
+    cells:
+      - cell: wave1.Q-NTF-05.localized_templates.behavior
+        value: "Each locale has its own template and the same named variables."
+      - cell: wave1.Q-NTF-05.localized_templates.failure
+        value: "If Localized templates is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Localized templates is interrupted, the effect is not applied twice."
+    bounds:
+      - "Localized templates allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-05-SINGLE-LOCALE
+    question: Q-NTF-05
+    option: single_locale
+    cells:
+      - cell: wave1.Q-NTF-05.single_locale.behavior
+        value: "One locale is rendered. A missing translation is not a second send."
+      - cell: wave1.Q-NTF-05.single_locale.failure
+        value: "If Single locale template is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Single locale template is interrupted, the effect is not applied twice."
+    bounds:
+      - "Single locale template allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-06-PER-RECIPIENT-CAP
+    question: Q-NTF-06
+    option: per_recipient_cap
+    cells:
+      - cell: wave1.Q-NTF-06.per_recipient_cap.behavior
+        value: "A recipient accepts a fixed number of product messages per hour. The rest are suppressed."
+      - cell: wave1.Q-NTF-06.per_recipient_cap.failure
+        value: "If Per-recipient anti-spam cap is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Per-recipient anti-spam cap is interrupted, the effect is not applied twice."
+    bounds:
+      - "Per-recipient anti-spam cap allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
+  - id: ELAB-Q-NTF-06-UNLIMITED
+    question: Q-NTF-06
+    option: unlimited
+    cells:
+      - cell: wave1.Q-NTF-06.unlimited.behavior
+        value: "No cap is applied. This option is the failure case."
+      - cell: wave1.Q-NTF-06.unlimited.failure
+        value: "If Unlimited sends is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Unlimited sends is interrupted, the effect is not applied twice."
+    bounds:
+      - "Unlimited sends allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. A bounce retries with the same idempotency key, then dead-letters without a second user-visible send."
