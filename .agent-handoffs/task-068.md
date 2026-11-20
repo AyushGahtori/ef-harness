@@ -27,7 +27,7 @@ Frozen Kitchen benchmark for `Task 105` and `Task 189`:
 Runner entry: `tests/e2e/m1-exit-gate/run-m1-suite.ts`.
 
 - `runM1ExitGate` — deterministic CI slice
-- `runLiveCertification` — `--live`. Returns `claimedCertification: false` when the key is missing, and does not claim the 20-task bar from a single provider call.
+- `runLiveCertification` — `--live`. With a key, grades all 20 briefs (one rule-only retry, no held-back input) and sets `claimedCertification` only at `>= 17/20`. With no key, returns `claimedCertification: false`.
 - `certifyCi`, `assertExitGate`, `writeExitReport`, `reportPath`, `renderReport`
 - `PIPELINE_STAGES` — `claimTask`, `WorktreeSlotManager`, `TestEnvOrchestrator`, `NativeWorkerLoop`, `AttemptMcpServer`, `harness.run`, `submit_candidate`, `STATIC_AUDIT`, `CleanVerifierRunner`, `CandidateAcceptanceCoordinator`, `squash`, `viewer`
 
@@ -78,7 +78,7 @@ From `C:\Users\Ayush\Desktop\ef-wt\task-068-m1-kitchen-exit-gate`:
 
 ## Known Limitations / Follow-Ups
 
-- Live M1 bar (`>= 17/20` on a real model) is not claimed. CI mode is `FakeModelAdapter` only. Run `node --experimental-transform-types tests/e2e/m1-exit-gate/run-m1-suite.ts --live` with `EF_M1_LIVE_API_KEY` or `OPENROUTER_API_KEY` when certifying a release. Node's strip-only loader rejects the parameter properties in `pipeline.ts`. One provider call must not be treated as the 20-task bar. Without a key, `runLiveCertification` returns `claimedCertification: false`. The CLI then sets exit code 2 because it did not certify.
+- Live M1 bar (`>= 17/20` on a real model) is not claimed. CI mode is `FakeModelAdapter` only. Run `node tests/e2e/m1-exit-gate/run-m1-suite.ts --live` with `EF_M1_LIVE_API_KEY` or `OPENROUTER_API_KEY` when certifying a release. That path grades every task and claims the bar only at `>= 17/20`. Without a key it returns `claimedCertification: false` and the CLI sets exit code 2.
 - OS red-team sign-off is withheld. The kernel policy blocked 7/7 (profile read, outside write, `.git/HEAD`, raw TCP, orphan sleeper, `pnpm add` / `curl | sh`, `kb.get` of a held-back id). Tier C is flagged as advisory and is not reported as OS-enforced. Full sign-off needs `@ef-harness/sandbox` on Tier A, B, or D.
 - Upstream packages were not modified. If a sibling implementation disagrees with a port, reproduce it against that package and swap the port listed above.
 - `tests/e2e/tests/m1-exit-gate.test.ts` is the only file outside `benchmarks/m1-kitchen-leaves/**` and `tests/e2e/m1-exit-gate/**`. It exists because `tests/e2e/vitest.config.ts` is frozen and only includes `tests/**/*.test.ts`.
