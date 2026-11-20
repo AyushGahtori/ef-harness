@@ -1,0 +1,270 @@
+{
+  "task": "Task-002",
+  "decision": "go",
+  "systemNode": {
+    "runtime": "node",
+    "checks": [
+      {
+        "id": "runtime-identity",
+        "pass": true,
+        "detail": "runtime=node electron=none node=24.16.0"
+      },
+      {
+        "id": "sqlite-version",
+        "pass": true,
+        "detail": "3.53.0 meets minimum 3.43 and target 3.53"
+      },
+      {
+        "id": "constructor-options",
+        "pass": true,
+        "detail": "explicit undefined options throw ERR_INVALID_ARG_TYPE; omitting options opens the database"
+      },
+      {
+        "id": "harness-pragmas",
+        "pass": true,
+        "detail": "journal_mode=wal synchronous=2 foreign_keys=1 busy_timeout=5000 secure_delete=1 journal_size_limit=67108864 temp_store=2"
+      },
+      {
+        "id": "sql-features",
+        "pass": true,
+        "detail": "STRICT WITHOUT ROWID VIRTUAL RETURNING AUTOINCREMENT json_each DEFERRABLE"
+      },
+      {
+        "id": "named-parameter-prefixes",
+        "pass": true,
+        "detail": "prefixes=: @ $ bareDefault=accepted bareOff=rejected unknown=rejected queries=45"
+      },
+      {
+        "id": "bigint",
+        "pass": true,
+        "detail": "default read throws; readBigInts returns bigint"
+      },
+      {
+        "id": "begin-immediate",
+        "pass": true,
+        "detail": "deferredBegin=rejected busyErrcode=5"
+      },
+      {
+        "id": "schema-suite-memory",
+        "pass": true,
+        "detail": "67/67 SQLite 3.53.0 storage=memory skipped=0"
+      },
+      {
+        "id": "schema-suite-wal",
+        "pass": true,
+        "detail": "67/67 SQLite 3.53.0 walFiles=4 skipped=0"
+      },
+      {
+        "id": "fts-contentless-trap",
+        "pass": true,
+        "detail": "contentlessLike=0 externalLike=C-014"
+      },
+      {
+        "id": "fts-unicode",
+        "pass": true,
+        "detail": "cafe naive camel snake stored=emoji+eszett strasseHits=0 emojiHits=0"
+      },
+      {
+        "id": "fts-vacuum",
+        "pass": true,
+        "detail": "VACUUM and VACUUM INTO kept external FTS and contentless LIKE stayed empty"
+      },
+      {
+        "id": "iterator-checkpoint",
+        "pass": true,
+        "detail": "openIterator=SQLITE_LOCKED 6; return() released PASSIVE RESTART TRUNCATE"
+      },
+      {
+        "id": "data-version",
+        "pass": true,
+        "detail": "same=2->2 other=3"
+      },
+      {
+        "id": "vacuum-into-concurrent",
+        "pass": true,
+        "detail": "bytes=59006976 vacuumIntoMs=775 quickCheckMs=78 integrityCheckMs=64 rows=12802"
+      },
+      {
+        "id": "vacuum-into-destination",
+        "pass": true,
+        "detail": "existing destination preserved; partial file removed; fresh copy passed quick_check"
+      },
+      {
+        "id": "worker-terminate",
+        "pass": true,
+        "detail": "terminateMs=3 PASSIVE=2ms RESTART=0ms TRUNCATE=0ms handlesReleased=yes"
+      },
+      {
+        "id": "worker-inflight-call",
+        "pass": true,
+        "detail": "inFlightTerminateMs=281 (sqlite3_interrupt is not exposed; terminate waits for the current call)"
+      },
+      {
+        "id": "driver-parity",
+        "pass": true,
+        "detail": "equal=yes nodeMs=15 fallbackMs=20 sample={\"count\":1000,\"name\":\"row-0\",\"length\":5,\"mode\":\"wal\"}"
+      },
+      {
+        "id": "native-addons",
+        "pass": true,
+        "detail": "nativeAddons=0 better-sqlite3=unresolved"
+      }
+    ],
+    "notes": {
+      "sqliteVersion": "3.53.0",
+      "electronVersion": null,
+      "nodeVersion": "24.16.0",
+      "vacuumIntoMs": 775,
+      "quickCheckMs": 78,
+      "integrityCheckMs": 64,
+      "syntheticBytes": 59006976,
+      "chunkedTerminateMs": 3,
+      "truncateMs": 0,
+      "blockingTerminateMs": 281,
+      "nodeDriverMs": 15,
+      "fallbackDriverMs": 20,
+      "parityEqual": true,
+      "nativeAddonCount": 0,
+      "contentlessLikeRows": 0,
+      "iteratorErrcode": 6,
+      "busyErrcode": 5,
+      "unsafeInteger": "throws-unless-readBigInts",
+      "bareNames": "default-accepts-bare-and-prefixed",
+      "sameConnectionDataVersion": "unchanged"
+    },
+    "passed": true
+  },
+  "electron": {
+    "runtime": "electron",
+    "checks": [
+      {
+        "id": "runtime-identity",
+        "pass": true,
+        "detail": "runtime=electron electron=45.3.4 node=24.22.3"
+      },
+      {
+        "id": "sqlite-version",
+        "pass": true,
+        "detail": "3.54.1 meets minimum 3.43 and target 3.53"
+      },
+      {
+        "id": "constructor-options",
+        "pass": true,
+        "detail": "explicit undefined options throw ERR_INVALID_ARG_TYPE; omitting options opens the database"
+      },
+      {
+        "id": "harness-pragmas",
+        "pass": true,
+        "detail": "journal_mode=wal synchronous=2 foreign_keys=1 busy_timeout=5000 secure_delete=1 journal_size_limit=67108864 temp_store=2"
+      },
+      {
+        "id": "sql-features",
+        "pass": true,
+        "detail": "STRICT WITHOUT ROWID VIRTUAL RETURNING AUTOINCREMENT json_each DEFERRABLE"
+      },
+      {
+        "id": "named-parameter-prefixes",
+        "pass": true,
+        "detail": "prefixes=: @ $ bareDefault=accepted bareOff=rejected unknown=rejected queries=45"
+      },
+      {
+        "id": "bigint",
+        "pass": true,
+        "detail": "default read throws; readBigInts returns bigint"
+      },
+      {
+        "id": "begin-immediate",
+        "pass": true,
+        "detail": "deferredBegin=rejected busyErrcode=5"
+      },
+      {
+        "id": "schema-suite-memory",
+        "pass": true,
+        "detail": "67/67 SQLite 3.54.1 storage=memory skipped=0"
+      },
+      {
+        "id": "schema-suite-wal",
+        "pass": true,
+        "detail": "67/67 SQLite 3.54.1 walFiles=4 skipped=0"
+      },
+      {
+        "id": "fts-contentless-trap",
+        "pass": true,
+        "detail": "contentlessLike=0 externalLike=C-014"
+      },
+      {
+        "id": "fts-unicode",
+        "pass": true,
+        "detail": "cafe naive camel snake stored=emoji+eszett strasseHits=0 emojiHits=0"
+      },
+      {
+        "id": "fts-vacuum",
+        "pass": true,
+        "detail": "VACUUM and VACUUM INTO kept external FTS and contentless LIKE stayed empty"
+      },
+      {
+        "id": "iterator-checkpoint",
+        "pass": true,
+        "detail": "openIterator=SQLITE_LOCKED 6; return() released PASSIVE RESTART TRUNCATE"
+      },
+      {
+        "id": "data-version",
+        "pass": true,
+        "detail": "same=2->2 other=3"
+      },
+      {
+        "id": "vacuum-into-concurrent",
+        "pass": true,
+        "detail": "bytes=59006976 vacuumIntoMs=876 quickCheckMs=69 integrityCheckMs=57 rows=12802"
+      },
+      {
+        "id": "vacuum-into-destination",
+        "pass": true,
+        "detail": "existing destination preserved; partial file removed; fresh copy passed quick_check"
+      },
+      {
+        "id": "worker-terminate",
+        "pass": true,
+        "detail": "terminateMs=3 PASSIVE=7ms RESTART=0ms TRUNCATE=8ms handlesReleased=yes"
+      },
+      {
+        "id": "worker-inflight-call",
+        "pass": true,
+        "detail": "inFlightTerminateMs=327 (sqlite3_interrupt is not exposed; terminate waits for the current call)"
+      },
+      {
+        "id": "driver-parity",
+        "pass": true,
+        "detail": "equal=yes nodeMs=12 fallbackMs=24 sample={\"count\":1000,\"name\":\"row-0\",\"length\":5,\"mode\":\"wal\"}"
+      },
+      {
+        "id": "native-addons",
+        "pass": true,
+        "detail": "nativeAddons=0 better-sqlite3=unresolved"
+      }
+    ],
+    "notes": {
+      "sqliteVersion": "3.54.1",
+      "electronVersion": "45.3.4",
+      "nodeVersion": "24.22.3",
+      "vacuumIntoMs": 876,
+      "quickCheckMs": 69,
+      "integrityCheckMs": 57,
+      "syntheticBytes": 59006976,
+      "chunkedTerminateMs": 3,
+      "truncateMs": 8,
+      "blockingTerminateMs": 327,
+      "nodeDriverMs": 12,
+      "fallbackDriverMs": 24,
+      "parityEqual": true,
+      "nativeAddonCount": 0,
+      "contentlessLikeRows": 0,
+      "iteratorErrcode": 6,
+      "busyErrcode": 5,
+      "unsafeInteger": "throws-unless-readBigInts",
+      "bareNames": "default-accepts-bare-and-prefixed",
+      "sameConnectionDataVersion": "unchanged"
+    },
+    "passed": true
+  }
+}
