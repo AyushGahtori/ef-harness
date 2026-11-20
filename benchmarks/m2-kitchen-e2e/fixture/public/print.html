@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Print lunch summary</title>
+    <link rel="stylesheet" href="/tokens.css">
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body data-page="print">
+    <header>
+      <img src="/assets/mark.png" width="32" height="32" alt="Office kitchen">
+      <h1>Printable lunch summary</h1>
+    </header>
+    <main>
+      <p id="summary-status" role="status" class="muted">Loading the print view.</p>
+      <table id="dishes">
+        <caption>Daily dish totals</caption>
+        <thead>
+          <tr>
+            <th scope="col">Dish</th>
+            <th scope="col">Count</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <h2>Dietary notes</h2>
+      <ul id="notes"></ul>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Order lunch</title>
+    <link rel="stylesheet" href="/tokens.css">
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body data-page="order">
+    <header>
+      <img src="/assets/mark.png" width="32" height="32" alt="Office kitchen">
+      <h1>Order lunch</h1>
+      <p class="muted">Open this link before the 11:00 AM cutoff.</p>
+    </header>
+    <main>
+      <form id="sign-in">
+        <label for="staff-name">Your name
+          <input id="staff-name" name="staff-name" autocomplete="name" required>
+        </label>
+        <button id="continue" type="submit">Continue</button>
+      </form>
+      <form id="order-form" hidden>
+        <label for="menu-item">Lunch
+          <select id="menu-item" name="menu-item" required></select>
+        </label>
+        <label for="dietary-note">Dietary note
+          <input id="dietary-note" name="dietary-note" type="text" maxlength="120">
+        </label>
+        <div class="actions">
+          <button id="submit-order" type="submit">Submit order</button>
+          <button id="update-order" type="button">Update order</button>
+          <button id="cancel-order" type="button">Cancel order</button>
+        </div>
+        <p id="cutoff-banner" class="banner" hidden>Ordering is closed for today.</p>
+        <p id="status" role="status"></p>
+      </form>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

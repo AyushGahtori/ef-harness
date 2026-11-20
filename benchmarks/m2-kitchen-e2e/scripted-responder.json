@@ -1,0 +1,44 @@
+{
+  "schema": "m2-scripted-developer@1",
+  "recommendations": [
+    { "id": "database.sqlite", "choice": "SQLite", "basis": "delegated" },
+    { "id": "auth.session-cookie", "choice": "session cookie", "basis": "delegated" },
+    { "id": "mail.mailpit", "choice": "Mailpit", "basis": "delegated" }
+  ],
+  "turns": [
+    { "id": "T1", "kind": "opening", "file": "opening-prompt.txt" },
+    {
+      "id": "T2",
+      "kind": "multi-question",
+      "text": "Staff and the kitchen use it first. Today's hard part is counting lunches by hand. A staff member submits a lunch choice and the kitchen sees totals grouped by dish. The first demo should show Soup × 2 and Salad × 1. The cutoff stays 11:00 AM and staff open a link on their phones.",
+      "answers": ["product.audience", "workflows.primary", "product.stage"]
+    },
+    {
+      "id": "T3",
+      "kind": "mistaken-claim",
+      "text": "Also make it an offline native phone app, and move the cutoff to 10:30 AM.",
+      "claims": ["offline-native-app", "cutoff-10:30"]
+    },
+    {
+      "id": "T4",
+      "kind": "retraction",
+      "text": "Scratch that. I take back the native app and I take back 10:30. Staff only open a link in the phone browser. The cutoff stays 11:00 AM. Orders at 11:01 AM are rejected.",
+      "retracts": ["T3"]
+    },
+    {
+      "id": "T5",
+      "kind": "accept-all-recommended",
+      "text": "Accept all recommended",
+      "optionsVersion": 1,
+      "accepts": ["database.sqlite", "auth.session-cookie", "mail.mailpit"]
+    },
+    {
+      "id": "T6",
+      "kind": "views-edit",
+      "path": ".harness/views/orders.md",
+      "base": "# Orders\n\n```ef:node id=R-cutoff\ncutoff_time: 11:00\ntimezone: America/New_York\n```\n",
+      "edited": "# Orders\n\n```ef:node id=R-cutoff\ncutoff_time: 11:00\ntimezone: America/New_York\n```\n\n```ef:node id=R-dietary\nEach order stores a dietary note shown on the kitchen summary and the print view.\n```\n"
+    },
+    { "id": "T7", "kind": "start-build", "text": "Start build" }
+  ]
+}
