@@ -7,6 +7,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./canonical": {
+      "types": "./dist/canonical/index.d.ts",
+      "import": "./dist/canonical/index.js"
+    },
+    "./telemetry": {
+      "types": "./dist/telemetry/index.d.ts",
+      "import": "./dist/telemetry/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -16,6 +24,9 @@
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
