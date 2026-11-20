@@ -1,0 +1,311 @@
+task: Task-076
+bundle: m2-web-api-cli
+core_data_auth_source: task-075-port
+paths:
+  packs:
+    - corpus/packs/web-api-cli/web.yaml
+    - corpus/packs/web-api-cli/api.yaml
+    - corpus/packs/web-api-cli/cli.yaml
+  elaborations:
+    - corpus/elaborations/web.yaml
+    - corpus/elaborations/api.yaml
+    - corpus/elaborations/cli.yaml
+    - corpus/elaborations/core-data-auth.yaml
+  policies: corpus/policies/universal-policies.yaml
+  task_075_port: packages/discovery/tests/corpus-web-api-cli/port/task-075-questions.json
+counts:
+  web: 6
+  api: 5
+  cli: 4
+  core: 18
+  data: 6
+  auth: 5
+  elaborations: 86
+  universal_policies: 8
+question_ids:
+  web:
+    - ui.responsive_targets
+    - ui.pages_inventory
+    - ui.forms_validation_style
+    - ui.states_style
+    - ui.look_and_feel
+    - ui.accessibility_level
+  api:
+    - api.style
+    - api.consumers
+    - api.pagination
+    - api.rate_limits
+    - jobs.background_needed
+  cli:
+    - cli.output_format
+    - cli.config_location
+    - cli.exit_codes
+    - cli.distribution
+policy_ids:
+  - UP-01
+  - UP-02
+  - UP-03
+  - UP-04
+  - UP-05
+  - UP-06
+  - UP-07
+  - UP-08
+elaboration_index:
+  - id: ELAB-Q-WEB-01-MOBILE-FIRST
+    question_id: ui.responsive_targets
+    option_id: mobile_first
+  - id: ELAB-Q-WEB-01-DESKTOP-FIRST
+    question_id: ui.responsive_targets
+    option_id: desktop_first
+  - id: ELAB-Q-WEB-01-RESPONSIVE-PARITY
+    question_id: ui.responsive_targets
+    option_id: responsive_parity
+  - id: ELAB-Q-WEB-02-CLIENT-ROUTING
+    question_id: ui.pages_inventory
+    option_id: client_routing
+  - id: ELAB-Q-WEB-02-SSR-SEO
+    question_id: ui.pages_inventory
+    option_id: ssr_seo
+  - id: ELAB-Q-WEB-02-STATIC-EXPORT
+    question_id: ui.pages_inventory
+    option_id: static_export
+  - id: ELAB-Q-WEB-02-HYBRID-PUBLIC-SSR
+    question_id: ui.pages_inventory
+    option_id: hybrid_public_ssr
+  - id: ELAB-Q-WEB-03-SIMPLE-SUBMIT
+    question_id: ui.forms_validation_style
+    option_id: simple_submit
+  - id: ELAB-Q-WEB-03-AUTOSAVE-DRAFTS
+    question_id: ui.forms_validation_style
+    option_id: autosave_drafts
+  - id: ELAB-Q-WEB-03-MULTI-STEP
+    question_id: ui.forms_validation_style
+    option_id: multi_step
+  - id: ELAB-Q-WEB-03-OPTIMISTIC-AUTOSAVE
+    question_id: ui.forms_validation_style
+    option_id: optimistic_autosave
+  - id: ELAB-Q-WEB-03-NO-FORMS
+    question_id: ui.forms_validation_style
+    option_id: no_forms
+  - id: ELAB-Q-WEB-04-CAPPED-FULL-LIST
+    question_id: ui.states_style
+    option_id: capped_full_list
+  - id: ELAB-Q-WEB-04-PAGED-ROWS
+    question_id: ui.states_style
+    option_id: paged_rows
+  - id: ELAB-Q-WEB-04-VIRTUALIZED-WINDOW
+    question_id: ui.states_style
+    option_id: virtualized_window
+  - id: ELAB-Q-WEB-04-PRINT-AND-EXPORT
+    question_id: ui.states_style
+    option_id: print_and_export
+  - id: ELAB-Q-WEB-05-LIGHT-ONLY
+    question_id: ui.look_and_feel
+    option_id: light_only
+  - id: ELAB-Q-WEB-05-SYSTEM-LIGHT-DARK
+    question_id: ui.look_and_feel
+    option_id: system_light_dark
+  - id: ELAB-Q-WEB-05-BRAND-TOKENS
+    question_id: ui.look_and_feel
+    option_id: brand_tokens
+  - id: ELAB-Q-WEB-06-WCAG-AA-EVERGREEN
+    question_id: ui.accessibility_level
+    option_id: wcag_aa_evergreen
+  - id: ELAB-Q-WEB-06-WCAG-AA-PINNED-LEGACY
+    question_id: ui.accessibility_level
+    option_id: wcag_aa_pinned_legacy
+  - id: ELAB-Q-WEB-06-WCAG-AA-KEYBOARD-FIRST
+    question_id: ui.accessibility_level
+    option_id: wcag_aa_keyboard_first
+  - id: ELAB-Q-API-01-REST-OPENAPI
+    question_id: api.style
+    option_id: rest_openapi
+  - id: ELAB-Q-API-01-RPC-SCHEMA
+    question_id: api.style
+    option_id: rpc_schema
+  - id: ELAB-Q-API-01-WEBHOOKS-AND-REST
+    question_id: api.style
+    option_id: webhooks_and_rest
+  - id: ELAB-Q-API-01-INTERNAL-RPC-ONLY
+    question_id: api.style
+    option_id: internal_rpc_only
+  - id: ELAB-Q-API-02-INTERNAL-UNVERSIONED
+    question_id: api.consumers
+    option_id: internal_unversioned
+  - id: ELAB-Q-API-02-PUBLIC-URL-VERSION
+    question_id: api.consumers
+    option_id: public_url_version
+  - id: ELAB-Q-API-02-PUBLIC-HEADER-VERSION
+    question_id: api.consumers
+    option_id: public_header_version
+  - id: ELAB-Q-API-03-OFFSET-PAGE
+    question_id: api.pagination
+    option_id: offset_page
+  - id: ELAB-Q-API-03-CURSOR-PAGE
+    question_id: api.pagination
+    option_id: cursor_page
+  - id: ELAB-Q-API-03-CURSOR-FILTER-SORT
+    question_id: api.pagination
+    option_id: cursor_filter_sort
+  - id: ELAB-Q-API-04-BASIC-LIMITS
+    question_id: api.rate_limits
+    option_id: basic_limits
+  - id: ELAB-Q-API-04-STRICT-PUBLIC
+    question_id: api.rate_limits
+    option_id: strict_public
+  - id: ELAB-Q-API-04-INTERNAL-HIGH-CEILING
+    question_id: api.rate_limits
+    option_id: internal_high_ceiling
+  - id: ELAB-Q-API-05-NONE-INLINE
+    question_id: jobs.background_needed
+    option_id: none_inline
+  - id: ELAB-Q-API-05-DURABLE-JOBS
+    question_id: jobs.background_needed
+    option_id: durable_jobs
+  - id: ELAB-Q-API-05-WEBHOOKS-WITH-RETRY
+    question_id: jobs.background_needed
+    option_id: webhooks_with_retry
+  - id: ELAB-Q-CLI-01-HUMAN-INTERACTIVE
+    question_id: cli.output_format
+    option_id: human_interactive
+  - id: ELAB-Q-CLI-01-JSON-NONINTERACTIVE
+    question_id: cli.output_format
+    option_id: json_noninteractive
+  - id: ELAB-Q-CLI-01-DUAL-TTY-OR-PIPE
+    question_id: cli.output_format
+    option_id: dual_tty_or_pipe
+  - id: ELAB-Q-CLI-02-FLAGS-ENV-PROJECT-USER
+    question_id: cli.config_location
+    option_id: flags_env_project_user
+  - id: ELAB-Q-CLI-02-ENV-ONLY
+    question_id: cli.config_location
+    option_id: env_only
+  - id: ELAB-Q-CLI-02-PROJECT-FILE-ONLY
+    question_id: cli.config_location
+    option_id: project_file_only
+  - id: ELAB-Q-CLI-03-CONVENTIONAL-SPLIT
+    question_id: cli.exit_codes
+    option_id: conventional_split
+  - id: ELAB-Q-CLI-03-POSIX-SYSEXITS
+    question_id: cli.exit_codes
+    option_id: posix_sysexits
+  - id: ELAB-Q-CLI-03-STDOUT-MESSAGES
+    question_id: cli.exit_codes
+    option_id: stdout_messages
+  - id: ELAB-Q-CLI-04-OS-CONFIG-DIRS
+    question_id: cli.distribution
+    option_id: os_config_dirs
+  - id: ELAB-Q-CLI-04-PROJECT-LOCAL-DOTDIR
+    question_id: cli.distribution
+    option_id: project_local_dotdir
+  - id: ELAB-Q-CLI-04-PORTABLE-SINGLE-FILE
+    question_id: cli.distribution
+    option_id: portable_single_file
+  - id: ELAB-Q-CORE-01-INTERNAL-WORKFLOW
+    question_id: product.purpose
+    option_id: internal_workflow
+  - id: ELAB-Q-CORE-02-OFFICE-STAFF
+    question_id: product.audience
+    option_id: office_staff
+  - id: ELAB-Q-CORE-03-PROTOTYPE-SLICE
+    question_id: product.stage
+    option_id: prototype_slice
+  - id: ELAB-Q-CORE-03-MVP-SLICE
+    question_id: product.stage
+    option_id: mvp_slice
+  - id: ELAB-Q-CORE-03-PRODUCTION-SLICE
+    question_id: product.stage
+    option_id: production_slice
+  - id: ELAB-Q-CORE-04-STAFF-AND-MANAGER
+    question_id: actors.roles
+    option_id: staff_and_manager
+  - id: ELAB-Q-CORE-05-ONE-HAPPY-PATH
+    question_id: workflows.primary
+    option_id: one_happy_path
+  - id: ELAB-Q-CORE-06-NONE-THIS-RELEASE
+    question_id: workflows.secondary
+    option_id: none_this_release
+  - id: ELAB-Q-CORE-07-NAMED-BY-USER
+    question_id: data.entities
+    option_id: named_by_user
+  - id: ELAB-Q-CORE-08-CREATOR-OWNED
+    question_id: data.ownership
+    option_id: creator_owned
+  - id: ELAB-Q-CORE-09-PERSISTS
+    question_id: product.persists_data
+    option_id: persists
+  - id: ELAB-Q-CORE-10-PLAIN-WITH-RETRY
+    question_id: errors.user_facing_style
+    option_id: plain_with_retry
+  - id: ELAB-Q-CORE-11-AUTOMATED-ACCEPTANCE
+    question_id: testing.expectations
+    option_id: automated_acceptance
+  - id: ELAB-Q-CORE-12-WEB-BROWSER
+    question_id: delivery.platform
+    option_id: web_browser
+  - id: ELAB-Q-CORE-13-LOCAL-ONLY
+    question_id: deploy.target
+    option_id: local_only
+  - id: ELAB-Q-CORE-13-SINGLE-HOSTED
+    question_id: deploy.target
+    option_id: single_hosted
+  - id: ELAB-Q-CORE-14-UNSET-OPEN
+    question_id: constraints.deadline_budget
+    option_id: unset_open
+  - id: ELAB-Q-CORE-15-NO-STACK-MANDATE
+    question_id: constraints.stack_preferences
+    option_id: no_stack_mandate
+  - id: ELAB-Q-CORE-16-NONE-THIS-RELEASE
+    question_id: integrations.external
+    option_id: none_this_release
+  - id: ELAB-Q-CORE-16-NAMED-HTTP
+    question_id: integrations.external
+    option_id: named_http
+  - id: ELAB-Q-CORE-17-UTC-STORAGE-IANA-DISPLAY
+    question_id: time.locale_timezone
+    option_id: utc_storage_iana_display
+  - id: ELAB-Q-CORE-18-ENGLISH-ONLY
+    question_id: content.language
+    option_id: english_only
+  - id: ELAB-Q-DATA-01-POSTGRES
+    question_id: data.storage.engine
+    option_id: postgres
+  - id: ELAB-Q-DATA-01-SQLITE
+    question_id: data.storage.engine
+    option_id: sqlite
+  - id: ELAB-Q-DATA-02-SOFT-DELETE
+    question_id: data.retention_deletion
+    option_id: soft_delete
+  - id: ELAB-Q-DATA-03-CONTACT-ONLY
+    question_id: data.personal_data
+    option_id: contact_only
+  - id: ELAB-Q-DATA-04-NO-IMPORT
+    question_id: data.import_existing
+    option_id: no_import
+  - id: ELAB-Q-DATA-05-SCHEDULED-SNAPSHOT
+    question_id: data.backup
+    option_id: scheduled_snapshot
+  - id: ELAB-Q-DATA-06-LAST-WRITE-WINS
+    question_id: data.concurrent_edits
+    option_id: last_write_wins
+  - id: ELAB-Q-DATA-06-OPTIMISTIC-VERSION
+    question_id: data.concurrent_edits
+    option_id: optimistic_version
+  - id: ELAB-Q-AUTH-01-REQUIRED
+    question_id: auth.needed
+    option_id: required
+  - id: ELAB-Q-AUTH-02-MAGIC-LINK
+    question_id: auth.method
+    option_id: magic_link
+  - id: ELAB-Q-AUTH-02-PASSWORD
+    question_id: auth.method
+    option_id: password
+  - id: ELAB-Q-AUTH-03-RBAC
+    question_id: auth.roles_permissions
+    option_id: rbac
+  - id: ELAB-Q-AUTH-04-WORKDAY
+    question_id: auth.session_length
+    option_id: workday
+  - id: ELAB-Q-AUTH-05-EMAIL-RESET
+    question_id: auth.account_recovery
+    option_id: email_reset

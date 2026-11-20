@@ -1,0 +1,298 @@
+policies:
+  - id: UP-01
+    title: Secret and credential hygiene
+    statement: The system shall load secrets only from the environment or a vault, shall not hardcode keys, and shall not write secrets to logs.
+    touches:
+      any:
+        - credentials
+        - config_env
+        - logging
+    clauses:
+      - id: UP-01.no-hardcode
+        text: The system shall not ship a hardcoded password, token, or API key. Secrets are read from the environment or a vault.
+        touches:
+          any:
+            - credentials
+            - config_env
+        oracle_hint: A fixture secret written into a source file fails the secret scan before the task is accepted.
+      - id: UP-01.never-logged
+        text: The system shall not write a raw password, token, or secret into a log line.
+        touches:
+          all:
+            - logging
+            - credentials
+        oracle_hint: Captured logs for a signed-in request do not contain the fixture token or password.
+    edge_cases:
+      - A debug switch does not unlock secret logging.
+      - A missing secret fails closed and names the environment key, not a sample value.
+    bounds:
+      - key: UP-01.logged_secret_count
+        value: 0
+        unit: count
+    oracle_hints:
+      - A fixture secret written into a source file fails the secret scan before the task is accepted.
+      - Captured logs for a signed-in request do not contain the fixture token or password.
+  - id: UP-02
+    title: Server-side input validation and canonical schema boundary checks
+    statement: The system shall validate inputs on the server against the canonical schema before any state change. A client check is not the boundary.
+    touches:
+      any:
+        - form_input
+        - inbound_webhook
+        - external_api
+        - route
+    clauses:
+      - id: UP-02.reject-invalid
+        text: The system shall reject a payload that violates the canonical schema before it changes stored state.
+        touches:
+          any:
+            - form_input
+            - inbound_webhook
+            - route
+        oracle_hint: A payload that violates the schema is rejected at the boundary before a state change.
+      - id: UP-02.server-authority
+        text: The system shall repeat the schema check on the server even when a client check already passed.
+        touches:
+          any:
+            - form_input
+            - external_api
+            - route
+        oracle_hint: A client that skips its check still receives a schema rejection from the server.
+    edge_cases:
+      - An empty body is a schema failure, not a partial write.
+      - Unknown fields are rejected or stripped by the schema, and the choice is the same at every boundary.
+    bounds:
+      - key: UP-02.client_only_acceptance
+        value: 0
+        unit: count
+    oracle_hints:
+      - A payload that violates the schema is rejected at the boundary before a state change.
+      - A client that skips its check still receives a schema rejection from the server.
+  - id: UP-03
+    title: Structured user-safe error handling
+    statement: The system shall return a structured error a person can read, and shall not leak stack traces, SQL, or internal paths.
+    touches:
+      any:
+        - route
+        - interactive_ui
+        - logging
+    clauses:
+      - id: UP-03.safe-body
+        text: A caller-facing error shall be a stable code plus a plain sentence. It shall not include a stack frame, a SQL statement, or a filesystem path.
+        touches:
+          any:
+            - route
+            - interactive_ui
+        oracle_hint: A forced internal failure response body does not contain a stack frame or a SQL statement.
+      - id: UP-03.logs-hold-detail
+        text: Diagnostic detail stays in the structured log. The caller-facing body stays free of internals.
+        touches:
+          any:
+            - logging
+        oracle_hint: The log for a forced failure contains the diagnostic detail, and the response body does not.
+    edge_cases:
+      - A database unique-constraint failure becomes a conflict the user can understand, not the driver message.
+      - An unexpected throw still returns the safe error shape.
+    bounds:
+      - key: UP-03.stack_frames_in_body
+        value: 0
+        unit: count
+    oracle_hints:
+      - A forced internal failure response body does not contain a stack frame or a SQL statement.
+      - The log for a forced failure contains the diagnostic detail, and the response body does not.
+  - id: UP-04
+    title: Safe state-changing mutations
+    statement: The system shall authorize state-changing requests, apply a retried mutation once when an idempotency key is present, and confirm destructive actions by naming the item.
+    touches:
+      any:
+        - destructive_write
+        - authz
+        - route
+    clauses:
+      - id: UP-04.authz
+        text: A state-changing request shall check the caller's authorization, and a browser session shall also pass a cross-site check.
+        touches:
+          any:
+            - authz
+            - route
+        oracle_hint: A state-changing request without authorization is refused and does not change stored state.
+      - id: UP-04.idempotency
+        text: A retried mutation that repeats the same idempotency key shall apply at most once.
+        touches:
+          any:
+            - route
+            - destructive_write
+        oracle_hint: Repeating the same idempotency key does not apply the mutation twice.
+      - id: UP-04.confirm
+        text: A destructive action shall name the item and wait for confirmation before it deletes or voids it.
+        touches:
+          any:
+            - destructive_write
+        oracle_hint: A destructive action without the named confirmation does not delete the item.
+    edge_cases:
+      - Two identical retries in parallel still leave one effect.
+      - Confirmation text that names a different item does not authorize the original item.
+    bounds:
+      - key: UP-04.replayed_idempotency_key.applies
+        value: 1
+        unit: count
+    oracle_hints:
+      - Repeating the same idempotency key does not apply the mutation twice.
+      - A destructive action without the named confirmation does not delete the item.
+  - id: UP-05
+    title: Timezone and monetary precision hygiene
+    statement: The system shall store instants in UTC, display them in an IANA zone, and store money as integer minor units with one rounding rule.
+    touches:
+      any:
+        - time_display
+        - scheduling
+        - money
+    clauses:
+      - id: UP-05.utc
+        text: The system shall store instants in UTC and display them in the project's IANA zone.
+        touches:
+          any:
+            - time_display
+            - scheduling
+        oracle_hint: A stored instant round-trips as UTC and displays in the project IANA zone.
+      - id: UP-05.money
+        text: The system shall store money as integer minor units and apply one declared rounding rule. Binary floating point is not the store.
+        touches:
+          any:
+            - money
+        oracle_hint: A money fixture of 10.10 stores as the integer 1010 minor units and does not use binary float.
+    edge_cases:
+      - A daylight-saving overlap uses the IANA zone rules, not a fixed offset.
+      - A half-unit rounding case follows the single declared rule.
+    bounds:
+      - key: UP-05.money.float_storage
+        value: 0
+        unit: count
+    oracle_hints:
+      - A stored instant round-trips as UTC and displays in the project IANA zone.
+      - A money fixture of 10.10 stores as the integer 1010 minor units and does not use binary float.
+  - id: UP-06
+    title: Bounded queries and resource limits
+    statement: The system shall cap list sizes, upload bytes and MIME types, and request timeouts so one call cannot exhaust the process.
+    touches:
+      any:
+        - search
+        - file_upload
+        - route
+        - rate_limited
+    clauses:
+      - id: UP-06.page-ceiling
+        text: The system shall reject or clamp a list request above the page ceiling.
+        touches:
+          any:
+            - search
+            - route
+        oracle_hint: A list request above the page ceiling is rejected or clamped to the ceiling.
+      - id: UP-06.upload
+        text: The system shall refuse an upload over the byte ceiling or outside the allowed MIME set, and shall not place that file on a public path.
+        touches:
+          any:
+            - file_upload
+        oracle_hint: An upload over the byte ceiling or outside the allowed MIME set is refused.
+      - id: UP-06.timeout
+        text: The system shall cap request and outbound call time at the declared timeout.
+        touches:
+          any:
+            - route
+            - rate_limited
+        oracle_hint: A handler that runs past the timeout cap is aborted and does not keep the caller waiting past that cap.
+    edge_cases:
+      - A page size of zero is rejected.
+      - A MIME type that only matches by filename extension is not accepted.
+    bounds:
+      - key: query.page.ceiling
+        value: 100
+        unit: count
+      - key: upload.max_bytes
+        value: 10485760
+        unit: bytes
+      - key: request.timeout_ms
+        value: 30000
+        unit: ms
+    oracle_hints:
+      - A list request above the page ceiling is rejected or clamped to the ceiling.
+      - An upload over the byte ceiling or outside the allowed MIME set is refused.
+  - id: UP-07
+    title: Accessibility and keyboard baseline
+    statement: The system shall meet WCAG AA contrast, name every control, keep keyboard focus visible, and size tap targets to at least 24 CSS pixels. This floor is for interactive UI and forms, not for a headless API or CLI task.
+    touches:
+      any:
+        - interactive_ui
+        - form_input
+    clauses:
+      - id: UP-07.names-contrast
+        text: Text and controls shall meet WCAG AA contrast, and every control shall have an accessible name.
+        touches:
+          any:
+            - interactive_ui
+            - form_input
+        oracle_hint: Every interactive control has an accessible name and meets the AA contrast pair against its background.
+      - id: UP-07.keyboard
+        text: Every interactive control shall be reachable by keyboard with a visible focus indicator.
+        touches:
+          any:
+            - interactive_ui
+            - form_input
+        oracle_hint: Every interactive control has an accessible name and is reachable by keyboard.
+      - id: UP-07.tap
+        text: Tap targets on the touch viewport shall be at least 24 CSS pixels in both axes.
+        touches:
+          any:
+            - interactive_ui
+            - form_input
+        oracle_hint: Computed tap target on the touch viewport is at least 24 CSS pixels.
+    edge_cases:
+      - A headless task with no interactive UI tag does not receive this policy.
+      - Placeholder text alone is not an accessible name.
+    bounds:
+      - key: ui.tap_target.min_px
+        value: 24
+        unit: px
+    oracle_hints:
+      - Every interactive control has an accessible name and is reachable by keyboard.
+      - Computed tap target on the touch viewport is at least 24 CSS pixels.
+  - id: UP-08
+    title: Observability and deterministic testability
+    statement: The system shall write structured logs with a request id, expose a health endpoint, and let tests replace the clock and random source with a fixed seed.
+    touches:
+      any:
+        - logging
+        - route
+        - background_job
+    clauses:
+      - id: UP-08.logs
+        text: A log line shall be structured and shall include the request id returned to the caller. Startup messages follow the same rule.
+        touches:
+          any:
+            - logging
+            - background_job
+        oracle_hint: A request log line is structured and includes the request id returned to the caller.
+      - id: UP-08.health
+        text: The health endpoint shall report process health without requiring a signed-in user.
+        touches:
+          any:
+            - route
+        oracle_hint: The health endpoint returns success without requiring a signed-in user.
+      - id: UP-08.seed
+        text: Tests shall be able to replace the clock and the random source with a fixed seed.
+        touches:
+          any:
+            - logging
+            - background_job
+            - route
+        oracle_hint: A test that installs a fixed clock and seed observes the same timestamps and ids on a second run.
+    edge_cases:
+      - When machine-readable stdout is selected, structured logs still happen, and they do not use that stdout stream.
+      - A failed dependency makes health report not-ready without throwing a stack to the caller.
+    bounds:
+      - key: UP-08.health.auth_required
+        value: 0
+        unit: count
+    oracle_hints:
+      - A request log line is structured and includes the request id returned to the caller.
+      - The health endpoint returns success without requiring a signed-in user.

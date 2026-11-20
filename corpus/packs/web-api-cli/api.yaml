@@ -1,0 +1,355 @@
+pack: api
+pack_version: 1
+questions:
+  - id: api.style
+    code: Q-API-01
+    pack: api
+    version: 1
+    scope: shared
+    title: What API style and schema contract should callers use?
+    explain: Decides REST with an OpenAPI document, a shared RPC schema, REST plus signed inbound webhooks, or a private RPC with no public HTTP contract. The error document shape is part of this schema contract.
+    criteria:
+      - api.style
+      - api.schema_contract
+      - api.error_format
+    touches:
+      - route
+      - external_api
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires: []
+    allowed_inference_rules: &a2
+      - infer.from_explicit_acceptance
+    options:
+      - id: rest_openapi
+        label: REST and OpenAPI
+        meaning: HTTP resources. The OpenAPI document is the contract, including a structured error object.
+        stage_suitability: &a1
+          - prototype
+          - mvp
+          - production
+        frequency: high
+        conflicts_with: []
+      - id: rpc_schema
+        label: RPC with a shared schema
+        meaning: Command-style calls share one schema. Resource URLs are not the contract.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: webhooks_and_rest
+        label: REST plus signed webhooks
+        meaning: REST for calls we initiate, plus signed inbound webhooks. This cannot pair with a no-job answer.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: jobs.background_needed
+            option_id: none_inline
+      - id: internal_rpc_only
+        label: Private RPC only
+        meaning: Private RPC with no public HTTP contract. This cannot pair with a public versioning promise.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: api.consumers
+            option_id: public_url_version
+          - question_id: api.consumers
+            option_id: public_header_version
+    stage_recommendations:
+      prototype:
+        option: rest_openapi
+        rationale: A prototype publishes a small REST contract so callers and tests share one schema.
+      mvp:
+        option: rest_openapi
+        rationale: MVP keeps the OpenAPI document as the contract, including the error document.
+      production:
+        option: rest_openapi
+        rationale: Production stays on that REST contract unless a later explicit answer moves to RPC or webhooks.
+    examples:
+      positive:
+        - utterance: REST resources, and the OpenAPI document is the contract, including the error shape.
+          settles: rest_openapi
+        - utterance: Yeah, normal HTTP resources with a schema file we can generate clients from.
+          settles: rest_openapi
+        - utterance: Make it command-style RPC with one shared schema, not a resource URL per noun.
+          settles: rpc_schema
+        - utterance: REST for the calls we initiate, plus signed inbound webhooks for the provider.
+          settles: webhooks_and_rest
+        - utterance: Keep it a private RPC. There is no public HTTP contract.
+          settles: internal_rpc_only
+      negative:
+        - utterance: We should have an API.
+          why: Wanting an API does not choose REST, RPC, webhooks, or the error document.
+        - utterance: Return JSON.
+          why: A JSON body does not settle the schema contract or versioning style.
+  - id: api.consumers
+    code: Q-API-02
+    pack: api
+    version: 1
+    scope: shared
+    title: Who calls the API, and how are versions promised?
+    explain: Decides whether callers are first-party only, or public consumers with a version in the URL or in a header, plus the deprecation window that promise implies.
+    criteria:
+      - api.consumers
+      - api.versioning
+    touches:
+      - route
+      - external_api
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - api.style
+    allowed_inference_rules: *a2
+    options:
+      - id: internal_unversioned
+        label: First-party, unversioned
+        meaning: Only first-party callers. Breaking changes do not carry a public version.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: public_url_version
+        label: Public version in the URL
+        meaning: Public callers pin a version in the URL. Breaking changes wait for a deprecation window.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: api.style
+            option_id: internal_rpc_only
+      - id: public_header_version
+        label: Public version header
+        meaning: Public callers send a version header. Compatibility tests cover each supported version.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: api.style
+            option_id: internal_rpc_only
+    stage_recommendations:
+      prototype:
+        option: internal_unversioned
+        rationale: A prototype may break the contract between first-party callers without a public version.
+      mvp:
+        option: public_url_version
+        rationale: MVP promises a public URL version and a deprecation window before a breaking change.
+      production:
+        option: public_url_version
+        rationale: Production keeps the URL version so external callers can pin a contract.
+    examples:
+      positive:
+        - utterance: Only our own app calls it. We can break it. No public version.
+          settles: internal_unversioned
+        - utterance: Yeah, internal only for now.
+          settles: internal_unversioned
+        - utterance: Outside callers will pin a version in the URL, and we will warn them before we break it.
+          settles: public_url_version
+        - utterance: Public callers send a version header, and we keep a compatibility test for the supported versions.
+          settles: public_header_version
+        - utterance: The path should look like /v1/ so a client can stay on v1.
+          settles: public_url_version
+      negative:
+        - utterance: Other teams might use this later.
+          why: A possible future caller does not choose public versioning or a deprecation window.
+        - utterance: Put a version number somewhere.
+          why: A version number without a place or a compatibility promise does not settle the policy.
+  - id: api.pagination
+    code: Q-API-03
+    pack: api
+    version: 1
+    scope: shared
+    title: How are list endpoints paginated, filtered, and sorted?
+    explain: Decides offset pages, opaque cursors, or cursors that also carry the filter and sort contract. This is the list-query convention for the API, separate from the on-screen table question.
+    criteria:
+      - api.pagination
+      - api.filtering
+      - api.sorting
+    touches:
+      - route
+      - search
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires:
+      - api.style
+    allowed_inference_rules: &a3
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: offset_page
+        label: Offset and limit
+        meaning: Lists use offset and limit. Filter and sort are optional query fields.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: cursor_page
+        label: Opaque cursor
+        meaning: Lists use an opaque cursor. Offsets are not the contract.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: cursor_filter_sort
+        label: Cursor with filter and sort
+        meaning: The cursor binds the filter and the sort. Changing either starts a new query.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: cursor_filter_sort
+        rationale: Even a prototype list states its filter, sort, and cursor so callers do not invent a second convention.
+      mvp:
+        option: cursor_filter_sort
+        rationale: MVP keeps cursor pagination with an explicit filter and sort contract.
+      production:
+        option: cursor_filter_sort
+        rationale: Production keeps that contract so a changing row set does not skip or duplicate rows the way a bare offset can.
+    examples:
+      positive:
+        - utterance: Use offset and limit pages for the lists.
+          settles: offset_page
+        - utterance: Give me an opaque cursor. Don't use offsets.
+          settles: cursor_page
+        - utterance: Cursor the list, and the filter and sort have to be part of that contract.
+          settles: cursor_filter_sort
+        - utterance: Yeah, next-page tokens, and the caller says which fields they filtered.
+          settles: cursor_filter_sort
+        - utterance: Page one, page two, with a limit. That is enough.
+          settles: offset_page
+      negative:
+        - utterance: The list might get long.
+          why: Length does not choose offset, cursor, filter, or sort.
+        - utterance: Sort it somehow.
+          why: An unnamed sort is not a pagination or filter contract.
+  - id: api.rate_limits
+    code: Q-API-04
+    pack: api
+    version: 1
+    scope: shared
+    title: What rate limit, idempotency key, and payload size rules apply?
+    explain: Decides the caller rate ceiling, whether unsafe retries must send an idempotency key, and the maximum request body size.
+    criteria:
+      - api.rate_limits
+      - api.idempotency_key
+      - api.payload_size
+    touches:
+      - route
+      - rate_limited
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires:
+      - api.consumers
+    allowed_inference_rules: *a3
+    options:
+      - id: basic_limits
+        label: Basic ceilings
+        meaning: Per-caller rate limit, a max body size, and an idempotency key on unsafe retries.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: strict_public
+        label: Strict public limits
+        meaning: Tighter anonymous limits, a Retry-After hint, and a required idempotency key.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: internal_high_ceiling
+        label: High first-party ceiling
+        meaning: First-party callers get a high ceiling that is still finite. Jobs remain idempotent.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: basic_limits
+        rationale: A prototype still has a ceiling, a body limit, and idempotency keys on unsafe retries.
+      mvp:
+        option: basic_limits
+        rationale: MVP keeps that basic ceiling while callers are still mostly first-party.
+      production:
+        option: strict_public
+        rationale: Production tightens anonymous traffic and requires the idempotency key on unsafe public calls.
+    examples:
+      positive:
+        - utterance: Cap each caller, limit the body size, and require an idempotency key when an unsafe call is retried.
+          settles: basic_limits
+        - utterance: Yeah, a normal rate limit and don't let them post a huge body.
+          settles: basic_limits
+        - utterance: Anonymous callers get a tighter cap, we send Retry-After, and the idempotency key is required.
+          settles: strict_public
+        - utterance: First-party callers can have a high ceiling, but there is still a ceiling, and jobs stay idempotent.
+          settles: internal_high_ceiling
+        - utterance: Tell the client to back off with Retry-After when they hit the cap.
+          settles: strict_public
+      negative:
+        - utterance: Don't let people hammer it.
+          why: A wish to be safe does not set a ceiling, a body limit, or an idempotency rule.
+        - utterance: Keep the payloads reasonable.
+          why: Reasonable is not a byte limit.
+  - id: jobs.background_needed
+    code: Q-API-05
+    pack: api
+    version: 1
+    scope: shared
+    title: How do long-running jobs and webhook retries behave?
+    explain: Decides whether work finishes inside the request, moves to a durable queue with retry and a dead letter, or shares that retry path with signed inbound webhooks.
+    criteria:
+      - jobs.background_needed
+      - jobs.webhook_retry
+      - jobs.dead_letter
+    touches:
+      - background_job
+      - inbound_webhook
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - api.style
+    allowed_inference_rules: *a2
+    options:
+      - id: none_inline
+        label: Finish inside the request
+        meaning: Work finishes inside the request. There is no job runner. This cannot pair with webhook-driven intake.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: api.style
+            option_id: webhooks_and_rest
+      - id: durable_jobs
+        label: Durable queue
+        meaning: A queue retries long work and dead-letters failures. Handlers are safe to run twice.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: webhooks_with_retry
+        label: Webhooks and jobs share retry
+        meaning: Inbound webhooks and long jobs share signature checks, retry, and a dead letter.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: none_inline
+        rationale: A prototype finishes work inside the request while there is no queue to operate.
+      mvp:
+        option: durable_jobs
+        rationale: MVP moves long work onto a durable queue that is safe to run twice.
+      production:
+        option: webhooks_with_retry
+        rationale: Production adds webhook retry and a dead letter on that same queue.
+    examples:
+      positive:
+        - utterance: Finish the work inside the request. We do not need a job runner.
+          settles: none_inline
+        - utterance: Yeah, keep it synchronous for now.
+          settles: none_inline
+        - utterance: Put long work on a queue, retry it, and park the failures in a dead letter. Running twice must be safe.
+          settles: durable_jobs
+        - utterance: Webhooks and long jobs share one retry path, with signature checks and a dead letter.
+          settles: webhooks_with_retry
+        - utterance: If the webhook arrives twice, the second one should not double-charge or double-send.
+          settles: webhooks_with_retry
+      negative:
+        - utterance: Some things might be slow.
+          why: Slowness does not choose a queue, a retry policy, or webhook handling.
+        - utterance: We will get webhooks from the provider someday.
+          why: A future provider does not settle retry or signature behavior.

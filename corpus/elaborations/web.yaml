@@ -1,0 +1,618 @@
+elaborations:
+  - id: ELAB-Q-WEB-01-MOBILE-FIRST
+    question_id: ui.responsive_targets
+    option_id: mobile_first
+    summary: Phone-first breakpoints
+    touches:
+      any: &a1
+        - interactive_ui
+        - route
+    clauses:
+      - id: ELAB-Q-WEB-01-MOBILE-FIRST.C1
+        text: The phone layout is designed first. Wider windows add columns at 640, 960, and 1280 CSS pixels.
+        touches:
+          any: *a1
+        oracle_hint: At 1280 CSS pixels the expanded arrangement is present.
+      - id: ELAB-Q-WEB-01-MOBILE-FIRST.C2
+        text: A desktop window shall expand that phone layout. It shall not be a second site with a different navigation model.
+        touches:
+          any: *a1
+        oracle_hint: At 599 CSS pixels the phone arrangement is present.
+    edge_cases:
+      - A 599px window keeps the phone arrangement, and a 1280px window shows the expanded arrangement.
+    bounds:
+      - key: ui.responsive_targets.mobile_first.lg_px
+        value: 1280
+        unit: px
+    oracle_hints:
+      - At 1280 CSS pixels the expanded arrangement is present.
+      - At 599 CSS pixels the phone arrangement is present.
+  - id: ELAB-Q-WEB-01-DESKTOP-FIRST
+    question_id: ui.responsive_targets
+    option_id: desktop_first
+    summary: Desktop-first stacking
+    touches:
+      any: &a2
+        - interactive_ui
+        - route
+    clauses:
+      - id: ELAB-Q-WEB-01-DESKTOP-FIRST.C1
+        text: The desktop layout is designed first at 1280 CSS pixels.
+        touches:
+          any: *a2
+        oracle_hint: Below 960 CSS pixels the regions stack in one column.
+      - id: ELAB-Q-WEB-01-DESKTOP-FIRST.C2
+        text: Below 960 CSS pixels the same regions stack in one column. No phone-only feature is required.
+        touches:
+          any: *a2
+        oracle_hint: Below 960 CSS pixels the regions stack in one column.
+    edge_cases:
+      - A 700px window shows one column of the desktop regions.
+    bounds:
+      - key: ui.responsive_targets.desktop_first.stack_px
+        value: 960
+        unit: px
+    oracle_hints:
+      - Below 960 CSS pixels the regions stack in one column.
+      - Below 960 CSS pixels the regions stack in one column.
+  - id: ELAB-Q-WEB-01-RESPONSIVE-PARITY
+    question_id: ui.responsive_targets
+    option_id: responsive_parity
+    summary: Designed parity at each breakpoint
+    touches:
+      any: &a3
+        - interactive_ui
+        - route
+    clauses:
+      - id: ELAB-Q-WEB-01-RESPONSIVE-PARITY.C1
+        text: Phone and desktop each have a designed arrangement. Neither is only a squeezed copy of the other.
+        touches:
+          any: *a3
+        oracle_hint: Three breakpoint bands each show a distinct arrangement.
+      - id: ELAB-Q-WEB-01-RESPONSIVE-PARITY.C2
+        text: The layout changes at 640, 960, and 1280 CSS pixels, and each band is reviewed on its own.
+        touches:
+          any: *a3
+        oracle_hint: Three breakpoint bands each show a distinct arrangement.
+    edge_cases:
+      - Removing the desktop stylesheet leaves the phone task completable, and the reverse is also true.
+    bounds:
+      - key: ui.responsive_targets.responsive_parity.bands
+        value: 3
+        unit: count
+    oracle_hints:
+      - Three breakpoint bands each show a distinct arrangement.
+      - Three breakpoint bands each show a distinct arrangement.
+  - id: ELAB-Q-WEB-02-CLIENT-ROUTING
+    question_id: ui.pages_inventory
+    option_id: client_routing
+    summary: Client-routed shell
+    touches:
+      any: &a4
+        - route
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-02-CLIENT-ROUTING.C1
+        text: The app shall load one HTML shell and let the client router swap pages.
+        touches:
+          any: *a4
+        oracle_hint: A request for a client route returns the shell, and the page content is not required in the first HTML payload.
+      - id: ELAB-Q-WEB-02-CLIENT-ROUTING.C2
+        text: Public screens are not required to be indexable. A crawler may see the shell rather than each page's content.
+        touches:
+          any: *a4
+        oracle_hint: A request for a client route returns the shell, and the page content is not required in the first HTML payload.
+    edge_cases:
+      - A deep link still opens the right page after the shell loads.
+    bounds:
+      - key: ui.pages_inventory.client_routing.indexable_required
+        value: 0
+        unit: count
+    oracle_hints:
+      - A request for a client route returns the shell, and the page content is not required in the first HTML payload.
+      - A request for a client route returns the shell, and the page content is not required in the first HTML payload.
+  - id: ELAB-Q-WEB-02-SSR-SEO
+    question_id: ui.pages_inventory
+    option_id: ssr_seo
+    summary: Server-rendered public HTML
+    touches:
+      any: &a5
+        - route
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-02-SSR-SEO.C1
+        text: Each public route shall return server-rendered HTML that includes the page title and description.
+        touches:
+          any: *a5
+        oracle_hint: The first HTML response for a public route contains the title and the primary text.
+      - id: ELAB-Q-WEB-02-SSR-SEO.C2
+        text: The client may take over after that HTML loads. The first response is still readable without running the client.
+        touches:
+          any: *a5
+        oracle_hint: The first HTML response for a public route contains the title and the primary text.
+    edge_cases:
+      - A request with a script blocker still shows the public page text.
+    bounds:
+      - key: ui.pages_inventory.ssr_seo.indexable_required
+        value: 1
+        unit: count
+    oracle_hints:
+      - The first HTML response for a public route contains the title and the primary text.
+      - The first HTML response for a public route contains the title and the primary text.
+  - id: ELAB-Q-WEB-02-STATIC-EXPORT
+    question_id: ui.pages_inventory
+    option_id: static_export
+    summary: Pre-rendered files
+    touches:
+      any: &a6
+        - route
+    clauses:
+      - id: ELAB-Q-WEB-02-STATIC-EXPORT.C1
+        text: Each page shall be a pre-rendered file served as-is.
+        touches:
+          any: *a6
+        oracle_hint: Two requests for the same public path return the same pre-rendered bytes.
+      - id: ELAB-Q-WEB-02-STATIC-EXPORT.C2
+        text: There shall be no client app router and no per-request render step.
+        touches:
+          any: *a6
+        oracle_hint: Two requests for the same public path return the same pre-rendered bytes.
+    edge_cases:
+      - A missing file returns the unknown-route response rather than a generated page.
+    bounds:
+      - key: ui.pages_inventory.static_export.per_request_render
+        value: 0
+        unit: count
+    oracle_hints:
+      - Two requests for the same public path return the same pre-rendered bytes.
+      - Two requests for the same public path return the same pre-rendered bytes.
+  - id: ELAB-Q-WEB-02-HYBRID-PUBLIC-SSR
+    question_id: ui.pages_inventory
+    option_id: hybrid_public_ssr
+    summary: Public SSR and private client routes
+    touches:
+      any: &a7
+        - route
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-02-HYBRID-PUBLIC-SSR.C1
+        text: Public routes shall be server-rendered and indexable.
+        touches:
+          any: *a7
+        oracle_hint: A signed-in route response carries noindex, and a public route's first HTML contains its title.
+      - id: ELAB-Q-WEB-02-HYBRID-PUBLIC-SSR.C2
+        text: Signed-in routes shall be client-routed and marked noindex.
+        touches:
+          any: *a7
+        oracle_hint: A signed-in route response carries noindex, and a public route's first HTML contains its title.
+    edge_cases:
+      - A public URL shared in chat shows its title without a session.
+    bounds:
+      - key: ui.pages_inventory.hybrid_public_ssr.private_noindex
+        value: 1
+        unit: count
+    oracle_hints:
+      - A signed-in route response carries noindex, and a public route's first HTML contains its title.
+      - A signed-in route response carries noindex, and a public route's first HTML contains its title.
+  - id: ELAB-Q-WEB-03-SIMPLE-SUBMIT
+    question_id: ui.forms_validation_style
+    option_id: simple_submit
+    summary: Single submit
+    touches:
+      any:
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-03-SIMPLE-SUBMIT.C1
+        text: The form shall be one page and shall validate on submit.
+        touches:
+          any:
+            - form_input
+        oracle_hint: Refreshing before submit yields an empty form.
+      - id: ELAB-Q-WEB-03-SIMPLE-SUBMIT.C2
+        text: The system shall not store a draft. A refresh before submit drops the unsaved entry.
+        touches:
+          any:
+            - form_input
+        oracle_hint: An invalid submit names the field and does not create a stored record.
+    edge_cases:
+      - A failed submit names the field and leaves the typed values in place for that attempt only.
+    bounds:
+      - key: ui.forms_validation_style.simple_submit.draft_records
+        value: 0
+        unit: count
+    oracle_hints:
+      - Refreshing before submit yields an empty form.
+      - An invalid submit names the field and does not create a stored record.
+  - id: ELAB-Q-WEB-03-AUTOSAVE-DRAFTS
+    question_id: ui.forms_validation_style
+    option_id: autosave_drafts
+    summary: Autosaved drafts
+    touches:
+      any:
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-03-AUTOSAVE-DRAFTS.C1
+        text: The form shall autosave a draft about every 2 seconds while the entry is dirty.
+        touches:
+          any:
+            - form_input
+        oracle_hint: A dirty form writes a draft within 2 seconds, and a later visit restores it.
+      - id: ELAB-Q-WEB-03-AUTOSAVE-DRAFTS.C2
+        text: Returning to the form shall restore the latest draft, and a successful submit shall clear it.
+        touches:
+          any:
+            - form_input
+        oracle_hint: After a successful submit the draft is gone.
+    edge_cases:
+      - A task with no form tag does not gain autosave behavior.
+    bounds:
+      - key: ui.forms_validation_style.autosave_drafts.interval_ms
+        value: 2000
+        unit: ms
+    oracle_hints:
+      - A dirty form writes a draft within 2 seconds, and a later visit restores it.
+      - After a successful submit the draft is gone.
+  - id: ELAB-Q-WEB-03-MULTI-STEP
+    question_id: ui.forms_validation_style
+    option_id: multi_step
+    summary: Stepped entry
+    touches:
+      any:
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-03-MULTI-STEP.C1
+        text: The entry shall be a sequence of steps with back and a progress marker.
+        touches:
+          any:
+            - form_input
+        oracle_hint: Next stays disabled until the current step is valid.
+      - id: ELAB-Q-WEB-03-MULTI-STEP.C2
+        text: The current step shall validate before the next step opens. Later steps stay unsent until then.
+        touches:
+          any:
+            - form_input
+        oracle_hint: Next stays disabled until the current step is valid.
+    edge_cases:
+      - Refreshing mid-flow reopens the last valid step rather than an empty first page.
+    bounds:
+      - key: ui.forms_validation_style.multi_step.min_steps
+        value: 2
+        unit: count
+    oracle_hints:
+      - Next stays disabled until the current step is valid.
+      - Next stays disabled until the current step is valid.
+  - id: ELAB-Q-WEB-03-OPTIMISTIC-AUTOSAVE
+    question_id: ui.forms_validation_style
+    option_id: optimistic_autosave
+    summary: Optimistic save with rollback
+    touches:
+      any:
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-03-OPTIMISTIC-AUTOSAVE.C1
+        text: The screen shall show the edited value immediately and send the save in the background.
+        touches:
+          any:
+            - form_input
+        oracle_hint: A rejected save restores the last accepted value and shows the reason.
+      - id: ELAB-Q-WEB-03-OPTIMISTIC-AUTOSAVE.C2
+        text: If the server rejects the save, the screen shall roll back to the last accepted value and name the reason.
+        touches:
+          any:
+            - form_input
+        oracle_hint: A rejected save restores the last accepted value and shows the reason.
+    edge_cases:
+      - A rejected optimistic save does not leave the rolled-back value looking saved.
+    bounds:
+      - key: ui.forms_validation_style.optimistic_autosave.rollback
+        value: 1
+        unit: count
+    oracle_hints:
+      - A rejected save restores the last accepted value and shows the reason.
+      - A rejected save restores the last accepted value and shows the reason.
+  - id: ELAB-Q-WEB-03-NO-FORMS
+    question_id: ui.forms_validation_style
+    option_id: no_forms
+    summary: No form drafts
+    touches:
+      any: &a8
+        - route
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-03-NO-FORMS.C1
+        text: The product shall not add a data-entry form, a draft store, or autosave.
+        touches:
+          any: *a8
+        oracle_hint: The route set contains no data-entry form and no draft record.
+      - id: ELAB-Q-WEB-03-NO-FORMS.C2
+        text: Pages may still show information and navigation. They shall not grow a hidden draft.
+        touches:
+          any: *a8
+        oracle_hint: The route set contains no data-entry form and no draft record.
+    edge_cases:
+      - A static marketing or dashboard page does not receive form-autosave requirements.
+    bounds:
+      - key: ui.forms_validation_style.no_forms.draft_records
+        value: 0
+        unit: count
+    oracle_hints:
+      - The route set contains no data-entry form and no draft record.
+      - The route set contains no data-entry form and no draft record.
+  - id: ELAB-Q-WEB-04-CAPPED-FULL-LIST
+    question_id: ui.states_style
+    option_id: capped_full_list
+    summary: Capped full list
+    touches:
+      any: &a9
+        - interactive_ui
+        - search
+    clauses:
+      - id: ELAB-Q-WEB-04-CAPPED-FULL-LIST.C1
+        text: The view shall render every row when the count is at or under 100.
+        touches:
+          any: *a9
+        oracle_hint: 101 rows are paged, and 100 rows render in one list.
+      - id: ELAB-Q-WEB-04-CAPPED-FULL-LIST.C2
+        text: Above 100 rows the view shall switch to pages rather than render the full set.
+        touches:
+          any: *a9
+        oracle_hint: 101 rows are paged, and 100 rows render in one list.
+    edge_cases:
+      - An empty collection shows an empty state that names what is missing. A load failure shows an error and a retry.
+    bounds:
+      - key: ui.states_style.capped_full_list.max_rows
+        value: 100
+        unit: count
+    oracle_hints:
+      - 101 rows are paged, and 100 rows render in one list.
+      - 101 rows are paged, and 100 rows render in one list.
+  - id: ELAB-Q-WEB-04-PAGED-ROWS
+    question_id: ui.states_style
+    option_id: paged_rows
+    summary: Pages of 50
+    touches:
+      any: &a10
+        - interactive_ui
+        - search
+    clauses:
+      - id: ELAB-Q-WEB-04-PAGED-ROWS.C1
+        text: The list shall show 50 rows per page with next and previous.
+        touches:
+          any: *a10
+        oracle_hint: A 120-row collection shows 50 rows on the first page.
+      - id: ELAB-Q-WEB-04-PAGED-ROWS.C2
+        text: The total is shown when it is known. Loading, empty, and error states are explicit and named.
+        touches:
+          any: *a10
+        oracle_hint: A 120-row collection shows 50 rows on the first page.
+    edge_cases:
+      - A request for a page past the end returns an empty page state, not a crash.
+    bounds:
+      - key: ui.states_style.paged_rows.page_size
+        value: 50
+        unit: count
+    oracle_hints:
+      - A 120-row collection shows 50 rows on the first page.
+      - A 120-row collection shows 50 rows on the first page.
+  - id: ELAB-Q-WEB-04-VIRTUALIZED-WINDOW
+    question_id: ui.states_style
+    option_id: virtualized_window
+    summary: Windowed rows
+    touches:
+      any: &a11
+        - interactive_ui
+        - search
+    clauses:
+      - id: ELAB-Q-WEB-04-VIRTUALIZED-WINDOW.C1
+        text: The list shall render only the visible window of rows.
+        touches:
+          any: *a11
+        oracle_hint: A long list mounts a bounded window rather than one node per row.
+      - id: ELAB-Q-WEB-04-VIRTUALIZED-WINDOW.C2
+        text: Page controls shall not be the way the person moves through the collection.
+        touches:
+          any: *a11
+        oracle_hint: A long list mounts a bounded window rather than one node per row.
+    edge_cases:
+      - Jumping to the end does not mount every preceding row.
+    bounds:
+      - key: ui.states_style.virtualized_window.page_controls
+        value: 0
+        unit: count
+    oracle_hints:
+      - A long list mounts a bounded window rather than one node per row.
+      - A long list mounts a bounded window rather than one node per row.
+  - id: ELAB-Q-WEB-04-PRINT-AND-EXPORT
+    question_id: ui.states_style
+    option_id: print_and_export
+    summary: Paged screen plus print and export
+    touches:
+      any: &a12
+        - interactive_ui
+        - search
+        - file_download
+    clauses:
+      - id: ELAB-Q-WEB-04-PRINT-AND-EXPORT.C1
+        text: The on-screen list shall page 50 rows. Print and export shall use the active filter, not only the mounted page.
+        touches:
+          any: *a12
+        oracle_hint: Export of a filtered 80-row set contains 80 rows, while the screen shows 50.
+      - id: ELAB-Q-WEB-04-PRINT-AND-EXPORT.C2
+        text: Export shall download a file of the filtered rows up to the export ceiling. Print shall use a print view rather than a screenshot of the page.
+        touches:
+          any: *a12
+        oracle_hint: Export of a filtered 80-row set contains 80 rows, while the screen shows 50.
+    edge_cases:
+      - An export that hits the ceiling says so instead of silently truncating.
+    bounds:
+      - key: ui.states_style.print_and_export.page_size
+        value: 50
+        unit: count
+    oracle_hints:
+      - Export of a filtered 80-row set contains 80 rows, while the screen shows 50.
+      - Export of a filtered 80-row set contains 80 rows, while the screen shows 50.
+  - id: ELAB-Q-WEB-05-LIGHT-ONLY
+    question_id: ui.look_and_feel
+    option_id: light_only
+    summary: Light token theme
+    touches:
+      any: &a13
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-05-LIGHT-ONLY.C1
+        text: The interface shall use the light token set only.
+        touches:
+          any: *a13
+        oracle_hint: The product renders the light tokens and does not offer a dark theme switch.
+      - id: ELAB-Q-WEB-05-LIGHT-ONLY.C2
+        text: Color, type, and spacing shall come from that shared token set. A dark theme is not required.
+        touches:
+          any: *a13
+        oracle_hint: The product renders the light tokens and does not offer a dark theme switch.
+    edge_cases:
+      - A system dark setting does not switch this product into an undefined dark palette.
+    bounds:
+      - key: ui.look_and_feel.light_only.themes
+        value: 1
+        unit: count
+    oracle_hints:
+      - The product renders the light tokens and does not offer a dark theme switch.
+      - The product renders the light tokens and does not offer a dark theme switch.
+  - id: ELAB-Q-WEB-05-SYSTEM-LIGHT-DARK
+    question_id: ui.look_and_feel
+    option_id: system_light_dark
+    summary: System light and dark tokens
+    touches:
+      any: &a14
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-05-SYSTEM-LIGHT-DARK.C1
+        text: Light and dark shall follow the operating system setting.
+        touches:
+          any: *a14
+        oracle_hint: With the system set to dark, the dark tokens are the ones on screen.
+      - id: ELAB-Q-WEB-05-SYSTEM-LIGHT-DARK.C2
+        text: Both modes shall come from one token set so spacing and type do not diverge.
+        touches:
+          any: *a14
+        oracle_hint: With the system set to dark, the dark tokens are the ones on screen.
+    edge_cases:
+      - Switching the system setting updates the theme without a reload of saved data.
+    bounds:
+      - key: ui.look_and_feel.system_light_dark.themes
+        value: 2
+        unit: count
+    oracle_hints:
+      - With the system set to dark, the dark tokens are the ones on screen.
+      - With the system set to dark, the dark tokens are the ones on screen.
+  - id: ELAB-Q-WEB-05-BRAND-TOKENS
+    question_id: ui.look_and_feel
+    option_id: brand_tokens
+    summary: Brand accent with both modes
+    touches:
+      any: &a15
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-WEB-05-BRAND-TOKENS.C1
+        text: A brand accent shall sit on the shared token set.
+        touches:
+          any: *a15
+        oracle_hint: Both themes render, and the accent is the only brand override on the token set.
+      - id: ELAB-Q-WEB-05-BRAND-TOKENS.C2
+        text: Both light and dark modes are required, and the accent shall meet the contrast floor in each.
+        touches:
+          any: *a15
+        oracle_hint: Both themes render, and the accent is the only brand override on the token set.
+    edge_cases:
+      - The accent color is not a second type scale or a second spacing scale.
+    bounds:
+      - key: ui.look_and_feel.brand_tokens.themes
+        value: 2
+        unit: count
+    oracle_hints:
+      - Both themes render, and the accent is the only brand override on the token set.
+      - Both themes render, and the accent is the only brand override on the token set.
+  - id: ELAB-Q-WEB-06-WCAG-AA-EVERGREEN
+    question_id: ui.accessibility_level
+    option_id: wcag_aa_evergreen
+    summary: Evergreen AA matrix
+    touches:
+      any: &a16
+        - interactive_ui
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-06-WCAG-AA-EVERGREEN.C1
+        text: The interface shall meet WCAG AA on the latest two versions of the major evergreen browsers.
+        touches:
+          any: *a16
+        oracle_hint: The support matrix lists two versions for each major evergreen browser and the AA checks run there.
+      - id: ELAB-Q-WEB-06-WCAG-AA-EVERGREEN.C2
+        text: Older browsers outside that matrix are not a support promise.
+        touches:
+          any: *a16
+        oracle_hint: The support matrix lists two versions for each major evergreen browser and the AA checks run there.
+    edge_cases:
+      - A failure in the newest version blocks release even if the previous version passed.
+    bounds:
+      - key: ui.accessibility_level.wcag_aa_evergreen.major_versions
+        value: 2
+        unit: count
+    oracle_hints:
+      - The support matrix lists two versions for each major evergreen browser and the AA checks run there.
+      - The support matrix lists two versions for each major evergreen browser and the AA checks run there.
+  - id: ELAB-Q-WEB-06-WCAG-AA-PINNED-LEGACY
+    question_id: ui.accessibility_level
+    option_id: wcag_aa_pinned_legacy
+    summary: AA plus one named older browser
+    touches:
+      any: &a17
+        - interactive_ui
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-06-WCAG-AA-PINNED-LEGACY.C1
+        text: The interface shall meet WCAG AA on the evergreen matrix and on one named older browser.
+        touches:
+          any: *a17
+        oracle_hint: The matrix contains the evergreen pairs plus exactly one named older browser.
+      - id: ELAB-Q-WEB-06-WCAG-AA-PINNED-LEGACY.C2
+        text: The older browser is named in the decision. An unnamed old browser is not silently included.
+        touches:
+          any: *a17
+        oracle_hint: The matrix contains the evergreen pairs plus exactly one named older browser.
+    edge_cases:
+      - Removing the name removes the extra browser from the matrix.
+    bounds:
+      - key: ui.accessibility_level.wcag_aa_pinned_legacy.extra_browsers
+        value: 1
+        unit: count
+    oracle_hints:
+      - The matrix contains the evergreen pairs plus exactly one named older browser.
+      - The matrix contains the evergreen pairs plus exactly one named older browser.
+  - id: ELAB-Q-WEB-06-WCAG-AA-KEYBOARD-FIRST
+    question_id: ui.accessibility_level
+    option_id: wcag_aa_keyboard_first
+    summary: Keyboard-only pass on every screen
+    touches:
+      any: &a18
+        - interactive_ui
+        - form_input
+    clauses:
+      - id: ELAB-Q-WEB-06-WCAG-AA-KEYBOARD-FIRST.C1
+        text: The interface shall meet WCAG AA on the evergreen matrix.
+        touches:
+          any: *a18
+        oracle_hint: A keyboard-only run completes the primary action on each screen.
+      - id: ELAB-Q-WEB-06-WCAG-AA-KEYBOARD-FIRST.C2
+        text: Every screen shall have a keyboard-only journey that completes the primary action with a visible focus.
+        touches:
+          any: *a18
+        oracle_hint: A keyboard-only run completes the primary action on each screen.
+    edge_cases:
+      - A control that only appears on hover is still reachable from the keyboard.
+    bounds:
+      - key: ui.accessibility_level.wcag_aa_keyboard_first.keyboard_passes
+        value: 1
+        unit: count
+    oracle_hints:
+      - A keyboard-only run completes the primary action on each screen.
+      - A keyboard-only run completes the primary action on each screen.

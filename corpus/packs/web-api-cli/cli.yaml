@@ -1,0 +1,278 @@
+pack: cli
+pack_version: 1
+questions:
+  - id: cli.output_format
+    code: Q-CLI-01
+    pack: cli
+    version: 1
+    scope: shared
+    title: "How is the command tree used: prompts, or non-interactive flags, JSON, and pipes?"
+    explain: Decides whether the command tree may prompt a person, and whether --json, --yes, and pipes must run without a terminal. Machine output keeps stdout clean.
+    criteria:
+      - cli.output_format
+      - cli.command_tree
+      - cli.interactivity
+    touches:
+      - config_env
+      - logging
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires: []
+    allowed_inference_rules:
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: human_interactive
+        label: Interactive prompts
+        meaning: The command tree may prompt. It is not a pipe-safe contract.
+        stage_suitability: &a1
+          - prototype
+          - mvp
+          - production
+        frequency: high
+        conflicts_with: []
+      - id: json_noninteractive
+        label: Non-interactive JSON
+        meaning: --json and --yes run with no prompts. Stdout is one JSON document and logs stay off it.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: cli.exit_codes
+            option_id: stdout_messages
+      - id: dual_tty_or_pipe
+        label: Terminal prompts, pipes stay quiet
+        meaning: A terminal may prompt. A pipe, --json, or --yes disables prompts and uses the JSON stdout contract.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: cli.exit_codes
+            option_id: stdout_messages
+    stage_recommendations:
+      prototype:
+        option: dual_tty_or_pipe
+        rationale: A prototype may prompt on a terminal and must still run when the output is a pipe.
+      mvp:
+        option: dual_tty_or_pipe
+        rationale: MVP keeps that split so scripts can pass --json or --yes without a person present.
+      production:
+        option: dual_tty_or_pipe
+        rationale: Production keeps prompts off whenever stdin is not a terminal or --json or --yes is set.
+    examples:
+      positive:
+        - utterance: It can ask questions. I will run it myself. It does not need to be piped.
+          settles: human_interactive
+        - utterance: Yeah, just prompt me.
+          settles: human_interactive
+        - utterance: Support --json and --yes. No prompts. Scripts will pipe it.
+          settles: json_noninteractive
+        - utterance: Prompt me in a terminal. If I pipe it, or pass --json or --yes, do not prompt.
+          settles: dual_tty_or_pipe
+        - utterance: When stdout is a pipe, print machine output and don't ask anything.
+          settles: dual_tty_or_pipe
+      negative:
+        - utterance: Add a command for it.
+          why: A new command does not choose prompts, JSON, or pipes.
+        - utterance: Make the CLI nice to use.
+          why: Nice does not settle interactive prompts versus machine output.
+  - id: cli.config_location
+    code: Q-CLI-02
+    pack: cli
+    version: 1
+    scope: shared
+    title: Where does configuration live, and which source wins?
+    explain: Decides configuration precedence and where files live. The baseline contract is flags, then environment, then the project file, then the user config file.
+    criteria:
+      - cli.config_location
+      - cli.config_precedence
+    touches:
+      - config_env
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires: []
+    allowed_inference_rules: &a2
+      - infer.from_explicit_acceptance
+    options:
+      - id: flags_env_project_user
+        label: Flags, then env, then project, then user
+        meaning: Precedence is flags, then environment, then the project file, then the user config. Later sources only fill gaps.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: env_only
+        label: Environment only
+        meaning: Configuration comes from the environment. Files are ignored.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: project_file_only
+        label: Project file only
+        meaning: One project file is the source of truth. A user-level file does not override it.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: flags_env_project_user
+        rationale: "Scripts need a stable precedence from the first build: flags, then environment, then project file, then user config."
+      mvp:
+        option: flags_env_project_user
+        rationale: MVP keeps that order so a flag can override a committed project file without editing it.
+      production:
+        option: flags_env_project_user
+        rationale: Production keeps the same order so automation and laptops do not disagree.
+    examples:
+      positive:
+        - utterance: Flags win, then environment, then the project file, then the user config.
+          settles: flags_env_project_user
+        - utterance: Yeah, command-line flags beat the env, and the env beats the config files.
+          settles: flags_env_project_user
+        - utterance: Ignore the files. Only the environment counts.
+          settles: env_only
+        - utterance: One project file is the source of truth. Don't let a user-level file override it.
+          settles: project_file_only
+        - utterance: A flag should override the project file for that one run.
+          settles: flags_env_project_user
+      negative:
+        - utterance: Put the settings in a file.
+          why: A file does not order flags, environment, project file, and user config.
+        - utterance: Read the environment.
+          why: Reading the environment does not say whether a flag or a file wins.
+  - id: cli.exit_codes
+    code: Q-CLI-03
+    pack: cli
+    version: 1
+    scope: shared
+    title: What exit codes are used, and how are stdout and stderr separated?
+    explain: Decides the exit-code contract and whether data stays on stdout while diagnostics stay on stderr. Human messages that share stdout with data cannot pair with a JSON stdout contract.
+    criteria:
+      - cli.exit_codes
+      - cli.stdout_stderr
+    touches:
+      - config_env
+      - logging
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - cli.output_format
+    allowed_inference_rules: *a2
+    options:
+      - id: conventional_split
+        label: 0, 1, and 2 with split streams
+        meaning: 0 is success, 1 is usage, 2 is operational failure. Data is on stdout and diagnostics are on stderr.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: posix_sysexits
+        label: Sysexits codes
+        meaning: Exit codes follow the sysexits set. Data stays on stdout and diagnostics stay on stderr.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: stdout_messages
+        label: Messages may share stdout
+        meaning: Human messages may share stdout with data. This cannot pair with a JSON stdout contract.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: cli.output_format
+            option_id: json_noninteractive
+          - question_id: cli.output_format
+            option_id: dual_tty_or_pipe
+    stage_recommendations:
+      prototype:
+        option: conventional_split
+        rationale: "Callers need a stable split from the start: 0 success, 1 usage, 2 failure, data on stdout, diagnostics on stderr."
+      mvp:
+        option: conventional_split
+        rationale: MVP keeps that contract so scripts can branch on the code.
+      production:
+        option: conventional_split
+        rationale: Production keeps the same codes so a later release does not break automation.
+    examples:
+      positive:
+        - utterance: Zero for success, one for bad usage, two for a real failure. Data on stdout, messages on stderr.
+          settles: conventional_split
+        - utterance: Yeah, stdout is the result and stderr is the logs.
+          settles: conventional_split
+        - utterance: Use the sysexits codes, but still keep data on stdout and diagnostics on stderr.
+          settles: posix_sysexits
+        - utterance: It's fine if human messages share stdout with the data.
+          settles: stdout_messages
+        - utterance: A usage mistake should be a different code from a network failure.
+          settles: conventional_split
+      negative:
+        - utterance: Return an error when it fails.
+          why: An error does not assign exit codes or choose stdout versus stderr.
+        - utterance: Print a message.
+          why: A message does not say which stream or which code.
+  - id: cli.distribution
+    code: Q-CLI-04
+    pack: cli
+    version: 1
+    scope: shared
+    title: Where are local state, cache, and credentials stored, and how are paths chosen?
+    explain: Decides install shape and path roots together. State, cache, and credentials stay in separate places. Paths use the platform directory API, never a hardcoded drive letter or one slash style. The install root changes where those directories sit.
+    criteria:
+      - cli.distribution
+      - cli.state_paths
+      - cli.credentials
+      - cli.cache
+    touches:
+      - config_env
+      - credentials
+      - caching
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - cli.config_location
+    allowed_inference_rules: *a2
+    options:
+      - id: os_config_dirs
+        label: OS config directories
+        meaning: Installed on PATH. State, cache, and credentials use OS directories, and credentials prefer the OS secret store.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: project_local_dotdir
+        label: Project dot directory
+        meaning: State and cache live in a dot directory in the project. Credentials do not.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: portable_single_file
+        label: Portable single file
+        meaning: One movable file. State and cache sit under a user-selected home resolved by the platform path API.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: project_local_dotdir
+        rationale: A prototype can keep state in a project dot directory so it is easy to delete.
+      mvp:
+        option: os_config_dirs
+        rationale: MVP moves state and cache to the operating system directories and keeps credentials out of the project tree.
+      production:
+        option: os_config_dirs
+        rationale: Production uses the OS directories and the OS secret store so a copied project folder does not contain secrets.
+    examples:
+      positive:
+        - utterance: Install it on PATH. Put state and cache in the OS directories, and put credentials in the OS secret store.
+          settles: os_config_dirs
+        - utterance: Yeah, use AppData or the XDG folders, not a folder next to the source.
+          settles: os_config_dirs
+        - utterance: Keep state and cache in a dot directory in the project. Credentials still go to the OS secret store, not that directory.
+          settles: project_local_dotdir
+        - utterance: Ship one file I can move. Let me pick a home directory, and resolve it with the platform path API.
+          settles: portable_single_file
+        - utterance: Don't hardcode C:\ or a single slash style.
+          settles: os_config_dirs
+      negative:
+        - utterance: Remember what I typed last time.
+          why: Remembering input does not choose a directory, a cache, or a credential store.
+        - utterance: Ship it as a binary.
+          why: A binary does not locate state, cache, or credentials on each platform.

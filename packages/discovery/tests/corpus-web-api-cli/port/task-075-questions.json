@@ -1,0 +1,3135 @@
+{
+  "questions": [
+    {
+      "id": "product.purpose",
+      "code": "Q-CORE-01",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "What is the primary job of the product?",
+      "explain": "Names the one job the product is for. A feature list is not this decision.",
+      "criteria": [
+        "product.purpose"
+      ],
+      "touches": [
+        "user_content"
+      ],
+      "impact": "critical",
+      "reversibility": "costly",
+      "must_ask": true,
+      "requires": [],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "internal_workflow",
+          "label": "One internal workflow",
+          "meaning": "The product's primary job is one named internal workflow, and success is that workflow completed.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "customer_product",
+          "label": "Customer product",
+          "meaning": "The primary job is a product sold to outside customers.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "public_content",
+          "label": "Public content",
+          "meaning": "The primary job is publishing content to the public.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "internal_workflow",
+          "rationale": "The M2 stand-in default is one internal workflow so the benchmark has a single job."
+        },
+        "mvp": {
+          "option": "internal_workflow",
+          "rationale": "The M2 stand-in default is one internal workflow so the benchmark has a single job."
+        },
+        "production": {
+          "option": "internal_workflow",
+          "rationale": "The M2 stand-in default is one internal workflow so the benchmark has a single job."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: One internal workflow. The product's primary job is one named internal workflow, and success is that workflow completed.",
+            "settles": "internal_workflow"
+          },
+          {
+            "utterance": "Please record \"One internal workflow\". The product's primary job is one named internal workflow, and success is that workflow completed.",
+            "settles": "internal_workflow"
+          },
+          {
+            "utterance": "Yeah, one internal workflow. The product's primary job is one named internal workflow, and success is that workflow completed.",
+            "settles": "internal_workflow"
+          },
+          {
+            "utterance": "For this release I want One internal workflow. The product's primary job is one named internal workflow, and success is that workflow completed.",
+            "settles": "internal_workflow"
+          },
+          {
+            "utterance": "Lock this in as One internal workflow. The product's primary job is one named internal workflow, and success is that workflow completed.",
+            "settles": "internal_workflow"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "It should be useful.",
+            "why": "Useful does not name the job."
+          },
+          {
+            "utterance": "Maybe invoices, or maybe chat, we will see.",
+            "why": "Two open jobs are not one settled purpose."
+          }
+        ]
+      }
+    },
+    {
+      "id": "product.audience",
+      "code": "Q-CORE-02",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Who is the primary audience?",
+      "explain": "Names who the product is for. A platform is not an audience.",
+      "criteria": [
+        "product.audience"
+      ],
+      "touches": [
+        "personal_data"
+      ],
+      "impact": "high",
+      "reversibility": "costly",
+      "must_ask": true,
+      "requires": [
+        "product.purpose"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "office_staff",
+          "label": "Office staff",
+          "meaning": "The primary users are office staff doing the job during a shift, not the general public.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "public_visitors",
+          "label": "Public visitors",
+          "meaning": "The primary users are members of the public.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "mixed_staff_and_customers",
+          "label": "Staff and customers",
+          "meaning": "Both staff and outside customers are primary.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "office_staff",
+          "rationale": "The stand-in audience is office staff doing the job during a shift."
+        },
+        "mvp": {
+          "option": "office_staff",
+          "rationale": "The stand-in audience is office staff doing the job during a shift."
+        },
+        "production": {
+          "option": "office_staff",
+          "rationale": "The stand-in audience is office staff doing the job during a shift."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Office staff. The primary users are office staff doing the job during a shift, not the general public.",
+            "settles": "office_staff"
+          },
+          {
+            "utterance": "Please record \"Office staff\". The primary users are office staff doing the job during a shift, not the general public.",
+            "settles": "office_staff"
+          },
+          {
+            "utterance": "Yeah, office staff. The primary users are office staff doing the job during a shift, not the general public.",
+            "settles": "office_staff"
+          },
+          {
+            "utterance": "For this release I want Office staff. The primary users are office staff doing the job during a shift, not the general public.",
+            "settles": "office_staff"
+          },
+          {
+            "utterance": "Lock this in as Office staff. The primary users are office staff doing the job during a shift, not the general public.",
+            "settles": "office_staff"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "People will use it.",
+            "why": "People is not a specific audience."
+          },
+          {
+            "utterance": "Our users have phones.",
+            "why": "A device is not the audience."
+          }
+        ]
+      }
+    },
+    {
+      "id": "product.stage",
+      "code": "Q-CORE-03",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Which release slice is in scope?",
+      "explain": "Chooses prototype, MVP, or production depth for this project.",
+      "criteria": [
+        "product.stage"
+      ],
+      "touches": [
+        "config_env"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.purpose"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "prototype_slice",
+          "label": "Prototype slice",
+          "meaning": "The release is a prototype of the primary workflow, not a support commitment.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "mvp_slice",
+          "label": "MVP slice",
+          "meaning": "The release is the smallest slice that completes the primary workflow for real use.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "production_slice",
+          "label": "Production slice",
+          "meaning": "The release is a production commitment with the operational floor turned on.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "prototype_slice",
+          "rationale": "Each preset selects its own slice."
+        },
+        "mvp": {
+          "option": "mvp_slice",
+          "rationale": "Each preset selects its own slice."
+        },
+        "production": {
+          "option": "production_slice",
+          "rationale": "Each preset selects its own slice."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Prototype slice. The release is a prototype of the primary workflow, not a support commitment.",
+            "settles": "prototype_slice"
+          },
+          {
+            "utterance": "Please record \"Prototype slice\". The release is a prototype of the primary workflow, not a support commitment.",
+            "settles": "prototype_slice"
+          },
+          {
+            "utterance": "Yeah, prototype slice. The release is a prototype of the primary workflow, not a support commitment.",
+            "settles": "prototype_slice"
+          },
+          {
+            "utterance": "For this release I want Prototype slice. The release is a prototype of the primary workflow, not a support commitment.",
+            "settles": "prototype_slice"
+          },
+          {
+            "utterance": "Lock this in as Prototype slice. The release is a prototype of the primary workflow, not a support commitment.",
+            "settles": "prototype_slice"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Ship something soon.",
+            "why": "Soon does not choose prototype, MVP, or production."
+          },
+          {
+            "utterance": "Make it good.",
+            "why": "Good is not a stage."
+          }
+        ]
+      }
+    },
+    {
+      "id": "actors.roles",
+      "code": "Q-CORE-04",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Which roles act in the product?",
+      "explain": "Names the actors. A login screen is not a role list.",
+      "criteria": [
+        "actors.roles"
+      ],
+      "touches": [
+        "authz"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.audience"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "staff_and_manager",
+          "label": "Staff and manager",
+          "meaning": "Two roles: staff who do the work, and a manager who reviews it.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "single_actor",
+          "label": "Single actor",
+          "meaning": "One person does every action.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "custom_matrix",
+          "label": "Custom matrix",
+          "meaning": "The role list is a custom matrix the user will name later.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "staff_and_manager",
+          "rationale": "The stand-in has staff who do the work and a manager who reviews it."
+        },
+        "mvp": {
+          "option": "staff_and_manager",
+          "rationale": "The stand-in has staff who do the work and a manager who reviews it."
+        },
+        "production": {
+          "option": "staff_and_manager",
+          "rationale": "The stand-in has staff who do the work and a manager who reviews it."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Staff and manager. Two roles: staff who do the work, and a manager who reviews it.",
+            "settles": "staff_and_manager"
+          },
+          {
+            "utterance": "Please record \"Staff and manager\". Two roles: staff who do the work, and a manager who reviews it.",
+            "settles": "staff_and_manager"
+          },
+          {
+            "utterance": "Yeah, staff and manager. Two roles: staff who do the work, and a manager who reviews it.",
+            "settles": "staff_and_manager"
+          },
+          {
+            "utterance": "For this release I want Staff and manager. Two roles: staff who do the work, and a manager who reviews it.",
+            "settles": "staff_and_manager"
+          },
+          {
+            "utterance": "Lock this in as Staff and manager. Two roles: staff who do the work, and a manager who reviews it.",
+            "settles": "staff_and_manager"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Someone has to be in charge.",
+            "why": "Being in charge does not name the roles."
+          },
+          {
+            "utterance": "Users can sign in.",
+            "why": "Sign-in is not a role list."
+          }
+        ]
+      }
+    },
+    {
+      "id": "workflows.primary",
+      "code": "Q-CORE-05",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "What is the primary workflow?",
+      "explain": "Names the happy path and its done state.",
+      "criteria": [
+        "workflows.primary"
+      ],
+      "touches": [
+        "interactive_ui"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.purpose"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "one_happy_path",
+          "label": "One happy path",
+          "meaning": "There is one primary workflow with a named done state.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "several_equal",
+          "label": "Several equal workflows",
+          "meaning": "Several workflows are equally primary.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "one_happy_path",
+          "rationale": "One happy path keeps the first release testable."
+        },
+        "mvp": {
+          "option": "one_happy_path",
+          "rationale": "One happy path keeps the first release testable."
+        },
+        "production": {
+          "option": "one_happy_path",
+          "rationale": "One happy path keeps the first release testable."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: One happy path. There is one primary workflow with a named done state.",
+            "settles": "one_happy_path"
+          },
+          {
+            "utterance": "Please record \"One happy path\". There is one primary workflow with a named done state.",
+            "settles": "one_happy_path"
+          },
+          {
+            "utterance": "Yeah, one happy path. There is one primary workflow with a named done state.",
+            "settles": "one_happy_path"
+          },
+          {
+            "utterance": "For this release I want One happy path. There is one primary workflow with a named done state.",
+            "settles": "one_happy_path"
+          },
+          {
+            "utterance": "Lock this in as One happy path. There is one primary workflow with a named done state.",
+            "settles": "one_happy_path"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "They do their job in the app.",
+            "why": "Doing the job does not name the steps or the done state."
+          },
+          {
+            "utterance": "It should be easy.",
+            "why": "Easy is not a workflow."
+          }
+        ]
+      }
+    },
+    {
+      "id": "workflows.secondary",
+      "code": "Q-CORE-06",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Is a secondary workflow in this release?",
+      "explain": "Says whether a second workflow is in scope now.",
+      "criteria": [
+        "workflows.secondary"
+      ],
+      "touches": [
+        "interactive_ui"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "workflows.primary"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "none_this_release",
+          "label": "None this release",
+          "meaning": "No secondary workflow is in this release.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "one_named",
+          "label": "One named secondary",
+          "meaning": "One named secondary workflow is in this release.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "none_this_release",
+          "rationale": "The stand-in leaves secondary workflows out of this release."
+        },
+        "mvp": {
+          "option": "none_this_release",
+          "rationale": "The stand-in leaves secondary workflows out of this release."
+        },
+        "production": {
+          "option": "none_this_release",
+          "rationale": "The stand-in leaves secondary workflows out of this release."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: None this release. No secondary workflow is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "Please record \"None this release\". No secondary workflow is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "Yeah, none this release. No secondary workflow is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "For this release I want None this release. No secondary workflow is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "Lock this in as None this release. No secondary workflow is in this release.",
+            "settles": "none_this_release"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We might add reports later.",
+            "why": "Later is not a yes for this release."
+          },
+          {
+            "utterance": "There is a settings page.",
+            "why": "A settings page is not a second workflow."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.entities",
+      "code": "Q-CORE-07",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Which records does the workflow create?",
+      "explain": "The user names the records. A database choice is not an entity list.",
+      "criteria": [
+        "data.entities"
+      ],
+      "touches": [
+        "migration"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "workflows.primary"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "named_by_user",
+          "label": "User-named records",
+          "meaning": "The records are exactly the ones the user names for the workflow.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "undecided",
+          "label": "Not yet named",
+          "meaning": "The record list is not settled.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "named_by_user",
+          "rationale": "Entities stay the ones the user names, not a guessed catalog."
+        },
+        "mvp": {
+          "option": "named_by_user",
+          "rationale": "Entities stay the ones the user names, not a guessed catalog."
+        },
+        "production": {
+          "option": "named_by_user",
+          "rationale": "Entities stay the ones the user names, not a guessed catalog."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: User-named records. The records are exactly the ones the user names for the workflow.",
+            "settles": "named_by_user"
+          },
+          {
+            "utterance": "Please record \"User-named records\". The records are exactly the ones the user names for the workflow.",
+            "settles": "named_by_user"
+          },
+          {
+            "utterance": "Yeah, user-named records. The records are exactly the ones the user names for the workflow.",
+            "settles": "named_by_user"
+          },
+          {
+            "utterance": "For this release I want User-named records. The records are exactly the ones the user names for the workflow.",
+            "settles": "named_by_user"
+          },
+          {
+            "utterance": "Lock this in as User-named records. The records are exactly the ones the user names for the workflow.",
+            "settles": "named_by_user"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We will store data.",
+            "why": "Storing data does not name the records."
+          },
+          {
+            "utterance": "Use a database.",
+            "why": "An engine is not an entity list."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.ownership",
+      "code": "Q-CORE-08",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Who owns a record?",
+      "explain": "Says who may act on a record they created.",
+      "criteria": [
+        "data.ownership"
+      ],
+      "touches": [
+        "authz"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "data.entities"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "creator_owned",
+          "label": "Creator owns it",
+          "meaning": "The actor who created a record owns it until a manager reassigns it.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "organization_owned",
+          "label": "Organization owns it",
+          "meaning": "The organization owns every record. The creator is only an author stamp.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "creator_owned",
+          "rationale": "The creator owns the record until a manager reassigns it."
+        },
+        "mvp": {
+          "option": "creator_owned",
+          "rationale": "The creator owns the record until a manager reassigns it."
+        },
+        "production": {
+          "option": "creator_owned",
+          "rationale": "The creator owns the record until a manager reassigns it."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Creator owns it. The actor who created a record owns it until a manager reassigns it.",
+            "settles": "creator_owned"
+          },
+          {
+            "utterance": "Please record \"Creator owns it\". The actor who created a record owns it until a manager reassigns it.",
+            "settles": "creator_owned"
+          },
+          {
+            "utterance": "Yeah, creator owns it. The actor who created a record owns it until a manager reassigns it.",
+            "settles": "creator_owned"
+          },
+          {
+            "utterance": "For this release I want Creator owns it. The actor who created a record owns it until a manager reassigns it.",
+            "settles": "creator_owned"
+          },
+          {
+            "utterance": "Lock this in as Creator owns it. The actor who created a record owns it until a manager reassigns it.",
+            "settles": "creator_owned"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "People have their own stuff.",
+            "why": "Own stuff does not say whether a manager can reassign it."
+          },
+          {
+            "utterance": "Admins can do everything.",
+            "why": "An unbounded admin is not an ownership rule."
+          }
+        ]
+      }
+    },
+    {
+      "id": "product.persists_data",
+      "code": "Q-CORE-09",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Must data survive a restart?",
+      "explain": "Decides whether the product stores data or only holds it for the session.",
+      "criteria": [
+        "product.persists_data"
+      ],
+      "touches": [
+        "migration"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "data.entities"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "persists",
+          "label": "Persists across restart",
+          "meaning": "Data must survive a process restart.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "ephemeral",
+          "label": "Ephemeral",
+          "meaning": "Data lives only until the process stops.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "persists",
+          "rationale": "The stand-in persists data so a restart does not drop the workflow."
+        },
+        "mvp": {
+          "option": "persists",
+          "rationale": "The stand-in persists data so a restart does not drop the workflow."
+        },
+        "production": {
+          "option": "persists",
+          "rationale": "The stand-in persists data so a restart does not drop the workflow."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Persists across restart. Data must survive a process restart.",
+            "settles": "persists"
+          },
+          {
+            "utterance": "Please record \"Persists across restart\". Data must survive a process restart.",
+            "settles": "persists"
+          },
+          {
+            "utterance": "Yeah, persists across restart. Data must survive a process restart.",
+            "settles": "persists"
+          },
+          {
+            "utterance": "For this release I want Persists across restart. Data must survive a process restart.",
+            "settles": "persists"
+          },
+          {
+            "utterance": "Lock this in as Persists across restart. Data must survive a process restart.",
+            "settles": "persists"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Don't lose my work.",
+            "why": "That sentence does not say the data must survive a process restart."
+          },
+          {
+            "utterance": "Keep it in memory, I think.",
+            "why": "I think is not a persistence decision."
+          }
+        ]
+      }
+    },
+    {
+      "id": "errors.user_facing_style",
+      "code": "Q-CORE-10",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "How should a person see an error?",
+      "explain": "Decides the caller-facing error shape. Internals stay out of it.",
+      "criteria": [
+        "errors.user_facing_style"
+      ],
+      "touches": [
+        "logging",
+        "interactive_ui"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "workflows.primary"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "plain_with_retry",
+          "label": "Plain sentence and retry",
+          "meaning": "The person sees a plain sentence, no internals, and a retry when the action can be repeated.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "code_and_message",
+          "label": "Code and message",
+          "meaning": "The person sees a stable code and a sentence, without a retry affordance.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "plain_with_retry",
+          "rationale": "A plain sentence plus retry is the stand-in when the action can be repeated."
+        },
+        "mvp": {
+          "option": "plain_with_retry",
+          "rationale": "A plain sentence plus retry is the stand-in when the action can be repeated."
+        },
+        "production": {
+          "option": "plain_with_retry",
+          "rationale": "A plain sentence plus retry is the stand-in when the action can be repeated."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Plain sentence and retry. The person sees a plain sentence, no internals, and a retry when the action can be repeated.",
+            "settles": "plain_with_retry"
+          },
+          {
+            "utterance": "Please record \"Plain sentence and retry\". The person sees a plain sentence, no internals, and a retry when the action can be repeated.",
+            "settles": "plain_with_retry"
+          },
+          {
+            "utterance": "Yeah, plain sentence and retry. The person sees a plain sentence, no internals, and a retry when the action can be repeated.",
+            "settles": "plain_with_retry"
+          },
+          {
+            "utterance": "For this release I want Plain sentence and retry. The person sees a plain sentence, no internals, and a retry when the action can be repeated.",
+            "settles": "plain_with_retry"
+          },
+          {
+            "utterance": "Lock this in as Plain sentence and retry. The person sees a plain sentence, no internals, and a retry when the action can be repeated.",
+            "settles": "plain_with_retry"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Show an error.",
+            "why": "Showing an error does not choose the words or a retry."
+          },
+          {
+            "utterance": "Log the stack.",
+            "why": "A log is not the user-facing style."
+          }
+        ]
+      }
+    },
+    {
+      "id": "testing.expectations",
+      "code": "Q-CORE-11",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "What testing bar applies to the primary workflow?",
+      "explain": "Decides whether the primary workflow has an automated acceptance check.",
+      "criteria": [
+        "testing.expectations"
+      ],
+      "touches": [
+        "logging"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "workflows.primary"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "automated_acceptance",
+          "label": "Automated acceptance",
+          "meaning": "The primary workflow has an automated acceptance check that fails when the done state is not reached.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "manual_only",
+          "label": "Manual only",
+          "meaning": "A person checks the workflow by hand. No automated acceptance check is required.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "automated_acceptance",
+          "rationale": "The primary workflow needs an automated acceptance check."
+        },
+        "mvp": {
+          "option": "automated_acceptance",
+          "rationale": "The primary workflow needs an automated acceptance check."
+        },
+        "production": {
+          "option": "automated_acceptance",
+          "rationale": "The primary workflow needs an automated acceptance check."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Automated acceptance. The primary workflow has an automated acceptance check that fails when the done state is not reached.",
+            "settles": "automated_acceptance"
+          },
+          {
+            "utterance": "Please record \"Automated acceptance\". The primary workflow has an automated acceptance check that fails when the done state is not reached.",
+            "settles": "automated_acceptance"
+          },
+          {
+            "utterance": "Yeah, automated acceptance. The primary workflow has an automated acceptance check that fails when the done state is not reached.",
+            "settles": "automated_acceptance"
+          },
+          {
+            "utterance": "For this release I want Automated acceptance. The primary workflow has an automated acceptance check that fails when the done state is not reached.",
+            "settles": "automated_acceptance"
+          },
+          {
+            "utterance": "Lock this in as Automated acceptance. The primary workflow has an automated acceptance check that fails when the done state is not reached.",
+            "settles": "automated_acceptance"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We should test it.",
+            "why": "A testing wish does not choose automated acceptance versus a manual pass."
+          },
+          {
+            "utterance": "I will click around.",
+            "why": "Clicking around is not an automated check."
+          }
+        ]
+      }
+    },
+    {
+      "id": "delivery.platform",
+      "code": "Q-CORE-12",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Where is the product delivered?",
+      "explain": "Chooses the delivery surface. This stand-in defaults to the browser and does not conflict with the CLI pack's own questions.",
+      "criteria": [
+        "delivery.platform"
+      ],
+      "touches": [
+        "route"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.purpose"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "web_browser",
+          "label": "Web browser",
+          "meaning": "The product is delivered in a desktop and phone browser, not as a native store app.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "cli_tool",
+          "label": "Command line",
+          "meaning": "The product is delivered as a command-line tool.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "api_only",
+          "label": "API only",
+          "meaning": "The product is delivered only as an API.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "web_browser",
+          "rationale": "The stand-in delivery is a browser so the web pack's defaults stay coherent."
+        },
+        "mvp": {
+          "option": "web_browser",
+          "rationale": "The stand-in delivery is a browser so the web pack's defaults stay coherent."
+        },
+        "production": {
+          "option": "web_browser",
+          "rationale": "The stand-in delivery is a browser so the web pack's defaults stay coherent."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Web browser. The product is delivered in a desktop and phone browser, not as a native store app.",
+            "settles": "web_browser"
+          },
+          {
+            "utterance": "Please record \"Web browser\". The product is delivered in a desktop and phone browser, not as a native store app.",
+            "settles": "web_browser"
+          },
+          {
+            "utterance": "Yeah, web browser. The product is delivered in a desktop and phone browser, not as a native store app.",
+            "settles": "web_browser"
+          },
+          {
+            "utterance": "For this release I want Web browser. The product is delivered in a desktop and phone browser, not as a native store app.",
+            "settles": "web_browser"
+          },
+          {
+            "utterance": "Lock this in as Web browser. The product is delivered in a desktop and phone browser, not as a native store app.",
+            "settles": "web_browser"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "They will use it at work.",
+            "why": "A place of work is not a delivery surface."
+          },
+          {
+            "utterance": "Make it an app.",
+            "why": "App does not choose browser, CLI, or API."
+          }
+        ]
+      }
+    },
+    {
+      "id": "deploy.target",
+      "code": "Q-CORE-13",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Where does it run?",
+      "explain": "Chooses a local-only run or one hosted URL.",
+      "criteria": [
+        "deploy.target"
+      ],
+      "touches": [
+        "config_env"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "delivery.platform"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "local_only",
+          "label": "Local only",
+          "meaning": "The product runs on one local machine and is not opened by a public URL.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "single_hosted",
+          "label": "One hosted environment",
+          "meaning": "One hosted environment is opened by a URL.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "local_only",
+          "rationale": "Prototype stays local. Later stages use one hosted URL."
+        },
+        "mvp": {
+          "option": "single_hosted",
+          "rationale": "Prototype stays local. Later stages use one hosted URL."
+        },
+        "production": {
+          "option": "single_hosted",
+          "rationale": "Prototype stays local. Later stages use one hosted URL."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Local only. The product runs on one local machine and is not opened by a public URL.",
+            "settles": "local_only"
+          },
+          {
+            "utterance": "Please record \"Local only\". The product runs on one local machine and is not opened by a public URL.",
+            "settles": "local_only"
+          },
+          {
+            "utterance": "Yeah, local only. The product runs on one local machine and is not opened by a public URL.",
+            "settles": "local_only"
+          },
+          {
+            "utterance": "For this release I want Local only. The product runs on one local machine and is not opened by a public URL.",
+            "settles": "local_only"
+          },
+          {
+            "utterance": "Lock this in as Local only. The product runs on one local machine and is not opened by a public URL.",
+            "settles": "local_only"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Put it online.",
+            "why": "Online does not choose one hosted environment versus many."
+          },
+          {
+            "utterance": "Run it on my laptop for the demo.",
+            "why": "A demo laptop does not by itself rule out a hosted environment."
+          }
+        ]
+      }
+    },
+    {
+      "id": "constraints.deadline_budget",
+      "code": "Q-CORE-14",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Is there a deadline or a budget?",
+      "explain": "Records a date or a price only when the user states one. The stand-in does not invent either.",
+      "criteria": [
+        "constraints.deadline_budget"
+      ],
+      "touches": [
+        "scheduling"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.stage"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "unset_open",
+          "label": "Unset",
+          "meaning": "Deadline and budget are unset. The plan must not invent a date or a price.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "named_date",
+          "label": "Named date",
+          "meaning": "The user named a deadline or a budget figure.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "unset_open",
+          "rationale": "No date or price is invented when the user has not stated one."
+        },
+        "mvp": {
+          "option": "unset_open",
+          "rationale": "No date or price is invented when the user has not stated one."
+        },
+        "production": {
+          "option": "unset_open",
+          "rationale": "No date or price is invented when the user has not stated one."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Unset. Deadline and budget are unset. The plan must not invent a date or a price.",
+            "settles": "unset_open"
+          },
+          {
+            "utterance": "Please record \"Unset\". Deadline and budget are unset. The plan must not invent a date or a price.",
+            "settles": "unset_open"
+          },
+          {
+            "utterance": "Yeah, unset. Deadline and budget are unset. The plan must not invent a date or a price.",
+            "settles": "unset_open"
+          },
+          {
+            "utterance": "For this release I want Unset. Deadline and budget are unset. The plan must not invent a date or a price.",
+            "settles": "unset_open"
+          },
+          {
+            "utterance": "Lock this in as Unset. Deadline and budget are unset. The plan must not invent a date or a price.",
+            "settles": "unset_open"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We are in a hurry.",
+            "why": "Hurry is not a date."
+          },
+          {
+            "utterance": "Keep it cheap.",
+            "why": "Cheap is not a budget figure."
+          }
+        ]
+      }
+    },
+    {
+      "id": "constraints.stack_preferences",
+      "code": "Q-CORE-15",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Is a technology stack mandated?",
+      "explain": "Records a stack only when the user mandates one. Otherwise choices stay behavioral.",
+      "criteria": [
+        "constraints.stack_preferences"
+      ],
+      "touches": [
+        "config_env"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "delivery.platform"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "no_stack_mandate",
+          "label": "No stack mandate",
+          "meaning": "No stack is mandated. Requirements stay behavioral.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "named_stack",
+          "label": "Named stack",
+          "meaning": "The user mandated a named stack.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "no_stack_mandate",
+          "rationale": "No stack is mandated, so elaborations stay behavioral."
+        },
+        "mvp": {
+          "option": "no_stack_mandate",
+          "rationale": "No stack is mandated, so elaborations stay behavioral."
+        },
+        "production": {
+          "option": "no_stack_mandate",
+          "rationale": "No stack is mandated, so elaborations stay behavioral."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: No stack mandate. No stack is mandated. Requirements stay behavioral.",
+            "settles": "no_stack_mandate"
+          },
+          {
+            "utterance": "Please record \"No stack mandate\". No stack is mandated. Requirements stay behavioral.",
+            "settles": "no_stack_mandate"
+          },
+          {
+            "utterance": "Yeah, no stack mandate. No stack is mandated. Requirements stay behavioral.",
+            "settles": "no_stack_mandate"
+          },
+          {
+            "utterance": "For this release I want No stack mandate. No stack is mandated. Requirements stay behavioral.",
+            "settles": "no_stack_mandate"
+          },
+          {
+            "utterance": "Lock this in as No stack mandate. No stack is mandated. Requirements stay behavioral.",
+            "settles": "no_stack_mandate"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Use something modern.",
+            "why": "Modern is not a stack mandate."
+          },
+          {
+            "utterance": "I saw a tutorial that used a framework.",
+            "why": "A tutorial is not a mandate."
+          }
+        ]
+      }
+    },
+    {
+      "id": "integrations.external",
+      "code": "Q-CORE-16",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Are external systems in this release?",
+      "explain": "Says whether this release calls a third party.",
+      "criteria": [
+        "integrations.external"
+      ],
+      "touches": [
+        "external_api"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "workflows.primary"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "none_this_release",
+          "label": "No external integration",
+          "meaning": "No third-party integration is in this release.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "named_http",
+          "label": "One named HTTP integration",
+          "meaning": "This release calls one named HTTP integration, with a timeout and a bounded retry.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "none_this_release",
+          "rationale": "Early stages call no third party. Production may name one HTTP integration."
+        },
+        "mvp": {
+          "option": "none_this_release",
+          "rationale": "Early stages call no third party. Production may name one HTTP integration."
+        },
+        "production": {
+          "option": "named_http",
+          "rationale": "Early stages call no third party. Production may name one HTTP integration."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: No external integration. No third-party integration is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "Please record \"No external integration\". No third-party integration is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "Yeah, no external integration. No third-party integration is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "For this release I want No external integration. No third-party integration is in this release.",
+            "settles": "none_this_release"
+          },
+          {
+            "utterance": "Lock this in as No external integration. No third-party integration is in this release.",
+            "settles": "none_this_release"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We might connect payments later.",
+            "why": "Later is not an integration in this release."
+          },
+          {
+            "utterance": "Send an email.",
+            "why": "Email does not name the provider or whether it is in this release."
+          }
+        ]
+      }
+    },
+    {
+      "id": "time.locale_timezone",
+      "code": "Q-CORE-17",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "How are instants stored and shown?",
+      "explain": "Store UTC and display in an IANA zone. This stays compatible with UP-05.",
+      "criteria": [
+        "time.locale_timezone"
+      ],
+      "touches": [
+        "time_display",
+        "scheduling"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.purpose"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "utc_storage_iana_display",
+          "label": "UTC storage, IANA display",
+          "meaning": "Instants are stored in UTC and shown in the project's IANA zone.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "utc_storage_fixed_zone",
+          "label": "One fixed display zone",
+          "meaning": "Store UTC and always display one named zone, not the viewer's zone.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "utc_storage_iana_display",
+          "rationale": "UTC storage and an IANA display zone match the universal time policy."
+        },
+        "mvp": {
+          "option": "utc_storage_iana_display",
+          "rationale": "UTC storage and an IANA display zone match the universal time policy."
+        },
+        "production": {
+          "option": "utc_storage_iana_display",
+          "rationale": "UTC storage and an IANA display zone match the universal time policy."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: UTC storage, IANA display. Instants are stored in UTC and shown in the project's IANA zone.",
+            "settles": "utc_storage_iana_display"
+          },
+          {
+            "utterance": "Please record \"UTC storage, IANA display\". Instants are stored in UTC and shown in the project's IANA zone.",
+            "settles": "utc_storage_iana_display"
+          },
+          {
+            "utterance": "Yeah, uTC storage, IANA display. Instants are stored in UTC and shown in the project's IANA zone.",
+            "settles": "utc_storage_iana_display"
+          },
+          {
+            "utterance": "For this release I want UTC storage, IANA display. Instants are stored in UTC and shown in the project's IANA zone.",
+            "settles": "utc_storage_iana_display"
+          },
+          {
+            "utterance": "Lock this in as UTC storage, IANA display. Instants are stored in UTC and shown in the project's IANA zone.",
+            "settles": "utc_storage_iana_display"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Show the time.",
+            "why": "Showing a time does not choose UTC storage or an IANA zone."
+          },
+          {
+            "utterance": "We are in London.",
+            "why": "A city name is not yet an IANA zone decision for storage."
+          }
+        ]
+      }
+    },
+    {
+      "id": "content.language",
+      "code": "Q-CORE-18",
+      "pack": "core",
+      "version": 1,
+      "scope": "shared",
+      "title": "Which languages does the product speak?",
+      "explain": "Chooses the language set for the interface and stored labels.",
+      "criteria": [
+        "content.language"
+      ],
+      "touches": [
+        "user_content"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "product.audience"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "english_only",
+          "label": "English only",
+          "meaning": "The interface and stored system labels are English only.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "additional_locales",
+          "label": "Additional locales",
+          "meaning": "The user named more than one locale.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "english_only",
+          "rationale": "The stand-in is English until the user names another language."
+        },
+        "mvp": {
+          "option": "english_only",
+          "rationale": "The stand-in is English until the user names another language."
+        },
+        "production": {
+          "option": "english_only",
+          "rationale": "The stand-in is English until the user names another language."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: English only. The interface and stored system labels are English only.",
+            "settles": "english_only"
+          },
+          {
+            "utterance": "Please record \"English only\". The interface and stored system labels are English only.",
+            "settles": "english_only"
+          },
+          {
+            "utterance": "Yeah, english only. The interface and stored system labels are English only.",
+            "settles": "english_only"
+          },
+          {
+            "utterance": "For this release I want English only. The interface and stored system labels are English only.",
+            "settles": "english_only"
+          },
+          {
+            "utterance": "Lock this in as English only. The interface and stored system labels are English only.",
+            "settles": "english_only"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Write it clearly.",
+            "why": "Clarity is not a language choice."
+          },
+          {
+            "utterance": "Some customers are abroad.",
+            "why": "Abroad does not add a locale."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.storage.engine",
+      "code": "Q-DATA-01",
+      "pack": "data",
+      "version": 1,
+      "scope": "shared",
+      "title": "Which database engine stores the data?",
+      "explain": "Chooses the engine. PostgreSQL and SQLite are the high-frequency answers.",
+      "criteria": [
+        "data.storage.engine"
+      ],
+      "touches": [
+        "migration"
+      ],
+      "impact": "critical",
+      "reversibility": "irreversible",
+      "must_ask": true,
+      "requires": [
+        "product.persists_data"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance",
+        "infer.from_stated_technology"
+      ],
+      "options": [
+        {
+          "id": "postgres",
+          "label": "PostgreSQL",
+          "meaning": "PostgreSQL with transactional migrations, parameterized queries, indexes on foreign keys and filters, UTC timestamptz, and connection pooling.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "sqlite",
+          "label": "SQLite file",
+          "meaning": "One local SQLite file, no separate database server, and one writer transaction at a time.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "document_store",
+          "label": "Document store",
+          "meaning": "A document store, not a relational engine.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "sqlite",
+          "rationale": "Prototype uses a single SQLite file. Later stages use PostgreSQL."
+        },
+        "mvp": {
+          "option": "postgres",
+          "rationale": "Prototype uses a single SQLite file. Later stages use PostgreSQL."
+        },
+        "production": {
+          "option": "postgres",
+          "rationale": "Prototype uses a single SQLite file. Later stages use PostgreSQL."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: PostgreSQL. PostgreSQL with transactional migrations, parameterized queries, indexes on foreign keys and filters, UTC timestamptz, and connection pooling.",
+            "settles": "postgres"
+          },
+          {
+            "utterance": "Please record \"PostgreSQL\". PostgreSQL with transactional migrations, parameterized queries, indexes on foreign keys and filters, UTC timestamptz, and connection pooling.",
+            "settles": "postgres"
+          },
+          {
+            "utterance": "Yeah, postgreSQL. PostgreSQL with transactional migrations, parameterized queries, indexes on foreign keys and filters, UTC timestamptz, and connection pooling.",
+            "settles": "postgres"
+          },
+          {
+            "utterance": "For this release I want PostgreSQL. PostgreSQL with transactional migrations, parameterized queries, indexes on foreign keys and filters, UTC timestamptz, and connection pooling.",
+            "settles": "postgres"
+          },
+          {
+            "utterance": "Lock this in as PostgreSQL. PostgreSQL with transactional migrations, parameterized queries, indexes on foreign keys and filters, UTC timestamptz, and connection pooling.",
+            "settles": "postgres"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Store it properly.",
+            "why": "Properly does not name an engine."
+          },
+          {
+            "utterance": "We might use the cloud.",
+            "why": "The cloud is not an engine."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.retention_deletion",
+      "code": "Q-DATA-02",
+      "pack": "data",
+      "version": 1,
+      "scope": "shared",
+      "title": "How is a record deleted?",
+      "explain": "Chooses soft delete, hard delete, or retain-then-purge.",
+      "criteria": [
+        "data.retention_deletion"
+      ],
+      "touches": [
+        "destructive_write"
+      ],
+      "impact": "critical",
+      "reversibility": "irreversible",
+      "must_ask": true,
+      "requires": [
+        "data.entities"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "soft_delete",
+          "label": "Soft delete",
+          "meaning": "A delete hides the record and keeps it restorable. It is not a physical purge.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "hard_delete",
+          "label": "Hard delete",
+          "meaning": "A delete removes the row and it cannot be restored.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "retain_then_purge",
+          "label": "Retain then purge",
+          "meaning": "A delete hides the record, and a later job purges it after a named retention window.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "soft_delete",
+          "rationale": "Soft delete keeps history until an explicit purge policy exists."
+        },
+        "mvp": {
+          "option": "soft_delete",
+          "rationale": "Soft delete keeps history until an explicit purge policy exists."
+        },
+        "production": {
+          "option": "soft_delete",
+          "rationale": "Soft delete keeps history until an explicit purge policy exists."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Soft delete. A delete hides the record and keeps it restorable. It is not a physical purge.",
+            "settles": "soft_delete"
+          },
+          {
+            "utterance": "Please record \"Soft delete\". A delete hides the record and keeps it restorable. It is not a physical purge.",
+            "settles": "soft_delete"
+          },
+          {
+            "utterance": "Yeah, soft delete. A delete hides the record and keeps it restorable. It is not a physical purge.",
+            "settles": "soft_delete"
+          },
+          {
+            "utterance": "For this release I want Soft delete. A delete hides the record and keeps it restorable. It is not a physical purge.",
+            "settles": "soft_delete"
+          },
+          {
+            "utterance": "Lock this in as Soft delete. A delete hides the record and keeps it restorable. It is not a physical purge.",
+            "settles": "soft_delete"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Let them remove it.",
+            "why": "Remove does not choose soft delete, hard delete, or a retention window."
+          },
+          {
+            "utterance": "Keep it forever, I guess.",
+            "why": "A guess is not a retention rule."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.personal_data",
+      "code": "Q-DATA-03",
+      "pack": "data",
+      "version": 1,
+      "scope": "shared",
+      "title": "What personal data is stored?",
+      "explain": "Classifies personal data. Contact details are the stand-in, not a regulated-health assumption.",
+      "criteria": [
+        "data.personal_data"
+      ],
+      "touches": [
+        "personal_data"
+      ],
+      "impact": "high",
+      "reversibility": "costly",
+      "must_ask": true,
+      "requires": [
+        "data.entities"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "contact_only",
+          "label": "Contact details only",
+          "meaning": "Personal data is limited to contact details such as name and email. It is not a regulated-health class.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "none",
+          "label": "No personal data",
+          "meaning": "The product stores no personal data.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "regulated",
+          "label": "Regulated personal data",
+          "meaning": "The product stores a regulated class of personal data the user must name.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "contact_only",
+          "rationale": "The stand-in stores contact details only, until the user names a stricter class."
+        },
+        "mvp": {
+          "option": "contact_only",
+          "rationale": "The stand-in stores contact details only, until the user names a stricter class."
+        },
+        "production": {
+          "option": "contact_only",
+          "rationale": "The stand-in stores contact details only, until the user names a stricter class."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Contact details only. Personal data is limited to contact details such as name and email. It is not a regulated-health class.",
+            "settles": "contact_only"
+          },
+          {
+            "utterance": "Please record \"Contact details only\". Personal data is limited to contact details such as name and email. It is not a regulated-health class.",
+            "settles": "contact_only"
+          },
+          {
+            "utterance": "Yeah, contact details only. Personal data is limited to contact details such as name and email. It is not a regulated-health class.",
+            "settles": "contact_only"
+          },
+          {
+            "utterance": "For this release I want Contact details only. Personal data is limited to contact details such as name and email. It is not a regulated-health class.",
+            "settles": "contact_only"
+          },
+          {
+            "utterance": "Lock this in as Contact details only. Personal data is limited to contact details such as name and email. It is not a regulated-health class.",
+            "settles": "contact_only"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We have users.",
+            "why": "Users do not classify the personal data."
+          },
+          {
+            "utterance": "Be careful with privacy.",
+            "why": "Careful is not a data class."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.import_existing",
+      "code": "Q-DATA-04",
+      "pack": "data",
+      "version": 1,
+      "scope": "shared",
+      "title": "Is existing data imported?",
+      "explain": "Says whether this release imports existing data.",
+      "criteria": [
+        "data.import_existing"
+      ],
+      "touches": [
+        "bulk_write"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "data.entities"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "no_import",
+          "label": "No import",
+          "meaning": "This release does not import existing data.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "csv_once",
+          "label": "One CSV import",
+          "meaning": "One CSV file is imported once.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "no_import",
+          "rationale": "The stand-in does not import existing data."
+        },
+        "mvp": {
+          "option": "no_import",
+          "rationale": "The stand-in does not import existing data."
+        },
+        "production": {
+          "option": "no_import",
+          "rationale": "The stand-in does not import existing data."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: No import. This release does not import existing data.",
+            "settles": "no_import"
+          },
+          {
+            "utterance": "Please record \"No import\". This release does not import existing data.",
+            "settles": "no_import"
+          },
+          {
+            "utterance": "Yeah, no import. This release does not import existing data.",
+            "settles": "no_import"
+          },
+          {
+            "utterance": "For this release I want No import. This release does not import existing data.",
+            "settles": "no_import"
+          },
+          {
+            "utterance": "Lock this in as No import. This release does not import existing data.",
+            "settles": "no_import"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "We have a spreadsheet somewhere.",
+            "why": "A spreadsheet's existence is not an import commitment."
+          },
+          {
+            "utterance": "Move the old system over.",
+            "why": "Move over does not say this release includes the import."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.backup",
+      "code": "Q-DATA-05",
+      "pack": "data",
+      "version": 1,
+      "scope": "shared",
+      "title": "How is data backed up?",
+      "explain": "Chooses a scheduled snapshot or a manual export.",
+      "criteria": [
+        "data.backup"
+      ],
+      "touches": [
+        "migration"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "data.storage.engine"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "scheduled_snapshot",
+          "label": "Scheduled snapshot",
+          "meaning": "A snapshot is taken on a schedule and can be restored onto a fresh store.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "manual_export",
+          "label": "Manual export",
+          "meaning": "A person exports a copy by hand. There is no schedule.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "scheduled_snapshot",
+          "rationale": "A scheduled snapshot is the stand-in backup."
+        },
+        "mvp": {
+          "option": "scheduled_snapshot",
+          "rationale": "A scheduled snapshot is the stand-in backup."
+        },
+        "production": {
+          "option": "scheduled_snapshot",
+          "rationale": "A scheduled snapshot is the stand-in backup."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Scheduled snapshot. A snapshot is taken on a schedule and can be restored onto a fresh store.",
+            "settles": "scheduled_snapshot"
+          },
+          {
+            "utterance": "Please record \"Scheduled snapshot\". A snapshot is taken on a schedule and can be restored onto a fresh store.",
+            "settles": "scheduled_snapshot"
+          },
+          {
+            "utterance": "Yeah, scheduled snapshot. A snapshot is taken on a schedule and can be restored onto a fresh store.",
+            "settles": "scheduled_snapshot"
+          },
+          {
+            "utterance": "For this release I want Scheduled snapshot. A snapshot is taken on a schedule and can be restored onto a fresh store.",
+            "settles": "scheduled_snapshot"
+          },
+          {
+            "utterance": "Lock this in as Scheduled snapshot. A snapshot is taken on a schedule and can be restored onto a fresh store.",
+            "settles": "scheduled_snapshot"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Don't lose the data.",
+            "why": "Not losing data does not choose a snapshot schedule."
+          },
+          {
+            "utterance": "I can copy the file.",
+            "why": "A manual copy is not a scheduled snapshot."
+          }
+        ]
+      }
+    },
+    {
+      "id": "data.concurrent_edits",
+      "code": "Q-DATA-06",
+      "pack": "data",
+      "version": 1,
+      "scope": "shared",
+      "title": "What happens when two people edit the same record?",
+      "explain": "Chooses last write wins or an optimistic version check.",
+      "criteria": [
+        "data.concurrent_edits"
+      ],
+      "touches": [
+        "concurrent_edit"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "data.storage.engine"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "last_write_wins",
+          "label": "Last save wins",
+          "meaning": "The later save replaces the earlier one and no warning is shown.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "optimistic_version",
+          "label": "Warn when someone else changed it",
+          "meaning": "If the record changed since it was opened, the save is rejected and the person is asked to reload.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "pessimistic_lock",
+          "label": "Pessimistic lock",
+          "meaning": "The record is locked while one person is editing it.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "last_write_wins",
+          "rationale": "Prototype uses last write wins. Later stages reject a stale save."
+        },
+        "mvp": {
+          "option": "optimistic_version",
+          "rationale": "Prototype uses last write wins. Later stages reject a stale save."
+        },
+        "production": {
+          "option": "optimistic_version",
+          "rationale": "Prototype uses last write wins. Later stages reject a stale save."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Last save wins. The later save replaces the earlier one and no warning is shown.",
+            "settles": "last_write_wins"
+          },
+          {
+            "utterance": "Please record \"Last save wins\". The later save replaces the earlier one and no warning is shown.",
+            "settles": "last_write_wins"
+          },
+          {
+            "utterance": "Yeah, last save wins. The later save replaces the earlier one and no warning is shown.",
+            "settles": "last_write_wins"
+          },
+          {
+            "utterance": "For this release I want Last save wins. The later save replaces the earlier one and no warning is shown.",
+            "settles": "last_write_wins"
+          },
+          {
+            "utterance": "Lock this in as Last save wins. The later save replaces the earlier one and no warning is shown.",
+            "settles": "last_write_wins"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "A couple of people might edit it.",
+            "why": "The possibility of two editors does not choose last write wins or a version check."
+          },
+          {
+            "utterance": "Lock the row, maybe.",
+            "why": "Maybe is not a locking decision."
+          }
+        ]
+      }
+    },
+    {
+      "id": "auth.needed",
+      "code": "Q-AUTH-01",
+      "pack": "auth",
+      "version": 1,
+      "scope": "shared",
+      "title": "Is authentication required?",
+      "explain": "Decides whether callers must authenticate. The stand-in requires it so the magic-link default is coherent.",
+      "criteria": [
+        "auth.needed"
+      ],
+      "touches": [
+        "authn"
+      ],
+      "impact": "high",
+      "reversibility": "costly",
+      "must_ask": true,
+      "requires": [
+        "actors.roles"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "required",
+          "label": "Authentication required",
+          "meaning": "A caller must authenticate before the protected workflow.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": [
+            {
+              "question_id": "auth.method",
+              "option_id": "not_applicable"
+            }
+          ]
+        },
+        {
+          "id": "public_anonymous",
+          "label": "Public and anonymous",
+          "meaning": "The workflow is public and does not require authentication.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [
+            {
+              "question_id": "auth.method",
+              "option_id": "magic_link"
+            },
+            {
+              "question_id": "auth.method",
+              "option_id": "password"
+            },
+            {
+              "question_id": "auth.method",
+              "option_id": "oauth"
+            },
+            {
+              "question_id": "auth.method",
+              "option_id": "sso"
+            }
+          ],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "mixed",
+          "label": "Mixed public and protected",
+          "meaning": "Some routes are public and some require authentication.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "required",
+          "rationale": "Authentication is required so the magic-link default has a caller."
+        },
+        "mvp": {
+          "option": "required",
+          "rationale": "Authentication is required so the magic-link default has a caller."
+        },
+        "production": {
+          "option": "required",
+          "rationale": "Authentication is required so the magic-link default has a caller."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Authentication required. A caller must authenticate before the protected workflow.",
+            "settles": "required"
+          },
+          {
+            "utterance": "Please record \"Authentication required\". A caller must authenticate before the protected workflow.",
+            "settles": "required"
+          },
+          {
+            "utterance": "Yeah, authentication required. A caller must authenticate before the protected workflow.",
+            "settles": "required"
+          },
+          {
+            "utterance": "For this release I want Authentication required. A caller must authenticate before the protected workflow.",
+            "settles": "required"
+          },
+          {
+            "utterance": "Lock this in as Authentication required. A caller must authenticate before the protected workflow.",
+            "settles": "required"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "It is for our team.",
+            "why": "A team is not a yes or no on authentication."
+          },
+          {
+            "utterance": "Hide the admin page.",
+            "why": "Hiding a page is not an authentication decision."
+          }
+        ]
+      }
+    },
+    {
+      "id": "auth.method",
+      "code": "Q-AUTH-02",
+      "pack": "auth",
+      "version": 1,
+      "scope": "shared",
+      "title": "How does a person sign in?",
+      "explain": "Chooses magic link, password, OAuth, SSO, or no method because authentication is off.",
+      "criteria": [
+        "auth.method"
+      ],
+      "touches": [
+        "authn",
+        "credentials"
+      ],
+      "impact": "high",
+      "reversibility": "costly",
+      "must_ask": true,
+      "requires": [
+        "auth.needed"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "magic_link",
+          "label": "Magic link",
+          "meaning": "Sign-in is a single-use 15-min token, hashed at rest, with a rate-limited resend and a generic response.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": [
+            {
+              "question_id": "auth.needed",
+              "option_id": "public_anonymous"
+            }
+          ]
+        },
+        {
+          "id": "password",
+          "label": "Password",
+          "meaning": "Sign-in uses a password checked against a slow hash, with a rate limit on failures.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": [
+            {
+              "question_id": "auth.needed",
+              "option_id": "public_anonymous"
+            }
+          ]
+        },
+        {
+          "id": "oauth",
+          "label": "OAuth",
+          "meaning": "Sign-in uses an external OAuth provider the user names.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [
+            {
+              "question_id": "auth.needed",
+              "option_id": "public_anonymous"
+            }
+          ],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "sso",
+          "label": "SSO",
+          "meaning": "Sign-in uses enterprise SSO the user names.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [
+            {
+              "question_id": "auth.needed",
+              "option_id": "public_anonymous"
+            }
+          ],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "not_applicable",
+          "label": "No sign-in method",
+          "meaning": "There is no sign-in method because authentication is not required.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [
+            {
+              "question_id": "auth.needed",
+              "option_id": "required"
+            }
+          ],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "magic_link",
+          "rationale": "Magic link is the stand-in sign-in method."
+        },
+        "mvp": {
+          "option": "magic_link",
+          "rationale": "Magic link is the stand-in sign-in method."
+        },
+        "production": {
+          "option": "magic_link",
+          "rationale": "Magic link is the stand-in sign-in method."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Magic link. Sign-in is a single-use 15-min token, hashed at rest, with a rate-limited resend and a generic response.",
+            "settles": "magic_link"
+          },
+          {
+            "utterance": "Please record \"Magic link\". Sign-in is a single-use 15-min token, hashed at rest, with a rate-limited resend and a generic response.",
+            "settles": "magic_link"
+          },
+          {
+            "utterance": "Yeah, magic link. Sign-in is a single-use 15-min token, hashed at rest, with a rate-limited resend and a generic response.",
+            "settles": "magic_link"
+          },
+          {
+            "utterance": "For this release I want Magic link. Sign-in is a single-use 15-min token, hashed at rest, with a rate-limited resend and a generic response.",
+            "settles": "magic_link"
+          },
+          {
+            "utterance": "Lock this in as Magic link. Sign-in is a single-use 15-min token, hashed at rest, with a rate-limited resend and a generic response.",
+            "settles": "magic_link"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Users log in.",
+            "why": "Logging in does not choose magic link, password, OAuth, or SSO."
+          },
+          {
+            "utterance": "Send them a code or a link, whatever is easier.",
+            "why": "Whatever is easier does not pick one method."
+          }
+        ]
+      }
+    },
+    {
+      "id": "auth.roles_permissions",
+      "code": "Q-AUTH-03",
+      "pack": "auth",
+      "version": 1,
+      "scope": "shared",
+      "title": "How are permissions bounded?",
+      "explain": "Chooses role-based permissions for the stand-in.",
+      "criteria": [
+        "auth.roles_permissions"
+      ],
+      "touches": [
+        "authz"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "auth.needed"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "rbac",
+          "label": "Role-based access",
+          "meaning": "Permissions are granted by role. Staff and manager do not share one permission set.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "single_owner",
+          "label": "Single owner",
+          "meaning": "One owner can do every action.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "ownership",
+          "label": "Ownership checks",
+          "meaning": "Permissions follow record ownership rather than named roles.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "rbac",
+          "rationale": "Role-based permissions match the staff and manager actors."
+        },
+        "mvp": {
+          "option": "rbac",
+          "rationale": "Role-based permissions match the staff and manager actors."
+        },
+        "production": {
+          "option": "rbac",
+          "rationale": "Role-based permissions match the staff and manager actors."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Role-based access. Permissions are granted by role. Staff and manager do not share one permission set.",
+            "settles": "rbac"
+          },
+          {
+            "utterance": "Please record \"Role-based access\". Permissions are granted by role. Staff and manager do not share one permission set.",
+            "settles": "rbac"
+          },
+          {
+            "utterance": "Yeah, role-based access. Permissions are granted by role. Staff and manager do not share one permission set.",
+            "settles": "rbac"
+          },
+          {
+            "utterance": "For this release I want Role-based access. Permissions are granted by role. Staff and manager do not share one permission set.",
+            "settles": "rbac"
+          },
+          {
+            "utterance": "Lock this in as Role-based access. Permissions are granted by role. Staff and manager do not share one permission set.",
+            "settles": "rbac"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Managers should have more access.",
+            "why": "More access does not define the permission model."
+          },
+          {
+            "utterance": "Use roles.",
+            "why": "The word roles does not list which actions each role may take."
+          }
+        ]
+      }
+    },
+    {
+      "id": "auth.session_length",
+      "code": "Q-AUTH-04",
+      "pack": "auth",
+      "version": 1,
+      "scope": "shared",
+      "title": "How long does a session last?",
+      "explain": "Chooses a workday session for the stand-in.",
+      "criteria": [
+        "auth.session_length"
+      ],
+      "touches": [
+        "session"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "auth.method"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "workday",
+          "label": "Workday session",
+          "meaning": "A session lasts a workday, about 12 hours, and then requires sign-in again.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "short_session",
+          "label": "Short session",
+          "meaning": "A session lasts about 30 minutes.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        },
+        {
+          "id": "persistent",
+          "label": "Persistent session",
+          "meaning": "A session stays until the person signs out.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "workday",
+          "rationale": "A workday session matches office staff and expires overnight."
+        },
+        "mvp": {
+          "option": "workday",
+          "rationale": "A workday session matches office staff and expires overnight."
+        },
+        "production": {
+          "option": "workday",
+          "rationale": "A workday session matches office staff and expires overnight."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Workday session. A session lasts a workday, about 12 hours, and then requires sign-in again.",
+            "settles": "workday"
+          },
+          {
+            "utterance": "Please record \"Workday session\". A session lasts a workday, about 12 hours, and then requires sign-in again.",
+            "settles": "workday"
+          },
+          {
+            "utterance": "Yeah, workday session. A session lasts a workday, about 12 hours, and then requires sign-in again.",
+            "settles": "workday"
+          },
+          {
+            "utterance": "For this release I want Workday session. A session lasts a workday, about 12 hours, and then requires sign-in again.",
+            "settles": "workday"
+          },
+          {
+            "utterance": "Lock this in as Workday session. A session lasts a workday, about 12 hours, and then requires sign-in again.",
+            "settles": "workday"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "Keep them signed in.",
+            "why": "Signed in does not choose a lifetime."
+          },
+          {
+            "utterance": "Make it secure.",
+            "why": "Secure is not a session length."
+          }
+        ]
+      }
+    },
+    {
+      "id": "auth.account_recovery",
+      "code": "Q-AUTH-05",
+      "pack": "auth",
+      "version": 1,
+      "scope": "shared",
+      "title": "How is an account recovered?",
+      "explain": "Chooses email recovery for the stand-in.",
+      "criteria": [
+        "auth.account_recovery"
+      ],
+      "touches": [
+        "authn",
+        "credentials"
+      ],
+      "impact": "medium",
+      "reversibility": "easy",
+      "must_ask": false,
+      "requires": [
+        "auth.method"
+      ],
+      "allowed_inference_rules": [
+        "infer.from_stated_behavior",
+        "infer.from_explicit_acceptance"
+      ],
+      "options": [
+        {
+          "id": "email_reset",
+          "label": "Email recovery",
+          "meaning": "Recovery sends a single-use email link. The response does not reveal whether the address exists.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "high",
+          "conflicts_with": []
+        },
+        {
+          "id": "admin_reset",
+          "label": "Admin reset",
+          "meaning": "Only an administrator can reset access.",
+          "stage_suitability": [
+            "prototype",
+            "mvp",
+            "production"
+          ],
+          "frequency": "low",
+          "conflicts_with": [],
+          "elaboration_exempt_reason": "Low-frequency alternative. Spec cells for this option stay open until a later elaboration wave; M2 fills the high-frequency option instead."
+        }
+      ],
+      "stage_recommendations": {
+        "prototype": {
+          "option": "email_reset",
+          "rationale": "Email recovery matches magic link and password without an admin bottleneck."
+        },
+        "mvp": {
+          "option": "email_reset",
+          "rationale": "Email recovery matches magic link and password without an admin bottleneck."
+        },
+        "production": {
+          "option": "email_reset",
+          "rationale": "Email recovery matches magic link and password without an admin bottleneck."
+        }
+      },
+      "examples": {
+        "positive": [
+          {
+            "utterance": "We decided: Email recovery. Recovery sends a single-use email link. The response does not reveal whether the address exists.",
+            "settles": "email_reset"
+          },
+          {
+            "utterance": "Please record \"Email recovery\". Recovery sends a single-use email link. The response does not reveal whether the address exists.",
+            "settles": "email_reset"
+          },
+          {
+            "utterance": "Yeah, email recovery. Recovery sends a single-use email link. The response does not reveal whether the address exists.",
+            "settles": "email_reset"
+          },
+          {
+            "utterance": "For this release I want Email recovery. Recovery sends a single-use email link. The response does not reveal whether the address exists.",
+            "settles": "email_reset"
+          },
+          {
+            "utterance": "Lock this in as Email recovery. Recovery sends a single-use email link. The response does not reveal whether the address exists.",
+            "settles": "email_reset"
+          }
+        ],
+        "negative": [
+          {
+            "utterance": "They might forget.",
+            "why": "Forgetting does not choose a recovery channel."
+          },
+          {
+            "utterance": "Call support.",
+            "why": "Support is not an email reset or an admin-only reset until it is specified."
+          }
+        ]
+      }
+    }
+  ]
+}

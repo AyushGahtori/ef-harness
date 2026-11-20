@@ -1,0 +1,338 @@
+elaborations:
+  - id: ELAB-Q-CLI-01-HUMAN-INTERACTIVE
+    question_id: cli.output_format
+    option_id: human_interactive
+    summary: Prompts allowed
+    touches:
+      any: &a1
+        - config_env
+    clauses:
+      - id: ELAB-Q-CLI-01-HUMAN-INTERACTIVE.C1
+        text: The command tree may prompt for a missing answer.
+        touches:
+          any: *a1
+        oracle_hint: On a terminal, a missing required answer produces a prompt rather than a silent default.
+      - id: ELAB-Q-CLI-01-HUMAN-INTERACTIVE.C2
+        text: The command is not required to succeed when stdin is not a terminal.
+        touches:
+          any: *a1
+        oracle_hint: On a terminal, a missing required answer produces a prompt rather than a silent default.
+    edge_cases:
+      - A pipe that closes is not a supported success path for this option.
+    bounds:
+      - key: cli.output_format.human_interactive.prompts_allowed
+        value: 1
+        unit: count
+    oracle_hints:
+      - On a terminal, a missing required answer produces a prompt rather than a silent default.
+      - On a terminal, a missing required answer produces a prompt rather than a silent default.
+  - id: ELAB-Q-CLI-01-JSON-NONINTERACTIVE
+    question_id: cli.output_format
+    option_id: json_noninteractive
+    summary: JSON on stdout and logs on stderr
+    touches:
+      any:
+        - config_env
+        - logging
+    clauses:
+      - id: ELAB-Q-CLI-01-JSON-NONINTERACTIVE.C1
+        text: When --json is set, the command shall emit exactly one JSON document on stdout and shall not prompt.
+        touches:
+          any:
+            - config_env
+        oracle_hint: CLI --json emits valid single JSON doc on stdout and zero logs on stdout
+      - id: ELAB-Q-CLI-01-JSON-NONINTERACTIVE.C2
+        text: Logs go strictly to stderr; stdout is reserved for machine-readable output.
+        touches:
+          any:
+            - logging
+            - config_env
+        oracle_hint: With --json, a diagnostic line is on stderr and stdout has no log line.
+    edge_cases:
+      - A startup log or a progress line on stdout fails this contract.
+    bounds:
+      - key: cli.output_format.json_noninteractive.documents_on_stdout
+        value: 1
+        unit: count
+    oracle_hints:
+      - CLI --json emits valid single JSON doc on stdout and zero logs on stdout
+      - With --json, a diagnostic line is on stderr and stdout has no log line.
+  - id: ELAB-Q-CLI-01-DUAL-TTY-OR-PIPE
+    question_id: cli.output_format
+    option_id: dual_tty_or_pipe
+    summary: TTY prompts and pipe-safe JSON
+    touches:
+      any: &a2
+        - config_env
+        - logging
+    clauses:
+      - id: ELAB-Q-CLI-01-DUAL-TTY-OR-PIPE.C1
+        text: A terminal may prompt. A pipe, --json, or --yes shall disable prompts.
+        touches:
+          any: *a2
+        oracle_hint: With stdout piped, the process writes no prompt and one JSON document.
+      - id: ELAB-Q-CLI-01-DUAL-TTY-OR-PIPE.C2
+        text: In the non-interactive path, stdout shall be one JSON document and logs shall stay on stderr.
+        touches:
+          any: *a2
+        oracle_hint: With stdout piped, the process writes no prompt and one JSON document.
+    edge_cases:
+      - Detecting a pipe after the first prompt has already been written is too late. The mode is chosen before the first byte.
+    bounds:
+      - key: cli.output_format.dual_tty_or_pipe.prompt_before_mode
+        value: 0
+        unit: count
+    oracle_hints:
+      - With stdout piped, the process writes no prompt and one JSON document.
+      - With stdout piped, the process writes no prompt and one JSON document.
+  - id: ELAB-Q-CLI-02-FLAGS-ENV-PROJECT-USER
+    question_id: cli.config_location
+    option_id: flags_env_project_user
+    summary: Four-level configuration precedence
+    touches:
+      any: &a3
+        - config_env
+    clauses:
+      - id: ELAB-Q-CLI-02-FLAGS-ENV-PROJECT-USER.C1
+        text: The winning value shall be the flag, else the environment, else the project file, else the user config.
+        touches:
+          any: *a3
+        oracle_hint: A flag overrides the same key in the environment, the project file, and the user file.
+      - id: ELAB-Q-CLI-02-FLAGS-ENV-PROJECT-USER.C2
+        text: A lower source shall fill only keys the higher sources left unset.
+        touches:
+          any: *a3
+        oracle_hint: A flag overrides the same key in the environment, the project file, and the user file.
+    edge_cases:
+      - An empty flag is a set value, not a gap, when the flag was passed.
+    bounds:
+      - key: cli.config_location.flags_env_project_user.levels
+        value: 4
+        unit: count
+    oracle_hints:
+      - A flag overrides the same key in the environment, the project file, and the user file.
+      - A flag overrides the same key in the environment, the project file, and the user file.
+  - id: ELAB-Q-CLI-02-ENV-ONLY
+    question_id: cli.config_location
+    option_id: env_only
+    summary: Environment-only configuration
+    touches:
+      any: &a4
+        - config_env
+    clauses:
+      - id: ELAB-Q-CLI-02-ENV-ONLY.C1
+        text: Configuration shall be read from the environment only.
+        touches:
+          any: *a4
+        oracle_hint: A project file that sets a key does not override the environment.
+      - id: ELAB-Q-CLI-02-ENV-ONLY.C2
+        text: Project files and user files shall be ignored.
+        touches:
+          any: *a4
+        oracle_hint: A project file that sets a key does not override the environment.
+    edge_cases:
+      - A present file with a conflicting key does not change the result.
+    bounds:
+      - key: cli.config_location.env_only.files_read
+        value: 0
+        unit: count
+    oracle_hints:
+      - A project file that sets a key does not override the environment.
+      - A project file that sets a key does not override the environment.
+  - id: ELAB-Q-CLI-02-PROJECT-FILE-ONLY
+    question_id: cli.config_location
+    option_id: project_file_only
+    summary: Single project file
+    touches:
+      any: &a5
+        - config_env
+    clauses:
+      - id: ELAB-Q-CLI-02-PROJECT-FILE-ONLY.C1
+        text: Configuration shall come from one project file.
+        touches:
+          any: *a5
+        oracle_hint: A user file value does not replace the project file value.
+      - id: ELAB-Q-CLI-02-PROJECT-FILE-ONLY.C2
+        text: A user-level file shall not override that file.
+        touches:
+          any: *a5
+        oracle_hint: A user file value does not replace the project file value.
+    edge_cases:
+      - A missing project file is an error that names the path. It does not fall through to a user file.
+    bounds:
+      - key: cli.config_location.project_file_only.user_override
+        value: 0
+        unit: count
+    oracle_hints:
+      - A user file value does not replace the project file value.
+      - A user file value does not replace the project file value.
+  - id: ELAB-Q-CLI-03-CONVENTIONAL-SPLIT
+    question_id: cli.exit_codes
+    option_id: conventional_split
+    summary: Conventional exit codes and split streams
+    touches:
+      any: &a6
+        - config_env
+        - logging
+    clauses:
+      - id: ELAB-Q-CLI-03-CONVENTIONAL-SPLIT.C1
+        text: The process shall exit 0 on success, 1 on a usage error, and 2 on an operational failure.
+        touches:
+          any: *a6
+        oracle_hint: A usage error exits 1 and writes the diagnostic on stderr.
+      - id: ELAB-Q-CLI-03-CONVENTIONAL-SPLIT.C2
+        text: Data shall be written to stdout. Diagnostics shall be written to stderr.
+        touches:
+          any: *a6
+        oracle_hint: A usage error exits 1 and writes the diagnostic on stderr.
+    edge_cases:
+      - A usage error does not also write a success payload on stdout.
+    bounds:
+      - key: cli.exit_codes.conventional_split.success_code
+        value: 0
+        unit: count
+    oracle_hints:
+      - A usage error exits 1 and writes the diagnostic on stderr.
+      - A usage error exits 1 and writes the diagnostic on stderr.
+  - id: ELAB-Q-CLI-03-POSIX-SYSEXITS
+    question_id: cli.exit_codes
+    option_id: posix_sysexits
+    summary: Sysexits with split streams
+    touches:
+      any: &a7
+        - config_env
+        - logging
+    clauses:
+      - id: ELAB-Q-CLI-03-POSIX-SYSEXITS.C1
+        text: Exit codes shall follow the sysexits set, including a distinct usage code and a distinct data-error code.
+        touches:
+          any: *a7
+        oracle_hint: Bad usage exits 64 and does not write the data document.
+      - id: ELAB-Q-CLI-03-POSIX-SYSEXITS.C2
+        text: Data shall stay on stdout and diagnostics shall stay on stderr.
+        touches:
+          any: *a7
+        oracle_hint: Bad usage exits 64 and does not write the data document.
+    edge_cases:
+      - Success is still 0. A usage problem is not 0.
+    bounds:
+      - key: cli.exit_codes.posix_sysexits.usage_code
+        value: 64
+        unit: count
+    oracle_hints:
+      - Bad usage exits 64 and does not write the data document.
+      - Bad usage exits 64 and does not write the data document.
+  - id: ELAB-Q-CLI-03-STDOUT-MESSAGES
+    question_id: cli.exit_codes
+    option_id: stdout_messages
+    summary: Human messages on stdout
+    touches:
+      any: &a8
+        - logging
+    clauses:
+      - id: ELAB-Q-CLI-03-STDOUT-MESSAGES.C1
+        text: Human messages may be written to stdout along with data.
+        touches:
+          any: *a8
+        oracle_hint: Stdout may contain a human sentence and is not promised to be a single JSON document.
+      - id: ELAB-Q-CLI-03-STDOUT-MESSAGES.C2
+        text: This option does not promise a machine-readable stdout stream.
+        touches:
+          any: *a8
+        oracle_hint: Stdout may contain a human sentence and is not promised to be a single JSON document.
+    edge_cases:
+      - A caller that parses stdout as one JSON document is outside this contract.
+    bounds:
+      - key: cli.exit_codes.stdout_messages.stdout_reserved
+        value: 0
+        unit: count
+    oracle_hints:
+      - Stdout may contain a human sentence and is not promised to be a single JSON document.
+      - Stdout may contain a human sentence and is not promised to be a single JSON document.
+  - id: ELAB-Q-CLI-04-OS-CONFIG-DIRS
+    question_id: cli.distribution
+    option_id: os_config_dirs
+    summary: OS directories and secret store
+    touches:
+      any: &a9
+        - config_env
+        - credentials
+        - caching
+    clauses:
+      - id: ELAB-Q-CLI-04-OS-CONFIG-DIRS.C1
+        text: State, cache, and credentials shall use the operating system directories, resolved through the platform path API.
+        touches:
+          any: *a9
+        oracle_hint: On two platforms the same logical directory resolves to two different absolute paths, and neither is hardcoded.
+      - id: ELAB-Q-CLI-04-OS-CONFIG-DIRS.C2
+        text: Credentials shall use the OS secret store when one exists. They shall not be written into the state directory.
+        touches:
+          any: *a9
+        oracle_hint: On two platforms the same logical directory resolves to two different absolute paths, and neither is hardcoded.
+    edge_cases:
+      - A path shall not contain a hardcoded drive letter or only one slash style.
+    bounds:
+      - key: cli.distribution.os_config_dirs.hardcoded_roots
+        value: 0
+        unit: count
+    oracle_hints:
+      - On two platforms the same logical directory resolves to two different absolute paths, and neither is hardcoded.
+      - On two platforms the same logical directory resolves to two different absolute paths, and neither is hardcoded.
+  - id: ELAB-Q-CLI-04-PROJECT-LOCAL-DOTDIR
+    question_id: cli.distribution
+    option_id: project_local_dotdir
+    summary: Project-local state without credentials
+    touches:
+      any: &a10
+        - config_env
+        - credentials
+        - caching
+    clauses:
+      - id: ELAB-Q-CLI-04-PROJECT-LOCAL-DOTDIR.C1
+        text: State and cache shall live in a dot directory inside the project.
+        touches:
+          any: *a10
+        oracle_hint: The project dot directory contains no credential file after a signed-in command.
+      - id: ELAB-Q-CLI-04-PROJECT-LOCAL-DOTDIR.C2
+        text: Credentials shall use the OS secret store or an environment variable, not that directory.
+        touches:
+          any: *a10
+        oracle_hint: The project dot directory contains no credential file after a signed-in command.
+    edge_cases:
+      - Copying the project folder to another machine does not copy a secret file.
+    bounds:
+      - key: cli.distribution.project_local_dotdir.secrets_in_tree
+        value: 0
+        unit: count
+    oracle_hints:
+      - The project dot directory contains no credential file after a signed-in command.
+      - The project dot directory contains no credential file after a signed-in command.
+  - id: ELAB-Q-CLI-04-PORTABLE-SINGLE-FILE
+    question_id: cli.distribution
+    option_id: portable_single_file
+    summary: Portable file with a chosen home
+    touches:
+      any: &a11
+        - config_env
+        - credentials
+        - caching
+    clauses:
+      - id: ELAB-Q-CLI-04-PORTABLE-SINGLE-FILE.C1
+        text: The tool shall be distributable as one file the person can move.
+        touches:
+          any: *a11
+        oracle_hint: After the executable is moved, previously stored credentials are not in the new directory.
+      - id: ELAB-Q-CLI-04-PORTABLE-SINGLE-FILE.C2
+        text: State and cache shall sit under a user-selected home directory resolved through the platform path API. Credentials shall not sit beside the executable.
+        touches:
+          any: *a11
+        oracle_hint: After the executable is moved, previously stored credentials are not in the new directory.
+    edge_cases:
+      - Moving the executable does not move the credential store with it.
+    bounds:
+      - key: cli.distribution.portable_single_file.credentials_beside_exe
+        value: 0
+        unit: count
+    oracle_hints:
+      - After the executable is moved, previously stored credentials are not in the new directory.
+      - After the executable is moved, previously stored credentials are not in the new directory.
