@@ -1,0 +1,20 @@
+/** Local stand-in for Task 031 channel numbers. Length on the wire is the payload size. */
+export const JSON_RPC_CHANNEL = 0 as const;
+export const BINARY_STREAM_CHANNEL = 1 as const;
+export const JSON_IPC_MAX_BYTES = 1_048_576;
+export const BINARY_CHUNK_BYTES = 65_536;
+export const SUPPORTED_PROTOCOLS = ["1.0", "1.1"] as const;
+export const CURRENT_PROTOCOL = "1.1";
+export const RPC_AUTH_FAILED = -32_001;
+export const RPC_PROTOCOL_MISMATCH = -32_002;
+export const RPC_INVALID_REQUEST = -32_600;
+export const RPC_METHOD_NOT_FOUND = -32_601;
+export const RPC_INTERNAL_ERROR = -32_603;
+export const RPC_OP_CONFLICT = -32_004;
+export const DEFAULT_HANDSHAKE_MS = 5_000;
+export const DEFAULT_IDLE_MS = 60_000;
+export const INITIAL_STREAM_CREDITS = 8;
+export const MAX_CREDIT_GRANT = 256;
+export const MAX_OUTSTANDING_CREDITS = 512;
+export const SNAPSHOT_SECTION_MAX_BYTES = 2 * 1024 * 1024;
+export const M1_PROJECT_ID = "m1";
