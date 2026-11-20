@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.json --pretty false",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "certify:m0": "node --import tsx src/m0/certify-cli.ts"
   },
   "dependencies": {
     "@ef-harness/shared-contracts": "workspace:*"
