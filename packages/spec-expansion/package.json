@@ -18,7 +18,8 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/shared-contracts": "workspace:*",
+    "z3-solver": "^5.4.1"
   },
   "devDependencies": {
     "@types/node": "catalog:",
