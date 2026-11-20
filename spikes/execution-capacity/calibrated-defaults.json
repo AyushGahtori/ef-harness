@@ -1,0 +1,798 @@
+{
+  "schema": {
+    "machine_profile": [
+      "key",
+      "value",
+      "measured_at"
+    ],
+    "footprints": [
+      "consumer",
+      "project",
+      "p50_mb",
+      "p95_mb",
+      "samples",
+      "updated_at"
+    ]
+  },
+  "machine_profile": [
+    {
+      "key": "ram_total_mb",
+      "value": "16088",
+      "measured_at": 1795091282578
+    },
+    {
+      "key": "cores",
+      "value": "12",
+      "measured_at": 1795091282578
+    },
+    {
+      "key": "gpu",
+      "value": "Intel(R) UHD Graphics; NVIDIA GeForce RTX 4050 Laptop GPU",
+      "measured_at": 1795091282578
+    },
+    {
+      "key": "dev_drive",
+      "value": "not_available_on_host",
+      "measured_at": 1795091282578
+    },
+    {
+      "key": "calibration_run",
+      "value": "{\"quick\":false,\"osBuild\":\"26200.9974\",\"fileSystem\":\"NTFS\",\"warnings\":[\"Baseline idle CPU is 82.74%, above 15%. Repeated samples are still taken; treat a single noisy cell cautiously.\"]}",
+      "measured_at": 1795091282578
+    }
+  ],
+  "footprints": [
+    {
+      "consumer": "worker_cli",
+      "project": "",
+      "p50_mb": 54,
+      "p95_mb": 54,
+      "samples": 1,
+      "updated_at": 1795091282578
+    },
+    {
+      "consumer": "dev_server",
+      "project": "",
+      "p50_mb": 54,
+      "p95_mb": 54,
+      "samples": 1,
+      "updated_at": 1795091282578
+    },
+    {
+      "consumer": "build",
+      "project": "",
+      "p50_mb": 0,
+      "p95_mb": 0,
+      "samples": 3,
+      "updated_at": 1795091282578
+    },
+    {
+      "consumer": "browser",
+      "project": "",
+      "p50_mb": 54,
+      "p95_mb": 54,
+      "samples": 1,
+      "updated_at": 1795091282578
+    }
+  ],
+  "pools": {
+    "16gb": {
+      "measurementMode": "direct",
+      "thinking": {
+        "provisional": 12,
+        "measured": 1,
+        "recommended": 1,
+        "basis": "measured_largest_pass_below_failure"
+      },
+      "execution": {
+        "provisional": 2,
+        "measured": 1,
+        "recommended": 1,
+        "basis": "measured_largest_pass_below_failure"
+      },
+      "heavyLane": {
+        "provisional": 1,
+        "measured": null,
+        "recommended": 1,
+        "basis": "provisional_no_passing_cell"
+      },
+      "sessionProcess": {
+        "provisional": 2,
+        "measured": null,
+        "recommended": 2,
+        "basis": "provisional_no_passing_cell"
+      },
+      "services": {
+        "provisional": {
+          "environments": 2,
+          "preview": true
+        },
+        "measured": null,
+        "recommended": {
+          "environments": 2,
+          "preview": true
+        },
+        "basis": "provisional_service_processes_not_hosted_in_this_spike"
+      }
+    },
+    "32gb": {
+      "measurementMode": "not_measured_on_host",
+      "thinking": {
+        "provisional": 20,
+        "measured": null,
+        "recommended": 20,
+        "basis": "provisional_not_measured_on_host"
+      },
+      "execution": {
+        "provisional": 4,
+        "measured": null,
+        "recommended": 4,
+        "basis": "provisional_not_measured_on_host"
+      },
+      "heavyLane": {
+        "provisional": 2,
+        "measured": null,
+        "recommended": 2,
+        "basis": "provisional_not_measured_on_host"
+      },
+      "sessionProcess": {
+        "provisional": 5,
+        "measured": null,
+        "recommended": 5,
+        "basis": "provisional_not_measured_on_host"
+      },
+      "services": {
+        "provisional": {
+          "environments": 4,
+          "preview": true
+        },
+        "measured": null,
+        "recommended": {
+          "environments": 4,
+          "preview": true
+        },
+        "basis": "provisional_service_processes_not_hosted_in_this_spike"
+      }
+    }
+  },
+  "axes": {
+    "thinking": "thinkingWidth",
+    "executing": "executingWidth"
+  },
+  "passCriterion": {
+    "uiInputLatencyP95Ms": 50,
+    "comparison": "strictly_less_than",
+    "hardPageReadsPerSec": 50,
+    "commitChargeAbortRatio": 0.9
+  },
+  "cells": [
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 1,
+      "load": "idle",
+      "thinkingWidth": 1,
+      "executingWidth": 1,
+      "verdict": "PASS",
+      "metrics": {
+        "uiInputLatencyP95Ms": 7.025999997004892,
+        "hardPageReadsPerSecMedian": 26,
+        "commitChargeRatio": 0.4381,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        841.0712000000003,
+        812.8359999999993,
+        785.4712
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 1,
+      "load": "active",
+      "thinkingWidth": 1,
+      "executingWidth": 1,
+      "verdict": "PASS",
+      "metrics": {
+        "uiInputLatencyP95Ms": 6.663999994607001,
+        "hardPageReadsPerSecMedian": 7,
+        "commitChargeRatio": 0.4276,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        834.0030000000006,
+        860.2786999999989,
+        932.0915999999997
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 1,
+      "load": "mixed",
+      "thinkingWidth": 1,
+      "executingWidth": 1,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 1054,
+        "commitChargeRatio": 0.4314,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        765.6049999999959,
+        904.6846000000005,
+        842.4297000000079
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 5,
+      "load": "idle",
+      "thinkingWidth": 5,
+      "executingWidth": 2,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 87,
+        "commitChargeRatio": 0.4115,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        1105.1987999999983,
+        4583.534400000004,
+        1067.5794999999925,
+        923.3237000000081,
+        938.2505000000092,
+        983.5470999999961
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 5,
+      "load": "active",
+      "thinkingWidth": 5,
+      "executingWidth": 2,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 3,
+        "commitChargeRatio": 0.3916,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        960.4613000000099,
+        901.843000000008,
+        835.5659000000014,
+        932.5623999999953,
+        835.9790999999968,
+        823.0546999999933
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 5,
+      "load": "mixed",
+      "thinkingWidth": 5,
+      "executingWidth": 2,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 3,
+        "commitChargeRatio": 0.3868,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        936.1087000000116,
+        823.1189999999915,
+        1084.6345999999903,
+        849.4806000000099,
+        743.8819999999978,
+        906.6665000000066
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 10,
+      "load": "idle",
+      "thinkingWidth": 10,
+      "executingWidth": 2,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 31,
+        "commitChargeRatio": 0.3942,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        1011.6370999999926,
+        927.4660999999905,
+        785.9560999999812,
+        826.1532000000007,
+        954.7509000000136,
+        885.0155000000086
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 10,
+      "load": "active",
+      "thinkingWidth": 10,
+      "executingWidth": 2,
+      "availability": "not_available_on_host",
+      "reason": "active_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 10,
+      "load": "mixed",
+      "thinkingWidth": 10,
+      "executingWidth": 2,
+      "availability": "not_available_on_host",
+      "reason": "active_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 20,
+      "load": "idle",
+      "thinkingWidth": 20,
+      "executingWidth": 2,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 35,
+        "commitChargeRatio": 0.3947,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        925.871300000028,
+        871.742099999974,
+        819.929999999993,
+        775.203600000008,
+        1273.7547000000195,
+        1217.6270000000077
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 20,
+      "load": "active",
+      "thinkingWidth": 20,
+      "executingWidth": 2,
+      "availability": "not_available_on_host",
+      "reason": "active_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "own_loop",
+      "workerCount": 20,
+      "load": "mixed",
+      "thinkingWidth": 20,
+      "executingWidth": 2,
+      "availability": "not_available_on_host",
+      "reason": "active_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 1,
+      "load": "idle",
+      "thinkingWidth": 1,
+      "executingWidth": 1,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 200,
+        "commitChargeRatio": 0.4067,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        1112.9120999999868,
+        901.6594999999797,
+        1089.1223000000173
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 1,
+      "load": "active",
+      "thinkingWidth": 1,
+      "executingWidth": 1,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 50,
+        "commitChargeRatio": 0.3699,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        987.9106000000029,
+        1004.5007000000041,
+        1094.0764999999956
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 1,
+      "load": "mixed",
+      "thinkingWidth": 1,
+      "executingWidth": 1,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 413,
+        "commitChargeRatio": 0.3657,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        1003.2835999999952,
+        965.7004999999772,
+        1000.0622000000149
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 5,
+      "load": "idle",
+      "thinkingWidth": 5,
+      "executingWidth": 5,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 549,
+        "commitChargeRatio": 0.4159,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        734.0557000000263,
+        779.1491000000096,
+        871.1895999999833,
+        776.9701000000059,
+        823.5540999999794,
+        817.054300000018,
+        760.1820000000007,
+        1187.174399999989,
+        964.5486000000092,
+        825.2189000000071,
+        840.762699999992,
+        869.712200000009,
+        726.3773999999976,
+        791.0339000000095,
+        1265.4181000000099
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 5,
+      "load": "active",
+      "thinkingWidth": 5,
+      "executingWidth": 5,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 27,
+        "commitChargeRatio": 0.3759,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        886.0430000000051,
+        887.0976000000082,
+        869.761599999998,
+        933.6716000000015,
+        837.2060000000056,
+        967.2238999999827,
+        1001.2839999999851,
+        920.4211000000068,
+        1014.2827000000107,
+        837.9898999999859,
+        917.0692000000272,
+        1058.0757999999914,
+        844.2164000000048,
+        997.3319000000192,
+        966.7053000000014
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 5,
+      "load": "mixed",
+      "thinkingWidth": 5,
+      "executingWidth": 5,
+      "verdict": "FAIL",
+      "metrics": {
+        "uiInputLatencyP95Ms": null,
+        "hardPageReadsPerSecMedian": 125,
+        "commitChargeRatio": 0.3779,
+        "oomGuardTripped": false
+      },
+      "launchMs": [
+        897.7490000000107,
+        901.8986999999906,
+        967.589100000012,
+        899.7870999999868,
+        788.5062999999791,
+        784.2869000000064,
+        830.7164999999804,
+        962.594299999997,
+        912.443499999994,
+        1274.0474000000104,
+        796.9962999999989,
+        1042.4061999999976,
+        915.0277999999817,
+        759.232399999979,
+        903.4674999999988
+      ],
+      "sampleCount": 3
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 10,
+      "load": "idle",
+      "thinkingWidth": 10,
+      "executingWidth": 10,
+      "availability": "not_available_on_host",
+      "reason": "session_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 10,
+      "load": "active",
+      "thinkingWidth": 10,
+      "executingWidth": 10,
+      "availability": "not_available_on_host",
+      "reason": "session_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 10,
+      "load": "mixed",
+      "thinkingWidth": 10,
+      "executingWidth": 10,
+      "availability": "not_available_on_host",
+      "reason": "session_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 20,
+      "load": "idle",
+      "thinkingWidth": 20,
+      "executingWidth": 20,
+      "availability": "not_available_on_host",
+      "reason": "session_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 20,
+      "load": "active",
+      "thinkingWidth": 20,
+      "executingWidth": 20,
+      "availability": "not_available_on_host",
+      "reason": "session_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    },
+    {
+      "isolationMode": "session_process",
+      "workerCount": 20,
+      "load": "mixed",
+      "thinkingWidth": 20,
+      "executingWidth": 20,
+      "availability": "not_available_on_host",
+      "reason": "session_width_not_run_in_this_invocation",
+      "verdict": "not_available_on_host",
+      "samples": []
+    }
+  ],
+  "heavyLane": {
+    "rows": [
+      {
+        "width": 1,
+        "elapsedMs": 1190.5595999999787,
+        "commitBefore": 15168577536,
+        "commitAfter": 14578130944,
+        "commitSpikeBytes": 0,
+        "commitChargeRatio": 0.3739,
+        "hardPageReadsPerSec": 19,
+        "uiInputLatencyP95Ms": null,
+        "tscCodes": [
+          0
+        ],
+        "viteCodes": [
+          0
+        ],
+        "toolErrors": [],
+        "viteAvailable": true
+      },
+      {
+        "width": 2,
+        "elapsedMs": 1314.5360000000219,
+        "commitBefore": 14707347456,
+        "commitAfter": 14571524096,
+        "commitSpikeBytes": 0,
+        "commitChargeRatio": 0.3738,
+        "hardPageReadsPerSec": 7,
+        "uiInputLatencyP95Ms": null,
+        "tscCodes": [
+          0,
+          0
+        ],
+        "viteCodes": [
+          0,
+          0
+        ],
+        "toolErrors": [],
+        "viteAvailable": true
+      },
+      {
+        "width": 4,
+        "elapsedMs": 1656.3673999999883,
+        "commitBefore": 14620766208,
+        "commitAfter": 14364229632,
+        "commitSpikeBytes": 0,
+        "commitChargeRatio": 0.3684,
+        "hardPageReadsPerSec": 3,
+        "uiInputLatencyP95Ms": null,
+        "tscCodes": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "viteCodes": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "toolErrors": [],
+        "viteAvailable": true
+      }
+    ],
+    "largestPassing": null,
+    "uiSamples": [],
+    "p95OfJitter": null
+  },
+  "acl": {
+    "user": "desktop-fmv2lg3\\ayush",
+    "fileCount": 500,
+    "empty": {
+      "ms": 79.35029999999097,
+      "code": 0,
+      "diskQueueLength": 13,
+      "diskActivePercent": 11
+    },
+    "afterTree": {
+      "ms": 168.09400000004098,
+      "code": 0,
+      "diskQueueLength": 0,
+      "diskActivePercent": 30
+    }
+  },
+  "slotReset": {
+    "coldCreateMs": 367.94029999995837,
+    "reuseResetMs": 192.4880000000121,
+    "commitCode": 0,
+    "checkoutCode": 0,
+    "cleanCode": 0,
+    "readme": "slot",
+    "junkRemains": false
+  },
+  "tiers": {
+    "tier_a": {
+      "available": false,
+      "osQualified": true,
+      "reason": "mxc_api_not_bound"
+    },
+    "tier_c": {
+      "available": false,
+      "reason": "restricted_token_process_not_launched"
+    },
+    "tier_d": {
+      "available": false,
+      "wslFound": true,
+      "dockerFound": false,
+      "reason": "left_stopped_low_free_memory"
+    }
+  },
+  "warnings": [
+    "Baseline idle CPU is 82.74%, above 15%. Repeated samples are still taken; treat a single noisy cell cautiously."
+  ],
+  "host": {
+    "totalMb": 16088,
+    "cores": 12,
+    "gpu": "Intel(R) UHD Graphics; NVIDIA GeForce RTX 4050 Laptop GPU",
+    "fileSystem": "NTFS",
+    "devDrive": "not_available_on_host",
+    "osBuild": "26200.9974",
+    "osProduct": "Windows 10 Home Single Language",
+    "commitChargeRatio": 0.4371,
+    "availPhys": 4974043136
+  },
+  "measurementModes": {
+    "16gb": "direct",
+    "32gb": "not_measured_on_host"
+  },
+  "provisional": {
+    "16gb": {
+      "thinking": 12,
+      "execution": 2,
+      "heavyLane": 1,
+      "sessionProcess": 2,
+      "services": {
+        "environments": 2,
+        "preview": true
+      }
+    },
+    "32gb": {
+      "thinking": 20,
+      "execution": 4,
+      "heavyLane": 2,
+      "sessionProcess": 5,
+      "services": {
+        "environments": 4,
+        "preview": true
+      }
+    }
+  },
+  "modes": {
+    "defenderExclusionsMutated": false,
+    "wslConfigMutated": false,
+    "networkCalls": false
+  },
+  "collectors": {
+    "committedMemoryAndWorkingSet": {
+      "committedBytes": 17042317312,
+      "workingSetBytes": 14649147392,
+      "commitChargeRatio": 0.4371
+    },
+    "cpuUtilization": {
+      "percent": 82.74
+    },
+    "diskActiveTimeAndQueue": {
+      "activePercent": 3,
+      "queueLength": 0
+    },
+    "sandboxLaunchLatency": {
+      "p50Ms": 901.8986999999906,
+      "p95Ms": 1199.3554399999962
+    },
+    "slotResetTime": {
+      "coldCreateMs": 367.94029999995837,
+      "reuseResetMs": 192.4880000000121
+    },
+    "defenderCpu": {
+      "percent": 0,
+      "found": true,
+      "workingSetBytes": 492736512,
+      "api": "Get-Process MsMpEng TotalProcessorTime delta / (elapsed * cores)"
+    },
+    "uiInputLatency": {
+      "p95Ms": 7.007899996884997
+    }
+  }
+}
