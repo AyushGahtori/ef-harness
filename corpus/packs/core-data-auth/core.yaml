@@ -1,0 +1,1481 @@
+kind: question_pack
+id: core
+version: 1
+title: "M2 core questions"
+questions:
+  - id: Q-CORE-01
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Who is this for, and what job must it finish?"
+    explain: "The audience and the job they hire the product to do decide every later workflow."
+    criteria:
+      - product.audience
+      - product.purpose
+    applies_when: []
+    requires: []
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [user_content]
+    options:
+      - id: known_group
+        label: "A known group of people"
+        meaning: "The same named people use it, such as one team at one workplace."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Accounts and roles can be created for that group."
+      - id: public_customers
+        label: "Anyone who shows up"
+        meaning: "People you have not listed in advance can start using it."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Strangers need a way to arrive without a staff account."
+      - id: single_operator
+        label: "Just me"
+        meaning: "One person runs it and nobody else has an account."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no shared login or permission split."
+    stage_recommendations:
+      prototype:
+        option: known_group
+        rationale: "A prototype serves the people already named."
+      mvp:
+        option: known_group
+        rationale: "An MVP still serves the named group until you widen it."
+      production:
+        option: known_group
+        rationale: "Production keeps that group until you explicitly say the audience is wider."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_audience]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "yeah it's for my eight coworkers so they can order lunch"
+        style: spoken_dictation
+        settles:
+          product.audience: known_group
+          product.purpose: order_lunch
+      - utterance: "The morning kitchen crew uses it to place the lunch order."
+        style: plain
+        settles:
+          product.audience: known_group
+          product.purpose: order_lunch
+      - utterance: "My team of twelve is the whole audience, and their job is to submit the daily order."
+        style: plain
+        settles:
+          product.audience: known_group
+          product.purpose: order_lunch
+      - utterance: "Only the staff on this shift need it, and success is that lunch is ordered before the cutoff."
+        style: plain
+        settles:
+          product.audience: known_group
+          product.purpose: order_lunch
+      - utterance: "It is for the people in this office so they can request a meal."
+        style: plain
+        settles:
+          product.audience: known_group
+          product.purpose: order_lunch
+    negative_examples:
+      - utterance: "People might look at it sometime."
+        must_not_settle: [public_launch]
+        reason: "A vague someday audience does not settle who the product is for."
+      - utterance: "We should make it nice."
+        must_not_settle: [visual_redesign]
+        reason: "Wanting it to look nice does not settle the audience or the job."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-02
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "What are the core workflows, and how do you know they worked?"
+    explain: "The primary path and its success check are what the first build has to finish."
+    criteria:
+      - workflows.primary
+      - workflows.success
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: costly
+    must_ask: true
+    touches: [interactive_ui]
+    options:
+      - id: one_main_path
+        label: "One main path"
+        meaning: "People finish one job from start to success, and extra chores wait."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The build is shaped around that single path."
+      - id: several_paths
+        label: "Several equal paths"
+        meaning: "More than one job is required for the product to be useful."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Each path needs its own success check."
+      - id: something_else
+        label: "Something else"
+        meaning: "The workflow does not match the other choices."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Discovery asks you to describe the path in your own words."
+    stage_recommendations:
+      prototype:
+        option: one_main_path
+        rationale: "A prototype proves one path end to end."
+      mvp:
+        option: one_main_path
+        rationale: "An MVP can still ship the one path people named first."
+      production:
+        option: one_main_path
+        rationale: "Production keeps one primary path until you name another that must ship too."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "so the main thing is they place the order and the kitchen sees it, that's the win"
+        style: spoken_dictation
+        settles:
+          workflows.primary: one_main_path
+          workflows.success: order_placed
+      - utterance: "Staff submit an order and success is the kitchen list showing that order."
+        style: plain
+        settles:
+          workflows.primary: one_main_path
+          workflows.success: order_placed
+      - utterance: "The only workflow that matters first is creating a booking and getting a confirmation."
+        style: plain
+        settles:
+          workflows.primary: one_main_path
+          workflows.success: order_placed
+      - utterance: "A person files an expense and knows it worked when the total is saved."
+        style: plain
+        settles:
+          workflows.primary: one_main_path
+          workflows.success: order_placed
+      - utterance: "Success is one completed checkout, not a pile of side tools."
+        style: plain
+        settles:
+          workflows.primary: one_main_path
+          workflows.success: order_placed
+    negative_examples:
+      - utterance: "It should also have settings."
+        must_not_settle: [settings_page]
+        reason: "Mentioning settings does not settle the primary workflow."
+      - utterance: "Make it fast."
+        must_not_settle: [performance_budget]
+        reason: "Asking for speed does not say which job must succeed."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-03
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Which devices and platforms must it run on?"
+    explain: "The device people actually use decides layout, install, and where the first demo runs."
+    criteria:
+      - delivery.platforms
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [interactive_ui, route]
+    options:
+      - id: web_browser
+        label: "A website in a browser"
+        meaning: "People open a link. There is no install."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The first version is a browser app."
+      - id: phone_browser
+        label: "A phone browser"
+        meaning: "The important screen is a phone-sized browser page."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Layout is designed for a phone first."
+      - id: installable_app
+        label: "An installed app"
+        meaning: "People install a native or desktop app."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The build includes an installable shell."
+    stage_recommendations:
+      prototype:
+        option: web_browser
+        rationale: "A prototype is easiest as a link you open in a browser."
+      mvp:
+        option: web_browser
+        rationale: "An MVP can stay a browser app until an install is required."
+      production:
+        option: web_browser
+        rationale: "Production stays on the browser until you require an install."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_platform]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "they just open the link on their phones, no app store or anything"
+        style: spoken_dictation
+        settles:
+          delivery.platforms: phone_browser
+      - utterance: "Staff use the phone browser during service."
+        style: plain
+        settles:
+          delivery.platforms: phone_browser
+      - utterance: "It has to work in mobile Safari and Chrome, not as an installed app."
+        style: plain
+        settles:
+          delivery.platforms: phone_browser
+      - utterance: "The demo is a website you pinch open on a handset."
+        style: plain
+        settles:
+          delivery.platforms: phone_browser
+      - utterance: "Desktop can wait. The phone browser is the real screen."
+        style: plain
+        settles:
+          delivery.platforms: phone_browser
+    negative_examples:
+      - utterance: "use on their phones"
+        must_not_settle: [offline_native_app]
+        reason: "Saying people use phones does not establish an offline native app."
+      - utterance: "We might do an app later."
+        must_not_settle: [installable_app]
+        reason: "A later maybe does not settle an installed app now."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-04
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Is this one shared space or many separate customer spaces?"
+    explain: "Single-space and multi-tenant products isolate data differently, and that choice is costly to reverse."
+    criteria:
+      - tenancy.model
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [authz]
+    options:
+      - id: single_space
+        label: "One shared space"
+        meaning: "Everyone in the product sees the same workspace."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no per-customer data wall."
+      - id: many_spaces
+        label: "Many separate customer spaces"
+        meaning: "Each customer has a space that others cannot see."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Queries and permissions must stay inside one space."
+      - id: not_in_this_release
+        label: "Not in this release"
+        meaning: "Separate customer spaces are out of scope for now."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The build keeps a single space and records the deferral."
+    stage_recommendations:
+      prototype:
+        option: single_space
+        rationale: "A prototype can live in one shared space."
+      mvp:
+        option: single_space
+        rationale: "An MVP stays one space until a second customer must be walled off."
+      production:
+        option: single_space
+        rationale: "Production stays one space until you name real tenant boundaries."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: [auth.tenant_isolation]
+    positive_examples:
+      - utterance: "nah it's just our one kitchen, not a thing we sell to other restaurants"
+        style: spoken_dictation
+        settles:
+          tenancy.model: single_space
+      - utterance: "Only this company uses it, in one shared workspace."
+        style: plain
+        settles:
+          tenancy.model: single_space
+      - utterance: "There is one list of orders and every staff member is in that same space."
+        style: plain
+        settles:
+          tenancy.model: single_space
+      - utterance: "We are not hosting separate customers. It is our own tool."
+        style: plain
+        settles:
+          tenancy.model: single_space
+      - utterance: "All of the data belongs to this one team."
+        style: plain
+        settles:
+          tenancy.model: single_space
+    negative_examples:
+      - utterance: "We have two shifts."
+        must_not_settle: [many_spaces]
+        reason: "Two shifts are not separate customer tenants."
+      - utterance: "Users have profiles."
+        must_not_settle: [many_spaces]
+        reason: "Profiles do not by themselves mean multi-tenant isolation."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-05
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "How fresh must shared information be?"
+    explain: "Freshness decides whether a refresh is enough or people must see live updates."
+    criteria:
+      - freshness.expectation
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: [Q-CORE-06]
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [realtime]
+    options:
+      - id: refresh_on_open
+        label: "Refresh when you open it"
+        meaning: "People see current data when they load or refresh."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no live push channel."
+      - id: live_updates
+        label: "Live updates"
+        meaning: "Other people's changes appear without a manual refresh."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The product keeps a live connection."
+      - id: daily_is_enough
+        label: "Daily is enough"
+        meaning: "Being a day behind is acceptable."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A daily snapshot is enough."
+    stage_recommendations:
+      prototype:
+        option: refresh_on_open
+        rationale: "A prototype can refresh when the page opens."
+      mvp:
+        option: refresh_on_open
+        rationale: "An MVP can keep refresh-on-open until someone needs live updates."
+      production:
+        option: refresh_on_open
+        rationale: "Production uses refresh-on-open until a live view is required."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "they can just hit refresh, it doesn't have to move by itself"
+        style: spoken_dictation
+        settles:
+          freshness.expectation: refresh_on_open
+      - utterance: "Seeing the latest orders on reload is enough."
+        style: plain
+        settles:
+          freshness.expectation: refresh_on_open
+      - utterance: "Nobody needs a live ticker. Opening the page shows the current list."
+        style: plain
+        settles:
+          freshness.expectation: refresh_on_open
+      - utterance: "A manual refresh is the freshness we need."
+        style: plain
+        settles:
+          freshness.expectation: refresh_on_open
+      - utterance: "Data can update when the screen loads, not in the background."
+        style: plain
+        settles:
+          freshness.expectation: refresh_on_open
+    negative_examples:
+      - utterance: "The kitchen is busy."
+        must_not_settle: [live_updates]
+        reason: "A busy room does not require live updates."
+      - utterance: "use on their phones"
+        must_not_settle: [live_updates]
+        reason: "Phone use does not settle a live freshness requirement."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-06
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Must it keep working offline or on a poor network?"
+    explain: "Offline tolerance is separate from which device people hold. Phone use does not mean an offline native app."
+    criteria:
+      - offline.tolerance
+    applies_when: []
+    requires: [Q-CORE-03]
+    conflicts_with: [Q-CORE-05]
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [caching]
+    options:
+      - id: online_only
+        label: "Online only"
+        meaning: "The product stops when the network stops."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no offline queue."
+      - id: tolerate_blips
+        label: "Tolerate short blips"
+        meaning: "A brief network drop should not lose the current edit."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Unsent work is kept locally until the network returns."
+      - id: full_offline
+        label: "Works fully offline"
+        meaning: "The main job can be finished with no network."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Data syncs later from the device."
+    stage_recommendations:
+      prototype:
+        option: online_only
+        rationale: "A prototype can require a network."
+      mvp:
+        option: online_only
+        rationale: "An MVP can stay online-only until a real offline job appears."
+      production:
+        option: online_only
+        rationale: "Production stays online-only until you require offline work."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if the wifi is down they just wait, it doesn't need to work offline"
+        style: spoken_dictation
+        settles:
+          offline.tolerance: online_only
+      - utterance: "The app requires a connection. Offline use is out of scope."
+        style: plain
+        settles:
+          offline.tolerance: online_only
+      - utterance: "Staff only use it at the counter, where the network is up."
+        style: plain
+        settles:
+          offline.tolerance: online_only
+      - utterance: "Do not build an offline mode."
+        style: plain
+        settles:
+          offline.tolerance: online_only
+      - utterance: "A failed request should retry online, not store a local copy of the business."
+        style: plain
+        settles:
+          offline.tolerance: online_only
+    negative_examples:
+      - utterance: "use on their phones"
+        must_not_settle: [offline_native_app]
+        reason: "Saying people use phones does not establish an offline native app."
+      - utterance: "The wifi in the kitchen is usually fine."
+        must_not_settle: [full_offline]
+        reason: "A usually-fine network does not require full offline support."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-07
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Will people upload files or media?"
+    explain: "Uploads bring size limits, file types, and a place to store bytes outside the page."
+    criteria:
+      - uploads.policy
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [file_upload]
+    options:
+      - id: no_uploads
+        label: "No uploads"
+        meaning: "People type data. They do not send files."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no upload endpoint."
+      - id: images_and_docs
+        label: "Images and documents"
+        meaning: "People attach photos or ordinary documents."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Type and size limits apply, and files sit outside the public web root."
+      - id: large_media
+        label: "Large media"
+        meaning: "People upload big video or audio."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The product needs a large-file store and a progress indicator."
+    stage_recommendations:
+      prototype:
+        option: no_uploads
+        rationale: "A prototype skips uploads until a workflow needs a file."
+      mvp:
+        option: no_uploads
+        rationale: "An MVP adds uploads only when a named workflow attaches a file."
+      production:
+        option: no_uploads
+        rationale: "Production stays without uploads until a workflow requires them."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "yeah they snap a photo of the receipt and attach it, nothing huge"
+        style: spoken_dictation
+        settles:
+          uploads.policy: images_and_docs
+      - utterance: "Users upload a PNG or PDF with the expense."
+        style: plain
+        settles:
+          uploads.policy: images_and_docs
+      - utterance: "A booking can include a photo of the room, not a video."
+        style: plain
+        settles:
+          uploads.policy: images_and_docs
+      - utterance: "Documents and images only, with a size cap."
+        style: plain
+        settles:
+          uploads.policy: images_and_docs
+      - utterance: "Staff attach a scan of the paper form."
+        style: plain
+        settles:
+          uploads.policy: images_and_docs
+    negative_examples:
+      - utterance: "Put the logo on the page."
+        must_not_settle: [images_and_docs]
+        reason: "A built-in logo is not a user upload."
+      - utterance: "We have pictures in the design."
+        must_not_settle: [large_media]
+        reason: "Design mockups are not a large-media upload requirement."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-08
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Does the product send email or other outbound notifications?"
+    explain: "Outbound messages need a provider, a template, and a rule for who is told."
+    criteria:
+      - notifications.outbound
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [outbound_message]
+    options:
+      - id: none
+        label: "No outbound messages"
+        meaning: "The product never emails or pushes anyone."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no message provider."
+      - id: email_only
+        label: "Email only"
+        meaning: "The product sends email and no other channel."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "One email provider and plain templates are enough."
+      - id: email_and_push
+        label: "Email and push"
+        meaning: "People can be told by email and by a push channel."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Both channels need a failure path."
+    stage_recommendations:
+      prototype:
+        option: none
+        rationale: "A prototype can show results on screen and send nothing."
+      mvp:
+        option: none
+        rationale: "An MVP sends mail only after you name a message that must go out."
+      production:
+        option: none
+        rationale: "Production sends nothing until a real notification is named."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "just email the totals to the shift lead, no texts or push"
+        style: spoken_dictation
+        settles:
+          notifications.outbound: email_only
+      - utterance: "Send one email when the order is placed."
+        style: plain
+        settles:
+          notifications.outbound: email_only
+      - utterance: "The only outbound channel is email."
+        style: plain
+        settles:
+          notifications.outbound: email_only
+      - utterance: "A confirmation email is required. SMS is not."
+        style: plain
+        settles:
+          notifications.outbound: email_only
+      - utterance: "Notify by email and keep the message plain."
+        style: plain
+        settles:
+          notifications.outbound: email_only
+    negative_examples:
+      - utterance: "Email the totals."
+        must_not_settle: [recipient_identity]
+        reason: "Naming the channel does not settle who receives the mail."
+      - utterance: "They talk to each other."
+        must_not_settle: [email_and_push]
+        reason: "People talking does not require the product to send a push."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-09
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Are there scheduled jobs, cutoffs, or time zones that change behavior?"
+    explain: "Cutoffs and zones change what a list shows and when a job runs. Times are stored in UTC."
+    criteria:
+      - time.jobs_and_zones
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [scheduling, time_display]
+    options:
+      - id: no_clock_rules
+        label: "No clock rules"
+        meaning: "Nothing in the product changes because of the clock or a zone."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no scheduler and no cutoff."
+      - id: one_zone_cutoffs
+        label: "One zone with cutoffs"
+        meaning: "Behavior changes at clock times in a single zone."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Jobs and cutoffs use that zone, stored as UTC instants."
+      - id: many_zones
+        label: "Many zones"
+        meaning: "Different people see or hit cutoffs in different zones."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Each place needs its own zone while storage stays in UTC."
+    stage_recommendations:
+      prototype:
+        option: one_zone_cutoffs
+        rationale: "A prototype can use the one zone you are standing in."
+      mvp:
+        option: one_zone_cutoffs
+        rationale: "An MVP keeps one zone until a second place is real."
+      production:
+        option: one_zone_cutoffs
+        rationale: "Production keeps one zone until you operate in more than one."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "orders lock at 11 in our kitchen time, just the one timezone"
+        style: spoken_dictation
+        settles:
+          time.jobs_and_zones: one_zone_cutoffs
+      - utterance: "The cutoff is 11:00 in America/Chicago and nowhere else."
+        style: plain
+        settles:
+          time.jobs_and_zones: one_zone_cutoffs
+      - utterance: "A nightly job runs at 2:00 local time for this single site."
+        style: plain
+        settles:
+          time.jobs_and_zones: one_zone_cutoffs
+      - utterance: "Show times in the shop's zone. Do not ask each user for a zone."
+        style: plain
+        settles:
+          time.jobs_and_zones: one_zone_cutoffs
+      - utterance: "One cutoff clock governs the whole product."
+        style: plain
+        settles:
+          time.jobs_and_zones: one_zone_cutoffs
+    negative_examples:
+      - utterance: "Open Monday to Friday."
+        must_not_settle: [many_zones]
+        reason: "Business days do not settle multiple time zones."
+      - utterance: "Put the date on the receipt."
+        must_not_settle: [one_zone_cutoffs]
+        reason: "Printing a date does not by itself create a cutoff rule."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-10
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "How large can search and filtering get?"
+    explain: "Search scale decides whether a short list is enough or an index is required."
+    criteria:
+      - search.scale
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: low
+    impact: low
+    reversibility: easy
+    must_ask: false
+    touches: [search]
+    options:
+      - id: short_lists
+        label: "Short lists"
+        meaning: "People scan a short list. A simple filter is enough."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "No search index is required."
+      - id: thousands_of_rows
+        label: "Thousands of rows"
+        meaning: "Lists grow past what you scroll by hand."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Filters hit indexed columns and long lists paginate."
+      - id: full_text_corpus
+        label: "A large text search"
+        meaning: "People search the words inside many records."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A full-text index is part of the product."
+    stage_recommendations:
+      prototype:
+        option: short_lists
+        rationale: "A prototype can filter a short list in memory."
+      mvp:
+        option: short_lists
+        rationale: "An MVP keeps a short list until the count is real."
+      production:
+        option: short_lists
+        rationale: "Production starts with a short list and adds an index when the count demands it."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "it's like twenty rows, they can just eyeball it"
+        style: spoken_dictation
+        settles:
+          search.scale: short_lists
+      - utterance: "The order list fits on one screen."
+        style: plain
+        settles:
+          search.scale: short_lists
+      - utterance: "Filtering by name on a short list is enough."
+        style: plain
+        settles:
+          search.scale: short_lists
+      - utterance: "We do not expect more rows than a person can scan."
+        style: plain
+        settles:
+          search.scale: short_lists
+      - utterance: "No full-text search in this version."
+        style: plain
+        settles:
+          search.scale: short_lists
+    negative_examples:
+      - utterance: "Add a search box."
+        must_not_settle: [full_text_corpus]
+        reason: "A search box does not mean a large text corpus."
+      - utterance: "Sort by date."
+        must_not_settle: [thousands_of_rows]
+        reason: "Sorting does not settle a thousand-row scale."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-11
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Do you need history, audit, or undo?"
+    explain: "History and undo decide whether a change can be reversed or only explained later."
+    criteria:
+      - audit.history
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: high
+    impact: medium
+    reversibility: costly
+    must_ask: true
+    touches: [logging, destructive_write]
+    options:
+      - id: no_history
+        label: "No history"
+        meaning: "The current value is all that is kept."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Past values are not recoverable."
+      - id: undo_recent
+        label: "Undo the recent change"
+        meaning: "The last edit can be reversed by the person who made it."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "One previous value is kept for that edit."
+      - id: full_audit
+        label: "A full audit trail"
+        meaning: "Every change records who did it and what it was before."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "History is kept for review."
+    stage_recommendations:
+      prototype:
+        option: no_history
+        rationale: "A prototype can keep only the current value."
+      mvp:
+        option: undo_recent
+        rationale: "An MVP should let someone undo the last mistaken edit."
+      production:
+        option: full_audit
+        rationale: "Production keeps who changed what, because reversing a silent overwrite is costly."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if they fat-finger it they should undo that last save, we don't need a forever log"
+        style: spoken_dictation
+        settles:
+          audit.history: undo_recent
+      - utterance: "Keep the previous value so the last edit can be undone."
+        style: plain
+        settles:
+          audit.history: undo_recent
+      - utterance: "A mistaken order edit can be reversed once."
+        style: plain
+        settles:
+          audit.history: undo_recent
+      - utterance: "Undo is enough. A compliance archive is not required."
+        style: plain
+        settles:
+          audit.history: undo_recent
+      - utterance: "The person who just saved can put the record back."
+        style: plain
+        settles:
+          audit.history: undo_recent
+    negative_examples:
+      - utterance: "Don't lose my work."
+        must_not_settle: [full_audit]
+        reason: "Not wanting data loss does not require a full audit trail."
+      - utterance: "Show the updated time."
+        must_not_settle: [full_audit]
+        reason: "A timestamp is not a history of every change."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-12
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Do staff need admin or back-office tools?"
+    explain: "Admin tools are screens for staff that ordinary users should not need."
+    criteria:
+      - admin.tools
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [authz, interactive_ui]
+    options:
+      - id: no_admin
+        label: "No separate admin"
+        meaning: "The same screens serve everyone who can sign in."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no back-office area."
+      - id: simple_staff_screens
+        label: "Simple staff screens"
+        meaning: "Staff get a few extra screens inside the same app."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Those screens check a staff role."
+      - id: separate_back_office
+        label: "A separate back office"
+        meaning: "Operations live in their own area."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The back office is a distinct surface with its own navigation."
+    stage_recommendations:
+      prototype:
+        option: no_admin
+        rationale: "A prototype can skip a back office."
+      mvp:
+        option: no_admin
+        rationale: "An MVP adds staff screens only when a staff-only job is named."
+      production:
+        option: no_admin
+        rationale: "Production adds a back office when operations cannot share the user screens."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "the manager just needs a page to fix an order, not a whole other app"
+        style: spoken_dictation
+        settles:
+          admin.tools: simple_staff_screens
+      - utterance: "Staff need one screen to correct an order."
+        style: plain
+        settles:
+          admin.tools: simple_staff_screens
+      - utterance: "A manager view inside the same site is enough."
+        style: plain
+        settles:
+          admin.tools: simple_staff_screens
+      - utterance: "Add a staff page, not a separate admin product."
+        style: plain
+        settles:
+          admin.tools: simple_staff_screens
+      - utterance: "Back-office work is a handful of screens for the manager."
+        style: plain
+        settles:
+          admin.tools: simple_staff_screens
+    negative_examples:
+      - utterance: "Users can edit their profile."
+        must_not_settle: [separate_back_office]
+        reason: "A profile editor is not a back office."
+      - utterance: "Make an admin later."
+        must_not_settle: [separate_back_office]
+        reason: "A later maybe does not settle a separate back office now."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-13
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "What import, export, or reporting formats are required?"
+    explain: "Import and export decide which files cross the boundary and which reports must match."
+    criteria:
+      - reporting.formats
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: low
+    impact: low
+    reversibility: easy
+    must_ask: false
+    touches: [file_download, bulk_write]
+    options:
+      - id: none
+        label: "No import or export"
+        meaning: "Data stays on screen."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no file exchange."
+      - id: csv_export
+        label: "CSV export"
+        meaning: "People can download a CSV of the current list."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The file matches the columns on screen."
+      - id: csv_and_pdf
+        label: "CSV and a printable report"
+        meaning: "People can download a CSV and a paginated PDF."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Both formats are part of the job."
+    stage_recommendations:
+      prototype:
+        option: none
+        rationale: "A prototype can stay on screen."
+      mvp:
+        option: none
+        rationale: "An MVP exports only when someone must take the data elsewhere."
+      production:
+        option: none
+        rationale: "Production adds a format when a named report exists."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "let them download a csv of the orders, we don't need a fancy pdf"
+        style: spoken_dictation
+        settles:
+          reporting.formats: csv_export
+      - utterance: "Export the expense list as CSV."
+        style: plain
+        settles:
+          reporting.formats: csv_export
+      - utterance: "A spreadsheet download is the only report."
+        style: plain
+        settles:
+          reporting.formats: csv_export
+      - utterance: "Managers download CSV. Printing can wait."
+        style: plain
+        settles:
+          reporting.formats: csv_export
+      - utterance: "The required format is CSV, not PDF."
+        style: plain
+        settles:
+          reporting.formats: csv_export
+    negative_examples:
+      - utterance: "Show a table."
+        must_not_settle: [csv_export]
+        reason: "A table on screen is not a file export."
+      - utterance: "We use spreadsheets at work."
+        must_not_settle: [csv_and_pdf]
+        reason: "Using spreadsheets elsewhere does not require both CSV and PDF from this product."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-14
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Which third-party services does this call?"
+    explain: "External services create side effects the product does not fully control."
+    criteria:
+      - integrations.external
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [external_api]
+    options:
+      - id: none
+        label: "No third parties"
+        meaning: "The product does not call an outside service."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no external account to configure."
+      - id: one_named_service
+        label: "One named service"
+        meaning: "Exactly one outside service is called, and you can name it."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "That service gets timeouts, retries, and a failure message."
+      - id: several_services
+        label: "Several services"
+        meaning: "More than one outside service is required."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Each service has its own failure behavior."
+    stage_recommendations:
+      prototype:
+        option: none
+        rationale: "A prototype calls nothing outside until a service is named."
+      mvp:
+        option: none
+        rationale: "An MVP adds one service only when the workflow cannot finish without it."
+      production:
+        option: none
+        rationale: "Production stays internal until a named integration is required."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "don't call stripe or anything, it all stays in our app"
+        style: spoken_dictation
+        settles:
+          integrations.external: none
+      - utterance: "There are no third-party APIs in this version."
+        style: plain
+        settles:
+          integrations.external: none
+      - utterance: "Payments, mail providers, and maps are all out of scope."
+        style: plain
+        settles:
+          integrations.external: none
+      - utterance: "The product talks only to its own database."
+        style: plain
+        settles:
+          integrations.external: none
+      - utterance: "No external integration is required for the first job."
+        style: plain
+        settles:
+          integrations.external: none
+    negative_examples:
+      - utterance: "We might add payments later."
+        must_not_settle: [one_named_service]
+        reason: "A later maybe does not name a service now."
+      - utterance: "It runs on the web."
+        must_not_settle: [several_services]
+        reason: "Being a website does not mean several external services."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-15
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "What privacy, compliance, or personal-data class applies?"
+    explain: "Personal data and compliance duties are hard to reverse once copies exist."
+    criteria:
+      - privacy.class
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [personal_data]
+    options:
+      - id: no_personal_data
+        label: "No personal data"
+        meaning: "The product does not store information about a person."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Privacy duties for personal data do not apply."
+      - id: basic_contact_data
+        label: "Basic contact data"
+        meaning: "Names, emails, or phone numbers are stored."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Those fields are treated as personal data and kept out of logs."
+      - id: regulated_personal_data
+        label: "Regulated personal data"
+        meaning: "The data falls under a named privacy or compliance duty."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Retention, access, and deletion follow that duty."
+    stage_recommendations:
+      prototype:
+        option: no_personal_data
+        rationale: "A prototype should avoid personal data until the job truly needs it."
+      mvp:
+        option: basic_contact_data
+        rationale: "An MVP that has accounts stores basic contact data on purpose."
+      production:
+        option: basic_contact_data
+        rationale: "Production stores only the contact data you named, unless a regulation applies."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: [data.deletion]
+    positive_examples:
+      - utterance: "we keep their name and email, nothing medical or payment-card stuff"
+        style: spoken_dictation
+        settles:
+          privacy.class: basic_contact_data
+      - utterance: "Store the staff name and email address."
+        style: plain
+        settles:
+          privacy.class: basic_contact_data
+      - utterance: "Contact details are personal data, but there is no regulated health data."
+        style: plain
+        settles:
+          privacy.class: basic_contact_data
+      - utterance: "The account record has a name and an email and that is the personal data."
+        style: plain
+        settles:
+          privacy.class: basic_contact_data
+      - utterance: "We are not under a special privacy regime beyond ordinary contact data."
+        style: plain
+        settles:
+          privacy.class: basic_contact_data
+    negative_examples:
+      - utterance: "Users log in."
+        must_not_settle: [regulated_personal_data]
+        reason: "Login does not by itself mean a regulated data class."
+      - utterance: "It is a website."
+        must_not_settle: [no_personal_data]
+        reason: "Being a website does not prove that no personal data is stored."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-16
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "How much traffic and stored data do you expect?"
+    explain: "Expected volume keeps a small tool from being designed like a public launch, and the reverse."
+    criteria:
+      - scale.volume
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: low
+    impact: low
+    reversibility: easy
+    must_ask: false
+    touches: [bulk_write]
+    options:
+      - id: handful
+        label: "A handful of people"
+        meaning: "Tens of people and a small amount of data."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A single small database is enough."
+      - id: hundreds
+        label: "Hundreds of people"
+        meaning: "Hundreds of people or a steady daily pile of records."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Indexes and ordinary hosting matter."
+      - id: large_public
+        label: "A large public audience"
+        meaning: "Traffic or data can spike like a public site."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Capacity and limits have to be designed in."
+    stage_recommendations:
+      prototype:
+        option: handful
+        rationale: "A prototype is sized for the people in the room."
+      mvp:
+        option: handful
+        rationale: "An MVP stays small until you have evidence of more traffic."
+      production:
+        option: hundreds
+        rationale: "Production plans for hundreds only when that volume is the real expectation."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "it's my eight coworkers, not the whole internet"
+        style: spoken_dictation
+        settles:
+          scale.volume: handful
+      - utterance: "About twenty people will use it."
+        style: plain
+        settles:
+          scale.volume: handful
+      - utterance: "The data is one kitchen's orders, not a public catalog."
+        style: plain
+        settles:
+          scale.volume: handful
+      - utterance: "Expect tens of users and a modest database."
+        style: plain
+        settles:
+          scale.volume: handful
+      - utterance: "This is a small internal tool."
+        style: plain
+        settles:
+          scale.volume: handful
+    negative_examples:
+      - utterance: "Make it scale."
+        must_not_settle: [large_public]
+        reason: "The word scale does not settle a public traffic class."
+      - utterance: "We hope it grows."
+        must_not_settle: [hundreds]
+        reason: "A hope is not an expected volume."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-17
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "Where should it be hosted and deployed?"
+    explain: "The deploy target decides who runs the process and how a new version ships."
+    criteria:
+      - deploy.target
+    applies_when: []
+    requires: [Q-CORE-03]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [config_env]
+    options:
+      - id: local_machine
+        label: "On one local machine"
+        meaning: "It runs on a computer you control in the room."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no remote host to provision."
+      - id: managed_host
+        label: "A managed host"
+        meaning: "A hosted platform runs the app for you."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Deploys go through that host."
+      - id: own_servers
+        label: "Our own servers"
+        meaning: "You operate the machines yourself."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "You own patching, process restarts, and the network."
+    stage_recommendations:
+      prototype:
+        option: local_machine
+        rationale: "A prototype can run on the machine in front of you."
+      mvp:
+        option: local_machine
+        rationale: "An MVP moves to a host only when someone else must reach it."
+      production:
+        option: local_machine
+        rationale: "Production uses a managed host or your servers only after that choice is explicit."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: [data.storage.engine]
+    positive_examples:
+      - utterance: "just run it on the shop computer for now, don't rent a server"
+        style: spoken_dictation
+        settles:
+          deploy.target: local_machine
+      - utterance: "The demo runs locally. No cloud account."
+        style: plain
+        settles:
+          deploy.target: local_machine
+      - utterance: "Deploy means starting it on this machine."
+        style: plain
+        settles:
+          deploy.target: local_machine
+      - utterance: "We do not want a hosted platform yet."
+        style: plain
+        settles:
+          deploy.target: local_machine
+      - utterance: "One local process is the deployment."
+        style: plain
+        settles:
+          deploy.target: local_machine
+    negative_examples:
+      - utterance: "It is a website."
+        must_not_settle: [managed_host]
+        reason: "A website can still run on a local machine."
+      - utterance: "Use a modern stack."
+        must_not_settle: [own_servers]
+        reason: "A stack preference does not choose who hosts it."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-CORE-18
+    version: 1
+    scope: shared
+    domains: [core]
+    title: "What visual tone and accessibility baseline do you want?"
+    explain: "Tone is how it should feel. The accessibility baseline is what keyboard and screen-reader users can do."
+    criteria:
+      - ui.tone
+      - ui.accessibility
+    applies_when: []
+    requires: [Q-CORE-03]
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [interactive_ui]
+    options:
+      - id: plain_and_keyboard
+        label: "Plain and keyboard accessible"
+        meaning: "A quiet visual tone with keyboard access and visible focus."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Controls have accessible names and work without a pointer."
+      - id: branded_and_keyboard
+        label: "Branded, still keyboard accessible"
+        meaning: "It should look like the brand and still work from the keyboard."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Color and type follow the brand without removing keyboard access."
+      - id: full_audit
+        label: "A full accessibility audit"
+        meaning: "You want an audited accessibility target, not only the baseline."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The build includes an accessibility audit, not only built-in basics."
+    stage_recommendations:
+      prototype:
+        option: plain_and_keyboard
+        rationale: "A prototype stays plain and keyboard accessible."
+      mvp:
+        option: plain_and_keyboard
+        rationale: "An MVP keeps the keyboard baseline even if the look gets warmer."
+      production:
+        option: plain_and_keyboard
+        rationale: "Production does not drop the keyboard baseline when the visual tone firms up."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "keep it plain, nothing flashy, and I have to be able to tab through it"
+        style: spoken_dictation
+        settles:
+          ui.tone: plain_and_keyboard
+          ui.accessibility: keyboard_baseline
+      - utterance: "Use a quiet layout and make every control keyboard accessible."
+        style: plain
+        settles:
+          ui.tone: plain_and_keyboard
+          ui.accessibility: keyboard_baseline
+      - utterance: "No custom brand system yet. Keyboard and focus states are required."
+        style: plain
+        settles:
+          ui.tone: plain_and_keyboard
+          ui.accessibility: keyboard_baseline
+      - utterance: "The visual tone is plain, and screen-reader names are part of the baseline."
+        style: plain
+        settles:
+          ui.tone: plain_and_keyboard
+          ui.accessibility: keyboard_baseline
+      - utterance: "Accessibility means keyboard basics, not a formal audit, for this version."
+        style: plain
+        settles:
+          ui.tone: plain_and_keyboard
+          ui.accessibility: keyboard_baseline
+    negative_examples:
+      - utterance: "Make it look modern."
+        must_not_settle: [full_audit]
+        reason: "A modern look does not settle an accessibility audit."
+      - utterance: "Use our logo."
+        must_not_settle: [branded_and_keyboard]
+        reason: "A logo alone does not settle the full visual tone or the access baseline."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
