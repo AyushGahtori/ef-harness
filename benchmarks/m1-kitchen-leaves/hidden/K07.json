@@ -1,0 +1,92 @@
+{
+  "task": "K07",
+  "rule_id": "R42",
+  "cases": [
+    {
+      "id": "K07-H1",
+      "canary": "HK-K07-1",
+      "args": [
+        [
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 2,
+            "cancelled": true
+          }
+        ]
+      ],
+      "expect": []
+    },
+    {
+      "id": "K07-H2",
+      "canary": "HK-K07-2",
+      "args": [
+        [
+          {
+            "dishId": "t",
+            "label": "Tea",
+            "quantity": 1,
+            "cancelled": false
+          },
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 2,
+            "cancelled": false
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Tea",
+          "quantity": 1
+        },
+        {
+          "label": "Soup",
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "id": "K07-H3",
+      "canary": "HK-K07-3",
+      "args": [
+        [
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 4,
+            "cancelled": true
+          },
+          {
+            "dishId": "s",
+            "label": "Soup",
+            "quantity": 1,
+            "cancelled": false
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "label": "Soup",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "id": "K07-H4",
+      "canary": "HK-K07-4",
+      "args": [
+        [
+          {
+            "dishId": "r",
+            "label": "Rice",
+            "quantity": 0,
+            "cancelled": false
+          }
+        ]
+      ],
+      "expect": []
+    }
+  ]
+}

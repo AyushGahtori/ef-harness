@@ -1,0 +1,80 @@
+{
+  "task": "K11",
+  "rule_id": "X-02",
+  "cases": [
+    {
+      "id": "K11-H1",
+      "canary": "HK-K11-1",
+      "args": [
+        {
+          "dishId": "",
+          "quantity": 2
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "error": {
+          "code": "validation",
+          "message": "Dish is required",
+          "field": "dishId"
+        }
+      }
+    },
+    {
+      "id": "K11-H2",
+      "canary": "HK-K11-2",
+      "args": [
+        {
+          "dishId": "soup",
+          "quantity": 0
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "error": {
+          "code": "validation",
+          "message": "Quantity must be a whole number from 1 to 99",
+          "field": "quantity"
+        }
+      }
+    },
+    {
+      "id": "K11-H3",
+      "canary": "HK-K11-3",
+      "args": [
+        {
+          "dishId": " soup ",
+          "quantity": 99,
+          "note": "hot"
+        }
+      ],
+      "expect": {
+        "ok": true,
+        "value": {
+          "dishId": "soup",
+          "quantity": 99,
+          "note": "hot"
+        }
+      }
+    },
+    {
+      "id": "K11-H4",
+      "canary": "HK-K11-4",
+      "args": [
+        {
+          "dishId": "soup",
+          "quantity": 2,
+          "note": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+        }
+      ],
+      "expect": {
+        "ok": false,
+        "error": {
+          "code": "validation",
+          "message": "Note must be 140 characters or fewer",
+          "field": "note"
+        }
+      }
+    }
+  ]
+}

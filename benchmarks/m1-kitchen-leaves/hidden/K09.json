@@ -1,0 +1,46 @@
+{
+  "task": "K09",
+  "rule_id": "X-04",
+  "cases": [
+    {
+      "id": "K09-H1",
+      "canary": "HK-K09-1",
+      "args": [
+        100,
+        1,
+        10
+      ],
+      "expect": 10
+    },
+    {
+      "id": "K09-H2",
+      "canary": "HK-K09-2",
+      "args": [
+        1,
+        1,
+        2
+      ],
+      "expect": 1
+    },
+    {
+      "id": "K09-H3",
+      "canary": "HK-K09-3",
+      "args": [
+        5,
+        1,
+        2
+      ],
+      "expect": 3
+    },
+    {
+      "id": "K09-H4",
+      "canary": "HK-K09-4",
+      "args": [
+        2,
+        1,
+        3
+      ],
+      "expect": 1
+    }
+  ]
+}

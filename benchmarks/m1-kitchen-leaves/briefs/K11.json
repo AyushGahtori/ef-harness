@@ -1,0 +1,74 @@
+{
+  "schema": "task-packet@1",
+  "task": "K11",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Validate order input at the boundary.",
+  "write_scope": [
+    "src/api/order-schema.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-02",
+      "v": 1,
+      "text": "dishId is a non-empty trimmed string. quantity is an integer from 1 to 99. An optional note is a string of at most 140 characters. Invalid input returns the shared validation error and does not coerce a success value."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k11",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K11-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/api/order-schema.mjs",
+    "export": "parseOrder"
+  },
+  "registered_names": [],
+  "rule_id": "X-02",
+  "rule_text": "dishId is a non-empty trimmed string. quantity is an integer from 1 to 99. An optional note is a string of at most 140 characters. Invalid input returns the shared validation error and does not coerce a success value.",
+  "visible": [
+    {
+      "id": "K11-V1",
+      "canary": "VIS-K11-1",
+      "args": [
+        {
+          "dishId": "soup",
+          "quantity": 2
+        }
+      ],
+      "expect": {
+        "ok": true,
+        "value": {
+          "dishId": "soup",
+          "quantity": 2
+        }
+      }
+    }
+  ]
+}

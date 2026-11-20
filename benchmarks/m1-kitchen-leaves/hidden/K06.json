@@ -1,0 +1,92 @@
+{
+  "task": "K06",
+  "rule_id": "R41",
+  "cases": [
+    {
+      "id": "K06-H1",
+      "canary": "HK-K06-1",
+      "args": [
+        [
+          {
+            "dishId": "a",
+            "label": "Rice"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "dishId": "a",
+          "label": "Rice"
+        }
+      ]
+    },
+    {
+      "id": "K06-H2",
+      "canary": "HK-K06-2",
+      "args": [
+        [
+          {
+            "dishId": "s",
+            "label": "Soup"
+          },
+          {
+            "dishId": "s2",
+            "label": "Soup"
+          },
+          {
+            "dishId": "s3",
+            "label": "Soup"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "dishId": "s",
+          "label": "Soup (s)"
+        },
+        {
+          "dishId": "s2",
+          "label": "Soup (s2)"
+        },
+        {
+          "dishId": "s3",
+          "label": "Soup (s3)"
+        }
+      ]
+    },
+    {
+      "id": "K06-H3",
+      "canary": "HK-K06-3",
+      "args": [
+        [
+          {
+            "dishId": "a",
+            "label": "Soup"
+          },
+          {
+            "dishId": "b",
+            "label": "soup"
+          }
+        ]
+      ],
+      "expect": [
+        {
+          "dishId": "a",
+          "label": "Soup"
+        },
+        {
+          "dishId": "b",
+          "label": "soup"
+        }
+      ]
+    },
+    {
+      "id": "K06-H4",
+      "canary": "HK-K06-4",
+      "args": [
+        []
+      ],
+      "expect": []
+    }
+  ]
+}

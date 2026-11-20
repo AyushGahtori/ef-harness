@@ -1,0 +1,73 @@
+{
+  "schema": "task-packet@1",
+  "task": "K12",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Return the shared error body.",
+  "write_scope": [
+    "src/api/errors.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-11",
+      "v": 1,
+      "text": "Errors are { error: { code, message, field? } }. code and message are required non-empty strings. field is included only when provided."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k12",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K12-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/api/errors.mjs",
+    "export": "toErrorBody"
+  },
+  "registered_names": [],
+  "rule_id": "X-11",
+  "rule_text": "Errors are { error: { code, message, field? } }. code and message are required non-empty strings. field is included only when provided.",
+  "visible": [
+    {
+      "id": "K12-V1",
+      "canary": "VIS-K12-1",
+      "args": [
+        "validation",
+        "Quantity is invalid",
+        "quantity"
+      ],
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Quantity is invalid",
+          "field": "quantity"
+        }
+      }
+    }
+  ]
+}

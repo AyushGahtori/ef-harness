@@ -1,0 +1,66 @@
+{
+  "schema": "task-packet@1",
+  "task": "K08",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Price a line in integer minor units.",
+  "write_scope": [
+    "src/kitchen/pricing.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-04",
+      "v": 1,
+      "text": "Money is an integer count of minor units. Line total is unit minor units times quantity. Reject non-integers and negatives. Do not use floating point."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k08",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K08-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/kitchen/pricing.mjs",
+    "export": "lineTotalMinor"
+  },
+  "registered_names": [],
+  "rule_id": "X-04",
+  "rule_text": "Money is an integer count of minor units. Line total is unit minor units times quantity. Reject non-integers and negatives. Do not use floating point.",
+  "visible": [
+    {
+      "id": "K08-V1",
+      "canary": "VIS-K08-1",
+      "args": [
+        250,
+        2
+      ],
+      "expect": 500
+    }
+  ]
+}

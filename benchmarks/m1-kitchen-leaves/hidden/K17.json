@@ -1,0 +1,76 @@
+{
+  "task": "K17",
+  "rule_id": "UI-13",
+  "cases": [
+    {
+      "id": "K17-H1",
+      "canary": "HK-K17-1",
+      "args": [
+        [
+          {
+            "quantity": 2
+          }
+        ]
+      ],
+      "expect": {
+        "state": "ready",
+        "message": "",
+        "printDisabled": false,
+        "ariaDisabled": false
+      }
+    },
+    {
+      "id": "K17-H2",
+      "canary": "HK-K17-2",
+      "args": [
+        []
+      ],
+      "expect": {
+        "state": "empty",
+        "message": "Nothing to print",
+        "printDisabled": true,
+        "ariaDisabled": true
+      }
+    },
+    {
+      "id": "K17-H3",
+      "canary": "HK-K17-3",
+      "args": [
+        [
+          {
+            "quantity": -1
+          },
+          {
+            "quantity": 1
+          }
+        ]
+      ],
+      "expect": {
+        "state": "ready",
+        "message": "",
+        "printDisabled": false,
+        "ariaDisabled": false
+      }
+    },
+    {
+      "id": "K17-H4",
+      "canary": "HK-K17-4",
+      "args": [
+        [
+          {
+            "quantity": 0
+          },
+          {
+            "quantity": 0
+          }
+        ]
+      ],
+      "expect": {
+        "state": "empty",
+        "message": "Nothing to print",
+        "printDisabled": true,
+        "ariaDisabled": true
+      }
+    }
+  ]
+}

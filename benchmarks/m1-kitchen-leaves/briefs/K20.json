@@ -1,0 +1,74 @@
+{
+  "schema": "task-packet@1",
+  "task": "K20",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Render the kitchen error banner from the shared error body.",
+  "write_scope": [
+    "src/ui/kitchen-error-banner.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-11",
+      "v": 1,
+      "text": "A banner has role alert and text equal to error.message. A body without a non-empty error.message is rejected."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k20",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K20-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/ui/kitchen-error-banner.mjs",
+    "export": "kitchenErrorBanner"
+  },
+  "registered_names": [],
+  "rule_id": "X-11",
+  "rule_text": "A banner has role alert and text equal to error.message. A body without a non-empty error.message is rejected.",
+  "visible": [
+    {
+      "id": "K20-V1",
+      "canary": "VIS-K20-1",
+      "args": [
+        {
+          "error": {
+            "code": "validation",
+            "message": "Quantity is invalid",
+            "field": "quantity"
+          }
+        }
+      ],
+      "expect": {
+        "role": "alert",
+        "text": "Quantity is invalid"
+      }
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "schema": "task-packet@1",
+  "task": "K16",
+  "attempt": 1,
+  "epoch": 1,
+  "brief_version": 1,
+  "base": {
+    "branch": "harness/f/F12",
+    "commit": "seed"
+  },
+  "goal": "Expose the kitchen list ARIA contract.",
+  "write_scope": [
+    "src/ui/kitchen-aria.mjs"
+  ],
+  "must": [
+    {
+      "id": "X-13",
+      "v": 1,
+      "text": "The Print button accessible name is Print, aria-label is Print kitchen list, and aria-controls is kitchen-list. The region id is kitchen-list, role is region, aria-label is Kitchen totals, and rowCount follows the input."
+    }
+  ],
+  "contracts": [
+    {
+      "id": "kitchen-k16",
+      "v": 1,
+      "role": "produce"
+    }
+  ],
+  "checks_visible": [
+    "K16-V1"
+  ],
+  "checks_hidden_count": 4,
+  "should": [],
+  "skills": [],
+  "tools": [
+    "edit",
+    "harness.run",
+    "kb.get",
+    "harness.start_service",
+    "submit_candidate"
+  ],
+  "budget": {
+    "usd": 0.4
+  },
+  "limits": {
+    "wall_min": 30
+  },
+  "entry": {
+    "module": "src/ui/kitchen-aria.mjs",
+    "export": "kitchenAria"
+  },
+  "registered_names": [],
+  "rule_id": "X-13",
+  "rule_text": "The Print button accessible name is Print, aria-label is Print kitchen list, and aria-controls is kitchen-list. The region id is kitchen-list, role is region, aria-label is Kitchen totals, and rowCount follows the input.",
+  "visible": [
+    {
+      "id": "K16-V1",
+      "canary": "VIS-K16-1",
+      "args": [
+        [
+          {
+            "label": "Soup",
+            "quantity": 2
+          }
+        ]
+      ],
+      "expect": {
+        "button": {
+          "name": "Print",
+          "ariaLabel": "Print kitchen list",
+          "ariaControls": "kitchen-list"
+        },
+        "region": {
+          "id": "kitchen-list",
+          "role": "region",
+          "ariaLabel": "Kitchen totals",
+          "rowCount": 1
+        }
+      }
+    }
+  ]
+}

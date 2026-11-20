@@ -1,0 +1,81 @@
+{
+  "task": "K15",
+  "rule_id": "UI-12",
+  "cases": [
+    {
+      "id": "K15-H1",
+      "canary": "HK-K15-1",
+      "args": [
+        []
+      ],
+      "expect": {
+        "type": "button",
+        "name": "Print",
+        "html": "<button type=\"button\" data-action=\"print\">Print</button>",
+        "rowCount": 0
+      }
+    },
+    {
+      "id": "K15-H2",
+      "canary": "HK-K15-2",
+      "args": [
+        [
+          {
+            "label": "A",
+            "quantity": 1
+          },
+          {
+            "label": "B",
+            "quantity": 1
+          },
+          {
+            "label": "C",
+            "quantity": 1
+          }
+        ]
+      ],
+      "expect": {
+        "type": "button",
+        "name": "Print",
+        "html": "<button type=\"button\" data-action=\"print\">Print</button>",
+        "rowCount": 3
+      }
+    },
+    {
+      "id": "K15-H3",
+      "canary": "HK-K15-3",
+      "args": [
+        [
+          {
+            "label": "Tea",
+            "quantity": 0
+          }
+        ]
+      ],
+      "expect": {
+        "type": "button",
+        "name": "Print",
+        "html": "<button type=\"button\" data-action=\"print\">Print</button>",
+        "rowCount": 1
+      }
+    },
+    {
+      "id": "K15-H4",
+      "canary": "HK-K15-4",
+      "args": [
+        [
+          {
+            "label": "Knödel",
+            "quantity": 2
+          }
+        ]
+      ],
+      "expect": {
+        "type": "button",
+        "name": "Print",
+        "html": "<button type=\"button\" data-action=\"print\">Print</button>",
+        "rowCount": 1
+      }
+    }
+  ]
+}
