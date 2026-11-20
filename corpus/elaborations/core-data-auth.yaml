@@ -1,0 +1,944 @@
+elaborations:
+  - id: ELAB-Q-CORE-01-INTERNAL-WORKFLOW
+    question_id: product.purpose
+    option_id: internal_workflow
+    summary: One internal workflow
+    touches:
+      any: &a1
+        - user_content
+    clauses:
+      - id: ELAB-Q-CORE-01-INTERNAL-WORKFLOW.C1
+        text: The product's primary job is one named internal workflow, and success is that workflow completed.
+        touches:
+          any: *a1
+        oracle_hint: A fixture that completes the named workflow is a pass, and a second unrelated job is out of scope.
+      - id: ELAB-Q-CORE-01-INTERNAL-WORKFLOW.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The product's primary job is one named internal workflow, and success is that workflow completed."
+        touches:
+          any: *a1
+        oracle_hint: A fixture that completes the named workflow is a pass, and a second unrelated job is out of scope.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: product.purpose.internal_workflow.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A fixture that completes the named workflow is a pass, and a second unrelated job is out of scope.
+  - id: ELAB-Q-CORE-02-OFFICE-STAFF
+    question_id: product.audience
+    option_id: office_staff
+    summary: Office staff
+    touches:
+      any: &a2
+        - personal_data
+    clauses:
+      - id: ELAB-Q-CORE-02-OFFICE-STAFF.C1
+        text: The primary users are office staff doing the job during a shift, not the general public.
+        touches:
+          any: *a2
+        oracle_hint: A journey completed by a shift worker is in scope, and a public signup is not required.
+      - id: ELAB-Q-CORE-02-OFFICE-STAFF.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The primary users are office staff doing the job during a shift, not the general public."
+        touches:
+          any: *a2
+        oracle_hint: A journey completed by a shift worker is in scope, and a public signup is not required.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: product.audience.office_staff.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A journey completed by a shift worker is in scope, and a public signup is not required.
+  - id: ELAB-Q-CORE-03-PROTOTYPE-SLICE
+    question_id: product.stage
+    option_id: prototype_slice
+    summary: Prototype slice
+    touches:
+      any: &a3
+        - config_env
+    clauses:
+      - id: ELAB-Q-CORE-03-PROTOTYPE-SLICE.C1
+        text: The release is a prototype of the primary workflow, not a support commitment.
+        touches:
+          any: *a3
+        oracle_hint: The plan labels the release as a prototype and does not promise operational support.
+      - id: ELAB-Q-CORE-03-PROTOTYPE-SLICE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The release is a prototype of the primary workflow, not a support commitment."
+        touches:
+          any: *a3
+        oracle_hint: The plan labels the release as a prototype and does not promise operational support.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: product.stage.prototype_slice.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The plan labels the release as a prototype and does not promise operational support.
+  - id: ELAB-Q-CORE-03-MVP-SLICE
+    question_id: product.stage
+    option_id: mvp_slice
+    summary: MVP slice
+    touches:
+      any: &a4
+        - config_env
+    clauses:
+      - id: ELAB-Q-CORE-03-MVP-SLICE.C1
+        text: The release is the smallest slice that completes the primary workflow for real use.
+        touches:
+          any: *a4
+        oracle_hint: The plan's must-have list is exactly the primary workflow.
+      - id: ELAB-Q-CORE-03-MVP-SLICE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The release is the smallest slice that completes the primary workflow for real use."
+        touches:
+          any: *a4
+        oracle_hint: The plan's must-have list is exactly the primary workflow.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: product.stage.mvp_slice.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The plan's must-have list is exactly the primary workflow.
+  - id: ELAB-Q-CORE-03-PRODUCTION-SLICE
+    question_id: product.stage
+    option_id: production_slice
+    summary: Production slice
+    touches:
+      any: &a5
+        - config_env
+    clauses:
+      - id: ELAB-Q-CORE-03-PRODUCTION-SLICE.C1
+        text: The release is a production commitment with the operational floor turned on.
+        touches:
+          any: *a5
+        oracle_hint: The plan includes the operational floor, not only the happy path.
+      - id: ELAB-Q-CORE-03-PRODUCTION-SLICE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The release is a production commitment with the operational floor turned on."
+        touches:
+          any: *a5
+        oracle_hint: The plan includes the operational floor, not only the happy path.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: product.stage.production_slice.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The plan includes the operational floor, not only the happy path.
+  - id: ELAB-Q-CORE-04-STAFF-AND-MANAGER
+    question_id: actors.roles
+    option_id: staff_and_manager
+    summary: Staff and manager
+    touches:
+      any: &a6
+        - authz
+    clauses:
+      - id: ELAB-Q-CORE-04-STAFF-AND-MANAGER.C1
+        text: "Two roles: staff who do the work, and a manager who reviews it."
+        touches:
+          any: *a6
+        oracle_hint: A staff action and a distinct manager review are both representable.
+      - id: ELAB-Q-CORE-04-STAFF-AND-MANAGER.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Two roles: staff who do the work, and a manager who reviews it."
+        touches:
+          any: *a6
+        oracle_hint: A staff action and a distinct manager review are both representable.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: actors.roles.staff_and_manager.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A staff action and a distinct manager review are both representable.
+  - id: ELAB-Q-CORE-05-ONE-HAPPY-PATH
+    question_id: workflows.primary
+    option_id: one_happy_path
+    summary: One happy path
+    touches:
+      any: &a7
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-CORE-05-ONE-HAPPY-PATH.C1
+        text: There is one primary workflow with a named done state.
+        touches:
+          any: *a7
+        oracle_hint: A test can walk one path to the named done state.
+      - id: ELAB-Q-CORE-05-ONE-HAPPY-PATH.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: There is one primary workflow with a named done state."
+        touches:
+          any: *a7
+        oracle_hint: A test can walk one path to the named done state.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: workflows.primary.one_happy_path.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A test can walk one path to the named done state.
+  - id: ELAB-Q-CORE-06-NONE-THIS-RELEASE
+    question_id: workflows.secondary
+    option_id: none_this_release
+    summary: None this release
+    touches:
+      any: &a8
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-CORE-06-NONE-THIS-RELEASE.C1
+        text: No secondary workflow is in this release.
+        touches:
+          any: *a8
+        oracle_hint: The release checklist contains one workflow.
+      - id: ELAB-Q-CORE-06-NONE-THIS-RELEASE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: No secondary workflow is in this release."
+        touches:
+          any: *a8
+        oracle_hint: The release checklist contains one workflow.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: workflows.secondary.none_this_release.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The release checklist contains one workflow.
+  - id: ELAB-Q-CORE-07-NAMED-BY-USER
+    question_id: data.entities
+    option_id: named_by_user
+    summary: User-named records
+    touches:
+      any: &a9
+        - migration
+    clauses:
+      - id: ELAB-Q-CORE-07-NAMED-BY-USER.C1
+        text: The records are exactly the ones the user names for the workflow.
+        touches:
+          any: *a9
+        oracle_hint: The model contains the named records and no extra guessed entity.
+      - id: ELAB-Q-CORE-07-NAMED-BY-USER.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The records are exactly the ones the user names for the workflow."
+        touches:
+          any: *a9
+        oracle_hint: The model contains the named records and no extra guessed entity.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.entities.named_by_user.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The model contains the named records and no extra guessed entity.
+  - id: ELAB-Q-CORE-08-CREATOR-OWNED
+    question_id: data.ownership
+    option_id: creator_owned
+    summary: Creator owns it
+    touches:
+      any: &a10
+        - authz
+    clauses:
+      - id: ELAB-Q-CORE-08-CREATOR-OWNED.C1
+        text: The actor who created a record owns it until a manager reassigns it.
+        touches:
+          any: *a10
+        oracle_hint: A non-owner non-manager cannot change the record.
+      - id: ELAB-Q-CORE-08-CREATOR-OWNED.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The actor who created a record owns it until a manager reassigns it."
+        touches:
+          any: *a10
+        oracle_hint: A non-owner non-manager cannot change the record.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.ownership.creator_owned.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A non-owner non-manager cannot change the record.
+  - id: ELAB-Q-CORE-09-PERSISTS
+    question_id: product.persists_data
+    option_id: persists
+    summary: Persists across restart
+    touches:
+      any: &a11
+        - migration
+    clauses:
+      - id: ELAB-Q-CORE-09-PERSISTS.C1
+        text: Data must survive a process restart.
+        touches:
+          any: *a11
+        oracle_hint: A record saved before a restart is still readable after it.
+      - id: ELAB-Q-CORE-09-PERSISTS.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Data must survive a process restart."
+        touches:
+          any: *a11
+        oracle_hint: A record saved before a restart is still readable after it.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: product.persists_data.persists.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A record saved before a restart is still readable after it.
+  - id: ELAB-Q-CORE-10-PLAIN-WITH-RETRY
+    question_id: errors.user_facing_style
+    option_id: plain_with_retry
+    summary: Plain sentence and retry
+    touches:
+      any: &a12
+        - logging
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-CORE-10-PLAIN-WITH-RETRY.C1
+        text: The person sees a plain sentence, no internals, and a retry when the action can be repeated.
+        touches:
+          any: *a12
+        oracle_hint: A failed load shows a plain sentence and a retry, and no stack frame.
+      - id: ELAB-Q-CORE-10-PLAIN-WITH-RETRY.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The person sees a plain sentence, no internals, and a retry when the action can be repeated."
+        touches:
+          any: *a12
+        oracle_hint: A failed load shows a plain sentence and a retry, and no stack frame.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: errors.user_facing_style.plain_with_retry.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A failed load shows a plain sentence and a retry, and no stack frame.
+  - id: ELAB-Q-CORE-11-AUTOMATED-ACCEPTANCE
+    question_id: testing.expectations
+    option_id: automated_acceptance
+    summary: Automated acceptance
+    touches:
+      any: &a13
+        - logging
+    clauses:
+      - id: ELAB-Q-CORE-11-AUTOMATED-ACCEPTANCE.C1
+        text: The primary workflow has an automated acceptance check that fails when the done state is not reached.
+        touches:
+          any: *a13
+        oracle_hint: The acceptance check fails when the done state is absent.
+      - id: ELAB-Q-CORE-11-AUTOMATED-ACCEPTANCE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The primary workflow has an automated acceptance check that fails when the done state is not reached."
+        touches:
+          any: *a13
+        oracle_hint: The acceptance check fails when the done state is absent.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: testing.expectations.automated_acceptance.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The acceptance check fails when the done state is absent.
+  - id: ELAB-Q-CORE-12-WEB-BROWSER
+    question_id: delivery.platform
+    option_id: web_browser
+    summary: Web browser
+    touches:
+      any: &a14
+        - route
+    clauses:
+      - id: ELAB-Q-CORE-12-WEB-BROWSER.C1
+        text: The product is delivered in a desktop and phone browser, not as a native store app.
+        touches:
+          any: *a14
+        oracle_hint: The primary journey runs in a browser without a store install.
+      - id: ELAB-Q-CORE-12-WEB-BROWSER.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The product is delivered in a desktop and phone browser, not as a native store app."
+        touches:
+          any: *a14
+        oracle_hint: The primary journey runs in a browser without a store install.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: delivery.platform.web_browser.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The primary journey runs in a browser without a store install.
+  - id: ELAB-Q-CORE-13-LOCAL-ONLY
+    question_id: deploy.target
+    option_id: local_only
+    summary: Local only
+    touches:
+      any: &a15
+        - config_env
+    clauses:
+      - id: ELAB-Q-CORE-13-LOCAL-ONLY.C1
+        text: The product runs on one local machine and is not opened by a public URL.
+        touches:
+          any: *a15
+        oracle_hint: No public URL is required for the primary journey.
+      - id: ELAB-Q-CORE-13-LOCAL-ONLY.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The product runs on one local machine and is not opened by a public URL."
+        touches:
+          any: *a15
+        oracle_hint: No public URL is required for the primary journey.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: deploy.target.local_only.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - No public URL is required for the primary journey.
+  - id: ELAB-Q-CORE-13-SINGLE-HOSTED
+    question_id: deploy.target
+    option_id: single_hosted
+    summary: One hosted environment
+    touches:
+      any: &a16
+        - config_env
+    clauses:
+      - id: ELAB-Q-CORE-13-SINGLE-HOSTED.C1
+        text: One hosted environment is opened by a URL.
+        touches:
+          any: *a16
+        oracle_hint: The primary journey is reachable at one URL.
+      - id: ELAB-Q-CORE-13-SINGLE-HOSTED.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: One hosted environment is opened by a URL."
+        touches:
+          any: *a16
+        oracle_hint: The primary journey is reachable at one URL.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: deploy.target.single_hosted.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The primary journey is reachable at one URL.
+  - id: ELAB-Q-CORE-14-UNSET-OPEN
+    question_id: constraints.deadline_budget
+    option_id: unset_open
+    summary: Unset
+    touches:
+      any: &a17
+        - scheduling
+    clauses:
+      - id: ELAB-Q-CORE-14-UNSET-OPEN.C1
+        text: Deadline and budget are unset. The plan must not invent a date or a price.
+        touches:
+          any: *a17
+        oracle_hint: The plan contains no invented ship date and no invented price.
+      - id: ELAB-Q-CORE-14-UNSET-OPEN.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Deadline and budget are unset. The plan must not invent a date or a price."
+        touches:
+          any: *a17
+        oracle_hint: The plan contains no invented ship date and no invented price.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: constraints.deadline_budget.unset_open.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The plan contains no invented ship date and no invented price.
+  - id: ELAB-Q-CORE-15-NO-STACK-MANDATE
+    question_id: constraints.stack_preferences
+    option_id: no_stack_mandate
+    summary: No stack mandate
+    touches:
+      any: &a18
+        - config_env
+    clauses:
+      - id: ELAB-Q-CORE-15-NO-STACK-MANDATE.C1
+        text: No stack is mandated. Requirements stay behavioral.
+        touches:
+          any: *a18
+        oracle_hint: The spec names no framework and no library as a requirement.
+      - id: ELAB-Q-CORE-15-NO-STACK-MANDATE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: No stack is mandated. Requirements stay behavioral."
+        touches:
+          any: *a18
+        oracle_hint: The spec names no framework and no library as a requirement.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: constraints.stack_preferences.no_stack_mandate.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The spec names no framework and no library as a requirement.
+  - id: ELAB-Q-CORE-16-NONE-THIS-RELEASE
+    question_id: integrations.external
+    option_id: none_this_release
+    summary: No external integration
+    touches:
+      any: &a19
+        - external_api
+    clauses:
+      - id: ELAB-Q-CORE-16-NONE-THIS-RELEASE.C1
+        text: No third-party integration is in this release.
+        touches:
+          any: *a19
+        oracle_hint: The release performs no call to a non-local host.
+      - id: ELAB-Q-CORE-16-NONE-THIS-RELEASE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: No third-party integration is in this release."
+        touches:
+          any: *a19
+        oracle_hint: The release performs no call to a non-local host.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: integrations.external.none_this_release.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The release performs no call to a non-local host.
+  - id: ELAB-Q-CORE-16-NAMED-HTTP
+    question_id: integrations.external
+    option_id: named_http
+    summary: One named HTTP integration
+    touches:
+      any: &a20
+        - external_api
+    clauses:
+      - id: ELAB-Q-CORE-16-NAMED-HTTP.C1
+        text: This release calls one named HTTP integration, with a timeout and a bounded retry.
+        touches:
+          any: *a20
+        oracle_hint: The named host is called with a timeout, and an unnamed host is not called.
+      - id: ELAB-Q-CORE-16-NAMED-HTTP.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: This release calls one named HTTP integration, with a timeout and a bounded retry."
+        touches:
+          any: *a20
+        oracle_hint: The named host is called with a timeout, and an unnamed host is not called.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: integrations.external.named_http.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The named host is called with a timeout, and an unnamed host is not called.
+  - id: ELAB-Q-CORE-17-UTC-STORAGE-IANA-DISPLAY
+    question_id: time.locale_timezone
+    option_id: utc_storage_iana_display
+    summary: UTC storage, IANA display
+    touches:
+      any: &a21
+        - time_display
+        - scheduling
+    clauses:
+      - id: ELAB-Q-CORE-17-UTC-STORAGE-IANA-DISPLAY.C1
+        text: Instants are stored in UTC and shown in the project's IANA zone.
+        touches:
+          any: *a21
+        oracle_hint: A stored instant round-trips as UTC and displays in the project IANA zone.
+      - id: ELAB-Q-CORE-17-UTC-STORAGE-IANA-DISPLAY.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Instants are stored in UTC and shown in the project's IANA zone."
+        touches:
+          any: *a21
+        oracle_hint: A stored instant round-trips as UTC and displays in the project IANA zone.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: time.locale_timezone.utc_storage_iana_display.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A stored instant round-trips as UTC and displays in the project IANA zone.
+  - id: ELAB-Q-CORE-18-ENGLISH-ONLY
+    question_id: content.language
+    option_id: english_only
+    summary: English only
+    touches:
+      any: &a22
+        - user_content
+    clauses:
+      - id: ELAB-Q-CORE-18-ENGLISH-ONLY.C1
+        text: The interface and stored system labels are English only.
+        touches:
+          any: *a22
+        oracle_hint: The interface ships one language, English.
+      - id: ELAB-Q-CORE-18-ENGLISH-ONLY.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The interface and stored system labels are English only."
+        touches:
+          any: *a22
+        oracle_hint: The interface ships one language, English.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: content.language.english_only.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The interface ships one language, English.
+  - id: ELAB-Q-DATA-01-POSTGRES
+    question_id: data.storage.engine
+    option_id: postgres
+    summary: PostgreSQL storage contract
+    touches:
+      any: &a23
+        - migration
+    clauses:
+      - id: ELAB-Q-DATA-01-POSTGRES.C1
+        text: Schema changes shall run as transactional migrations.
+        touches:
+          any: *a23
+        oracle_hint: A migration rolls back with the transaction, and a timestamptz column rejects a zone-less write.
+      - id: ELAB-Q-DATA-01-POSTGRES.C2
+        text: Queries shall be parameterized. Foreign keys and filter columns shall have explicit indexes. Instants shall use UTC timestamptz, and connections shall be pooled.
+        touches:
+          any: *a23
+        oracle_hint: A migration rolls back with the transaction, and a timestamptz column rejects a zone-less write.
+    edge_cases:
+      - A string-concatenated query or a timestamp without a time zone fails this contract.
+    bounds:
+      - key: data.storage.engine.postgres.pool_required
+        value: 1
+        unit: count
+    oracle_hints:
+      - A migration rolls back with the transaction, and a timestamptz column rejects a zone-less write.
+  - id: ELAB-Q-DATA-01-SQLITE
+    question_id: data.storage.engine
+    option_id: sqlite
+    summary: Single SQLite file
+    touches:
+      any: &a24
+        - migration
+    clauses:
+      - id: ELAB-Q-DATA-01-SQLITE.C1
+        text: Data shall live in one local SQLite file with no separate database server.
+        touches:
+          any: *a24
+        oracle_hint: The data file is the only store, and a second overlapping write waits or fails rather than interleaving.
+      - id: ELAB-Q-DATA-01-SQLITE.C2
+        text: Writes shall take one writer transaction at a time.
+        touches:
+          any: *a24
+        oracle_hint: The data file is the only store, and a second overlapping write waits or fails rather than interleaving.
+    edge_cases:
+      - Two overlapping writers do not silently interleave a transaction.
+    bounds:
+      - key: data.storage.engine.sqlite.server_processes
+        value: 0
+        unit: count
+    oracle_hints:
+      - The data file is the only store, and a second overlapping write waits or fails rather than interleaving.
+  - id: ELAB-Q-DATA-02-SOFT-DELETE
+    question_id: data.retention_deletion
+    option_id: soft_delete
+    summary: Soft delete
+    touches:
+      any: &a25
+        - destructive_write
+    clauses:
+      - id: ELAB-Q-DATA-02-SOFT-DELETE.C1
+        text: A delete hides the record and keeps it restorable. It is not a physical purge.
+        touches:
+          any: *a25
+        oracle_hint: A deleted record is hidden from the normal list and can be restored.
+      - id: ELAB-Q-DATA-02-SOFT-DELETE.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: A delete hides the record and keeps it restorable. It is not a physical purge."
+        touches:
+          any: *a25
+        oracle_hint: A deleted record is hidden from the normal list and can be restored.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.retention_deletion.soft_delete.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A deleted record is hidden from the normal list and can be restored.
+  - id: ELAB-Q-DATA-03-CONTACT-ONLY
+    question_id: data.personal_data
+    option_id: contact_only
+    summary: Contact details only
+    touches:
+      any: &a26
+        - personal_data
+    clauses:
+      - id: ELAB-Q-DATA-03-CONTACT-ONLY.C1
+        text: Personal data is limited to contact details such as name and email. It is not a regulated-health class.
+        touches:
+          any: *a26
+        oracle_hint: The stored personal fields are name and email, and a health field is absent.
+      - id: ELAB-Q-DATA-03-CONTACT-ONLY.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Personal data is limited to contact details such as name and email. It is not a regulated-health class."
+        touches:
+          any: *a26
+        oracle_hint: The stored personal fields are name and email, and a health field is absent.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.personal_data.contact_only.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - The stored personal fields are name and email, and a health field is absent.
+  - id: ELAB-Q-DATA-04-NO-IMPORT
+    question_id: data.import_existing
+    option_id: no_import
+    summary: No import
+    touches:
+      any: &a27
+        - bulk_write
+    clauses:
+      - id: ELAB-Q-DATA-04-NO-IMPORT.C1
+        text: This release does not import existing data.
+        touches:
+          any: *a27
+        oracle_hint: No import job is part of the release.
+      - id: ELAB-Q-DATA-04-NO-IMPORT.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: This release does not import existing data."
+        touches:
+          any: *a27
+        oracle_hint: No import job is part of the release.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.import_existing.no_import.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - No import job is part of the release.
+  - id: ELAB-Q-DATA-05-SCHEDULED-SNAPSHOT
+    question_id: data.backup
+    option_id: scheduled_snapshot
+    summary: Scheduled snapshot
+    touches:
+      any: &a28
+        - migration
+    clauses:
+      - id: ELAB-Q-DATA-05-SCHEDULED-SNAPSHOT.C1
+        text: A snapshot is taken on a schedule and can be restored onto a fresh store.
+        touches:
+          any: *a28
+        oracle_hint: A restore from the latest snapshot reproduces the records taken at that time.
+      - id: ELAB-Q-DATA-05-SCHEDULED-SNAPSHOT.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: A snapshot is taken on a schedule and can be restored onto a fresh store."
+        touches:
+          any: *a28
+        oracle_hint: A restore from the latest snapshot reproduces the records taken at that time.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.backup.scheduled_snapshot.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A restore from the latest snapshot reproduces the records taken at that time.
+  - id: ELAB-Q-DATA-06-LAST-WRITE-WINS
+    question_id: data.concurrent_edits
+    option_id: last_write_wins
+    summary: Last save wins
+    touches:
+      any: &a29
+        - concurrent_edit
+    clauses:
+      - id: ELAB-Q-DATA-06-LAST-WRITE-WINS.C1
+        text: The later save replaces the earlier one and no warning is shown.
+        touches:
+          any: *a29
+        oracle_hint: Two saves of the same record leave the later payload stored.
+      - id: ELAB-Q-DATA-06-LAST-WRITE-WINS.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: The later save replaces the earlier one and no warning is shown."
+        touches:
+          any: *a29
+        oracle_hint: Two saves of the same record leave the later payload stored.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: data.concurrent_edits.last_write_wins.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - Two saves of the same record leave the later payload stored.
+  - id: ELAB-Q-DATA-06-OPTIMISTIC-VERSION
+    question_id: data.concurrent_edits
+    option_id: optimistic_version
+    summary: Optimistic version check
+    touches:
+      any: &a30
+        - concurrent_edit
+    clauses:
+      - id: ELAB-Q-DATA-06-OPTIMISTIC-VERSION.C1
+        text: If the record changed since it was opened, the system shall reject the save and show that someone else changed it.
+        touches:
+          any: *a30
+        oracle_hint: A save with a stale version is rejected and the stored row stays at the newer version.
+      - id: ELAB-Q-DATA-06-OPTIMISTIC-VERSION.C2
+        text: Every editable entity shall have an integer version incremented on save.
+        touches:
+          any: *a30
+        oracle_hint: A save with a stale version is rejected and the stored row stays at the newer version.
+    edge_cases:
+      - A stale version does not overwrite the newer row.
+    bounds:
+      - key: data.concurrent_edits.optimistic_version.required
+        value: 1
+        unit: count
+    oracle_hints:
+      - A save with a stale version is rejected and the stored row stays at the newer version.
+  - id: ELAB-Q-AUTH-01-REQUIRED
+    question_id: auth.needed
+    option_id: required
+    summary: Authentication required
+    touches:
+      any: &a31
+        - authn
+    clauses:
+      - id: ELAB-Q-AUTH-01-REQUIRED.C1
+        text: A caller must authenticate before the protected workflow.
+        touches:
+          any: *a31
+        oracle_hint: An anonymous request to the protected workflow is refused.
+      - id: ELAB-Q-AUTH-01-REQUIRED.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: A caller must authenticate before the protected workflow."
+        touches:
+          any: *a31
+        oracle_hint: An anonymous request to the protected workflow is refused.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: auth.needed.required.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - An anonymous request to the protected workflow is refused.
+  - id: ELAB-Q-AUTH-02-MAGIC-LINK
+    question_id: auth.method
+    option_id: magic_link
+    summary: Magic link login
+    touches:
+      any: &a32
+        - authn
+        - credentials
+        - rate_limited
+    clauses:
+      - id: ELAB-Q-AUTH-02-MAGIC-LINK.C1
+        text: A magic link shall be a single-use 15-min token, stored hashed-at-rest, with a rate-limited resend.
+        touches:
+          any: *a32
+        oracle_hint: Expired magic link returns 400/410 and shows resend link
+      - id: ELAB-Q-AUTH-02-MAGIC-LINK.C2
+        text: The response shall be the generic non-enumerating sentence "If an account exists...", and an expired link shall offer a recovery resend.
+        touches:
+          any: *a32
+        oracle_hint: Expired magic link returns 400/410 and shows resend link
+    edge_cases:
+      - A second use of the same token fails, and an unknown address gets the same sentence as a known one.
+    bounds:
+      - key: auth.method.magic_link.ttl_seconds
+        value: 900
+        unit: seconds
+    oracle_hints:
+      - Expired magic link returns 400/410 and shows resend link
+  - id: ELAB-Q-AUTH-02-PASSWORD
+    question_id: auth.method
+    option_id: password
+    summary: Password sign-in
+    touches:
+      any: &a33
+        - authn
+        - credentials
+        - rate_limited
+    clauses:
+      - id: ELAB-Q-AUTH-02-PASSWORD.C1
+        text: A password shall be checked against a slow hash. The raw password shall not be stored or logged.
+        touches:
+          any: *a33
+        oracle_hint: The stored password column is a hash, and a burst of failures is refused.
+      - id: ELAB-Q-AUTH-02-PASSWORD.C2
+        text: Repeated failures shall be rate-limited, and the failure response shall not say whether the account exists.
+        touches:
+          any: *a33
+        oracle_hint: The stored password column is a hash, and a burst of failures is refused.
+    edge_cases:
+      - A correct password for an unknown account and an incorrect password look the same to the caller.
+    bounds:
+      - key: auth.method.password.raw_storage
+        value: 0
+        unit: count
+    oracle_hints:
+      - The stored password column is a hash, and a burst of failures is refused.
+  - id: ELAB-Q-AUTH-03-RBAC
+    question_id: auth.roles_permissions
+    option_id: rbac
+    summary: Role-based access
+    touches:
+      any: &a34
+        - authz
+    clauses:
+      - id: ELAB-Q-AUTH-03-RBAC.C1
+        text: Permissions are granted by role. Staff and manager do not share one permission set.
+        touches:
+          any: *a34
+        oracle_hint: A staff caller is refused a manager-only action.
+      - id: ELAB-Q-AUTH-03-RBAC.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Permissions are granted by role. Staff and manager do not share one permission set."
+        touches:
+          any: *a34
+        oracle_hint: A staff caller is refused a manager-only action.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: auth.roles_permissions.rbac.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A staff caller is refused a manager-only action.
+  - id: ELAB-Q-AUTH-04-WORKDAY
+    question_id: auth.session_length
+    option_id: workday
+    summary: Workday session
+    touches:
+      any: &a35
+        - session
+    clauses:
+      - id: ELAB-Q-AUTH-04-WORKDAY.C1
+        text: A session lasts a workday, about 12 hours, and then requires sign-in again.
+        touches:
+          any: *a35
+        oracle_hint: A session older than 12 hours is refused.
+      - id: ELAB-Q-AUTH-04-WORKDAY.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: A session lasts a workday, about 12 hours, and then requires sign-in again."
+        touches:
+          any: *a35
+        oracle_hint: A session older than 12 hours is refused.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: auth.session_length.workday.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - A session older than 12 hours is refused.
+  - id: ELAB-Q-AUTH-05-EMAIL-RESET
+    question_id: auth.account_recovery
+    option_id: email_reset
+    summary: Email recovery
+    touches:
+      any: &a36
+        - authn
+        - credentials
+    clauses:
+      - id: ELAB-Q-AUTH-05-EMAIL-RESET.C1
+        text: Recovery sends a single-use email link. The response does not reveal whether the address exists.
+        touches:
+          any: *a36
+        oracle_hint: An unknown address and a known address receive the same response, and the link works once.
+      - id: ELAB-Q-AUTH-05-EMAIL-RESET.C2
+        text: "The system shall treat a result that contradicts this decision as a failed check: Recovery sends a single-use email link. The response does not reveal whether the address exists."
+        touches:
+          any: *a36
+        oracle_hint: An unknown address and a known address receive the same response, and the link works once.
+    edge_cases:
+      - A keyword that overlaps this option, without this behavior, does not settle it.
+    bounds:
+      - key: auth.account_recovery.email_reset.marker
+        value: 1
+        unit: count
+    oracle_hints:
+      - An unknown address and a known address receive the same response, and the link works once.

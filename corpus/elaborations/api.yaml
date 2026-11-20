@@ -1,0 +1,444 @@
+elaborations:
+  - id: ELAB-Q-API-01-REST-OPENAPI
+    question_id: api.style
+    option_id: rest_openapi
+    summary: REST contract with a structured error object
+    touches:
+      any: &a1
+        - route
+        - external_api
+    clauses:
+      - id: ELAB-Q-API-01-REST-OPENAPI.C1
+        text: Callers shall use HTTP resources whose request and response shapes are the OpenAPI document.
+        touches:
+          any: *a1
+        oracle_hint: A validation failure returns the documented error object and not a free-form string.
+      - id: ELAB-Q-API-01-REST-OPENAPI.C2
+        text: Errors shall be one structured object with a stable code and a plain message. The document is the contract for that shape too.
+        touches:
+          any: *a1
+        oracle_hint: A validation failure returns the documented error object and not a free-form string.
+    edge_cases:
+      - An undocumented field in a success or error body fails the contract check.
+    bounds:
+      - key: api.style.rest_openapi.error_fields
+        value: 2
+        unit: count
+    oracle_hints:
+      - A validation failure returns the documented error object and not a free-form string.
+      - A validation failure returns the documented error object and not a free-form string.
+  - id: ELAB-Q-API-01-RPC-SCHEMA
+    question_id: api.style
+    option_id: rpc_schema
+    summary: Shared RPC schema
+    touches:
+      any: &a2
+        - route
+    clauses:
+      - id: ELAB-Q-API-01-RPC-SCHEMA.C1
+        text: Callers shall invoke named commands against one shared schema.
+        touches:
+          any: *a2
+        oracle_hint: A command missing from the schema is rejected before it runs.
+      - id: ELAB-Q-API-01-RPC-SCHEMA.C2
+        text: The schema, not a resource URL layout, is the contract for inputs, outputs, and errors.
+        touches:
+          any: *a2
+        oracle_hint: A command missing from the schema is rejected before it runs.
+    edge_cases:
+      - Adding a command without a schema entry is a contract failure.
+    bounds:
+      - key: api.style.rpc_schema.schema_required
+        value: 1
+        unit: count
+    oracle_hints:
+      - A command missing from the schema is rejected before it runs.
+      - A command missing from the schema is rejected before it runs.
+  - id: ELAB-Q-API-01-WEBHOOKS-AND-REST
+    question_id: api.style
+    option_id: webhooks_and_rest
+    summary: REST plus signed inbound webhooks
+    touches:
+      any: &a3
+        - route
+        - inbound_webhook
+    clauses:
+      - id: ELAB-Q-API-01-WEBHOOKS-AND-REST.C1
+        text: Caller-facing operations shall stay on the REST schema.
+        touches:
+          any: *a3
+        oracle_hint: A forged webhook is rejected and a replay of a valid one does not double-apply.
+      - id: ELAB-Q-API-01-WEBHOOKS-AND-REST.C2
+        text: Inbound webhooks shall verify a signature and shall be safe to replay.
+        touches:
+          any: *a3
+        oracle_hint: A forged webhook is rejected and a replay of a valid one does not double-apply.
+    edge_cases:
+      - A webhook with a bad signature does not change state.
+    bounds:
+      - key: api.style.webhooks_and_rest.signature_required
+        value: 1
+        unit: count
+    oracle_hints:
+      - A forged webhook is rejected and a replay of a valid one does not double-apply.
+      - A forged webhook is rejected and a replay of a valid one does not double-apply.
+  - id: ELAB-Q-API-01-INTERNAL-RPC-ONLY
+    question_id: api.style
+    option_id: internal_rpc_only
+    summary: Private RPC without a public HTTP contract
+    touches:
+      any: &a4
+        - route
+    clauses:
+      - id: ELAB-Q-API-01-INTERNAL-RPC-ONLY.C1
+        text: Calls shall stay on a private RPC schema.
+        touches:
+          any: *a4
+        oracle_hint: An unauthenticated public request does not receive the RPC schema.
+      - id: ELAB-Q-API-01-INTERNAL-RPC-ONLY.C2
+        text: There shall be no public HTTP contract and no public version promise.
+        touches:
+          any: *a4
+        oracle_hint: An unauthenticated public request does not receive the RPC schema.
+    edge_cases:
+      - A public URL that answers this RPC is a contract leak.
+    bounds:
+      - key: api.style.internal_rpc_only.public_routes
+        value: 0
+        unit: count
+    oracle_hints:
+      - An unauthenticated public request does not receive the RPC schema.
+      - An unauthenticated public request does not receive the RPC schema.
+  - id: ELAB-Q-API-02-INTERNAL-UNVERSIONED
+    question_id: api.consumers
+    option_id: internal_unversioned
+    summary: First-party breakage allowed
+    touches:
+      any: &a5
+        - route
+    clauses:
+      - id: ELAB-Q-API-02-INTERNAL-UNVERSIONED.C1
+        text: Only first-party callers shall use the API.
+        touches:
+          any: *a5
+        oracle_hint: The contract documents no public version identifier.
+      - id: ELAB-Q-API-02-INTERNAL-UNVERSIONED.C2
+        text: A breaking change does not require a public version or a deprecation window.
+        touches:
+          any: *a5
+        oracle_hint: The contract documents no public version identifier.
+    edge_cases:
+      - A public client pinning a version is outside this contract.
+    bounds:
+      - key: api.consumers.internal_unversioned.public_versions
+        value: 0
+        unit: count
+    oracle_hints:
+      - The contract documents no public version identifier.
+      - The contract documents no public version identifier.
+  - id: ELAB-Q-API-02-PUBLIC-URL-VERSION
+    question_id: api.consumers
+    option_id: public_url_version
+    summary: URL version and a deprecation window
+    touches:
+      any: &a6
+        - route
+        - external_api
+    clauses:
+      - id: ELAB-Q-API-02-PUBLIC-URL-VERSION.C1
+        text: Public callers shall pin the version in the URL.
+        touches:
+          any: *a6
+        oracle_hint: A supported URL version still answers after a newer version ships, until 90 days have passed.
+      - id: ELAB-Q-API-02-PUBLIC-URL-VERSION.C2
+        text: A breaking change shall keep the previous version working through a documented deprecation window of at least 90 days.
+        touches:
+          any: *a6
+        oracle_hint: A supported URL version still answers after a newer version ships, until 90 days have passed.
+    edge_cases:
+      - Removing a version inside the window fails the compatibility check.
+    bounds:
+      - key: api.consumers.public_url_version.deprecation_days
+        value: 90
+        unit: days
+    oracle_hints:
+      - A supported URL version still answers after a newer version ships, until 90 days have passed.
+      - A supported URL version still answers after a newer version ships, until 90 days have passed.
+  - id: ELAB-Q-API-02-PUBLIC-HEADER-VERSION
+    question_id: api.consumers
+    option_id: public_header_version
+    summary: Header version with compatibility tests
+    touches:
+      any: &a7
+        - route
+        - external_api
+    clauses:
+      - id: ELAB-Q-API-02-PUBLIC-HEADER-VERSION.C1
+        text: Public callers shall send the version in a header.
+        touches:
+          any: *a7
+        oracle_hint: A request with no version header is rejected.
+      - id: ELAB-Q-API-02-PUBLIC-HEADER-VERSION.C2
+        text: Each supported header value shall have a compatibility test. A missing header is rejected, not guessed.
+        touches:
+          any: *a7
+        oracle_hint: A request with no version header is rejected.
+    edge_cases:
+      - An unknown header value returns the structured error and does not run the newest behavior by default.
+    bounds:
+      - key: api.consumers.public_header_version.guess_missing
+        value: 0
+        unit: count
+    oracle_hints:
+      - A request with no version header is rejected.
+      - A request with no version header is rejected.
+  - id: ELAB-Q-API-03-OFFSET-PAGE
+    question_id: api.pagination
+    option_id: offset_page
+    summary: Offset pages
+    touches:
+      any: &a8
+        - route
+        - search
+    clauses:
+      - id: ELAB-Q-API-03-OFFSET-PAGE.C1
+        text: A list shall accept offset and limit.
+        touches:
+          any: *a8
+        oracle_hint: A request with no limit returns 50 items or fewer, never more than the ceiling.
+      - id: ELAB-Q-API-03-OFFSET-PAGE.C2
+        text: Limit above the ceiling is rejected or clamped. Offset past the end returns an empty page.
+        touches:
+          any: *a8
+        oracle_hint: A request with no limit returns 50 items or fewer, never more than the ceiling.
+    edge_cases:
+      - A negative offset is a schema error.
+    bounds:
+      - key: api.pagination.offset_page.default_limit
+        value: 50
+        unit: count
+    oracle_hints:
+      - A request with no limit returns 50 items or fewer, never more than the ceiling.
+      - A request with no limit returns 50 items or fewer, never more than the ceiling.
+  - id: ELAB-Q-API-03-CURSOR-PAGE
+    question_id: api.pagination
+    option_id: cursor_page
+    summary: Opaque cursors
+    touches:
+      any: &a9
+        - route
+        - search
+    clauses:
+      - id: ELAB-Q-API-03-CURSOR-PAGE.C1
+        text: A list shall return an opaque next cursor and shall not use offset as the contract.
+        touches:
+          any: *a9
+        oracle_hint: A request that sends only an offset is rejected.
+      - id: ELAB-Q-API-03-CURSOR-PAGE.C2
+        text: An expired or forged cursor is a schema error, not an empty success that looks like the first page.
+        touches:
+          any: *a9
+        oracle_hint: A request that sends only an offset is rejected.
+    edge_cases:
+      - Repeating the same cursor returns the same page while the underlying order is unchanged.
+    bounds:
+      - key: api.pagination.cursor_page.offset_accepted
+        value: 0
+        unit: count
+    oracle_hints:
+      - A request that sends only an offset is rejected.
+      - A request that sends only an offset is rejected.
+  - id: ELAB-Q-API-03-CURSOR-FILTER-SORT
+    question_id: api.pagination
+    option_id: cursor_filter_sort
+    summary: Cursor bound to filter and sort
+    touches:
+      any: &a10
+        - route
+        - search
+    clauses:
+      - id: ELAB-Q-API-03-CURSOR-FILTER-SORT.C1
+        text: The cursor shall bind the filter and the sort that produced it.
+        touches:
+          any: *a10
+        oracle_hint: Replaying a cursor with a different sort value is rejected.
+      - id: ELAB-Q-API-03-CURSOR-FILTER-SORT.C2
+        text: Changing the filter or the sort shall start a new query rather than continue the old cursor.
+        touches:
+          any: *a10
+        oracle_hint: Replaying a cursor with a different sort value is rejected.
+    edge_cases:
+      - A cursor reused with a different sort is rejected.
+    bounds:
+      - key: api.pagination.cursor_filter_sort.sort_fields
+        value: 1
+        unit: count
+    oracle_hints:
+      - Replaying a cursor with a different sort value is rejected.
+      - Replaying a cursor with a different sort value is rejected.
+  - id: ELAB-Q-API-04-BASIC-LIMITS
+    question_id: api.rate_limits
+    option_id: basic_limits
+    summary: Basic rate, body, and idempotency ceilings
+    touches:
+      any: &a11
+        - route
+        - rate_limited
+    clauses:
+      - id: ELAB-Q-API-04-BASIC-LIMITS.C1
+        text: Each caller shall have a rate ceiling, and a request over the body limit shall be refused.
+        touches:
+          any: *a11
+        oracle_hint: The 61st call from one caller inside a minute is refused.
+      - id: ELAB-Q-API-04-BASIC-LIMITS.C2
+        text: An unsafe retry shall send an idempotency key. A repeat of that key shall not apply the change twice.
+        touches:
+          any: *a11
+        oracle_hint: The 61st call from one caller inside a minute is refused.
+    edge_cases:
+      - A caller over the ceiling receives a refusal rather than a queued success.
+    bounds:
+      - key: api.rate_limits.basic_limits.per_minute
+        value: 60
+        unit: count
+    oracle_hints:
+      - The 61st call from one caller inside a minute is refused.
+      - The 61st call from one caller inside a minute is refused.
+  - id: ELAB-Q-API-04-STRICT-PUBLIC
+    question_id: api.rate_limits
+    option_id: strict_public
+    summary: Tighter public limits
+    touches:
+      any: &a12
+        - route
+        - rate_limited
+    clauses:
+      - id: ELAB-Q-API-04-STRICT-PUBLIC.C1
+        text: Anonymous callers shall have a tighter ceiling than signed-in callers, and a refusal shall include Retry-After.
+        touches:
+          any: *a12
+        oracle_hint: An anonymous burst past 30 in a minute is refused with Retry-After.
+      - id: ELAB-Q-API-04-STRICT-PUBLIC.C2
+        text: An unsafe public call without an idempotency key shall be rejected.
+        touches:
+          any: *a12
+        oracle_hint: An anonymous burst past 30 in a minute is refused with Retry-After.
+    edge_cases:
+      - A missing Retry-After on a limited response fails the contract check.
+    bounds:
+      - key: api.rate_limits.strict_public.anonymous_per_minute
+        value: 30
+        unit: count
+    oracle_hints:
+      - An anonymous burst past 30 in a minute is refused with Retry-After.
+      - An anonymous burst past 30 in a minute is refused with Retry-After.
+  - id: ELAB-Q-API-04-INTERNAL-HIGH-CEILING
+    question_id: api.rate_limits
+    option_id: internal_high_ceiling
+    summary: Finite high ceiling for first-party callers
+    touches:
+      any: &a13
+        - route
+        - rate_limited
+    clauses:
+      - id: ELAB-Q-API-04-INTERNAL-HIGH-CEILING.C1
+        text: First-party callers shall have a high but finite rate ceiling.
+        touches:
+          any: *a13
+        oracle_hint: A first-party caller is still refused past 600 calls in a minute.
+      - id: ELAB-Q-API-04-INTERNAL-HIGH-CEILING.C2
+        text: Background work triggered by those calls shall stay idempotent.
+        touches:
+          any: *a13
+        oracle_hint: A first-party caller is still refused past 600 calls in a minute.
+    edge_cases:
+      - There is no unlimited caller, including a first-party one.
+    bounds:
+      - key: api.rate_limits.internal_high_ceiling.per_minute
+        value: 600
+        unit: count
+    oracle_hints:
+      - A first-party caller is still refused past 600 calls in a minute.
+      - A first-party caller is still refused past 600 calls in a minute.
+  - id: ELAB-Q-API-05-NONE-INLINE
+    question_id: jobs.background_needed
+    option_id: none_inline
+    summary: Inline work only
+    touches:
+      any: &a14
+        - route
+    clauses:
+      - id: ELAB-Q-API-05-NONE-INLINE.C1
+        text: The handler shall finish the work before it responds.
+        touches:
+          any: *a14
+        oracle_hint: After a successful response, no queued job remains for that request.
+      - id: ELAB-Q-API-05-NONE-INLINE.C2
+        text: There shall be no background queue and no deferred retry.
+        touches:
+          any: *a14
+        oracle_hint: After a successful response, no queued job remains for that request.
+    edge_cases:
+      - A handler that returns before the work finishes violates this option.
+    bounds:
+      - key: jobs.background_needed.none_inline.queues
+        value: 0
+        unit: count
+    oracle_hints:
+      - After a successful response, no queued job remains for that request.
+      - After a successful response, no queued job remains for that request.
+  - id: ELAB-Q-API-05-DURABLE-JOBS
+    question_id: jobs.background_needed
+    option_id: durable_jobs
+    summary: Idempotent durable jobs
+    touches:
+      any: &a15
+        - background_job
+    clauses:
+      - id: ELAB-Q-API-05-DURABLE-JOBS.C1
+        text: Long work shall enter a durable queue with retry and a dead letter.
+        touches:
+          any: *a15
+        oracle_hint: The same job delivered twice leaves one effect, and the 9th failure is dead-lettered.
+      - id: ELAB-Q-API-05-DURABLE-JOBS.C2
+        text: A handler shall be safe to run twice. A second run shall not duplicate the effect.
+        touches:
+          any: *a15
+        oracle_hint: The same job delivered twice leaves one effect, and the 9th failure is dead-lettered.
+    edge_cases:
+      - A poison message reaches the dead letter instead of retrying forever.
+    bounds:
+      - key: jobs.background_needed.durable_jobs.max_attempts
+        value: 8
+        unit: count
+    oracle_hints:
+      - The same job delivered twice leaves one effect, and the 9th failure is dead-lettered.
+      - The same job delivered twice leaves one effect, and the 9th failure is dead-lettered.
+  - id: ELAB-Q-API-05-WEBHOOKS-WITH-RETRY
+    question_id: jobs.background_needed
+    option_id: webhooks_with_retry
+    summary: Shared webhook and job retry
+    touches:
+      any: &a16
+        - background_job
+        - inbound_webhook
+    clauses:
+      - id: ELAB-Q-API-05-WEBHOOKS-WITH-RETRY.C1
+        text: Inbound webhooks shall verify a signature before they enqueue work.
+        touches:
+          any: *a16
+        oracle_hint: A second delivery of the same webhook id does not apply the effect twice.
+      - id: ELAB-Q-API-05-WEBHOOKS-WITH-RETRY.C2
+        text: The queued work shall retry with a bound and shall dead-letter when the bound is exhausted. A replay shall not double-apply.
+        touches:
+          any: *a16
+        oracle_hint: A second delivery of the same webhook id does not apply the effect twice.
+    edge_cases:
+      - A provider retry of the same webhook id is a no-op after the first success.
+    bounds:
+      - key: jobs.background_needed.webhooks_with_retry.max_attempts
+        value: 8
+        unit: count
+    oracle_hints:
+      - A second delivery of the same webhook id does not apply the effect twice.
+      - A second delivery of the same webhook id does not apply the effect twice.

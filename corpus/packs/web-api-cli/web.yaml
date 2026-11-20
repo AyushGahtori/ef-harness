@@ -1,0 +1,432 @@
+pack: web
+pack_version: 1
+questions:
+  - id: ui.responsive_targets
+    code: Q-WEB-01
+    pack: web
+    version: 1
+    scope: shared
+    title: Which viewport is the priority, and where are the breakpoints?
+    explain: Decides whether the phone or the desktop layout is designed first, and the widths where the layout changes. Opening a link on a phone is not, by itself, this decision.
+    criteria:
+      - ui.responsive_targets
+      - ui.breakpoints
+      - ui.viewport_priority
+    touches:
+      - interactive_ui
+      - route
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - ui.look_and_feel
+    allowed_inference_rules: &a2
+      - infer.from_explicit_acceptance
+    options:
+      - id: mobile_first
+        label: Mobile first
+        meaning: The phone layout is designed first. Wider windows add columns at 640, 960, and 1280 CSS pixels.
+        stage_suitability: &a1
+          - prototype
+          - mvp
+          - production
+        frequency: high
+        conflicts_with: []
+      - id: desktop_first
+        label: Desktop first
+        meaning: The desktop layout is designed first. Narrower windows stack the same regions.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: responsive_parity
+        label: Phone and desktop parity
+        meaning: Phone and desktop are both primary. Each breakpoint has its own arrangement.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: mobile_first
+        rationale: A prototype is designed phone-first so the primary task fits a narrow window.
+      mvp:
+        option: mobile_first
+        rationale: MVP keeps the phone layout primary and only expands it at the named breakpoints.
+      production:
+        option: responsive_parity
+        rationale: Production treats phone and desktop as two designed layouts, not a squeeze of one into the other.
+    examples:
+      positive:
+        - utterance: Design the phone screens first. Desktop can be a wider version of the same pages.
+          settles: mobile_first
+        - utterance: Yeah, mobile first, with breaks around tablet and desktop.
+          settles: mobile_first
+        - utterance: Our customers live on laptops at work, so start from the desktop layout and stack it on small screens.
+          settles: desktop_first
+        - utterance: Phone and desktop both have to feel designed. Don't just squash the desktop page.
+          settles: responsive_parity
+        - utterance: I want three layouts, phone, tablet, and a real desktop, each one laid out on purpose.
+          settles: responsive_parity
+      negative:
+        - utterance: People will open the link on their phones.
+          why: Phone access does not choose a breakpoint strategy or which viewport is designed first.
+        - utterance: Make it look modern and clean on every screen.
+          why: Visual tone is not a breakpoint or viewport-priority decision.
+  - id: ui.pages_inventory
+    code: Q-WEB-02
+    pack: web
+    version: 1
+    scope: shared
+    title: How are pages routed, rendered, and indexed?
+    explain: "Decides the page inventory's delivery: client-side routing, server-rendered HTML for search and sharing, a static export, or a hybrid where public pages are server-rendered and signed-in pages are client-routed."
+    criteria:
+      - ui.pages_inventory
+      - ui.routing
+      - ui.ssr
+      - ui.seo
+    touches:
+      - route
+      - interactive_ui
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires: []
+    allowed_inference_rules: *a2
+    options:
+      - id: client_routing
+        label: Client-side routing
+        meaning: One HTML shell. The client router swaps pages. Public screens are not required to be indexable.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: ssr_seo
+        label: Server-rendered and indexable
+        meaning: Each public route returns server-rendered HTML with a title and description a crawler can read.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: static_export
+        label: Static export
+        meaning: Pages are pre-rendered files. There is no client app router and no per-request server render.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: hybrid_public_ssr
+        label: Hybrid public SSR
+        meaning: Public routes are server-rendered and indexable. Signed-in routes are client-routed and noindex.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: client_routing
+        rationale: A prototype can ship as one client-routed shell while the page list is still moving.
+      mvp:
+        option: hybrid_public_ssr
+        rationale: MVP server-renders public pages so they can be shared and indexed, and keeps the signed-in app client-routed.
+      production:
+        option: hybrid_public_ssr
+        rationale: Production keeps public routes server-rendered and indexable, and marks signed-in routes noindex.
+    examples:
+      positive:
+        - utterance: One HTML shell is enough. The client router can swap the pages. Search engines do not need these screens.
+          settles: client_routing
+        - utterance: Yeah just a single page app, no SEO.
+          settles: client_routing
+        - utterance: Public URLs have to come back as real HTML with a title and description a crawler can read.
+          settles: ssr_seo
+        - utterance: Pre-render the pages as files. There is no app router and no server render per request.
+          settles: static_export
+        - utterance: Marketing pages should be server-rendered and indexable. The signed-in app can be client-routed and noindex.
+          settles: hybrid_public_ssr
+      negative:
+        - utterance: We need a home page and a settings page.
+          why: Naming pages does not choose client routing, server rendering, or whether those URLs are indexable.
+        - utterance: Make the link look nice when someone pastes it in chat.
+          why: A nicer link does not settle SSR or the indexing rules for the route inventory.
+  - id: ui.forms_validation_style
+    code: Q-WEB-03
+    pack: web
+    version: 1
+    scope: shared
+    title: "How complex are forms: autosave, drafts, multi-step, or optimistic updates?"
+    explain: Decides whether data-entry forms are a single submit, autosaved drafts, a multi-step flow, or optimistic updates that roll back when the server rejects them. Field validation is part of that behavior. A product with no data-entry forms does not grow draft behavior later by accident.
+    criteria:
+      - ui.forms_validation_style
+      - ui.autosave
+      - ui.drafts
+      - ui.multi_step
+      - ui.optimistic_ui
+    touches:
+      - form_input
+      - interactive_ui
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires:
+      - ui.pages_inventory
+    allowed_inference_rules: &a3
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: simple_submit
+        label: Submit once
+        meaning: One page, validate on submit, no draft is stored.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: autosave_drafts
+        label: Autosave drafts
+        meaning: Drafts autosave and restore when the person returns. This applies only on form tasks.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: multi_step
+        label: Multi-step
+        meaning: The entry is steps with back, progress, and validation on the current step.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: optimistic_autosave
+        label: Optimistic autosave
+        meaning: The screen updates immediately and rolls back if the server rejects the save.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: no_forms
+        label: No data-entry forms
+        meaning: The product has no data-entry forms, so draft and autosave behavior is not added.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: simple_submit
+        rationale: A prototype uses one-page submit so the primary task is visible without draft recovery.
+      mvp:
+        option: autosave_drafts
+        rationale: MVP autosaves drafts so a refresh does not drop a half-finished entry.
+      production:
+        option: multi_step
+        rationale: Production splits long entry into reviewed steps with per-step validation.
+    examples:
+      positive:
+        - utterance: Keep it to one page. Validate when they submit. Don't keep drafts.
+          settles: simple_submit
+        - utterance: Yeah just a normal form, save button at the bottom.
+          settles: simple_submit
+        - utterance: Save a draft as they type and restore it if they come back.
+          settles: autosave_drafts
+        - utterance: Break the entry into steps with back, a progress marker, and a check on each step.
+          settles: multi_step
+        - utterance: Update the screen immediately and roll it back if the server rejects the save.
+          settles: optimistic_autosave
+      negative:
+        - utterance: Add a form so people can type their name.
+          why: The existence of a form does not choose autosave, drafts, multi-step flow, or optimistic updates.
+        - utterance: Show the errors in red.
+          why: Color does not settle when validation runs or whether a draft is kept.
+  - id: ui.states_style
+    code: Q-WEB-04
+    pack: web
+    version: 1
+    scope: shared
+    title: How do tables and lists paginate, virtualize, print, and export?
+    explain: "Decides how large collections are shown and taken out of the app: pages of rows, a virtualized window, a print view, and an export file. Loading, empty, and error states for those views are part of the same decision so a list is never silently blank."
+    criteria:
+      - ui.states_style
+      - ui.pagination
+      - ui.virtualization
+      - ui.print
+      - ui.export
+      - ui.loading_empty_error
+    touches:
+      - interactive_ui
+      - search
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires:
+      - ui.pages_inventory
+    allowed_inference_rules: *a3
+    options:
+      - id: capped_full_list
+        label: Full list under 100
+        meaning: Show every row only while the count is at or under 100. Above that, the view must page.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: paged_rows
+        label: Paged rows
+        meaning: Rows are shown 50 at a time with next and previous. Print and export are not required.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: virtualized_window
+        label: Virtualized window
+        meaning: Only the visible window of rows is rendered. Page controls are not used.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: print_and_export
+        label: Print and export
+        meaning: On-screen rows are paged, and the person can print or export the filtered set.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: capped_full_list
+        rationale: A prototype may show the full list only while it stays at or under 100 rows.
+      mvp:
+        option: paged_rows
+        rationale: MVP pages rows so a growing list cannot render without a bound.
+      production:
+        option: print_and_export
+        rationale: Production adds a print view and an export of the filtered rows on top of paging.
+    examples:
+      positive:
+        - utterance: There will only ever be a short list, under a hundred rows, so show them all.
+          settles: capped_full_list
+        - utterance: Page the rows, fifty at a time, with next and previous.
+          settles: paged_rows
+        - utterance: Don't page it. Render only the rows in the window and scroll the rest.
+          settles: virtualized_window
+        - utterance: I need a print view and a file export of whatever filter is on screen.
+          settles: print_and_export
+        - utterance: Yeah, paginate the table and let them export the filtered set.
+          settles: print_and_export
+      negative:
+        - utterance: Show the orders in a list.
+          why: A list does not choose paging, virtualization, print, or export.
+        - utterance: It should feel fast.
+          why: Speed does not settle a page size or a virtualization window.
+  - id: ui.look_and_feel
+    code: Q-WEB-05
+    pack: web
+    version: 1
+    scope: shared
+    title: What theme, dark mode, and design-system rules should the interface follow?
+    explain: Decides light theme, light and dark following the system, or a brand accent on the shared token set. Spacing, type, and color come from one token set either way.
+    criteria:
+      - ui.look_and_feel
+      - ui.dark_mode
+      - ui.design_tokens
+    touches:
+      - interactive_ui
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires: []
+    allowed_inference_rules: *a3
+    options:
+      - id: light_only
+        label: Light only
+        meaning: Light theme only. Tokens still come from the shared set. Dark theme is not required.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: system_light_dark
+        label: System light and dark
+        meaning: Light and dark follow the operating system. One token set defines both.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: brand_tokens
+        label: Brand accent on tokens
+        meaning: A brand accent sits on the shared token set, and both light and dark are required.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: light_only
+        rationale: A prototype can ship the light token set only.
+      mvp:
+        option: system_light_dark
+        rationale: MVP follows the operating system light and dark settings with one token set.
+      production:
+        option: system_light_dark
+        rationale: Production keeps system light and dark so contrast stays intact in both modes.
+    examples:
+      positive:
+        - utterance: Light theme only for now. We do not need a dark mode.
+          settles: light_only
+        - utterance: Yeah, just light mode, keep it simple.
+          settles: light_only
+        - utterance: Follow the system setting for light and dark, and use one set of design tokens.
+          settles: system_light_dark
+        - utterance: Put our brand accent on the shared tokens, and ship both light and dark.
+          settles: brand_tokens
+        - utterance: Dark mode has to be a real theme, not an inverted screenshot.
+          settles: system_light_dark
+      negative:
+        - utterance: Make it feel premium.
+          why: A mood word does not choose light, dark, or a token set.
+        - utterance: Use our logo on the page.
+          why: A logo does not settle dark mode or the design-system rules.
+  - id: ui.accessibility_level
+    code: Q-WEB-06
+    pack: web
+    version: 1
+    scope: shared
+    title: Which browsers are supported, and what accessibility floor applies?
+    explain: The floor is WCAG AA. This question decides which browsers that floor is tested on, and whether a keyboard-only pass is required on every screen. Contrast, names, focus, and 24px tap targets stay in force through UP-07 on every option.
+    criteria:
+      - ui.accessibility_level
+      - ui.browser_support
+      - ui.wcag
+    touches:
+      - interactive_ui
+      - form_input
+    impact: high
+    reversibility: easy
+    must_ask: false
+    requires:
+      - ui.look_and_feel
+    allowed_inference_rules: *a3
+    options:
+      - id: wcag_aa_evergreen
+        label: WCAG AA on evergreen browsers
+        meaning: WCAG AA on the latest two versions of the major evergreen browsers.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: wcag_aa_pinned_legacy
+        label: AA plus one pinned older browser
+        meaning: WCAG AA on evergreen browsers plus one named older browser.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: wcag_aa_keyboard_first
+        label: AA plus keyboard-only journeys
+        meaning: WCAG AA on evergreen browsers, and a keyboard-only pass is required on every screen.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: wcag_aa_evergreen
+        rationale: Prototype still holds WCAG AA on the latest two evergreen browser versions.
+      mvp:
+        option: wcag_aa_evergreen
+        rationale: MVP keeps that evergreen matrix rather than dropping the floor.
+      production:
+        option: wcag_aa_evergreen
+        rationale: Production keeps the evergreen AA matrix unless a later explicit answer pins an older browser.
+    examples:
+      positive:
+        - utterance: WCAG AA on the latest two versions of the major evergreen browsers.
+          settles: wcag_aa_evergreen
+        - utterance: Yeah, current Chrome, Firefox, Safari, and Edge. Last two versions. AA is the floor.
+          settles: wcag_aa_evergreen
+        - utterance: AA on those evergreen browsers, plus one older browser we still have to name and support.
+          settles: wcag_aa_pinned_legacy
+        - utterance: Every screen needs a keyboard-only pass, on top of AA on evergreen browsers.
+          settles: wcag_aa_keyboard_first
+        - utterance: Don't ship a screen that only works with a pointer.
+          settles: wcag_aa_keyboard_first
+      negative:
+        - utterance: It should be accessible.
+          why: The word accessible does not choose a browser matrix or a keyboard-only requirement.
+        - utterance: We still have a few people on an old laptop.
+          why: An old laptop does not name the browser or add it to the support matrix.
