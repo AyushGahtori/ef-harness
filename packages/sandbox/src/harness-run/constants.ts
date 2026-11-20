@@ -1,0 +1,11 @@
+export const DEFAULT_HEAD_LINES = 100;
+export const DEFAULT_TAIL_LINES = 200;
+export const DEFAULT_LINE_CHARS = 4_000;
+export const DEFAULT_MAX_ARTIFACT_BYTES = 50 * 1024 * 1024;
+export const DEFAULT_TIMEOUT_MS = 120_000;
+export const DEFAULT_MEMORY_BYTES = 512 * 1024 * 1024;
+export const DEFAULT_PROCESS_LIMIT = 64;
+export const SEEKABLE_THRESHOLD_BYTES = 1024 * 1024;
+export const LINE_INDEX_INTERVAL = 1_000;
+export const FRAME_TARGET_BYTES = 1024 * 1024;
+export const PROGRESS_THROTTLE_MS = 200;
