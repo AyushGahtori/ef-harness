@@ -18,7 +18,11 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/shared-contracts": "workspace:*",
+    "fast-check": "^4.1.0",
+    "playwright": "^1.55.0",
+    "yaml": "^2.8.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
