@@ -12,6 +12,10 @@ playwright-report/
 test-results/
 logs/
 cas/
+!packages/db/src/cas/
+!packages/db/src/cas/**
+!packages/db/tests/cas/
+!packages/db/tests/cas/**
 wt/
 .tmp.*
 *.tsbuildinfo
