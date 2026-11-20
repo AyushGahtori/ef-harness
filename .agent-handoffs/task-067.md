@@ -107,6 +107,6 @@ Sibling branches are not on this base. These are local ports, not imports of unp
 
 MessagePort frames are base64 structured clones (`bytes:<base64>` from the page, `{ type: "bytes", encoding: "base64", payload }` from the utility). Transferring an `ArrayBuffer` on Electron's utility-process port dropped the message. Swap back to a real transfer when Task 031's bridge is the one on the wire.
 
-Closing the M1 window does not quit Electron main and does not stop `harnessd`. Task 131 still owns tray hide, quit-while-building, and the idle app quit. Daemon idle shutdown runs only when zero authenticated windows are connected and no simulated task is active.
+Closing the M1 window does not quit Electron main and does not stop `harnessd`. On Windows the shell starts `harnessd` with `Start-Process` so Electron's job object cannot kill the daemon when the viewer exits. Task 131 still owns tray hide, quit-while-building, and the idle app quit. Daemon idle shutdown runs only when zero authenticated windows are connected and no simulated task is active.
 
 `session.token` is overwritten atomically before `listen`. Pipe name is `\\.\pipe\efharness-<user>`. Profile root is `%LOCALAPPDATA%\EFHarness`, overridable with `EF_HARNESS_PROFILE` and `EF_HARNESS_PIPE`.

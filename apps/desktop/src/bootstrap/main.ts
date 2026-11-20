@@ -231,7 +231,7 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
 async function ensureRunning(options: DesktopOptions, tokenFile: string): Promise<void> {
   await ensureHarnessd({
     appVersion: options.appVersion,
-    timeoutMs: 15_000,
+    timeoutMs: 30_000,
     probe: () => probeDaemon(options.pipePath, tokenFile),
     parkAndExit: async () => {
       await callDaemon(options.pipePath, tokenFile, "daemon.parkAndExit", { op_id: `park-${Date.now()}` });

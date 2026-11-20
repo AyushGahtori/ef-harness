@@ -206,7 +206,7 @@ export class HarnessDaemon {
   private async listenWithRetry(): Promise<void> {
     const server = this.server;
     if (!server) throw new Error("server was not created");
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       try {
         await new Promise<void>((resolve, reject) => {
           const onError = (error: Error) => {
@@ -223,11 +223,11 @@ export class HarnessDaemon {
         });
         return;
       } catch (error) {
-        if (errorCode(error) !== "EADDRINUSE" || attempt === 29) {
+        if (errorCode(error) !== "EADDRINUSE" || attempt === 59) {
           if (errorCode(error) === "EADDRINUSE") throw new PipeInUseError(this.opts.pipePath);
           throw error;
         }
-        await delay(100);
+        await delay(250);
       }
     }
   }

@@ -156,7 +156,7 @@ export class PipeClient {
     return new Promise((resolve, reject) => {
       const socket = net.connect(pipePath);
       const client = new PipeClient(socket);
-      const timer = setTimeout(() => reject(new Error("connect timeout")), 5_000);
+      const timer = setTimeout(() => reject(new Error("connect timeout")), 15_000);
       socket.on("error", (error) => {
         clearTimeout(timer);
         reject(error);
@@ -187,7 +187,7 @@ export class PipeClient {
           this.waiters.delete(id);
           reject(new Error(`timeout ${method}`));
         }
-      }, 5_000);
+      }, 20_000);
     });
   }
 

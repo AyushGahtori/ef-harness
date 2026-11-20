@@ -190,7 +190,7 @@ function viewerEnv(profile: string, pipe: string, input: { simStepMs: string; di
     EF_HARNESS_PROFILE: profile,
     EF_HARNESS_PIPE: pipe,
     EF_HARNESS_APP_VERSION: "0.0.0",
-    EF_HARNESS_APP_NAME: "EF Harness M1 Test",
+    EF_HARNESS_APP_NAME: `EF Harness ${path.basename(profile)}`,
     EF_HARNESS_SIM_TASK: "1",
     EF_HARNESS_SIM_STEP_MS: input.simStepMs,
     EF_HARNESS_IDLE_MS: "120000",
