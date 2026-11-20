@@ -1,0 +1,521 @@
+kind: question_pack
+id: data
+version: 1
+title: "M2 data questions"
+questions:
+  - id: Q-DATA-01
+    version: 1
+    scope: shared
+    domains: [data]
+    title: "Which database engine fits, and is the data relational or document-shaped?"
+    explain: "The engine and the shape of the records decide migrations, queries, and how hard a later move will be."
+    criteria:
+      - data.storage.engine
+      - data.storage.shape
+    applies_when: []
+    requires: [Q-CORE-02]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [migration]
+    options:
+      - id: sqlite_relational
+        label: "SQLite, relational"
+        meaning: "One local file of related tables."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Zero setup, single writer assumptions, easy to copy."
+      - id: postgres_relational
+        label: "Postgres, relational"
+        meaning: "A Postgres server of related tables."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Concurrent writers, migrations, and a connection pool."
+      - id: document_store
+        label: "A document store"
+        meaning: "Records are documents, not normalized tables."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Queries follow the document shape instead of joins."
+    stage_recommendations:
+      prototype:
+        option: sqlite_relational
+        rationale: "A prototype can use a SQLite file."
+      mvp:
+        option: sqlite_relational
+        rationale: "An MVP can stay on SQLite until concurrent writers need a server."
+      production:
+        option: sqlite_relational
+        rationale: "Production moves to a server engine only when the workload needs it."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology, infer.from_repo_dependency]
+    invalidates_on_change: [data.backup, data.migration_safety]
+    positive_examples:
+      - utterance: "just a sqlite file on the machine, normal tables, not mongo"
+        style: spoken_dictation
+        settles:
+          data.storage.engine: sqlite_relational
+          data.storage.shape: relational
+      - utterance: "Use SQLite with relational tables for the demo."
+        style: plain
+        settles:
+          data.storage.engine: sqlite_relational
+          data.storage.shape: relational
+      - utterance: "The data is rows and foreign keys in a local SQLite file."
+        style: plain
+        settles:
+          data.storage.engine: sqlite_relational
+          data.storage.shape: relational
+      - utterance: "We already said the demo database is SQLite."
+        style: plain
+        settles:
+          data.storage.engine: sqlite_relational
+          data.storage.shape: relational
+      - utterance: "Keep it relational in one SQLite file."
+        style: plain
+        settles:
+          data.storage.engine: sqlite_relational
+          data.storage.shape: relational
+    negative_examples:
+      - utterance: "We use Postgres at work."
+        must_not_settle: [postgres_relational]
+        reason: "Another system at work does not settle this product's engine."
+      - utterance: "Store it somewhere safe."
+        must_not_settle: [document_store]
+        reason: "Wanting safety does not choose a document store."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-DATA-02
+    version: 1
+    scope: shared
+    domains: [data]
+    title: "Who owns each record, and is delete soft, hard, or retained?"
+    explain: "Ownership and deletion decide whether a row can come back and how long personal data stays."
+    criteria:
+      - data.ownership
+      - data.deletion
+    applies_when: []
+    requires: [Q-DATA-01, Q-CORE-15]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [destructive_write, personal_data]
+    options:
+      - id: owner_soft_delete
+        label: "The owner hides it"
+        meaning: "The person who owns the record can hide it, and a hidden row remains."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Deletes are soft and recoverable."
+      - id: owner_hard_delete
+        label: "The owner erases it"
+        meaning: "The owner can remove the row for good."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A hard delete is gone, aside from a backup you restore on purpose."
+      - id: retain_for_period
+        label: "Keep it for a named period"
+        meaning: "Records stay until a retention period ends, even if someone asks sooner."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Deletion waits for that period unless a duty says otherwise."
+    stage_recommendations:
+      prototype:
+        option: owner_soft_delete
+        rationale: "A prototype can hide rows instead of erasing them."
+      mvp:
+        option: owner_soft_delete
+        rationale: "An MVP keeps soft delete until a retention duty is named."
+      production:
+        option: owner_soft_delete
+        rationale: "Production uses a hard delete or a retention period only when you require it."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if they made the order they can hide it, don't actually wipe the row"
+        style: spoken_dictation
+        settles:
+          data.ownership: creator_owns_row
+          data.deletion: owner_soft_delete
+      - utterance: "The person who created the record owns it and delete only hides it."
+        style: plain
+        settles:
+          data.ownership: creator_owns_row
+          data.deletion: owner_soft_delete
+      - utterance: "Soft delete for orders. The creator is the owner."
+        style: plain
+        settles:
+          data.ownership: creator_owns_row
+          data.deletion: owner_soft_delete
+      - utterance: "Hiding a record is reversible. Hard delete is not the rule."
+        style: plain
+        settles:
+          data.ownership: creator_owns_row
+          data.deletion: owner_soft_delete
+      - utterance: "Ownership follows the creator, and deletion is soft."
+        style: plain
+        settles:
+          data.ownership: creator_owns_row
+          data.deletion: owner_soft_delete
+    negative_examples:
+      - utterance: "Add a delete button."
+        must_not_settle: [owner_hard_delete]
+        reason: "A delete button does not say whether the delete is hard or soft."
+      - utterance: "Keep the database."
+        must_not_settle: [retain_for_period]
+        reason: "Having a database does not settle a retention period."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-DATA-03
+    version: 1
+    scope: shared
+    domains: [data]
+    title: "What happens if two people save or buy the same thing at once?"
+    explain: "Concurrency rules stop a double submit or two editors from silently destroying each other's work."
+    criteria:
+      - data.concurrency
+    applies_when: []
+    requires: [Q-DATA-01]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [concurrent_edit]
+    options:
+      - id: last_save_wins
+        label: "Last save wins"
+        meaning: "The later save replaces the earlier one with no warning."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no version check."
+      - id: reject_stale_save
+        label: "Warn when someone else changed it"
+        meaning: "If the record changed since it was opened, the save is rejected."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The editor reloads before saving again."
+      - id: lock_the_row
+        label: "Lock the row"
+        meaning: "The first editor holds the row until they finish."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A second person is told the row is busy."
+    stage_recommendations:
+      prototype:
+        option: last_save_wins
+        rationale: "A prototype can let the last save win while only one person is testing."
+      mvp:
+        option: reject_stale_save
+        rationale: "An MVP should reject a stale save once two people edit the same row."
+      production:
+        option: reject_stale_save
+        rationale: "Production rejects a stale save so two editors cannot overwrite each other quietly."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if two people edit the same order, don't just let the second one clobber it"
+        style: spoken_dictation
+        settles:
+          data.concurrency: reject_stale_save
+      - utterance: "Reject the save when the record changed since it was opened."
+        style: plain
+        settles:
+          data.concurrency: reject_stale_save
+      - utterance: "A double submit of the same purchase must not create two charges."
+        style: plain
+        settles:
+          data.concurrency: reject_stale_save
+      - utterance: "Show that someone else changed it and ask for a reload."
+        style: plain
+        settles:
+          data.concurrency: reject_stale_save
+      - utterance: "Use a version check so the later stale save fails."
+        style: plain
+        settles:
+          data.concurrency: reject_stale_save
+    negative_examples:
+      - utterance: "Make saving fast."
+        must_not_settle: [last_save_wins]
+        reason: "Wanting a fast save does not choose last-write-wins."
+      - utterance: "Only one person uses it."
+        must_not_settle: [lock_the_row]
+        reason: "A single user today does not settle a lock for later."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-DATA-04
+    version: 1
+    scope: shared
+    domains: [data]
+    title: "How are money and time zones stored?"
+    explain: "Money and time have to survive rounding and daylight saving. Guessing either one corrupts records."
+    criteria:
+      - data.money_storage
+      - data.time_storage
+    applies_when: []
+    requires: [Q-CORE-09]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: costly
+    must_ask: true
+    touches: [money, time_display]
+    options:
+      - id: integer_minor_utc
+        label: "Integer minor units and UTC"
+        meaning: "Money is integer cents or the currency's minor unit. Instants are UTC."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "One rounding rule, and the screen converts UTC into the display zone."
+      - id: decimal_local
+        label: "Decimal money and local wall time"
+        meaning: "Money is a decimal and times are stored as local wall-clock text."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "This is easier to mis-round and mis-shift."
+      - id: no_money
+        label: "No money is stored"
+        meaning: "The product does not store amounts."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Time still follows the UTC rule if any instant is stored."
+    stage_recommendations:
+      prototype:
+        option: integer_minor_utc
+        rationale: "Even a prototype stores money as integers and instants as UTC if it stores them at all."
+      mvp:
+        option: integer_minor_utc
+        rationale: "An MVP keeps integer minor units and UTC."
+      production:
+        option: integer_minor_utc
+        rationale: "Production does not switch money or time storage casually."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "store cents as whole numbers and keep the timestamps in utc"
+        style: spoken_dictation
+        settles:
+          data.money_storage: integer_minor_utc
+          data.time_storage: utc
+      - utterance: "Prices are integer minor units. Times are UTC instants."
+        style: plain
+        settles:
+          data.money_storage: integer_minor_utc
+          data.time_storage: utc
+      - utterance: "Do not use floating point for money."
+        style: plain
+        settles:
+          data.money_storage: integer_minor_utc
+          data.time_storage: utc
+      - utterance: "Show local time, but store UTC."
+        style: plain
+        settles:
+          data.money_storage: integer_minor_utc
+          data.time_storage: utc
+      - utterance: "One currency minor-unit integer and UTC storage."
+        style: plain
+        settles:
+          data.money_storage: integer_minor_utc
+          data.time_storage: utc
+    negative_examples:
+      - utterance: "It costs about ten dollars."
+        must_not_settle: [decimal_local]
+        reason: "Talking about a price does not choose decimal wall-time storage."
+      - utterance: "Show the date."
+        must_not_settle: [decimal_local]
+        reason: "Displaying a date does not settle the storage rule."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-DATA-05
+    version: 1
+    scope: shared
+    domains: [data]
+    title: "What backup, restore, and migration safety do you need?"
+    explain: "Backup and migration safety decide whether a bad change can be undone without losing the only copy."
+    criteria:
+      - data.backup
+      - data.migration_safety
+    applies_when: []
+    requires: [Q-DATA-01]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [migration]
+    options:
+      - id: copy_the_file
+        label: "Copy the file"
+        meaning: "A person can copy the database file before a risky change."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Restore means putting that file back."
+      - id: scheduled_backups
+        label: "Scheduled backups"
+        meaning: "Backups run on a schedule without someone remembering."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "You can restore a recent scheduled copy."
+      - id: rehearsed_restore
+        label: "Rehearsed restore and safe migrations"
+        meaning: "Backups exist and a restore has been tried. Migrations expand before they contract."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A migration can roll forward without dropping the only copy."
+    stage_recommendations:
+      prototype:
+        option: copy_the_file
+        rationale: "A prototype is safe enough if you can copy the file first."
+      mvp:
+        option: scheduled_backups
+        rationale: "An MVP should take backups without relying on memory."
+      production:
+        option: rehearsed_restore
+        rationale: "Production needs a restore you have actually tried, plus safe migrations."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "before we change the schema just copy the sqlite file, that's enough for now"
+        style: spoken_dictation
+        settles:
+          data.backup: copy_the_file
+          data.migration_safety: copy_before_change
+      - utterance: "Copy the database file before a migration."
+        style: plain
+        settles:
+          data.backup: copy_the_file
+          data.migration_safety: copy_before_change
+      - utterance: "Restore means replacing the file with the copy."
+        style: plain
+        settles:
+          data.backup: copy_the_file
+          data.migration_safety: copy_before_change
+      - utterance: "No scheduled backup service in this version."
+        style: plain
+        settles:
+          data.backup: copy_the_file
+          data.migration_safety: copy_before_change
+      - utterance: "A manual file copy is the backup plan."
+        style: plain
+        settles:
+          data.backup: copy_the_file
+          data.migration_safety: copy_before_change
+    negative_examples:
+      - utterance: "Be careful with the data."
+        must_not_settle: [rehearsed_restore]
+        reason: "Asking for care does not settle a rehearsed restore."
+      - utterance: "Use migrations."
+        must_not_settle: [scheduled_backups]
+        reason: "Having migrations does not schedule backups."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-DATA-06
+    version: 1
+    scope: shared
+    domains: [data]
+    title: "How are seed data, demos, and environments kept apart?"
+    explain: "Demo rows and real rows have to stay apart so a seed script cannot wipe a real environment."
+    criteria:
+      - data.seed
+      - data.environments
+    applies_when: []
+    requires: [Q-DATA-01]
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [config_env]
+    options:
+      - id: one_database
+        label: "One database"
+        meaning: "Demo and real rows share a database."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Seeds must be obvious and must not run against data you meant to keep."
+      - id: separate_databases
+        label: "Separate databases"
+        meaning: "Demo, test, and real data use different database files or servers."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A seed targets only the demo database."
+      - id: synthetic_seed_only
+        label: "Synthetic seed only"
+        meaning: "Seeds are fake data and never copied from production."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A demo cannot leak a real person's data."
+    stage_recommendations:
+      prototype:
+        option: synthetic_seed_only
+        rationale: "A prototype seeds fake rows only."
+      mvp:
+        option: synthetic_seed_only
+        rationale: "An MVP keeps demo data synthetic and off to the side."
+      production:
+        option: synthetic_seed_only
+        rationale: "Production never seeds itself from a copy of real personal data."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "fake names in the demo please, and don't point that script at the real file"
+        style: spoken_dictation
+        settles:
+          data.seed: synthetic_seed_only
+          data.environments: separate_databases
+      - utterance: "Seed data is synthetic and the demo database is a different file."
+        style: plain
+        settles:
+          data.seed: synthetic_seed_only
+          data.environments: separate_databases
+      - utterance: "Never copy production rows into the demo."
+        style: plain
+        settles:
+          data.seed: synthetic_seed_only
+          data.environments: separate_databases
+      - utterance: "Tests get their own database, not the one the shop uses."
+        style: plain
+        settles:
+          data.seed: synthetic_seed_only
+          data.environments: separate_databases
+      - utterance: "Demo isolation means a separate database plus fake seed rows."
+        style: plain
+        settles:
+          data.seed: synthetic_seed_only
+          data.environments: separate_databases
+    negative_examples:
+      - utterance: "Add sample data."
+        must_not_settle: [one_database]
+        reason: "Sample data does not say it may share the real database."
+      - utterance: "We have a staging site."
+        must_not_settle: [synthetic_seed_only]
+        reason: "A staging site does not by itself prove seeds are synthetic."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0

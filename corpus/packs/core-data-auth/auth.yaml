@@ -1,0 +1,427 @@
+kind: question_pack
+id: auth
+version: 1
+title: "M2 auth questions"
+questions:
+  - id: Q-AUTH-01
+    version: 1
+    scope: shared
+    domains: [auth]
+    title: "Who must sign in, and how?"
+    explain: "Whether people sign in, and by which method, is costly to reverse and cannot be guessed from a phone or a brand."
+    criteria:
+      - auth.needed
+      - auth.method
+    applies_when: []
+    requires: [Q-CORE-01]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [authn, credentials]
+    options:
+      - id: public_anonymous
+        label: "No sign-in"
+        meaning: "Anyone with the link can use it. There is no account."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no password, session, or identity provider."
+      - id: magic_link
+        label: "Magic link"
+        meaning: "People sign in from a one-time link sent to their email."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The link expires, is stored hashed, and the reply does not reveal whether the account exists."
+      - id: password
+        label: "Email and password"
+        meaning: "People sign in with a password."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Passwords are hashed and reset is a separate flow."
+      - id: oauth_sso
+        label: "OAuth or company SSO"
+        meaning: "People sign in through a named provider or company SSO."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "The provider is the identity source."
+    stage_recommendations:
+      prototype:
+        option: magic_link
+        rationale: "When sign-in is required, a magic link avoids inventing a password system for a prototype."
+      mvp:
+        option: magic_link
+        rationale: "An MVP can keep magic link until you name SSO or passwords."
+      production:
+        option: magic_link
+        rationale: "Production changes the sign-in method only by an explicit choice."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: [auth.roles, auth.onboarding, auth.session, auth.tenant_isolation]
+    positive_examples:
+      - utterance: "they should sign in with a magic link, no passwords sitting around"
+        style: spoken_dictation
+        settles:
+          auth.needed: required
+          auth.method: magic_link
+      - utterance: "Authentication is required and the method is a magic link."
+        style: plain
+        settles:
+          auth.needed: required
+          auth.method: magic_link
+      - utterance: "Email a one-time sign-in link. Do not use passwords."
+        style: plain
+        settles:
+          auth.needed: required
+          auth.method: magic_link
+      - utterance: "Staff must sign in. Magic link is the method."
+        style: plain
+        settles:
+          auth.needed: required
+          auth.method: magic_link
+      - utterance: "No anonymous use. Sign-in is a magic link."
+        style: plain
+        settles:
+          auth.needed: required
+          auth.method: magic_link
+    negative_examples:
+      - utterance: "use on their phones"
+        must_not_settle: [oauth_sso]
+        reason: "Phone use does not choose an identity provider."
+      - utterance: "Make it secure."
+        must_not_settle: [password]
+        reason: "Asking for security does not choose passwords over a magic link or SSO."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AUTH-02
+    version: 1
+    scope: shared
+    domains: [auth]
+    title: "What roles and permission boundaries exist?"
+    explain: "Roles decide who can do the costly actions. A login is not a permission model."
+    criteria:
+      - auth.roles
+    applies_when: []
+    requires: [Q-AUTH-01]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: costly
+    must_ask: true
+    touches: [authz]
+    options:
+      - id: single_role
+        label: "One role"
+        meaning: "Everyone who signs in can do the same things."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no permission split."
+      - id: rbac
+        label: "Named roles"
+        meaning: "A few named roles gate the sensitive actions."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Each action checks the role, not only that someone is signed in."
+      - id: ownership
+        label: Ownership
+        meaning: "You can change the records you own, and not other people's."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Checks follow the owner of the row."
+    stage_recommendations:
+      prototype:
+        option: ownership
+        rationale: "Start from ownership when the creator is the person who may change a row."
+      mvp:
+        option: ownership
+        rationale: "An MVP adds named roles when staff and customers must differ."
+      production:
+        option: ownership
+        rationale: "Production does not collapse roles back into a single signed-in user."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "staff can edit orders and customers can't, that's the split"
+        style: spoken_dictation
+        settles:
+          auth.roles: rbac
+      - utterance: "Two roles: staff can change orders, and customers cannot."
+        style: plain
+        settles:
+          auth.roles: rbac
+      - utterance: "Managers can correct a record. Everyone else only views their own."
+        style: plain
+        settles:
+          auth.roles: rbac
+      - utterance: "Permission follows named roles, not a single signed-in bucket."
+        style: plain
+        settles:
+          auth.roles: rbac
+      - utterance: "The sensitive actions check a role."
+        style: plain
+        settles:
+          auth.roles: rbac
+    negative_examples:
+      - utterance: "People have accounts."
+        must_not_settle: [rbac]
+        reason: "Accounts do not describe the permission boundary."
+      - utterance: "Add an admin later."
+        must_not_settle: [rbac]
+        reason: "A later admin does not settle the roles now."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AUTH-03
+    version: 1
+    scope: shared
+    domains: [auth]
+    title: "How do new people get an account?"
+    explain: "Onboarding decides whether strangers can create themselves or someone has to invite them."
+    criteria:
+      - auth.onboarding
+    applies_when: []
+    requires: [Q-AUTH-01]
+    conflicts_with: []
+    risk_tier: medium
+    impact: high
+    reversibility: easy
+    must_ask: false
+    touches: [authn]
+    options:
+      - id: self_signup
+        label: "People sign themselves up"
+        meaning: "A new person can create an account without an invitation."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Signup is rate limited and does not reveal who already joined."
+      - id: invite_only
+        label: "Invite only"
+        meaning: "An existing member sends an invite."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "There is no public signup form."
+      - id: admin_provisioned
+        label: "An admin creates the account"
+        meaning: "Only an administrator provisions accounts."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "People cannot invite or sign themselves up."
+    stage_recommendations:
+      prototype:
+        option: invite_only
+        rationale: "A small prototype can be invite only."
+      mvp:
+        option: invite_only
+        rationale: "An MVP stays invite only until strangers must join themselves."
+      production:
+        option: invite_only
+        rationale: "Production opens self-signup only by an explicit choice."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "don't let random people sign up, the manager sends an invite"
+        style: spoken_dictation
+        settles:
+          auth.onboarding: invite_only
+      - utterance: "New staff join only by invite."
+        style: plain
+        settles:
+          auth.onboarding: invite_only
+      - utterance: "There is no public registration form."
+        style: plain
+        settles:
+          auth.onboarding: invite_only
+      - utterance: "An existing member creates the invite."
+        style: plain
+        settles:
+          auth.onboarding: invite_only
+      - utterance: "Onboarding is invite only."
+        style: plain
+        settles:
+          auth.onboarding: invite_only
+    negative_examples:
+      - utterance: "We have a sign-in page."
+        must_not_settle: [self_signup]
+        reason: "A sign-in page does not mean strangers can create accounts."
+      - utterance: "Add users."
+        must_not_settle: [admin_provisioned]
+        reason: "Adding users does not say whether they self-serve or an admin provisions them."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AUTH-04
+    version: 1
+    scope: shared
+    domains: [auth]
+    title: "How long do sessions last, and is MFA required?"
+    explain: "Session length, signing out everywhere, and MFA decide what a stolen device can still do."
+    criteria:
+      - auth.session
+      - auth.mfa
+    applies_when: []
+    requires: [Q-AUTH-01]
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: easy
+    must_ask: false
+    touches: [session, authn]
+    options:
+      - id: short_session
+        label: "A short session"
+        meaning: "The session ends after a short idle period, and one device can sign out."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A stolen open browser stops being useful quickly."
+      - id: logout_all
+        label: "Longer sessions with sign-out everywhere"
+        meaning: "Sessions can last longer, and the person can end every device at once."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Sign-out-all is a real action, not a local cookie delete only."
+      - id: mfa_required
+        label: "MFA required"
+        meaning: "A second factor is required in addition to the session rule."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Sign-in is not complete without that factor."
+    stage_recommendations:
+      prototype:
+        option: short_session
+        rationale: "A prototype can use a short session and skip MFA."
+      mvp:
+        option: short_session
+        rationale: "An MVP keeps a short session until you require MFA or many devices."
+      production:
+        option: logout_all
+        rationale: "Production should let a person end every device when sessions last beyond a quick demo."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "kick them out after a little while, we don't need a second factor yet"
+        style: spoken_dictation
+        settles:
+          auth.session: short_session
+          auth.mfa: not_required
+      - utterance: "Sessions expire quickly and MFA is not required."
+        style: plain
+        settles:
+          auth.session: short_session
+          auth.mfa: not_required
+      - utterance: "A short idle timeout is the session policy."
+        style: plain
+        settles:
+          auth.session: short_session
+          auth.mfa: not_required
+      - utterance: "Do not add MFA in this version."
+        style: plain
+        settles:
+          auth.session: short_session
+          auth.mfa: not_required
+      - utterance: "One device signs out locally after the short session ends."
+        style: plain
+        settles:
+          auth.session: short_session
+          auth.mfa: not_required
+    negative_examples:
+      - utterance: "Keep me logged in."
+        must_not_settle: [mfa_required]
+        reason: "Wanting to stay signed in does not require MFA."
+      - utterance: "It should be secure."
+        must_not_settle: [logout_all]
+        reason: "A general security wish does not settle sign-out-everywhere."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AUTH-05
+    version: 1
+    scope: shared
+    domains: [auth]
+    title: "How are tenant or workspace boundaries guaranteed?"
+    explain: "Isolation is the guarantee that one workspace cannot read another workspace's rows."
+    criteria:
+      - auth.tenant_isolation
+    applies_when: []
+    requires: [Q-AUTH-01, Q-CORE-04]
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [authz, session]
+    options:
+      - id: single_workspace
+        label: "One workspace"
+        meaning: "There is a single workspace, so cross-tenant leaks are not in scope."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Queries do not need a tenant predicate yet."
+      - id: row_scoped
+        label: "Rows carry the workspace"
+        meaning: "Every tenant-owned row stores the workspace id and queries filter on it."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A missing workspace predicate is a bug."
+      - id: separate_databases
+        label: "A database per workspace"
+        meaning: "Each workspace has its own database."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "A connection is chosen before any query runs."
+    stage_recommendations:
+      prototype:
+        option: single_workspace
+        rationale: "Until you have many customer spaces, isolation is the single shared workspace."
+      mvp:
+        option: single_workspace
+        rationale: "An MVP stays one workspace until Q-CORE-04 says otherwise."
+      production:
+        option: single_workspace
+        rationale: "Production uses row or database isolation only after separate spaces are real."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "there's only one workspace, we don't need to wall off other companies"
+        style: spoken_dictation
+        settles:
+          auth.tenant_isolation: single_workspace
+      - utterance: "One workspace. Tenant isolation is not a second database."
+        style: plain
+        settles:
+          auth.tenant_isolation: single_workspace
+      - utterance: "Everyone who signs in is in the same workspace."
+        style: plain
+        settles:
+          auth.tenant_isolation: single_workspace
+      - utterance: "Do not add a tenant id until there is a second space."
+        style: plain
+        settles:
+          auth.tenant_isolation: single_workspace
+      - utterance: "The isolation guarantee for now is that there is only one workspace."
+        style: plain
+        settles:
+          auth.tenant_isolation: single_workspace
+    negative_examples:
+      - utterance: "Users have their own orders."
+        must_not_settle: [row_scoped]
+        reason: "Per-user rows are not a tenant boundary."
+      - utterance: "We might sell this later."
+        must_not_settle: [separate_databases]
+        reason: "A possible future product does not settle database-per-tenant."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
