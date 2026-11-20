@@ -1,0 +1,441 @@
+pack: mobile
+elaborations:
+  - id: ELAB-Q-MOB-01-PWA-MOBILE-WEB
+    question_id: mobile.delivery
+    option_id: pwa_mobile_web
+    summary: PWA or mobile web
+    touches:
+      any: &a1
+        - route
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-MOB-01-PWA-MOBILE-WEB.C1
+        text: The phone opens a web app. It can be installed as a PWA. There is no App Store binary and no
+          React Native runtime.
+        touches:
+          any: *a1
+        oracle_hint: Mobile PWA degrades cleanly offline.
+      - id: ELAB-Q-MOB-01-PWA-MOBILE-WEB.C2
+        text: This choice stays inside is delivery a pwa, react native or expo, or a native ios and android
+          app and does not grant a behavior the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: Mobile PWA degrades cleanly offline.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.delivery stays dormant and
+        pwa_mobile_web is not asked.
+    bounds:
+      - key: mobile.delivery.pwa_mobile_web.bound
+        value: 1
+        unit: origin
+    oracle_hints:
+      - Mobile PWA degrades cleanly offline.
+      - Q-MOB-01 pwa_mobile_web is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-01-REACT-NATIVE-EXPO
+    question_id: mobile.delivery
+    option_id: react_native_expo
+    summary: React Native or Expo
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-MOB-01-REACT-NATIVE-EXPO.C1
+        text: One React Native or Expo project produces the iOS and Android binaries.
+        touches:
+          any: *a1
+        oracle_hint: The iOS and Android binaries come from the same React Native or Expo project.
+      - id: ELAB-Q-MOB-01-REACT-NATIVE-EXPO.C2
+        text: This choice stays inside is delivery a pwa, react native or expo, or a native ios and android
+          app and does not grant a behavior the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The iOS and Android binaries come from the same React Native or Expo project.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.delivery stays dormant and
+        react_native_expo is not asked.
+    bounds:
+      - key: mobile.delivery.react_native_expo.bound
+        value: 2
+        unit: stores
+    oracle_hints:
+      - The iOS and Android binaries come from the same React Native or Expo project.
+      - Q-MOB-01 react_native_expo is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-01-NATIVE-IOS-ANDROID
+    question_id: mobile.delivery
+    option_id: native_ios_android
+    summary: Native iOS and Android
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-MOB-01-NATIVE-IOS-ANDROID.C1
+        text: Separate native iOS and Android apps are built and submitted to the stores.
+        touches:
+          any: *a1
+        oracle_hint: The iOS project and the Android project are separate native codebases.
+      - id: ELAB-Q-MOB-01-NATIVE-IOS-ANDROID.C2
+        text: This choice stays inside is delivery a pwa, react native or expo, or a native ios and android
+          app and does not grant a behavior the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The iOS project and the Android project are separate native codebases.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.delivery stays dormant and
+        native_ios_android is not asked.
+    bounds:
+      - key: mobile.delivery.native_ios_android.bound
+        value: 2
+        unit: codebases
+    oracle_hints:
+      - The iOS project and the Android project are separate native codebases.
+      - Q-MOB-01 native_ios_android is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-02-ONLINE-ONLY
+    question_id: mobile.offline_sync
+    option_id: online_only
+    summary: Online only
+    touches:
+      any: &a2
+        - caching
+        - concurrent_edit
+    clauses:
+      - id: ELAB-Q-MOB-02-ONLINE-ONLY.C1
+        text: Writes require a network response. Offline, the client shows a blocked state and stores
+          nothing to replay.
+        touches:
+          any: *a2
+        oracle_hint: An offline submit is rejected on the device and creates no queued write.
+      - id: ELAB-Q-MOB-02-ONLINE-ONLY.C2
+        text: This choice stays inside how does offline persistence resolve sync conflicts and does not
+          grant a behavior the option does not name.
+        touches:
+          any: *a2
+        oracle_hint: An offline submit is rejected on the device and creates no queued write.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.offline_sync stays dormant
+        and online_only is not asked.
+    bounds:
+      - key: mobile.offline_sync.online_only.bound
+        value: 0
+        unit: queued_writes
+    oracle_hints:
+      - An offline submit is rejected on the device and creates no queued write.
+      - Q-MOB-02 online_only is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-02-OFFLINE-QUEUE-LAST-WRITE
+    question_id: mobile.offline_sync
+    option_id: offline_queue_last_write
+    summary: Offline queue, last write wins
+    touches:
+      any: *a2
+    clauses:
+      - id: ELAB-Q-MOB-02-OFFLINE-QUEUE-LAST-WRITE.C1
+        text: Writes queue locally and the latest write for a record replaces earlier queued writes on sync.
+        touches:
+          any: *a2
+        oracle_hint: Two offline edits of one record replay as the later edit only.
+      - id: ELAB-Q-MOB-02-OFFLINE-QUEUE-LAST-WRITE.C2
+        text: This choice stays inside how does offline persistence resolve sync conflicts and does not
+          grant a behavior the option does not name.
+        touches:
+          any: *a2
+        oracle_hint: Two offline edits of one record replay as the later edit only.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.offline_sync stays dormant
+        and offline_queue_last_write is not asked.
+    bounds:
+      - key: mobile.offline_sync.offline_queue_last_write.bound
+        value: 1
+        unit: winner
+    oracle_hints:
+      - Two offline edits of one record replay as the later edit only.
+      - Q-MOB-02 offline_queue_last_write is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-02-OFFLINE-QUEUE-VERSIONED
+    question_id: mobile.offline_sync
+    option_id: offline_queue_versioned
+    summary: Offline queue, version check
+    touches:
+      any: *a2
+    clauses:
+      - id: ELAB-Q-MOB-02-OFFLINE-QUEUE-VERSIONED.C1
+        text: Each queued write carries the version it edited. The server rejects a stale version and the
+          client shows the conflict.
+        touches:
+          any: *a2
+        oracle_hint: A stale version is rejected and the user sees both copies.
+      - id: ELAB-Q-MOB-02-OFFLINE-QUEUE-VERSIONED.C2
+        text: This choice stays inside how does offline persistence resolve sync conflicts and does not
+          grant a behavior the option does not name.
+        touches:
+          any: *a2
+        oracle_hint: A stale version is rejected and the user sees both copies.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.offline_sync stays dormant
+        and offline_queue_versioned is not asked.
+    bounds:
+      - key: mobile.offline_sync.offline_queue_versioned.bound
+        value: 1
+        unit: version
+    oracle_hints:
+      - A stale version is rejected and the user sees both copies.
+      - Q-MOB-02 offline_queue_versioned is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-03-NONE
+    question_id: mobile.device_permissions
+    option_id: none
+    summary: No device prompts
+    touches:
+      any: &a3
+        - personal_data
+        - credentials
+    clauses:
+      - id: ELAB-Q-MOB-03-NONE.C1
+        text: The app requests no camera, location, push, or biometric permission.
+        touches:
+          any: *a3
+        oracle_hint: No permission prompt appears during the primary task.
+      - id: ELAB-Q-MOB-03-NONE.C2
+        text: This choice stays inside which device capabilities prompt at runtime and does not grant a
+          behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: No permission prompt appears during the primary task.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.device_permissions stays
+        dormant and none is not asked.
+    bounds:
+      - key: mobile.device_permissions.none.bound
+        value: 0
+        unit: prompts
+    oracle_hints:
+      - No permission prompt appears during the primary task.
+      - Q-MOB-03 none is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-03-CAMERA-ONLY
+    question_id: mobile.device_permissions
+    option_id: camera_only
+    summary: Camera only
+    touches:
+      any: *a3
+    clauses:
+      - id: ELAB-Q-MOB-03-CAMERA-ONLY.C1
+        text: The only runtime prompt is the camera, and it appears at the moment a capture starts.
+        touches:
+          any: *a3
+        oracle_hint: The camera prompt is shown on first capture and location is never requested.
+      - id: ELAB-Q-MOB-03-CAMERA-ONLY.C2
+        text: This choice stays inside which device capabilities prompt at runtime and does not grant a
+          behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: The camera prompt is shown on first capture and location is never requested.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.device_permissions stays
+        dormant and camera_only is not asked.
+    bounds:
+      - key: mobile.device_permissions.camera_only.bound
+        value: 1
+        unit: prompts
+    oracle_hints:
+      - The camera prompt is shown on first capture and location is never requested.
+      - Q-MOB-03 camera_only is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-03-CAMERA-LOCATION-PUSH-BIOMETRICS
+    question_id: mobile.device_permissions
+    option_id: camera_location_push_biometrics
+    summary: Camera, location, push, and biometrics
+    touches:
+      any: *a3
+    clauses:
+      - id: ELAB-Q-MOB-03-CAMERA-LOCATION-PUSH-BIOMETRICS.C1
+        text: Each of camera, location, push, and biometrics has its own prompt at the moment that
+          capability is used.
+        touches:
+          any: *a3
+        oracle_hint: Four prompts exist and none of them appears before the matching action.
+      - id: ELAB-Q-MOB-03-CAMERA-LOCATION-PUSH-BIOMETRICS.C2
+        text: This choice stays inside which device capabilities prompt at runtime and does not grant a
+          behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: Four prompts exist and none of them appears before the matching action.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.device_permissions stays
+        dormant and camera_location_push_biometrics is not asked.
+    bounds:
+      - key: mobile.device_permissions.camera_location_push_biometrics.bound
+        value: 4
+        unit: prompts
+    oracle_hints:
+      - Four prompts exist and none of them appears before the matching action.
+      - Q-MOB-03 camera_location_push_biometrics is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-04-NO-STORE-NO-IAP
+    question_id: mobile.store_iap
+    option_id: no_store_no_iap
+    summary: No store purchase
+    touches:
+      any: &a4
+        - money
+        - authn
+        - route
+    clauses:
+      - id: ELAB-Q-MOB-04-NO-STORE-NO-IAP.C1
+        text: There is no in-app purchase and no store-account requirement. A deep link only opens a screen.
+        touches:
+          any: *a4
+        oracle_hint: A purchase API is absent, and a deep link opens the named screen.
+      - id: ELAB-Q-MOB-04-NO-STORE-NO-IAP.C2
+        text: This choice stays inside how do deep links, store sign-in, and in-app purchase work and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a4
+        oracle_hint: A purchase API is absent, and a deep link opens the named screen.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.store_iap stays dormant
+        and no_store_no_iap is not asked.
+    bounds:
+      - key: mobile.store_iap.no_store_no_iap.bound
+        value: 0
+        unit: products
+    oracle_hints:
+      - A purchase API is absent, and a deep link opens the named screen.
+      - Q-MOB-04 no_store_no_iap is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-04-UNIVERSAL-LINKS-STORE-AUTH
+    question_id: mobile.store_iap
+    option_id: universal_links_store_auth
+    summary: Deep links and store sign-in
+    touches:
+      any: *a4
+    clauses:
+      - id: ELAB-Q-MOB-04-UNIVERSAL-LINKS-STORE-AUTH.C1
+        text: Universal links and app links open the app, and sign-in can use the store account. There is
+          still no in-app purchase.
+        touches:
+          any: *a4
+        oracle_hint: A universal link opens the app and a browser visit to the same URL stays on the web.
+      - id: ELAB-Q-MOB-04-UNIVERSAL-LINKS-STORE-AUTH.C2
+        text: This choice stays inside how do deep links, store sign-in, and in-app purchase work and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a4
+        oracle_hint: A universal link opens the app and a browser visit to the same URL stays on the web.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.store_iap stays dormant
+        and universal_links_store_auth is not asked.
+    bounds:
+      - key: mobile.store_iap.universal_links_store_auth.bound
+        value: 0
+        unit: products
+    oracle_hints:
+      - A universal link opens the app and a browser visit to the same URL stays on the web.
+      - Q-MOB-04 universal_links_store_auth is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-04-STORE-IAP-SERVER-RECEIPTS
+    question_id: mobile.store_iap
+    option_id: store_iap_server_receipts
+    summary: Store in-app purchase with server receipts
+    touches:
+      any: *a4
+    clauses:
+      - id: ELAB-Q-MOB-04-STORE-IAP-SERVER-RECEIPTS.C1
+        text: Purchases go through the store, and the server accepts a purchase only after it verifies the
+          receipt. The client success screen is not proof.
+        touches:
+          any: *a4
+        oracle_hint: A client success callback without a verified receipt does not unlock the product.
+      - id: ELAB-Q-MOB-04-STORE-IAP-SERVER-RECEIPTS.C2
+        text: This choice stays inside how do deep links, store sign-in, and in-app purchase work and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a4
+        oracle_hint: A client success callback without a verified receipt does not unlock the product.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.store_iap stays dormant
+        and store_iap_server_receipts is not asked.
+    bounds:
+      - key: mobile.store_iap.store_iap_server_receipts.bound
+        value: 1
+        unit: receipt_check
+    oracle_hints:
+      - A client success callback without a verified receipt does not unlock the product.
+      - Q-MOB-04 store_iap_server_receipts is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-05-PHONE-SAFE-AREA
+    question_id: mobile.ergonomics
+    option_id: phone_safe_area
+    summary: Phone safe area
+    touches:
+      any: &a5
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-MOB-05-PHONE-SAFE-AREA.C1
+        text: The layout respects the top and bottom safe areas on a phone and keeps the primary action
+          above the home gesture.
+        touches:
+          any: *a5
+        oracle_hint: The primary action is visible above the system gesture bar on a phone.
+      - id: ELAB-Q-MOB-05-PHONE-SAFE-AREA.C2
+        text: This choice stays inside how do screen size, safe area, and gestures behave and does not grant
+          a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: The primary action is visible above the system gesture bar on a phone.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.ergonomics stays dormant
+        and phone_safe_area is not asked.
+    bounds:
+      - key: mobile.ergonomics.phone_safe_area.bound
+        value: 24
+        unit: px
+    oracle_hints:
+      - The primary action is visible above the system gesture bar on a phone.
+      - Q-MOB-05 phone_safe_area is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-05-PHONE-AND-TABLET
+    question_id: mobile.ergonomics
+    option_id: phone_and_tablet
+    summary: Phone and tablet
+    touches:
+      any: *a5
+    clauses:
+      - id: ELAB-Q-MOB-05-PHONE-AND-TABLET.C1
+        text: Phone and tablet each have a layout. The tablet width does not merely stretch the phone
+          column.
+        touches:
+          any: *a5
+        oracle_hint: A tablet width shows the tablet arrangement, not a stretched phone column.
+      - id: ELAB-Q-MOB-05-PHONE-AND-TABLET.C2
+        text: This choice stays inside how do screen size, safe area, and gestures behave and does not grant
+          a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: A tablet width shows the tablet arrangement, not a stretched phone column.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.ergonomics stays dormant
+        and phone_and_tablet is not asked.
+    bounds:
+      - key: mobile.ergonomics.phone_and_tablet.bound
+        value: 768
+        unit: px
+    oracle_hints:
+      - A tablet width shows the tablet arrangement, not a stretched phone column.
+      - Q-MOB-05 phone_and_tablet is observable without guessing a second platform.
+  - id: ELAB-Q-MOB-05-GESTURE-NAV-SAFE-AREA
+    question_id: mobile.ergonomics
+    option_id: gesture_nav_safe_area
+    summary: Gesture-first safe area
+    touches:
+      any: *a5
+    clauses:
+      - id: ELAB-Q-MOB-05-GESTURE-NAV-SAFE-AREA.C1
+        text: Edge-swipe back and the system gesture bar stay available. The app does not steal those
+          gestures.
+        touches:
+          any: *a5
+        oracle_hint: The system back gesture still fires from the left edge.
+      - id: ELAB-Q-MOB-05-GESTURE-NAV-SAFE-AREA.C2
+        text: This choice stays inside how do screen size, safe area, and gestures behave and does not grant
+          a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: The system back gesture still fires from the left edge.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, mobile.ergonomics stays dormant
+        and gesture_nav_safe_area is not asked.
+    bounds:
+      - key: mobile.ergonomics.gesture_nav_safe_area.bound
+        value: 24
+        unit: px
+    oracle_hints:
+      - The system back gesture still fires from the left edge.
+      - Q-MOB-05 gesture_nav_safe_area is observable without guessing a second platform.

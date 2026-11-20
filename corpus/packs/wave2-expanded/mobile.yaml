@@ -1,0 +1,390 @@
+pack: mobile
+pack_version: 1
+activation:
+  pack_id: mobile
+  explicit_targets:
+    - native_mobile
+  settled_any:
+    - question_id: delivery.platform
+      option_id: native_mobile
+  settled_all: []
+  dormant_platforms:
+    - web_saas
+    - cli
+    - api
+    - mobile_web
+    - web_browser
+  non_trigger_utterances:
+    - Staff open a link on their phones.
+    - People will open the link on their phones.
+  skill_ids: []
+  not_applicable_question_ids: []
+  not_applicable_criteria: []
+questions:
+  - id: mobile.delivery
+    code: Q-MOB-01
+    pack: mobile
+    version: 1
+    scope: shared
+    title: Is delivery a PWA, React Native or Expo, or a native iOS and Android app?
+    explain: Decides the native-app delivery. A PWA or mobile website, a React Native or Expo app, and a
+      native iOS and Android app are different products. Opening a link on a phone is mobile web and
+      does not settle this question.
+    criteria:
+      - mobile.delivery
+      - mobile.pwa
+      - mobile.react_native
+      - mobile.native_store
+    touches:
+      - route
+      - interactive_ui
+    impact: high
+    reversibility: irreversible
+    must_ask: true
+    requires: []
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+      - infer.from_stated_technology
+    options:
+      - id: pwa_mobile_web
+        label: PWA or mobile web
+        meaning: The phone opens a web app. It can be installed as a PWA. There is no App Store binary and
+          no React Native runtime.
+        stage_suitability: &a1
+          - prototype
+          - mvp
+          - production
+        frequency: high
+        conflicts_with: []
+      - id: react_native_expo
+        label: React Native or Expo
+        meaning: One React Native or Expo project produces the iOS and Android binaries.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: native_ios_android
+        label: Native iOS and Android
+        meaning: Separate native iOS and Android apps are built and submitted to the stores.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: pwa_mobile_web
+        rationale: A prototype of a native-shaped idea still starts as a PWA until a store binary is
+          explicitly required.
+      mvp:
+        option: pwa_mobile_web
+        rationale: MVP stays a PWA unless the settled target is a store binary.
+      production:
+        option: react_native_expo
+        rationale: Production of an explicit native target uses one React Native or Expo project for both
+          stores.
+    examples:
+      positive:
+        - utterance: Ship a PWA. Phones should open the site and install it from the browser.
+          settles: pwa_mobile_web
+        - utterance: Mobile web only. No App Store binary and no React Native.
+          settles: pwa_mobile_web
+        - utterance: Use React Native with Expo for the iOS and Android apps.
+          settles: react_native_expo
+        - utterance: One Expo project should produce both store binaries.
+          settles: react_native_expo
+        - utterance: Write a native iOS app and a separate native Android app.
+          settles: native_ios_android
+      negative:
+        - utterance: Staff open a link on their phones.
+          why: A link opened on a phone is mobile web, not a native app, not React Native, and not an App
+            Store or in-app purchase product.
+        - utterance: Make the website comfortable on a phone.
+          why: A responsive website does not choose React Native, Expo, or native store delivery.
+  - id: mobile.offline_sync
+    code: Q-MOB-02
+    pack: mobile
+    version: 1
+    scope: shared
+    title: How does offline persistence resolve sync conflicts?
+    explain: Decides whether the native or PWA client queues writes while offline and how two edits of
+      the same record merge when the device reconnects.
+    criteria:
+      - mobile.offline
+      - mobile.sync_conflict
+      - mobile.local_persistence
+    touches:
+      - caching
+      - concurrent_edit
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - mobile.delivery
+    allowed_inference_rules:
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: online_only
+        label: Online only
+        meaning: Writes require a network response. Offline, the client shows a blocked state and stores
+          nothing to replay.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: offline_queue_last_write
+        label: Offline queue, last write wins
+        meaning: Writes queue locally and the latest write for a record replaces earlier queued writes on
+          sync.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: offline_queue_versioned
+        label: Offline queue, version check
+        meaning: Each queued write carries the version it edited. The server rejects a stale version and the
+          client shows the conflict.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: online_only
+        rationale: A prototype blocks writes while offline instead of inventing a merge rule.
+      mvp:
+        option: offline_queue_last_write
+        rationale: MVP queues offline writes and lets the latest edit win.
+      production:
+        option: offline_queue_versioned
+        rationale: Production sends a version with each queued write and surfaces a stale-write conflict.
+    examples:
+      positive:
+        - utterance: If the phone is offline, block the save. Do not queue it.
+          settles: online_only
+        - utterance: Online only. Show a clear offline message and keep the form unsent.
+          settles: online_only
+        - utterance: Queue the save offline and let the latest edit win when we reconnect.
+          settles: offline_queue_last_write
+        - utterance: Last write wins after the offline queue flushes.
+          settles: offline_queue_last_write
+        - utterance: Send the version we edited. If the server has a newer one, show the conflict.
+          settles: offline_queue_versioned
+      negative:
+        - utterance: People will use this on the train.
+          why: A flaky network does not choose a queue or a conflict rule.
+        - utterance: Staff open a link on their phones.
+          why: Opening a link does not settle offline persistence or sync conflicts.
+  - id: mobile.device_permissions
+    code: Q-MOB-03
+    pack: mobile
+    version: 1
+    scope: shared
+    title: Which device capabilities prompt at runtime?
+    explain: Decides which runtime permission prompts exist for camera, location, push, and biometrics.
+      A capability that is not listed is not requested.
+    criteria:
+      - mobile.camera
+      - mobile.location
+      - mobile.push
+      - mobile.biometrics
+    touches:
+      - personal_data
+      - credentials
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - mobile.delivery
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+    options:
+      - id: none
+        label: No device prompts
+        meaning: The app requests no camera, location, push, or biometric permission.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: camera_only
+        label: Camera only
+        meaning: The only runtime prompt is the camera, and it appears at the moment a capture starts.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: camera_location_push_biometrics
+        label: Camera, location, push, and biometrics
+        meaning: Each of camera, location, push, and biometrics has its own prompt at the moment that
+          capability is used.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: none
+        rationale: A prototype of the shell requests no device permission.
+      mvp:
+        option: camera_only
+        rationale: MVP prompts for the camera only when a capture starts.
+      production:
+        option: camera_only
+        rationale: Production still prompts only for the camera unless a later explicit answer adds
+          location, push, or biometrics.
+    examples:
+      positive:
+        - utterance: Do not ask for camera, location, notifications, or fingerprint.
+          settles: none
+        - utterance: No device permissions in this version.
+          settles: none
+        - utterance: Ask for the camera when they take a photo, and nothing else.
+          settles: camera_only
+        - utterance: Camera only. Do not prompt for location or push.
+          settles: camera_only
+        - utterance: We need camera, location, push notifications, and biometrics, each prompted when used.
+          settles: camera_location_push_biometrics
+      negative:
+        - utterance: It should feel like a phone app.
+          why: A phone-like layout does not grant camera, location, push, or biometric access.
+        - utterance: Staff open a link on their phones.
+          why: Opening a link does not request a native permission prompt.
+  - id: mobile.store_iap
+    code: Q-MOB-04
+    pack: mobile
+    version: 1
+    scope: shared
+    title: How do deep links, store sign-in, and in-app purchase work?
+    explain: Decides deep links, store-account sign-in, and whether in-app purchase receipts are
+      verified on the server. This question belongs to an explicit native app, not to a page opened
+      in a phone browser.
+    criteria:
+      - mobile.deep_link
+      - mobile.store_auth
+      - mobile.iap
+    touches:
+      - money
+      - authn
+      - route
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    requires:
+      - mobile.delivery
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+    options:
+      - id: no_store_no_iap
+        label: No store purchase
+        meaning: There is no in-app purchase and no store-account requirement. A deep link only opens a
+          screen.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: universal_links_store_auth
+        label: Deep links and store sign-in
+        meaning: Universal links and app links open the app, and sign-in can use the store account. There is
+          still no in-app purchase.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: store_iap_server_receipts
+        label: Store in-app purchase with server receipts
+        meaning: Purchases go through the store, and the server accepts a purchase only after it verifies
+          the receipt. The client success screen is not proof.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: no_store_no_iap
+        rationale: A prototype does not add store billing or a store-account requirement.
+      mvp:
+        option: universal_links_store_auth
+        rationale: MVP adds deep links and optional store sign-in without taking payment inside the app.
+      production:
+        option: store_iap_server_receipts
+        rationale: Production verifies store receipts on the server before unlocking a paid product.
+    examples:
+      positive:
+        - utterance: No in-app purchase. A link should just open the right screen.
+          settles: no_store_no_iap
+        - utterance: Do not use the App Store for payment or sign-in.
+          settles: no_store_no_iap
+        - utterance: Universal links should open the app, and people may sign in with the store account. No
+            purchases.
+          settles: universal_links_store_auth
+        - utterance: App links and store sign-in, but do not sell anything inside the app.
+          settles: universal_links_store_auth
+        - utterance: Sell the upgrade as an in-app purchase and accept it only after our server checks the
+            receipt.
+          settles: store_iap_server_receipts
+      negative:
+        - utterance: Staff open a link on their phones.
+          why: A link on a phone is mobile web. It does not unlock App Store sign-in, in-app purchase, or
+            React Native store rules.
+        - utterance: Charge a subscription on the website.
+          why: Website billing is not an in-app purchase and does not settle store receipt checks.
+  - id: mobile.ergonomics
+    code: Q-MOB-05
+    pack: mobile
+    version: 1
+    scope: shared
+    title: How do screen size, safe area, and gestures behave?
+    explain: Decides safe-area insets, phone versus tablet layouts, and whether the primary action sits
+      clear of the system gesture bar.
+    criteria:
+      - mobile.safe_area
+      - mobile.gesture
+      - mobile.tablet
+    touches:
+      - interactive_ui
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires:
+      - mobile.delivery
+    allowed_inference_rules:
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: phone_safe_area
+        label: Phone safe area
+        meaning: The layout respects the top and bottom safe areas on a phone and keeps the primary action
+          above the home gesture.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: phone_and_tablet
+        label: Phone and tablet
+        meaning: Phone and tablet each have a layout. The tablet width does not merely stretch the phone
+          column.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: gesture_nav_safe_area
+        label: Gesture-first safe area
+        meaning: Edge-swipe back and the system gesture bar stay available. The app does not steal those
+          gestures.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: phone_safe_area
+        rationale: A prototype fits one phone and keeps controls out of the safe-area inset.
+      mvp:
+        option: phone_and_tablet
+        rationale: MVP designs a phone layout and a tablet layout.
+      production:
+        option: phone_and_tablet
+        rationale: Production keeps separate phone and tablet arrangements and respects the safe area on both.
+    examples:
+      positive:
+        - utterance: Fit a phone, keep the button above the home indicator, and ignore tablets.
+          settles: phone_safe_area
+        - utterance: Phone only, with the safe area padded.
+          settles: phone_safe_area
+        - utterance: Design the phone and the tablet separately.
+          settles: phone_and_tablet
+        - utterance: A tablet should not be a stretched phone page.
+          settles: phone_and_tablet
+        - utterance: Leave the system back swipe alone and keep the gesture bar clear.
+          settles: gesture_nav_safe_area
+      negative:
+        - utterance: It should look good on a phone.
+          why: A visual wish does not settle safe area, tablet layout, or gesture ownership.
+        - utterance: Staff open a link on their phones.
+          why: Opening a link does not choose native safe-area or gesture rules.

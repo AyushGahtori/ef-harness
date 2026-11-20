@@ -1,0 +1,468 @@
+pack: browser-extension
+elaborations:
+  - id: ELAB-Q-EXT-01-POPUP
+    question_id: extension.surface
+    option_id: popup
+    summary: Toolbar popup
+    touches:
+      any: &a1
+        - interactive_ui
+        - route
+    clauses:
+      - id: ELAB-Q-EXT-01-POPUP.C1
+        text: The action opens a small popup. The popup closes when it loses focus, and it is not a
+          persistent side panel.
+        touches:
+          any: *a1
+        oracle_hint: The toolbar action opens a popup and that popup closes on blur.
+      - id: ELAB-Q-EXT-01-POPUP.C2
+        text: This choice stays inside which manifest v3 surface is primary and does not grant a behavior
+          the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The toolbar action opens a popup and that popup closes on blur.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.surface stays dormant
+        and popup is not asked.
+    bounds:
+      - key: extension.surface.popup.bound
+        value: 400
+        unit: px
+    oracle_hints:
+      - The toolbar action opens a popup and that popup closes on blur.
+      - Q-EXT-01 popup is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-01-SIDE-PANEL
+    question_id: extension.surface
+    option_id: side_panel
+    summary: Side panel
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-EXT-01-SIDE-PANEL.C1
+        text: The primary UI stays open in the browser side panel while the user moves across tabs.
+        touches:
+          any: *a1
+        oracle_hint: The side panel stays open when the active tab changes.
+      - id: ELAB-Q-EXT-01-SIDE-PANEL.C2
+        text: This choice stays inside which manifest v3 surface is primary and does not grant a behavior
+          the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The side panel stays open when the active tab changes.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.surface stays dormant
+        and side_panel is not asked.
+    bounds:
+      - key: extension.surface.side_panel.bound
+        value: 360
+        unit: px
+    oracle_hints:
+      - The side panel stays open when the active tab changes.
+      - Q-EXT-01 side_panel is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-01-CONTENT-SCRIPT
+    question_id: extension.surface
+    option_id: content_script
+    summary: Content script
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-EXT-01-CONTENT-SCRIPT.C1
+        text: The primary UI is injected into matching pages. There is no persistent extension page for the
+          main task.
+        touches:
+          any: *a1
+        oracle_hint: A matching page shows the injected UI and an unmatched page does not.
+      - id: ELAB-Q-EXT-01-CONTENT-SCRIPT.C2
+        text: This choice stays inside which manifest v3 surface is primary and does not grant a behavior
+          the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: A matching page shows the injected UI and an unmatched page does not.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.surface stays dormant
+        and content_script is not asked.
+    bounds:
+      - key: extension.surface.content_script.bound
+        value: 1
+        unit: count
+    oracle_hints:
+      - A matching page shows the injected UI and an unmatched page does not.
+      - Q-EXT-01 content_script is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-01-OPTIONS-PAGE
+    question_id: extension.surface
+    option_id: options_page
+    summary: Options page
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-EXT-01-OPTIONS-PAGE.C1
+        text: The primary surface is the options page opened from the extension management UI.
+        touches:
+          any: *a1
+        oracle_hint: The main task is completed on the options page, not in a popup.
+      - id: ELAB-Q-EXT-01-OPTIONS-PAGE.C2
+        text: This choice stays inside which manifest v3 surface is primary and does not grant a behavior
+          the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The main task is completed on the options page, not in a popup.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.surface stays dormant
+        and options_page is not asked.
+    bounds:
+      - key: extension.surface.options_page.bound
+        value: 1
+        unit: count
+    oracle_hints:
+      - The main task is completed on the options page, not in a popup.
+      - Q-EXT-01 options_page is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-02-ACTIVE-TAB-ONLY
+    question_id: extension.host_permissions
+    option_id: active_tab_only
+    summary: Active tab only
+    touches:
+      any: &a2
+        - external_api
+        - authz
+    clauses:
+      - id: ELAB-Q-EXT-02-ACTIVE-TAB-ONLY.C1
+        text: The extension reads a tab only after the user invokes it, and it requests no standing host
+          permission.
+        touches:
+          any: *a2
+        oracle_hint: A page that was not invoked through the action is unreadable.
+      - id: ELAB-Q-EXT-02-ACTIVE-TAB-ONLY.C2
+        text: This choice stays inside how are host permissions scoped and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a2
+        oracle_hint: A page that was not invoked through the action is unreadable.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.host_permissions stays
+        dormant and active_tab_only is not asked.
+    bounds:
+      - key: extension.host_permissions.active_tab_only.bound
+        value: 0
+        unit: hosts
+    oracle_hints:
+      - A page that was not invoked through the action is unreadable.
+      - Q-EXT-02 active_tab_only is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-02-EXPLICIT-HOST-LIST
+    question_id: extension.host_permissions
+    option_id: explicit_host_list
+    summary: Explicit host list
+    touches:
+      any: *a2
+    clauses:
+      - id: ELAB-Q-EXT-02-EXPLICIT-HOST-LIST.C1
+        text: The manifest lists the hosts the extension may read. Optional hosts are requested at the
+          moment they are needed.
+        touches:
+          any: *a2
+        oracle_hint: A host that is absent from the manifest and was not optionally granted is blocked.
+      - id: ELAB-Q-EXT-02-EXPLICIT-HOST-LIST.C2
+        text: This choice stays inside how are host permissions scoped and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a2
+        oracle_hint: A host that is absent from the manifest and was not optionally granted is blocked.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.host_permissions stays
+        dormant and explicit_host_list is not asked.
+    bounds:
+      - key: extension.host_permissions.explicit_host_list.bound
+        value: 8
+        unit: hosts
+    oracle_hints:
+      - A host that is absent from the manifest and was not optionally granted is blocked.
+      - Q-EXT-02 explicit_host_list is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-02-ALL-URLS
+    question_id: extension.host_permissions
+    option_id: all_urls
+    summary: All URLs
+    touches:
+      any: *a2
+    clauses:
+      - id: ELAB-Q-EXT-02-ALL-URLS.C1
+        text: The manifest requests access to every http and https URL.
+        touches:
+          any: *a2
+        oracle_hint: The permission warning lists access to all sites.
+      - id: ELAB-Q-EXT-02-ALL-URLS.C2
+        text: This choice stays inside how are host permissions scoped and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a2
+        oracle_hint: The permission warning lists access to all sites.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.host_permissions stays
+        dormant and all_urls is not asked.
+    bounds:
+      - key: extension.host_permissions.all_urls.bound
+        value: 1
+        unit: count
+    oracle_hints:
+      - The permission warning lists access to all sites.
+      - Q-EXT-02 all_urls is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-03-CHROME-STORAGE-LOCAL
+    question_id: extension.service_worker_state
+    option_id: chrome_storage_local
+    summary: chrome.storage.local
+    touches:
+      any: &a3
+        - caching
+        - config_env
+    clauses:
+      - id: ELAB-Q-EXT-03-CHROME-STORAGE-LOCAL.C1
+        text: Durable state is written to chrome.storage.local before the worker returns. An idle unload of
+          30 seconds must not drop it. The stored payload stays inside the local quota.
+        touches:
+          any: *a3
+        oracle_hint: MV3 service worker survives 30s idle unload without losing state.
+      - id: ELAB-Q-EXT-03-CHROME-STORAGE-LOCAL.C2
+        text: This choice stays inside where does the service worker keep state across idle unload and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: MV3 service worker survives 30s idle unload without losing state.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.service_worker_state
+        stays dormant and chrome_storage_local is not asked.
+    bounds:
+      - key: extension.service_worker_state.chrome_storage_local.bound
+        value: 30
+        unit: s
+    oracle_hints:
+      - MV3 service worker survives 30s idle unload without losing state.
+      - Q-EXT-03 chrome_storage_local is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-03-CHROME-STORAGE-SESSION
+    question_id: extension.service_worker_state
+    option_id: chrome_storage_session
+    summary: chrome.storage.session
+    touches:
+      any: *a3
+    clauses:
+      - id: ELAB-Q-EXT-03-CHROME-STORAGE-SESSION.C1
+        text: State lives in chrome.storage.session and is cleared when the browser session ends.
+        touches:
+          any: *a3
+        oracle_hint: Quitting the browser clears the session area.
+      - id: ELAB-Q-EXT-03-CHROME-STORAGE-SESSION.C2
+        text: This choice stays inside where does the service worker keep state across idle unload and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: Quitting the browser clears the session area.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.service_worker_state
+        stays dormant and chrome_storage_session is not asked.
+    bounds:
+      - key: extension.service_worker_state.chrome_storage_session.bound
+        value: 1
+        unit: session
+    oracle_hints:
+      - Quitting the browser clears the session area.
+      - Q-EXT-03 chrome_storage_session is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-03-IN-MEMORY-ONLY
+    question_id: extension.service_worker_state
+    option_id: in_memory_only
+    summary: Memory only
+    touches:
+      any: *a3
+    clauses:
+      - id: ELAB-Q-EXT-03-IN-MEMORY-ONLY.C1
+        text: State is kept in worker memory. An idle unload drops it.
+        touches:
+          any: *a3
+        oracle_hint: After a 30 second idle stop, the in-memory value is gone.
+      - id: ELAB-Q-EXT-03-IN-MEMORY-ONLY.C2
+        text: This choice stays inside where does the service worker keep state across idle unload and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: After a 30 second idle stop, the in-memory value is gone.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.service_worker_state
+        stays dormant and in_memory_only is not asked.
+    bounds:
+      - key: extension.service_worker_state.in_memory_only.bound
+        value: 30
+        unit: s
+    oracle_hints:
+      - After a 30 second idle stop, the in-memory value is gone.
+      - Q-EXT-03 in_memory_only is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-04-RUNTIME-SENDMESSAGE-STRICT-CSP
+    question_id: extension.messaging_csp
+    option_id: runtime_sendmessage_strict_csp
+    summary: Runtime messages and a strict CSP
+    touches:
+      any: &a4
+        - route
+        - external_api
+    clauses:
+      - id: ELAB-Q-EXT-04-RUNTIME-SENDMESSAGE-STRICT-CSP.C1
+        text: Contexts talk with runtime.sendMessage. Extension pages use a strict script policy with no
+          remote script and no inline event handler.
+        touches:
+          any: *a4
+        oracle_hint: A remote script URL on an extension page is refused.
+      - id: ELAB-Q-EXT-04-RUNTIME-SENDMESSAGE-STRICT-CSP.C2
+        text: This choice stays inside how do extension contexts message each other under csp and does not
+          grant a behavior the option does not name.
+        touches:
+          any: *a4
+        oracle_hint: A remote script URL on an extension page is refused.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.messaging_csp stays
+        dormant and runtime_sendmessage_strict_csp is not asked.
+    bounds:
+      - key: extension.messaging_csp.runtime_sendmessage_strict_csp.bound
+        value: 0
+        unit: remote_scripts
+    oracle_hints:
+      - A remote script URL on an extension page is refused.
+      - Q-EXT-04 runtime_sendmessage_strict_csp is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-04-WINDOW-POSTMESSAGE-OPEN
+    question_id: extension.messaging_csp
+    option_id: window_postmessage_open
+    summary: window.postMessage
+    touches:
+      any: *a4
+    clauses:
+      - id: ELAB-Q-EXT-04-WINDOW-POSTMESSAGE-OPEN.C1
+        text: The page and the extension talk with window.postMessage and do not check the sender origin.
+        touches:
+          any: *a4
+        oracle_hint: A message from an unexpected origin is accepted.
+      - id: ELAB-Q-EXT-04-WINDOW-POSTMESSAGE-OPEN.C2
+        text: This choice stays inside how do extension contexts message each other under csp and does not
+          grant a behavior the option does not name.
+        touches:
+          any: *a4
+        oracle_hint: A message from an unexpected origin is accepted.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.messaging_csp stays
+        dormant and window_postmessage_open is not asked.
+    bounds:
+      - key: extension.messaging_csp.window_postmessage_open.bound
+        value: 0
+        unit: origin_checks
+    oracle_hints:
+      - A message from an unexpected origin is accepted.
+      - Q-EXT-04 window_postmessage_open is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-04-EXTERNALLY-CONNECTABLE-NAMED
+    question_id: extension.messaging_csp
+    option_id: externally_connectable_named
+    summary: Named external connect
+    touches:
+      any: *a4
+    clauses:
+      - id: ELAB-Q-EXT-04-EXTERNALLY-CONNECTABLE-NAMED.C1
+        text: Only the listed origins may connect, and each message names the sender extension id.
+        touches:
+          any: *a4
+        oracle_hint: An origin that is not on the allowlist cannot connect.
+      - id: ELAB-Q-EXT-04-EXTERNALLY-CONNECTABLE-NAMED.C2
+        text: This choice stays inside how do extension contexts message each other under csp and does not
+          grant a behavior the option does not name.
+        touches:
+          any: *a4
+        oracle_hint: An origin that is not on the allowlist cannot connect.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.messaging_csp stays
+        dormant and externally_connectable_named is not asked.
+    bounds:
+      - key: extension.messaging_csp.externally_connectable_named.bound
+        value: 4
+        unit: origins
+    oracle_hints:
+      - An origin that is not on the allowlist cannot connect.
+      - Q-EXT-04 externally_connectable_named is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-05-UNPACKED-DEV-ONLY
+    question_id: extension.store_packaging
+    option_id: unpacked_dev_only
+    summary: Unpacked developer load
+    touches:
+      any: &a5
+        - personal_data
+        - config_env
+    clauses:
+      - id: ELAB-Q-EXT-05-UNPACKED-DEV-ONLY.C1
+        text: The extension is loaded unpacked for local development and is not submitted to a store.
+        touches:
+          any: *a5
+        oracle_hint: No store listing is published.
+      - id: ELAB-Q-EXT-05-UNPACKED-DEV-ONLY.C2
+        text: This choice stays inside how is the extension packaged, and what privacy disclosure ships and
+          does not grant a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: No store listing is published.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.store_packaging stays
+        dormant and unpacked_dev_only is not asked.
+    bounds:
+      - key: extension.store_packaging.unpacked_dev_only.bound
+        value: 0
+        unit: stores
+    oracle_hints:
+      - No store listing is published.
+      - Q-EXT-05 unpacked_dev_only is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-05-CHROME-ONLY-MINIMAL
+    question_id: extension.store_packaging
+    option_id: chrome_only_minimal
+    summary: Chrome Web Store, minimal disclosure
+    touches:
+      any: *a5
+    clauses:
+      - id: ELAB-Q-EXT-05-CHROME-ONLY-MINIMAL.C1
+        text: A Chrome Web Store package is signed for upload, and the privacy form lists only the data the
+          extension actually sends off the device.
+        touches:
+          any: *a5
+        oracle_hint: The Chrome listing privacy form matches the data that leaves the browser.
+      - id: ELAB-Q-EXT-05-CHROME-ONLY-MINIMAL.C2
+        text: This choice stays inside how is the extension packaged, and what privacy disclosure ships and
+          does not grant a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: The Chrome listing privacy form matches the data that leaves the browser.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.store_packaging stays
+        dormant and chrome_only_minimal is not asked.
+    bounds:
+      - key: extension.store_packaging.chrome_only_minimal.bound
+        value: 1
+        unit: stores
+    oracle_hints:
+      - The Chrome listing privacy form matches the data that leaves the browser.
+      - Q-EXT-05 chrome_only_minimal is observable without guessing a second platform.
+  - id: ELAB-Q-EXT-05-CHROME-AND-FIREFOX-DISCLOSED
+    question_id: extension.store_packaging
+    option_id: chrome_and_firefox_disclosed
+    summary: Chrome and Firefox with a shared disclosure
+    touches:
+      any: *a5
+    clauses:
+      - id: ELAB-Q-EXT-05-CHROME-AND-FIREFOX-DISCLOSED.C1
+        text: The same disclosure covers the Chrome Web Store package and the Firefox Add-ons package,
+          including host access.
+        touches:
+          any: *a5
+        oracle_hint: Both store listings name the same host access and the same off-device data.
+      - id: ELAB-Q-EXT-05-CHROME-AND-FIREFOX-DISCLOSED.C2
+        text: This choice stays inside how is the extension packaged, and what privacy disclosure ships and
+          does not grant a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: Both store listings name the same host access and the same off-device data.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, extension.store_packaging stays
+        dormant and chrome_and_firefox_disclosed is not asked.
+    bounds:
+      - key: extension.store_packaging.chrome_and_firefox_disclosed.bound
+        value: 2
+        unit: stores
+    oracle_hints:
+      - Both store listings name the same host access and the same off-device data.
+      - Q-EXT-05 chrome_and_firefox_disclosed is observable without guessing a second platform.

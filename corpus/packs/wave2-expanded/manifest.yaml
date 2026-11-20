@@ -1,0 +1,78 @@
+schema_version: 1
+wave: 2
+question_count: 15
+elaboration_count: 46
+packs:
+  - id: browser-extension
+    file: corpus/packs/wave2-expanded/browser-extension.yaml
+    elaborations: corpus/elaborations/wave2/browser-extension.yaml
+    question_count: 5
+  - id: mobile
+    file: corpus/packs/wave2-expanded/mobile.yaml
+    elaborations: corpus/elaborations/wave2/mobile.yaml
+    question_count: 5
+  - id: desktop
+    file: corpus/packs/wave2-expanded/desktop.yaml
+    elaborations: corpus/elaborations/wave2/desktop.yaml
+    question_count: 5
+questions:
+  - code: Q-EXT-01
+    id: extension.surface
+    pack: browser-extension
+    file: corpus/packs/wave2-expanded/browser-extension.yaml
+  - code: Q-EXT-02
+    id: extension.host_permissions
+    pack: browser-extension
+    file: corpus/packs/wave2-expanded/browser-extension.yaml
+  - code: Q-EXT-03
+    id: extension.service_worker_state
+    pack: browser-extension
+    file: corpus/packs/wave2-expanded/browser-extension.yaml
+  - code: Q-EXT-04
+    id: extension.messaging_csp
+    pack: browser-extension
+    file: corpus/packs/wave2-expanded/browser-extension.yaml
+  - code: Q-EXT-05
+    id: extension.store_packaging
+    pack: browser-extension
+    file: corpus/packs/wave2-expanded/browser-extension.yaml
+  - code: Q-MOB-01
+    id: mobile.delivery
+    pack: mobile
+    file: corpus/packs/wave2-expanded/mobile.yaml
+  - code: Q-MOB-02
+    id: mobile.offline_sync
+    pack: mobile
+    file: corpus/packs/wave2-expanded/mobile.yaml
+  - code: Q-MOB-03
+    id: mobile.device_permissions
+    pack: mobile
+    file: corpus/packs/wave2-expanded/mobile.yaml
+  - code: Q-MOB-04
+    id: mobile.store_iap
+    pack: mobile
+    file: corpus/packs/wave2-expanded/mobile.yaml
+  - code: Q-MOB-05
+    id: mobile.ergonomics
+    pack: mobile
+    file: corpus/packs/wave2-expanded/mobile.yaml
+  - code: Q-DSK-01
+    id: desktop.distribution
+    pack: desktop
+    file: corpus/packs/wave2-expanded/desktop.yaml
+  - code: Q-DSK-02
+    id: desktop.privilege_boundary
+    pack: desktop
+    file: corpus/packs/wave2-expanded/desktop.yaml
+  - code: Q-DSK-03
+    id: desktop.lifecycle
+    pack: desktop
+    file: corpus/packs/wave2-expanded/desktop.yaml
+  - code: Q-DSK-04
+    id: desktop.secret_storage
+    pack: desktop
+    file: corpus/packs/wave2-expanded/desktop.yaml
+  - code: Q-DSK-05
+    id: desktop.ergonomics
+    pack: desktop
+    file: corpus/packs/wave2-expanded/desktop.yaml

@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "catalog": "v1-20",
+  "tokenizer": "cl100k-o200k-upper-bound-v1",
+  "m2Source": "local-port:task-078",
+  "wave2Source": "corpus/skills/wave2",
+  "skillCount": 20,
+  "skills": [
+    {
+      "skillId": "infer-or-ask@1",
+      "source": "local-port:task-078",
+      "sha256": "9c97178b037ed934fb0fa2a8103f76770ffda20642335294b23d9d251a507af0",
+      "tokenCount": 315,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "systematic-debugging@1",
+      "source": "local-port:task-078",
+      "sha256": "5136583a38592c6a5331435172f7b5d8d99c27db4d146d4856c7435d8031122c",
+      "tokenCount": 288,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "test-driven-verification@1",
+      "source": "local-port:task-078",
+      "sha256": "1db5ad0abca7085157a3494d44e9490375c547662571fed6f5c6c86cc8752631",
+      "tokenCount": 289,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "frontend-accessibility-ui@1",
+      "source": "local-port:task-078",
+      "sha256": "8e0086d0ea7e5606f0db2e1c3ae82a728c968de0c6ccbe4e314ed6dec0ede838",
+      "tokenCount": 285,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "sql-migrations-safety@1",
+      "source": "local-port:task-078",
+      "sha256": "ed228abaed3dbd9a3f113ccc2ff9fd36a81a9701c40c73df1566413e3986b0d6",
+      "tokenCount": 293,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "api-security-hardening@1",
+      "source": "local-port:task-078",
+      "sha256": "fff7f0d7b3fd39ee3274883e147e1503238382a0e70938c5b631dbcd76cc9f50",
+      "tokenCount": 281,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "react-state-and-forms@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "274a177f40c9e20dc1122a34577940ccffe8c4ae86cf52a12df419e3f365cf24",
+      "tokenCount": 429,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "playwright-e2e-reliability@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "a964fbe4d8818e5c240edb33c4c0718e6e897884122884b68726e18cd0612937",
+      "tokenCount": 350,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "stripe-billing-webhooks@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "835cfbacc6c308931a2e955c1da353277a63676640e38ff09351bc384173b21e",
+      "tokenCount": 355,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "auth-session-rbac@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "20c993c974feb30d019d322fcd5460a8d1e158b1b3eae1e13e4a51549359333c",
+      "tokenCount": 345,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "rest-openapi-contracts@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "b58a69b132aec706abb0403534d92f52110ddf46defbfb6184e71a8cb7fd5a80",
+      "tokenCount": 368,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "cli-ergonomics-and-io@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "5dba3446ffb57a9d703032d4b809b7a44651a7f0f25d189c64e3fc8da70b4b27",
+      "tokenCount": 366,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "background-jobs-idempotency@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "8a138e386d0f1655e12c60e1dccefea2218250355612de5e30ab17d4478b9c69",
+      "tokenCount": 348,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "file-uploads-and-media@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "63d571a33037c037edeeb25bba841f240ef3b97dad6672c988f02c192885733b",
+      "tokenCount": 351,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "performance-profiling-sql@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "94abcb2c485eb5bddcb4ad5c8528984cf2a446d9d362932899e7a941b1be0f11",
+      "tokenCount": 355,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "brownfield-safe-refactoring@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "cddb8b40c6173faaabb35a3cfe2ab2106112b5534f685c07f147b6a7dda907e3",
+      "tokenCount": 377,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "codemods-and-sweeps@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "07a1c515c3a1848a11ad085ed96aac47ac6dc4f700fb82e1cbb249bc313750c4",
+      "tokenCount": 375,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "desktop-electron-ipc-security@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "cf5644c5a6366fbb4771634841b4b7e045f602061f8da0892e16f6e1fa3fd0c6",
+      "tokenCount": 349,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "browser-extension-mv3@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "588f025268032e5f5754b1c4b34a2e36c70004f9c1cb4d3cad9f0ae51c17ec38",
+      "tokenCount": 371,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    },
+    {
+      "skillId": "docker-ci-deploy-hygiene@1",
+      "source": "corpus/skills/wave2",
+      "sha256": "901c5e2bc519d45a40c5679ebd8ff8f44161cd8f97f40c19c7f1ab8935090537",
+      "tokenCount": 338,
+      "vettingStatus": "vetted",
+      "canaryAccesses": 0,
+      "hiddenUnicode": 0,
+      "globalConfigWrites": 0
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "skillId": "test-driven-verification",
+  "version": "1",
+  "fromStatus": "quarantined",
+  "toStatus": "vetted",
+  "canaryAccesses": 0,
+  "unauthorizedNetworkCalls": 0,
+  "outOfScopeTestEdits": 0,
+  "hiddenUnicode": 0,
+  "globalConfigWrites": 0,
+  "smokePassed": true,
+  "reasons": [],
+  "evaluatedAt": "2026-11-20T13:00:00.000Z",
+  "tokenCount": 289
+}
