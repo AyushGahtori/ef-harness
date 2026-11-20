@@ -84,6 +84,24 @@ describe("ExactQuoteEvidenceVerifier", () => {
     expect(verifier.validateSpan(locate("Email the totals", "Email", "T6")).code).toBe("retracted");
   });
 
+  it("rejects every in-turn mention of a scrapped topic, including a wider span", () => {
+    const text = "Maybe add printing. Email the totals. Actually, scrap printing";
+    const verifier = new ExactQuoteEvidenceVerifier([developerTurn("T1", text)]);
+    const first = text.indexOf("printing");
+    const wider = text.indexOf("add printing");
+    const later = text.lastIndexOf("printing");
+    expect(verifier.validateSpan({ turn: "T1", start: first, end: first + "printing".length, quote: "printing" }).code).toBe("retracted");
+    expect(verifier.validateSpan({ turn: "T1", start: wider, end: wider + "add printing".length, quote: "add printing" }).code).toBe("retracted");
+    expect(verifier.validateSpan({ turn: "T1", start: later, end: later + "printing".length, quote: "printing" }).code).toBe("retracted");
+    expect(verifier.validateSpan(locate(text, "Email the totals")).accepted).toBe(true);
+
+    const draft = "Email the totals. scrap the draft";
+    const draftVerifier = new ExactQuoteEvidenceVerifier([developerTurn("T2", draft)]);
+    expect(draftVerifier.validateSpan(locate(draft, "Email the totals", "T2")).accepted).toBe(true);
+    const draftAt = draft.lastIndexOf("draft");
+    expect(draftVerifier.validateSpan({ turn: "T2", start: draftAt, end: draftAt + "draft".length, quote: "draft" }).code).toBe("retracted");
+  });
+
   it("collapses whitespace without ignoring digits or negations", () => {
     const text = "Email   the totals at 10:45";
     const verifier = new ExactQuoteEvidenceVerifier([developerTurn("T1", text)]);

@@ -22,7 +22,6 @@ import {
   phoneClaimIsBroadened,
   quoteIsPhoneLinkOnly,
   quoteNamesRecipient,
-  rangeContains,
   rangesOverlap,
   sameMultiset,
   userConfirmsBaseline,
@@ -152,11 +151,11 @@ export class ExactQuoteEvidenceVerifier {
       }
     }
     for (const range of autoRetractedRanges(turn.text)) {
-      if (rangeContains(span.start, span.end, range)) {
+      if (rangesOverlap(span.start, span.end, range)) {
         return result(
           false,
           "retracted",
-          "An earlier mention was scrapped later in the same turn.",
+          "This turn scraps the cited topic, so the span cannot earn credit.",
           span,
           criterionId,
           questionId,

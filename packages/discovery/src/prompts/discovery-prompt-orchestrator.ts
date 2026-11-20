@@ -12,7 +12,7 @@ import {
   parseOpening,
 } from "./ports.js";
 import { extractDigitRuns } from "./text-rules.js";
-import type { ParseHit } from "./ports.js";
+import type { ParseHit, PromptEnvelope } from "./ports.js";
 import type {
   BatchDocumentV1,
   BatchResolveRequest,
@@ -25,6 +25,7 @@ import type {
   DataBlock,
   DiscoveryPromptId,
   DiscoveryPromptModels,
+  DiscoveryTurn,
   DomainFinding,
   MappedRubric,
   OpeningCredit,
@@ -105,6 +106,35 @@ function failureOf(attempts: number, escalated: boolean, issues: readonly Schema
   return { code: "schema_invalid", attempts, escalated, issues };
 }
 
+function turnsData(turns: readonly DiscoveryTurn[]): DataBlock {
+  return {
+    source: "turns",
+    text: JSON.stringify(
+      turns.map((turn) => ({
+        id: turn.id,
+        author: turn.author,
+        text: turn.text,
+        retracted: turn.retracted === true,
+        superseded: turn.superseded === true,
+        retractedSpans: turn.retractedSpans ?? [],
+        supersededSpans: turn.supersededSpans ?? [],
+      })),
+    ),
+  };
+}
+
+function pinned(envelope: PromptEnvelope): {
+  readonly promptVersion: string;
+  readonly rubricVersion: string;
+  readonly ruleIds: readonly string[];
+} {
+  return {
+    promptVersion: envelope.promptVersion,
+    rubricVersion: envelope.rubricVersion,
+    ruleIds: envelope.ruleIds,
+  };
+}
+
 /**
  * Runs opening-review@1, batch-resolve@1, and clarify@1.
  * Each call allows one format-repair retry, then one stronger-reviewer escalation.
@@ -125,6 +155,7 @@ export class DiscoveryPromptOrchestrator {
       userText: request.transcript,
       data: [
         { source: "interaction-mode", text: request.interactionMode ?? "talk_it_through" },
+        turnsData(request.turns),
         ...(request.dataBlocks ?? []),
       ],
     });
@@ -134,7 +165,7 @@ export class DiscoveryPromptOrchestrator {
       envelope: envelope.text,
       parse: parseOpening,
     });
-    return this.finishOpening(request, closed);
+    return this.finishOpening(request, closed, envelope);
   }
 
   async runBatchResolve(request: BatchResolveRequest): Promise<BatchResolveResult> {
@@ -155,6 +186,7 @@ export class DiscoveryPromptOrchestrator {
         { source: "rules", text: JSON.stringify(request.rules ?? []) },
         { source: "prior-facts", text: JSON.stringify(request.priorFacts ?? []) },
         { source: "baselines", text: JSON.stringify(request.baselines ?? []) },
+        turnsData(request.turns),
         ...(request.dataBlocks ?? []),
       ],
     });
@@ -164,8 +196,8 @@ export class DiscoveryPromptOrchestrator {
       envelope: envelope.text,
       parse: parseBatchDocument,
     });
-    if (!closed.ok || !closed.value) return emptyBatch(closed);
-    return this.finishBatch(request, closed.value, closed.attempts, closed.escalated);
+    if (!closed.ok || !closed.value) return emptyBatch(closed, envelope);
+    return this.finishBatch(request, closed.value, closed.attempts, closed.escalated, envelope);
   }
 
   async runClarify(request: ClarifyRequest): Promise<ClarifyResult> {
@@ -189,7 +221,7 @@ export class DiscoveryPromptOrchestrator {
       parse: parseClarify,
       accept: (value) => clarifyIssues(value, request),
     });
-    return finishClarify(request, closed);
+    return finishClarify(request, closed, envelope);
   }
 
   private async completeClosed<T>(args: {
@@ -264,9 +296,11 @@ export class DiscoveryPromptOrchestrator {
   private finishOpening(
     request: OpeningReviewRequest,
     closed: ClosedCall<OpeningReviewV1>,
+    envelope: PromptEnvelope,
   ): OpeningReviewResult {
     const base = {
       promptId: PROMPT_IDS.openingReview,
+      ...pinned(envelope),
       attempts: closed.attempts,
       escalated: closed.escalated,
       blocked: closed.blocked,
@@ -304,42 +338,31 @@ export class DiscoveryPromptOrchestrator {
           proposedGaps.push(claim.criterion);
           continue;
         }
-        if (claim.evidence.length === 0 || claim.kind !== "value" || claim.value === null) {
-          const credit: OpeningCredit = {
-            rubric: rubric.rubric,
+        const settles = claim.kind === "value" && claim.value !== null && claim.evidence.length > 0;
+        if (claim.evidence.length > 0) {
+          const checked = verifier.validateClaim(claim.evidence, {
             criterionId: claim.criterion,
-            kind: claim.kind,
-            value: claim.kind === "value" ? claim.value : null,
-            evidence: claim.evidence,
-            settled: false,
-            catalogCriteria,
-            partialCatalogCriteria: targets.partial,
-          };
-          rubricCredits.push(credit);
-          continue;
-        }
-        const checked = verifier.validateClaim(claim.evidence, {
-          criterionId: claim.criterion,
-          basis: "explicit",
-          value: claim.value,
-          activeCriteria: catalogCriteria,
-        });
-        if (!checked.accepted) {
-          rejected.push(checked);
-          continue;
+            basis: settles ? "explicit" : null,
+            value: settles ? claim.value : null,
+            activeCriteria: catalogCriteria,
+          });
+          if (!checked.accepted) {
+            rejected.push(checked);
+            continue;
+          }
         }
         const credit: OpeningCredit = {
           rubric: rubric.rubric,
           criterionId: claim.criterion,
           kind: claim.kind,
-          value: claim.value,
+          value: claim.kind === "value" ? claim.value : null,
           evidence: claim.evidence,
-          settled: true,
+          settled: settles,
           catalogCriteria,
           partialCatalogCriteria: targets.partial,
         };
         rubricCredits.push(credit);
-        credits.push(credit);
+        if (settles) credits.push(credit);
       }
       rubrics.push({
         rubric: rubric.rubric,
@@ -385,6 +408,7 @@ export class DiscoveryPromptOrchestrator {
     document: BatchDocumentV1,
     attempts: number,
     escalated: boolean,
+    envelope: PromptEnvelope,
   ): Promise<BatchResolveResult> {
     const activeCriteria = request.criteria.map((criterion) => criterion.id);
     const activeQuestions = request.criteria.map((criterion) => criterion.questionId);
@@ -504,6 +528,7 @@ export class DiscoveryPromptOrchestrator {
 
     return {
       promptId: PROMPT_IDS.batchResolve,
+      ...pinned(envelope),
       ok: true,
       failure: null,
       attempts,
@@ -531,11 +556,17 @@ function clarifyData(request: ClarifyRequest): DataBlock[] {
   ];
 }
 
-function finishClarify(request: ClarifyRequest, closed: ClosedCall<ClarifyV1>): ClarifyResult {
+function finishClarify(
+  request: ClarifyRequest,
+  closed: ClosedCall<ClarifyV1>,
+  envelope: PromptEnvelope,
+): ClarifyResult {
   const openDecision = { status: "open", value: null, basis: null } as const;
+  const meta = pinned(envelope);
   if (!closed.ok || !closed.value) {
     return {
       promptId: PROMPT_IDS.clarify,
+      ...meta,
       ok: closed.ok,
       failure: closed.ok ? null : failureOf(closed.attempts, closed.escalated, closed.issues),
       attempts: closed.attempts,
@@ -551,6 +582,7 @@ function finishClarify(request: ClarifyRequest, closed: ClosedCall<ClarifyV1>): 
   }
   return {
     promptId: PROMPT_IDS.clarify,
+    ...meta,
     ok: true,
     failure: null,
     attempts: closed.attempts,
@@ -565,9 +597,10 @@ function finishClarify(request: ClarifyRequest, closed: ClosedCall<ClarifyV1>): 
   };
 }
 
-function emptyBatch(closed: ClosedCall<BatchDocumentV1>): BatchResolveResult {
+function emptyBatch(closed: ClosedCall<BatchDocumentV1>, envelope: PromptEnvelope): BatchResolveResult {
   return {
     promptId: PROMPT_IDS.batchResolve,
+    ...pinned(envelope),
     ok: closed.ok,
     failure: closed.ok ? null : failureOf(closed.attempts, closed.escalated, closed.issues),
     attempts: closed.attempts,

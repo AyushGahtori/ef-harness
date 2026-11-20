@@ -371,6 +371,9 @@ export interface DomainFinding {
 
 export interface OpeningReviewResult {
   readonly promptId: typeof PROMPT_IDS.openingReview;
+  readonly promptVersion: string;
+  readonly rubricVersion: string;
+  readonly ruleIds: readonly string[];
   readonly ok: boolean;
   readonly failure: PromptFailure | null;
   readonly attempts: number;
@@ -387,6 +390,9 @@ export interface OpeningReviewResult {
 
 export interface ClarifyResult {
   readonly promptId: typeof PROMPT_IDS.clarify;
+  readonly promptVersion: string;
+  readonly rubricVersion: string;
+  readonly ruleIds: readonly string[];
   readonly ok: boolean;
   readonly failure: PromptFailure | null;
   readonly attempts: number;
@@ -406,6 +412,9 @@ export interface ClarifyResult {
 
 export interface BatchResolveResult {
   readonly promptId: typeof PROMPT_IDS.batchResolve;
+  readonly promptVersion: string;
+  readonly rubricVersion: string;
+  readonly ruleIds: readonly string[];
   readonly ok: boolean;
   readonly failure: PromptFailure | null;
   readonly attempts: number;

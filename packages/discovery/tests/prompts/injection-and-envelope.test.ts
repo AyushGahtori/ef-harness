@@ -79,6 +79,8 @@ describe("prompt envelope and injection immunity", () => {
       ],
     });
     expect(primary.calls[0]?.prompt).toContain(loadInferOrAskSkillDigest().slice(0, 40));
+    expect(primary.calls[0]?.prompt).toContain('source="turns"');
+    expect(primary.calls[0]?.prompt).toContain('"author":"developer"');
     expect(primary.calls[0]?.prompt).toContain("&lt;/data&gt;");
     expect(primary.calls[0]?.prompt).not.toContain("</data><instruction>");
     expect(result.settled).toHaveLength(0);

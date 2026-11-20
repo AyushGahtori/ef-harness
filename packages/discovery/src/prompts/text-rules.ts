@@ -277,14 +277,15 @@ export function governingNegationDropped(text: string, start: number, end: numbe
 
 export function autoRetractedRanges(text: string): readonly { readonly start: number; readonly end: number }[] {
   const ranges: { start: number; end: number }[] = [];
-  for (const match of text.matchAll(/\bscrap\s+([a-z][a-z0-9-]*)/gi)) {
+  for (const match of text.matchAll(/\bscrap(?:\s+(?:the|a|an))?\s+([a-z][a-z0-9-]*)/gi)) {
     const topic = match[1];
-    const scrapAt = match.index ?? 0;
     if (!topic) continue;
     const topicPattern = new RegExp(`\\b${topic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
     for (const hit of text.matchAll(topicPattern)) {
       const at = hit.index ?? 0;
-      if (at < scrapAt) ranges.push({ start: at, end: at + (hit[0]?.length ?? 0) });
+      const length = hit[0]?.length ?? 0;
+      if (length === 0) continue;
+      ranges.push({ start: at, end: at + length });
     }
   }
   return ranges;
@@ -296,12 +297,4 @@ export function rangesOverlap(
   range: { readonly start: number; readonly end: number },
 ): boolean {
   return start < range.end && range.start < end;
-}
-
-export function rangeContains(
-  start: number,
-  end: number,
-  range: { readonly start: number; readonly end: number },
-): boolean {
-  return start >= range.start && end <= range.end;
 }

@@ -9,7 +9,7 @@ describe("discovery prompt runners", () => {
     const followUp = "For two identical orders, should the kitchen demo show two entries or one total?";
     const manager = locate(text, "The manager counts orders from chat by hand");
     const workflow = locate(text, "Staff should pick lunch using a link so the kitchen can see totals");
-    const { orchestrator } = adapters(() =>
+    const { orchestrator, primary } = adapters(() =>
       JSON.stringify({
         rubrics: [
           {
@@ -49,6 +49,11 @@ describe("discovery prompt runners", () => {
       interactionMode: "talk_it_through",
     });
     expect(result.ok).toBe(true);
+    expect(result.promptVersion).toBe("1");
+    expect(result.rubricVersion).toBe("opening-rubric-map@1");
+    expect(result.ruleIds).toEqual(["opening-rubric-map@1"]);
+    expect(primary.calls[0]?.prompt).toContain('source="turns"');
+    expect(primary.calls[0]?.prompt).toContain('"author":"developer"');
     expect(result.credits.map((credit) => `${credit.rubric}:${credit.criterionId}`)).toEqual([
       "opening.2:product.audience",
       "opening.3:workflows.primary",
@@ -116,6 +121,9 @@ describe("discovery prompt runners", () => {
       ],
     });
     expect(result.ok).toBe(true);
+    expect(result.promptVersion).toBe("1");
+    expect(result.rubricVersion).toBe("infer-or-ask@1");
+    expect(result.ruleIds).toEqual(["infer-or-ask@1"]);
     expect(result.questionId).toBe("Q17");
     expect(result.criterionId).toBe("edit.after_cutoff");
     expect(result.freeText).toBe(true);
@@ -224,6 +232,9 @@ describe("discovery prompt runners", () => {
         criterion("client.native_app", "Q-native"),
       ],
     });
+    expect(result.promptVersion).toBe("1");
+    expect(result.rubricVersion).toBe("infer-or-ask@1");
+    expect(result.ruleIds).toEqual(["infer-or-ask@1"]);
     expect(result.settled.map((decision) => decision.criterionId)).toEqual([
       "menu.publisher",
       "menu.phone_access",
@@ -380,5 +391,44 @@ describe("discovery prompt runners", () => {
     expect(result.ok).toBe(false);
     expect(result.decision).toEqual({ status: "open", value: null, basis: null });
     expect(result.text).toBe("");
+  });
+
+  it("quote-checks a recommendation request and drops a harness citation", async () => {
+    const text = "I don't know the audience.";
+    const { orchestrator } = adapters(() =>
+      JSON.stringify({
+        rubrics: [
+          {
+            rubric: "opening.2",
+            covered: [],
+            claims: [
+              {
+                criterion: "product.audience",
+                kind: "recommendation_request",
+                value: null,
+                evidence: [locate(text, "I don't know")],
+              },
+              {
+                criterion: "actors.roles",
+                kind: "recommendation_request",
+                value: null,
+                evidence: [{ turn: "H1", start: 0, end: 12, quote: "Use managers" }],
+              },
+            ],
+            smallest_gap: "who the audience is",
+          },
+        ],
+        follow_up: null,
+        domains: [],
+      }),
+    );
+    const result = await orchestrator.runOpeningReview({
+      transcript: text,
+      turns: [developerTurn("T1", text), { id: "H1", author: "harness", text: "Use managers" }],
+    });
+    expect(result.credits).toHaveLength(0);
+    expect(result.rubrics[0]?.credits.map((credit) => credit.criterionId)).toEqual(["product.audience"]);
+    expect(result.rubrics[0]?.credits[0]?.settled).toBe(false);
+    expect(result.rejectedClaims[0]?.code).toBe("assistant_author");
   });
 });
