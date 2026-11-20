@@ -1,0 +1,11 @@
+{
+  "skillId": "test-driven-verification",
+  "version": "1",
+  "fromStatus": "quarantined",
+  "toStatus": "vetted",
+  "canaryAccesses": 0,
+  "unauthorizedNetworkCalls": 0,
+  "outOfScopeTestEdits": 0,
+  "smokePassed": true,
+  "evaluatedAt": "2026-11-20T12:00:00.000Z"
+}

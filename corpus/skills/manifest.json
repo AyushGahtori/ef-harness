@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "skills": [
+    {
+      "skillId": "infer-or-ask",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": null,
+      "pinnedCommitSha": "38848d0a511498e48ab49eac5f5ac11c0b0fa2bb",
+      "license": "LicenseRef-EF-Harness",
+      "sha256": "3cbe49651e73b64e02139154aed4343429abc4a55c09b9e8c541ed43954d2da6",
+      "tokenCount": 1440,
+      "allowedRoles": [
+        "discovery",
+        "planner",
+        "worker"
+      ],
+      "allowedTouches": [
+        "requirements",
+        "decisions"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T12:00:00.000Z"
+    },
+    {
+      "skillId": "systematic-debugging",
+      "version": "1",
+      "sourceType": "downloaded",
+      "upstreamRepo": "offline-vendor:systematic-debugging",
+      "pinnedCommitSha": "bcfc732f3c23c8b71bc70fdea88453235e9b0c71",
+      "license": "MIT",
+      "sha256": "245fa59e5fa01d35518a8b321869def5352cd6228d4f2026b43ee19ea6443108",
+      "tokenCount": 693,
+      "allowedRoles": [
+        "worker",
+        "verifier"
+      ],
+      "allowedTouches": [
+        "debugging",
+        "regression"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T12:00:00.000Z"
+    },
+    {
+      "skillId": "test-driven-verification",
+      "version": "1",
+      "sourceType": "downloaded",
+      "upstreamRepo": "offline-vendor:test-driven-verification",
+      "pinnedCommitSha": "f44f700242cca68ff9e58bb85cbe362e82003bb8",
+      "license": "MIT",
+      "sha256": "5a315c0a661aa0cd740218a6e9e2de2c062914fc4c209e45fff65ef39d994a4a",
+      "tokenCount": 720,
+      "allowedRoles": [
+        "worker",
+        "verifier"
+      ],
+      "allowedTouches": [
+        "tests",
+        "verification"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T12:00:00.000Z"
+    },
+    {
+      "skillId": "frontend-accessibility-ui",
+      "version": "1",
+      "sourceType": "downloaded",
+      "upstreamRepo": "offline-vendor:frontend-accessibility-ui",
+      "pinnedCommitSha": "5c84fbd38c79afde7e79634c59623d37b1498d54",
+      "license": "MIT",
+      "sha256": "c0dd2717ffe2526c8c88616c9851e93eb8ba7feb51e651b87f83de6d76769628",
+      "tokenCount": 792,
+      "allowedRoles": [
+        "worker",
+        "frontend"
+      ],
+      "allowedTouches": [
+        "interactive_ui",
+        "accessibility"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T12:00:00.000Z"
+    },
+    {
+      "skillId": "sql-migrations-safety",
+      "version": "1",
+      "sourceType": "downloaded",
+      "upstreamRepo": "offline-vendor:sql-migrations-safety",
+      "pinnedCommitSha": "6a05e2573cd2406e688516d4f0fb396c7b68957b",
+      "license": "MIT",
+      "sha256": "e5660b72f94e63d49154575b07c9e046dc7816d2686994fb25a0b153fab1a8c1",
+      "tokenCount": 865,
+      "allowedRoles": [
+        "worker",
+        "backend"
+      ],
+      "allowedTouches": [
+        "schema",
+        "migrations"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T12:00:00.000Z"
+    },
+    {
+      "skillId": "api-security-hardening",
+      "version": "1",
+      "sourceType": "downloaded",
+      "upstreamRepo": "offline-vendor:api-security-hardening",
+      "pinnedCommitSha": "ad367815595d6c3625b8b079660fc8d00f002f12",
+      "license": "MIT",
+      "sha256": "53c3a0b3ef7140184f842e34e3b079189fe2b87419b06b9fd4b2ff8a7011ff75",
+      "tokenCount": 830,
+      "allowedRoles": [
+        "worker",
+        "backend"
+      ],
+      "allowedTouches": [
+        "authz",
+        "route",
+        "validation"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T12:00:00.000Z"
+    }
+  ]
+}
