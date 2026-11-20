@@ -1,0 +1,353 @@
+version: 1
+seams:
+  - id: S-01
+    name: "Auth Middleware ↔ Protected API Route"
+    left: "Auth Middleware"
+    right: "Protected API Route"
+    corpus_seam: "Auth ↔ every protected surface"
+    questions:
+      - "Which routes are public?"
+      - "What happens on an expired session?"
+    contract_shape: "Session-check middleware wraps each protected route and passes caller, role, and tenant id, or a denial when the session is missing or expired."
+    failure_modes:
+      - "Expired session during form submit"
+      - "Missing role on a protected handler"
+    integration_oracle: "Submit a protected form with an expired session and expect denial plus a re-auth path, with no mutation applied."
+    rules: [X-01]
+    activation:
+      shared: [endpoint]
+      scope:
+        all: [route]
+        any: [authn, authz, session]
+    match_cases:
+      - polarity: positive
+        shared_entities: []
+        shared_endpoints: [POST /orders]
+        shared_events: []
+        tags: [route, authz]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: [POST /orders]
+        shared_events: []
+        tags: [route]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [route, authz]
+
+  - id: S-02
+    name: "Web Client Form/State ↔ Backend API Contract"
+    left: "Web Client Form/State"
+    right: "Backend API Contract"
+    corpus_seam: "Web UI ↔ own API"
+    questions:
+      - "Typed client or fetch?"
+      - "Where do errors surface?"
+    contract_shape: "A typed endpoint client maps each response status onto field errors or the shared error banner."
+    failure_modes:
+      - "Slow response"
+      - "401 mid-session"
+      - "Validation errors shown per field"
+    integration_oracle: "Submit an invalid field and a slow 401. Expect per-field errors, then the session-expired banner, and no silent success."
+    rules: [X-02, X-11]
+    activation:
+      shared: [endpoint]
+      scope:
+        all: [route]
+        any: [form_input, interactive_ui]
+    match_cases:
+      - polarity: positive
+        shared_entities: []
+        shared_endpoints: [POST /orders]
+        shared_events: []
+        tags: [route, form_input]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: [POST /orders]
+        shared_events: []
+        tags: [form_input]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [route, form_input]
+
+  - id: S-03
+    name: "Backend Service ↔ Relational DB / Migration"
+    left: "Backend Service"
+    right: "Relational DB / Migration"
+    corpus_seam: "API ↔ database"
+    questions:
+      - "What are the transaction boundaries per operation?"
+    contract_shape: "Each write runs in one transaction through a repository interface and rolls back on partial failure or unique conflict."
+    failure_modes:
+      - "Partial failure"
+      - "Unique conflict"
+    integration_oracle: "Fail the second statement of a two-step write and expect the first statement to roll back with the shared conflict error."
+    rules: [X-06]
+    activation:
+      shared: [entity]
+      scope:
+        any: [migration, destructive_write, bulk_write]
+    match_cases:
+      - polarity: positive
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [migration]
+      - polarity: negative
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [caching]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [migration]
+
+  - id: S-04
+    name: "External Webhook Provider ↔ Signature Verifier & Queue"
+    left: "External Webhook Provider"
+    right: "Signature Verifier & Queue"
+    corpus_seam: "Inbound webhook verifier and replay queue"
+    questions:
+      - "How is the signature verified?"
+      - "Where is the replay queue?"
+    contract_shape: "The verifier checks the provider signature, then the queue stores the event id so a replay is a no-op."
+    failure_modes:
+      - "Forged signature"
+      - "Duplicate delivery"
+    integration_oracle: "Deliver one signed event twice and one forged event. Expect one state change, one no-op replay, and one rejection."
+    rules: [X-09]
+    activation:
+      shared: [event]
+      scope:
+        any: [inbound_webhook]
+    match_cases:
+      - polarity: positive
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: [payment.received]
+        tags: [inbound_webhook]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: [payment.received]
+        tags: [route]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [inbound_webhook]
+
+  - id: S-05
+    name: "File Upload UI ↔ Presigned/Local Storage & Scanner"
+    left: "File Upload UI"
+    right: "Presigned/Local Storage & Scanner"
+    corpus_seam: "File upload ↔ storage"
+    questions:
+      - "Where are files stored?"
+      - "Who can read them?"
+    contract_shape: "The upload contract returns a storage URL and metadata only after type, size, and scanner checks pass."
+    failure_modes:
+      - "Upload interrupted"
+      - "Oversized file"
+    integration_oracle: "Upload an allowed file and an oversized file. Expect stored metadata for the first and a typed rejection for the second."
+    rules: [X-08]
+    activation:
+      shared: [entity]
+      scope:
+        any: [file_upload]
+    match_cases:
+      - polarity: positive
+        shared_entities: [Attachment]
+        shared_endpoints: []
+        shared_events: []
+        tags: [file_upload]
+      - polarity: negative
+        shared_entities: [Attachment]
+        shared_endpoints: []
+        shared_events: []
+        tags: [route]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [file_upload]
+
+  - id: S-06
+    name: "Transactional Email / Notification Trigger ↔ Mailer/Queue"
+    left: "Transactional Email / Notification Trigger"
+    right: "Mailer/Queue"
+    corpus_seam: "Backend ↔ email/notifications"
+    questions:
+      - "Which events send messages?"
+      - "Which provider sends them?"
+    contract_shape: "A message template contract names the trigger, recipient, and idempotency key handed to the mailer queue."
+    failure_modes:
+      - "Provider down"
+      - "Bounce"
+      - "Duplicate send"
+    integration_oracle: "Emit one trigger twice while the provider fails once. Expect one send, one retry, and no duplicate delivery."
+    rules: [X-10, X-12]
+    activation:
+      shared: [event]
+      scope:
+        any: [outbound_message]
+    match_cases:
+      - polarity: positive
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: [order.confirmed]
+        tags: [outbound_message]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: [order.confirmed]
+        tags: [money]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [outbound_message]
+
+  - id: S-07
+    name: "Scheduled Job / Cutoff Timer ↔ Business State Mutation"
+    left: "Scheduled Job / Cutoff Timer"
+    right: "Business State Mutation"
+    corpus_seam: "Background worker ↔ auth and data"
+    questions:
+      - "Which identity do jobs run as?"
+      - "What happens at the cutoff?"
+    contract_shape: "The job payload names the cutoff instant and the identity the worker uses when it mutates business state."
+    failure_modes:
+      - "Job runs twice"
+      - "User deleted before the job runs"
+    integration_oracle: "Fire the cutoff job twice and once after the subject is gone. Expect one mutation, one no-op, and a recorded skip."
+    rules: [X-12, X-03]
+    activation:
+      shared: [entity]
+      scope:
+        any: [scheduling, background_job]
+    match_cases:
+      - polarity: positive
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [scheduling]
+      - polarity: negative
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [money]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [background_job]
+
+  - id: S-08
+    name: "Payment Checkout ↔ Order/Ledger Finalization"
+    left: "Payment Checkout"
+    right: "Order/Ledger Finalization"
+    corpus_seam: "UI ↔ payments"
+    questions:
+      - "Hosted checkout or embedded?"
+      - "What confirms payment, redirect or webhook?"
+    contract_shape: "Checkout start, the signed webhook, and the ledger write share one idempotency key and integer minor units."
+    failure_modes:
+      - "User closes the tab after paying"
+      - "Duplicate webhook"
+      - "Refund"
+    integration_oracle: "Pay, close the tab, and replay the webhook. The order becomes paid once and the ledger entry matches the minor-unit amount."
+    rules: [X-04, X-09]
+    activation:
+      shared: [entity]
+      scope:
+        any: [money]
+    match_cases:
+      - polarity: positive
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [money]
+      - polarity: negative
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [route]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [money]
+
+  - id: S-09
+    name: "Cache Layer ↔ Primary Store Invalidation"
+    left: "Cache Layer"
+    right: "Primary Store"
+    corpus_seam: "Cache layer ↔ primary store"
+    questions:
+      - "Which keys are invalidated when the primary row changes?"
+    contract_shape: "A cache key derived from the entity id is invalidated in the same transaction that commits the primary write."
+    failure_modes:
+      - "Stale cache served after a committed write"
+      - "Invalidation races ahead of the primary commit"
+    integration_oracle: "Write a row, read through the cache, and expect the new value or a miss, never the previous value."
+    rules: []
+    activation:
+      shared: [entity]
+      scope:
+        any: [caching]
+    match_cases:
+      - polarity: positive
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [caching]
+      - polarity: negative
+        shared_entities: [Order]
+        shared_endpoints: []
+        shared_events: []
+        tags: [migration]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [caching]
+
+  - id: S-10
+    name: "Realtime Stream/WebSocket ↔ Client Reconnect/Resync"
+    left: "Realtime Stream/WebSocket"
+    right: "Client Reconnect/Resync"
+    corpus_seam: "Realtime stream ↔ client resync"
+    questions:
+      - "How does the client resync after a dropped socket?"
+    contract_shape: "The stream contract sends a resume cursor. On reconnect the client requests every event after that cursor before showing live frames."
+    failure_modes:
+      - "Socket drops mid-update"
+      - "Cursor older than the retained window"
+    integration_oracle: "Drop the socket after event 3 and reconnect. The client must apply events 4 onward before rendering the live frame."
+    rules: []
+    activation:
+      shared: [endpoint]
+      scope:
+        any: [realtime]
+    match_cases:
+      - polarity: positive
+        shared_entities: []
+        shared_endpoints: [GET /stream]
+        shared_events: []
+        tags: [realtime]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: [GET /stream]
+        shared_events: []
+        tags: [route]
+      - polarity: negative
+        shared_entities: []
+        shared_endpoints: []
+        shared_events: []
+        tags: [realtime]

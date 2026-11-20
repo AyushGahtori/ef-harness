@@ -1,0 +1,271 @@
+version: 1
+tags_closed: 28
+rules:
+  - id: X-01
+    title: "Every server action and endpoint checks the caller's role"
+    requirement: "Every protected server route must check the caller's role, and every multi-tenant query must filter by tenant id."
+    scope:
+      all: [route, authz]
+    global: false
+    applies_as: must
+    check_ids: [X01-ROLE-TENANT]
+    verification_check:
+      id: X01-ROLE-TENANT
+      kind: generated_negative_test
+      spec: "For each role, call every protected route without that role and expect denial. A second case uses another tenant id and expects not-found."
+    match_cases:
+      - { polarity: positive, tags: [route, authz] }
+      - { polarity: positive, tags: [route, authz, logging] }
+      - { polarity: negative, tags: [route] }
+      - { polarity: negative, tags: [authz] }
+    covers:
+      - auth_authorization_on_every_protected_route
+      - tenant_id_scoping_on_every_multi_tenant_query
+
+  - id: X-02
+    title: "Inputs are validated at the boundary with the shared schema"
+    requirement: "Validate every boundary input with the shared schema, reject SQL, HTML, and command injection, and paginate or otherwise bound every list query."
+    scope:
+      # search keeps pagination selectable by the closed scope language
+      any: [form_input, inbound_webhook, external_api, search]
+    global: false
+    applies_as: must
+    check_ids: [X02-INVALID-INPUT]
+    verification_check:
+      id: X02-INVALID-INPUT
+      kind: invalid_input_test
+      spec: "Send an invalid form, a forged webhook body, a malformed external response, and an unbounded list query. Each must fail closed with the shared error."
+    match_cases:
+      - { polarity: positive, tags: [form_input] }
+      - { polarity: positive, tags: [search] }
+      - { polarity: positive, tags: [external_api] }
+      - { polarity: negative, tags: [money] }
+      - { polarity: negative, tags: [route] }
+    covers:
+      - safe_sql_html_command_injection_boundaries
+      - pagination_bounded_query_enforcement
+
+  - id: X-03
+    title: "Times are stored in UTC and shown in the project's display zone"
+    requirement: "Store times in UTC and show them in the project display zone, including cutoff instants across daylight-saving changes."
+    scope:
+      any: [scheduling, time_display]
+    global: false
+    applies_as: must
+    check_ids: [X03-ZONE-BOUNDARY]
+    verification_check:
+      id: X03-ZONE-BOUNDARY
+      kind: boundary_test
+      spec: "Store a cutoff in UTC and render it in the project zone on both sides of a daylight-saving change. The instant must not drift."
+    match_cases:
+      - { polarity: positive, tags: [scheduling] }
+      - { polarity: positive, tags: [time_display] }
+      - { polarity: negative, tags: [money] }
+    covers:
+      - timezone_cutoff_consistency
+
+  - id: X-04
+    title: "Money uses integer minor units and one rounding rule"
+    requirement: "Represent money as integer minor units and apply one rounding rule, never binary floating-point currency arithmetic."
+    scope:
+      any: [money]
+    global: false
+    applies_as: must
+    check_ids: [X04-MINOR-UNITS]
+    verification_check:
+      id: X04-MINOR-UNITS
+      kind: property_test
+      spec: "Add three minor-unit amounts and round once with the documented rule. The result must be exact, with no binary float residue."
+    match_cases:
+      - { polarity: positive, tags: [money] }
+      - { polarity: negative, tags: [route] }
+    covers:
+      - money_currency_integer_arithmetic
+
+  - id: X-05
+    title: "Secrets come only from configuration, never code or logs"
+    requirement: "Load secrets only from configuration, and redact secrets from source, logs, and error payloads."
+    scope:
+      any: [credentials, config_env, logging]
+    global: false
+    applies_as: must
+    check_ids: [X05-SECRET-SCAN]
+    verification_check:
+      id: X05-SECRET-SCAN
+      kind: static_scan
+      spec: "Scan source, logs, and error payloads for secret material. Configuration is the only allowed source, and every hit must be redacted."
+    match_cases:
+      - { polarity: positive, tags: [credentials] }
+      - { polarity: positive, tags: [logging] }
+      - { polarity: positive, tags: [config_env] }
+      - { polarity: negative, tags: [form_input] }
+    covers:
+      - pii_secret_redaction_in_logs_and_errors
+
+  - id: X-06
+    title: "Destructive actions confirm and can be undone or audited"
+    requirement: "Confirm each destructive action by naming the item, and keep an undo path or an audit trail."
+    scope:
+      any: [destructive_write]
+    global: false
+    applies_as: must
+    check_ids: [X06-DESTRUCTIVE-JOURNEY]
+    verification_check:
+      id: X06-DESTRUCTIVE-JOURNEY
+      kind: journey_test
+      spec: "Run the destructive journey, expect a confirmation that names the item, and expect either an undo or an audit record of the actor and target."
+    match_cases:
+      - { polarity: positive, tags: [destructive_write] }
+      - { polarity: negative, tags: [interactive_ui] }
+    covers:
+      - destructive_action_confirmation_and_audit_trail
+
+  - id: X-07
+    title: "Personal data is never written to logs"
+    requirement: "Never write personal data to logs, and redact it in errors and exports before emission."
+    scope:
+      all: [personal_data, logging]
+    global: false
+    applies_as: must
+    check_ids: [X07-PII-LOG]
+    verification_check:
+      id: X07-PII-LOG
+      kind: lint_and_log_capture
+      spec: "Capture logs and error text while handling a personal-data record. The capture must not contain the raw value, including on the export path."
+    match_cases:
+      - { polarity: positive, tags: [personal_data, logging] }
+      - { polarity: negative, tags: [personal_data] }
+      - { polarity: negative, tags: [logging] }
+    covers:
+      - pii_secret_redaction_in_logs_and_errors
+
+  - id: X-08
+    title: "File uploads limit type and size and are stored outside public paths"
+    requirement: "Limit upload type and size, store files outside public paths, and serve them as non-executable content."
+    scope:
+      any: [file_upload]
+    global: false
+    applies_as: must
+    check_ids: [X08-UPLOAD]
+    verification_check:
+      id: X08-UPLOAD
+      kind: upload_test
+      spec: "Upload an oversized file and a disallowed type and expect rejection. An accepted file must live outside the public root and download as non-executable."
+    match_cases:
+      - { polarity: positive, tags: [file_upload] }
+      - { polarity: negative, tags: [route] }
+    covers:
+      - safe_file_upload_validation_and_non_executable_serving
+
+  - id: X-09
+    title: "Inbound webhooks verify signatures and are idempotent"
+    requirement: "Verify inbound webhook signatures and keep retried webhook mutations idempotent."
+    scope:
+      any: [inbound_webhook]
+    global: false
+    applies_as: must
+    check_ids: [X09-WEBHOOK-REPLAY]
+    verification_check:
+      id: X09-WEBHOOK-REPLAY
+      kind: replayed_and_forged_webhook_test
+      spec: "Replay a signed webhook and expect one mutation. Forge the signature and expect rejection with no state change."
+    match_cases:
+      - { polarity: positive, tags: [inbound_webhook] }
+      - { polarity: negative, tags: [external_api] }
+    covers:
+      - idempotency_on_retried_mutations_and_webhooks
+
+  - id: X-10
+    title: "Outbound calls have timeouts and bounded retries"
+    requirement: "Bound outbound calls with a timeout and limited retries, then dead-letter failures and degrade without hanging."
+    scope:
+      any: [external_api, outbound_message]
+    global: false
+    applies_as: must
+    check_ids: [X10-TIMEOUT]
+    verification_check:
+      id: X10-TIMEOUT
+      kind: fault_injection_test
+      spec: "Stall an outbound API call and an email send. Expect a timeout, a bounded retry, then a dead letter, while the caller returns a degraded response."
+    match_cases:
+      - { polarity: positive, tags: [external_api] }
+      - { polarity: positive, tags: [outbound_message] }
+      - { polarity: negative, tags: [form_input] }
+    covers:
+      - outbound_email_webhook_retry_and_dead_letter
+      - graceful_degradation_and_timeout_budgets_on_external_calls
+
+  - id: X-11
+    title: "Errors use the shared error format and banner"
+    requirement: "Use the shared error format on every route and the same error banner in interactive UI."
+    scope:
+      any: [route, interactive_ui]
+    global: false
+    applies_as: must
+    check_ids: [X11-ERROR-CONTRACT]
+    verification_check:
+      id: X11-ERROR-CONTRACT
+      kind: contract_and_ui_check
+      spec: "Force a route failure and a UI failure. Both must use the shared error code, message, and banner, with no raw stack text."
+    match_cases:
+      - { polarity: positive, tags: [route] }
+      - { polarity: positive, tags: [interactive_ui] }
+      - { polarity: negative, tags: [money] }
+    covers: []
+
+  - id: X-12
+    title: "Background jobs are idempotent and safe to retry"
+    requirement: "Keep background jobs idempotent under retry, and lock shared counters and inventory optimistically or pessimistically."
+    scope:
+      # concurrent_edit keeps shared-counter locking selectable by the closed scope language
+      any: [background_job, concurrent_edit]
+    global: false
+    applies_as: must
+    check_ids: [X12-DOUBLE-RUN]
+    verification_check:
+      id: X12-DOUBLE-RUN
+      kind: double_run_test
+      spec: "Run the same job twice and expect one effect. Concurrent counter updates must take an optimistic or pessimistic lock and must not lose an increment."
+    match_cases:
+      - { polarity: positive, tags: [background_job] }
+      - { polarity: positive, tags: [concurrent_edit] }
+      - { polarity: negative, tags: [route] }
+    covers:
+      - idempotency_on_retried_mutations_and_webhooks
+      - optimistic_pessimistic_locking_on_shared_counters_and_inventory
+
+  - id: X-13
+    title: "Interactive elements have accessible names and keyboard access"
+    requirement: "Give interactive elements accessible names and keyboard access, and keep responsive UI on design tokens."
+    scope:
+      any: [interactive_ui]
+    global: false
+    applies_as: must
+    check_ids: [X13-A11Y]
+    verification_check:
+      id: X13-A11Y
+      kind: accessibility_scan
+      spec: "Scan interactive controls for accessible names, keyboard reach, and design-token colors at mobile and desktop widths."
+    match_cases:
+      - { polarity: positive, tags: [interactive_ui] }
+      - { polarity: negative, tags: [migration] }
+    covers:
+      - accessible_responsive_ui_and_design_token_compliance
+
+  - id: X-14
+    title: "Sign-in and other abuse-prone endpoints are rate limited"
+    requirement: "Rate limit sign-in and other abuse-prone endpoints, and reject traffic above the burst budget."
+    scope:
+      any: [authn, rate_limited]
+    global: false
+    applies_as: must
+    check_ids: [X14-BURST]
+    verification_check:
+      id: X14-BURST
+      kind: burst_test
+      spec: "Burst sign-in and another abuse-prone endpoint past the budget. Expect a rate-limit response and no further successful attempts in the window."
+    match_cases:
+      - { polarity: positive, tags: [authn] }
+      - { polarity: positive, tags: [rate_limited] }
+      - { polarity: negative, tags: [search] }
+    covers: []
