@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EF Harness M1</title>
+    <link rel="stylesheet" href="./viewer.css" />
+  </head>
+  <body>
+    <main id="m1-viewer">
+      <header class="top">
+        <div>
+          <p class="eyebrow">EF Harness</p>
+          <h1>M1 viewer</h1>
+        </div>
+        <div class="badges">
+          <p id="connection-badge">Connecting…</p>
+          <p id="sandbox-badge">Sandbox tier —</p>
+        </div>
+      </header>
+      <section class="panel" aria-labelledby="task-heading">
+        <h2 id="task-heading">Task</h2>
+        <p id="task-brief">Waiting for harnessd</p>
+        <p id="state-badge">—</p>
+        <p id="state-path"></p>
+        <p id="ref-line"></p>
+      </section>
+      <section class="panel" aria-labelledby="diff-heading">
+        <h2 id="diff-heading">Accepted diff</h2>
+        <div id="diff-view"></div>
+      </section>
+      <section class="panel" aria-labelledby="checks-heading">
+        <h2 id="checks-heading">Checks and receipt</h2>
+        <ul id="checks"></ul>
+        <p id="receipt"></p>
+      </section>
+      <div class="actions">
+        <button id="stop" type="button">Stop</button>
+        <p id="sync-status">waiting</p>
+        <p id="last-seq">0</p>
+      </div>
+      <p id="banner" hidden>Reconnecting to build engine...</p>
+    </main>
+    <script src="./viewer-client.js"></script>
+  </body>
+</html>
