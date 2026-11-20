@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./edits": {
+      "types": "./dist/edits/index.d.ts",
+      "import": "./dist/edits/index.js"
     }
   },
   "main": "./dist/index.js",
