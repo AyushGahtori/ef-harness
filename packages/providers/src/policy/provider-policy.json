@@ -1,0 +1,348 @@
+{
+  "policyVersion": 2026111701,
+  "publishedAt": "2026-11-17T00:00:00.000Z",
+  "refreshUrl": "https://updates.ef-harness.invalid/provider-policy.json",
+  "compliance": {
+    "immutable": true,
+    "anthropicConsoleOnly": true,
+    "subscriptionOauthWithdrawn": true,
+    "geminiCliDefaultEnabled": false,
+    "geminiRequiresExplicitOptIn": true,
+    "geminiInvocation": "gemini --acp",
+    "geminiNotice": "Verify your Google account terms allow third-party ACP harness use",
+    "geminiReadsCredentialDirectory": false,
+    "forbiddenVendorDenied": true,
+    "siwc": {
+      "scope": "chatgpt.tokens.use.direct",
+      "store": false,
+      "stream": true,
+      "forbiddenRequestFields": [
+        "max_output_tokens",
+        "temperature",
+        "previous_response_id"
+      ],
+      "persistExtAgentHostId": true
+    }
+  },
+  "routes": [
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "openai_api",
+      "provider": "openai",
+      "authFlow": "api_key",
+      "status": "allowed",
+      "billing": "api_key"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [
+        "Switch Connection",
+        "Keep Parked"
+      ],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": {
+        "scope": "chatgpt.tokens.use.direct",
+        "store": false,
+        "stream": true,
+        "forbiddenRequestFields": [
+          "max_output_tokens",
+          "temperature",
+          "previous_response_id"
+        ],
+        "persistExtAgentHostId": true
+      },
+      "id": "siwc_preview",
+      "provider": "openai",
+      "authFlow": "siwc",
+      "status": "allowed",
+      "billing": "plan"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": true,
+      "constraints": null,
+      "id": "anthropic_console",
+      "provider": "anthropic",
+      "authFlow": "console_api_key",
+      "status": "allowed",
+      "billing": "api_key"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": true,
+      "constraints": null,
+      "id": "claude_code",
+      "provider": "anthropic",
+      "authFlow": "console_api_key",
+      "status": "allowed",
+      "billing": "api_key"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": false,
+      "invocation": "gemini --acp",
+      "notice": "Verify your Google account terms allow third-party ACP harness use",
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "gemini_cli_acp",
+      "provider": "google",
+      "authFlow": "unmodified_cli",
+      "status": "opt_in_with_notice",
+      "billing": "plan"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "copilot_sdk",
+      "provider": "github",
+      "authFlow": "device_oauth",
+      "status": "allowed",
+      "billing": "plan"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "cursor_sdk",
+      "provider": "cursor",
+      "authFlow": "browser",
+      "status": "allowed",
+      "billing": "plan"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "openrouter",
+      "provider": "openrouter",
+      "authFlow": "pkce",
+      "status": "allowed",
+      "billing": "api_key"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "local_ollama",
+      "provider": "ollama",
+      "authFlow": "loopback",
+      "status": "allowed",
+      "billing": "local"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "local_lmstudio",
+      "provider": "lmstudio",
+      "authFlow": "loopback",
+      "status": "allowed",
+      "billing": "local"
+    },
+    {
+      "revocationNotice": null,
+      "alternatives": [],
+      "defaultEnabled": true,
+      "invocation": null,
+      "notice": null,
+      "readsCredentialDirectory": false,
+      "consoleKeyOnly": false,
+      "constraints": null,
+      "id": "codex_cli",
+      "provider": "openai",
+      "authFlow": "cli",
+      "status": "allowed",
+      "billing": "plan"
+    }
+  ],
+  "cliFloors": [
+    {
+      "runtime": "codex",
+      "minVersion": "0.42.0",
+      "denylist": [
+        {
+          "from": "0.40.0",
+          "to": "0.41.9",
+          "effect": "disabled",
+          "reason": "leaks processes or breaks permission hooks"
+        }
+      ]
+    },
+    {
+      "runtime": "claude",
+      "minVersion": "2.1.0",
+      "denylist": []
+    },
+    {
+      "runtime": "copilot",
+      "minVersion": "1.0.0",
+      "denylist": [
+        {
+          "from": "1.2.0",
+          "to": "1.2.3",
+          "effect": "observe-only",
+          "reason": "breaks permission hooks"
+        }
+      ]
+    },
+    {
+      "runtime": "cursor-agent",
+      "minVersion": "1.0.0",
+      "denylist": []
+    },
+    {
+      "runtime": "opencode",
+      "minVersion": "0.5.0",
+      "denylist": []
+    },
+    {
+      "runtime": "gemini",
+      "minVersion": "0.20.0",
+      "denylist": []
+    }
+  ],
+  "models": [
+    {
+      "contextWindow": 128000,
+      "supportsTools": true,
+      "supportsStructuredJson": true,
+      "supportsVision": true,
+      "inputMicroUsdPer1M": 2500000,
+      "outputMicroUsdPer1M": 10000000,
+      "cachedInputMicroUsdPer1M": 250000,
+      "defaultPassPriors": {
+        "trivial": 0.97,
+        "standard": 0.9,
+        "complex": 0.72,
+        "critical": 0.58
+      },
+      "deprecatedAfter": null,
+      "replacementModelId": null,
+      "revoked": false,
+      "modelId": "openai-general-mid",
+      "family": "openai",
+      "provider": "openai",
+      "tier": "mid"
+    },
+    {
+      "contextWindow": 128000,
+      "supportsTools": true,
+      "supportsStructuredJson": true,
+      "supportsVision": false,
+      "inputMicroUsdPer1M": 3000000,
+      "outputMicroUsdPer1M": 15000000,
+      "cachedInputMicroUsdPer1M": 300000,
+      "defaultPassPriors": {
+        "trivial": 0.97,
+        "standard": 0.9,
+        "complex": 0.72,
+        "critical": 0.58
+      },
+      "deprecatedAfter": null,
+      "replacementModelId": null,
+      "revoked": false,
+      "modelId": "anthropic-console-senior",
+      "family": "anthropic",
+      "provider": "anthropic",
+      "tier": "senior"
+    },
+    {
+      "contextWindow": 16384,
+      "supportsTools": true,
+      "supportsStructuredJson": true,
+      "supportsVision": false,
+      "inputMicroUsdPer1M": 1000000,
+      "outputMicroUsdPer1M": 2000000,
+      "cachedInputMicroUsdPer1M": 100000,
+      "defaultPassPriors": {
+        "trivial": 0.97,
+        "standard": 0.9,
+        "complex": 0.72,
+        "critical": 0.58
+      },
+      "deprecatedAfter": null,
+      "replacementModelId": null,
+      "revoked": false,
+      "modelId": "model-old-v1",
+      "family": "legacy",
+      "provider": "openai",
+      "tier": "junior"
+    },
+    {
+      "contextWindow": 128000,
+      "supportsTools": true,
+      "supportsStructuredJson": true,
+      "supportsVision": false,
+      "inputMicroUsdPer1M": 150000,
+      "outputMicroUsdPer1M": 600000,
+      "cachedInputMicroUsdPer1M": 15000,
+      "defaultPassPriors": {
+        "trivial": 0.97,
+        "standard": 0.9,
+        "complex": 0.72,
+        "critical": 0.58
+      },
+      "deprecatedAfter": null,
+      "replacementModelId": null,
+      "revoked": false,
+      "modelId": "gemini-api-flash",
+      "family": "google",
+      "provider": "google",
+      "tier": "junior"
+    }
+  ],
+  "signature": {
+    "alg": "Ed25519",
+    "keyId": "rfc8032-test-1",
+    "sig": "wbOp7HbJei+MYlTShefJ5s0cUmXrvc0spH3o6NK13rOdHYd35ooxfLqJ/3/pRsCQPNTiIdE2bvXxg3whZHBaAQ=="
+  }
+}
