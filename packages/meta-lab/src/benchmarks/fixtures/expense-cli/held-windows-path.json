@@ -1,0 +1,5 @@
+{
+  "command": "expense export",
+  "pathExample": "C:\\Users\\demo\\expenses.csv",
+  "sqliteExport": true
+}

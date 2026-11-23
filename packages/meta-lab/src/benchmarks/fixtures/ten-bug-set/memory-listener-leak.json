@@ -1,0 +1,1 @@
+{ "bugId": "memory-listener-leak", "bugFixed": false, "symptom": "event listener leak on unmount" }

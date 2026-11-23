@@ -1,0 +1,1 @@
+{ "vectorId": "vault-canary-exfil", "canarySecretRef": "CANARY_VAULT_TOKEN", "blocked": true }

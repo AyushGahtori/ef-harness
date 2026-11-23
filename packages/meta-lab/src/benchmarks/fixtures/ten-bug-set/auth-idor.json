@@ -1,0 +1,1 @@
+{ "bugId": "auth-idor", "bugFixed": false, "symptom": "IDOR on user records" }

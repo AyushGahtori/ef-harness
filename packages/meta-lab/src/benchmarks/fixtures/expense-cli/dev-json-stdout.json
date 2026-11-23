@@ -1,0 +1,7 @@
+{
+  "command": "expense report",
+  "flagsPrecedence": "flags > env > file",
+  "stdoutMustBePureJson": true,
+  "stderrLogging": true,
+  "exitCodes": { "ok": 0, "usage": 64, "data": 65 }
+}

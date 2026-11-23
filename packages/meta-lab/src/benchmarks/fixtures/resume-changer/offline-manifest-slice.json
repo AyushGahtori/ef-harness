@@ -1,0 +1,6 @@
+{
+  "repository": "AyushGahtori/resume-changer",
+  "commit": "497831ec5aa7effb354bb1a8d22d2f031b17a4e0",
+  "liveCloneSkippedOffline": true,
+  "guidedChangeChecks": ["stack-detection", "opening-rubric-map", "wiring-defects"]
+}

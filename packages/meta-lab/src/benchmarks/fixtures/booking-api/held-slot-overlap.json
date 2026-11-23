@@ -1,0 +1,6 @@
+{
+  "endpoint": "/slots",
+  "tag": "concurrency",
+  "overlapLockRequired": true,
+  "dstBoundaryCase": "America/New_York"
+}

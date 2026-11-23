@@ -1,0 +1,7 @@
+{
+  "route": "/order",
+  "cutoffTimezone": "Europe/Berlin",
+  "cutoffLabel": "11:00 AM kitchen cutoff",
+  "cateringEmailField": "CateringEmail",
+  "mobileOrderEnabled": true
+}

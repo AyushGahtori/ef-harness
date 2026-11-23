@@ -1,0 +1,5 @@
+{
+  "endpoint": "/appointments",
+  "idempotencyHeader": "Idempotency-Key",
+  "doubleSubmitSafe": true
+}

@@ -1,0 +1,1 @@
+{ "bugId": "cache-invalidation", "bugFixed": false, "symptom": "stale cache after update" }

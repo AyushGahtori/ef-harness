@@ -1,0 +1,1 @@
+{ "bugId": "react-stale-closure", "bugFixed": false, "symptom": "stale closure in effect hook" }
