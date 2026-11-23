@@ -1,0 +1,13 @@
+{
+  "schema": "m4-kitchen-tasks@1",
+  "tasks": [
+    { "id": "T-menu", "title": "Staff menu" },
+    { "id": "T-order", "title": "Meal order" },
+    { "id": "T-cutoff", "title": "Cutoff rule" },
+    { "id": "T-kitchen", "title": "Kitchen board" },
+    { "id": "T-print", "title": "Print view" },
+    { "id": "T-email", "title": "Catering email" },
+    { "id": "T-auth", "title": "Staff roles" },
+    { "id": "T-a11y", "title": "Accessible states" }
+  ]
+}
