@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "tileSizePx": 16,
+  "rooms": 11,
+  "atlas": "office-floorplan-v1",
+  "frames": [
+    "lobby",
+    "boardroom",
+    "library",
+    "lab",
+    "garage",
+    "kitchen",
+    "roof",
+    "garden",
+    "vault",
+    "studio",
+    "radio"
+  ]
+}

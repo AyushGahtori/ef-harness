@@ -1,0 +1,8 @@
+{
+  "keyId": "ef-harness-policy-2026",
+  "version": 1,
+  "routes": {
+    "default": "anthropic"
+  },
+  "signature": "fixture-unsigned-dev-policy"
+}

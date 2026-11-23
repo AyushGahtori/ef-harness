@@ -1,0 +1,65 @@
+appId: com.efharness.desktop
+productName: EF Harness
+copyright: Copyright © EF Harness
+
+directories:
+  output: dist/packaging
+  buildResources: build
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+
+files:
+  - "dist/**/*"
+  - "package.json"
+  - "!**/*.map"
+  - "!**/{tests,fixtures}/**"
+  - "!**/.env*"
+
+extraResources:
+  - from: build/fixtures/resources/bin
+    to: bin
+    filter:
+      - "**/*"
+  - from: build/fixtures/resources/wasm
+    to: wasm
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - arm64
+  executableName: EF Harness
+  requestedExecutionLevel: asInvoker
+  signingHashAlgorithms:
+    - sha256
+  verifyUpdateCodeSignature: true
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  uninstallDisplayName: EF Harness
+  include: build/nsis/uninstall-preserve-repos.nsh
+  installerSidebar: build/nsis/installer-sidebar.bmp
+  uninstallerSidebar: build/nsis/installer-sidebar.bmp
+
+publish:
+  provider: generic
+  useMultipleRangeRequest: true
+
+electronDownload:
+  cache: .cache/electron
+
+extraMetadata:
+  windowsToastId: EFHarness.Desktop
