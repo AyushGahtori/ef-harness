@@ -1,0 +1,116 @@
+export { CopilotAcpFallbackAdapter, COPILOT_ACP_ARGV } from "./acp-fallback.js";
+export { AttemptCheckpointStore, checkpointRow } from "./checkpoints.js";
+export { ConnectionWindowStore, quotaWindow } from "./connection-windows.js";
+export {
+  CopilotAdapterError,
+  CopilotAuthExpiredError,
+  CopilotByokComplianceError,
+  CopilotOveragePausedError,
+} from "./errors.js";
+export { SessionEventQueue } from "./event-queue.js";
+export { assertNotPersonalCopilotHome, cleanupCopilotAttempt, mountCopilotAttempt } from "./isolation.js";
+export { CopilotMetricsAndQuotaTracker } from "./metrics-quota-tracker.js";
+export { isBadCredentials, normalizeAccountQuota, normalizeSessionMetrics, readSessionMetrics } from "./normalize.js";
+export { normalizeSdkPermission, onPermissionRequest } from "./permission-handler.js";
+export { LocalDeterministicSupervisionPolicyEngine, NodePathResolver } from "./policy.js";
+export type { PathResolver } from "./policy.js";
+export {
+  LocalAllowancePacingController,
+  LocalAnthropicComplianceLocks,
+  LocalByokVault,
+  LocalCliMinVersionGate,
+  LocalCopilotRuntimePolicy,
+  LocalGitHubTokenVault,
+  LocalLeasedMcpServer,
+  LocalLoopbackAllowlistProxy,
+  LocalMicroUsdPriceTable,
+  LocalSandboxTierSelector,
+  LocalWindowsJobObject,
+  OverageApprovalStore,
+  RecordingByokLedger,
+  RecordingCardSink,
+  RecordingPaidFallbackGuard,
+  SystemClock,
+  localCopilotDeps,
+  quotaSnapshotForPacing,
+} from "./ports.js";
+export type {
+  AcpLaunchSpec,
+  AllowancePacingControllerPort,
+  AnthropicComplianceLocksPort,
+  ByokLedgerPort,
+  ByokVaultPort,
+  CliMinVersionGatePort,
+  Clock,
+  CopilotQuotaObservation,
+  CopilotRuntimeDeps,
+  CopilotRuntimePolicyPort,
+  CopilotSdkClientPort,
+  CopilotSdkPermissionDecision,
+  CopilotSdkPermissionRequest,
+  CopilotSdkSessionConfig,
+  CopilotSdkSessionPort,
+  CopilotSdkTurnResult,
+  GenericAcpAdapterPort,
+  GenericAcpSessionPort,
+  GitHubTokenVaultPort,
+  LeasedMcpServerPort,
+  LoopbackAllowlistProxyPort,
+  MicroUsdPriceTablePort,
+  NoSilentPaidFallbackPort,
+  SandboxTierSelectorPort,
+  SupervisionCardSink,
+  WindowsJobObjectPort,
+} from "./ports.js";
+export { CopilotRuntimeAdapter } from "./runtime-adapter.js";
+export { CopilotSdkBridge } from "./sdk-bridge.js";
+export {
+  ACCOUNT_CARD_TITLE,
+  HARNESS_MCP_TOOLS,
+  OVERAGE_STOP_MESSAGE,
+  STRIPPED_EXCLUDED_TOOLS,
+} from "./types.js";
+export type {
+  AccountCard,
+  AccountQuotaSnapshot,
+  AgentRuntimeAdapter,
+  AttemptCheckpointRow,
+  BillingMode,
+  BillingSpec,
+  ByokKeyClass,
+  ByokMaterial,
+  ByokProvider,
+  ByokSpend,
+  CheckpointStopCard,
+  ConnectionWindowSchemaRow,
+  CopilotAuthStatus,
+  CopilotCheckpointRef,
+  CopilotInterruptResult,
+  CopilotModelDescriptor,
+  CopilotPermissionRequest,
+  CopilotProbeResult,
+  CopilotResumeResult,
+  CopilotSessionRef,
+  CopilotSessionSpec,
+  CopilotSteerResult,
+  CopilotTransport,
+  CopilotTurnReceipt,
+  DeterministicSupervisionPolicyEngine,
+  JobAttachment,
+  LeasedMcpServer,
+  ModelRosterPublication,
+  MountedCopilotFiles,
+  NormalizedRuntimeEvent,
+  NormalizedUsage,
+  PermissionApplyResult,
+  PermissionKind,
+  PermissionResponse,
+  PersistedCopilotConfig,
+  PolicyContext,
+  PolicyDecision,
+  ResolvedByok,
+  ResumeFallback,
+  RuntimePosture,
+  SandboxLease,
+  VettedSkill,
+} from "./types.js";
