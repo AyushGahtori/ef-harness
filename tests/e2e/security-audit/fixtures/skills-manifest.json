@@ -1,0 +1,124 @@
+{
+  "skills": [
+    {
+      "id": "skill-01",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-01/SKILL.md",
+      "sha256": "58c37948cf3222757c6bc95b6a743e827f346a6c910ee726e01aa78db693e1ee",
+      "tokens": 18
+    },
+    {
+      "id": "skill-02",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-02/SKILL.md",
+      "sha256": "28b096166c3bfe9da6596a1e69955cb7a7ae33accd8e9da90b413a6c0486b5d6",
+      "tokens": 18
+    },
+    {
+      "id": "skill-03",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-03/SKILL.md",
+      "sha256": "60f75ff73d4d284a54a9d3c84e2f1f9c8816633afe9d289cae0f32b346da3171",
+      "tokens": 18
+    },
+    {
+      "id": "skill-04",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-04/SKILL.md",
+      "sha256": "a2ff626aadcaf2ac12aeb07765d9a8fe7cde8637945b546aa201d4bc244acd19",
+      "tokens": 18
+    },
+    {
+      "id": "skill-05",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-05/SKILL.md",
+      "sha256": "5c186c815bf89c7339e66aaf077e60d8f7db1ffa4cc26751ee7f2b4fd5698b22",
+      "tokens": 18
+    },
+    {
+      "id": "skill-06",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-06/SKILL.md",
+      "sha256": "2f71e4ac2c1d40b2f0735f29e6b08fcace9586b5d3e595f23da6b72ca764d939",
+      "tokens": 18
+    },
+    {
+      "id": "skill-07",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-07/SKILL.md",
+      "sha256": "7ea4d0304cb6617d2a07d3cf0eae03b309dd764260797361a6c5cb64f4e23651",
+      "tokens": 18
+    },
+    {
+      "id": "skill-08",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-08/SKILL.md",
+      "sha256": "620adb2aad61b81576cbc93b20a554fc5be3e8544b045eb0bc06ba672c45ab61",
+      "tokens": 18
+    },
+    {
+      "id": "skill-09",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-09/SKILL.md",
+      "sha256": "18587ad0be2706d51d5ff51368664eb6b8ee6a1aa11dd77d36f36244a5ae493e",
+      "tokens": 18
+    },
+    {
+      "id": "skill-10",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-10/SKILL.md",
+      "sha256": "923c840140b772bf26094be23e14dedb67ac697cc950b04d365a57fc0dea602f",
+      "tokens": 18
+    },
+    {
+      "id": "skill-11",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-11/SKILL.md",
+      "sha256": "68cff17ac41be90923c0f2badcec7965ee27024bea74e33d2fa824279f9021a0",
+      "tokens": 18
+    },
+    {
+      "id": "skill-12",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-12/SKILL.md",
+      "sha256": "bbe447594e752af715f2f36509b55779f6cb3eb6b7a739689c7ab0c39316eda0",
+      "tokens": 18
+    },
+    {
+      "id": "skill-13",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-13/SKILL.md",
+      "sha256": "61179dc9f461686f17f81843e84f3d21d0a6b6f8f067f88d50a026cb8ec3ce3e",
+      "tokens": 18
+    },
+    {
+      "id": "skill-14",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-14/SKILL.md",
+      "sha256": "5e26cbc4fbfcf909f950f8e92f6758a04547bfbec5a5e12fc55a764a98911105",
+      "tokens": 18
+    },
+    {
+      "id": "skill-15",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-15/SKILL.md",
+      "sha256": "b8064a6acddd489e6e6eefaa845f1a6689b2d11239cbf15f78049a453bb7490a",
+      "tokens": 18
+    },
+    {
+      "id": "skill-16",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-16/SKILL.md",
+      "sha256": "0de3f184e94392d8947e9d586e86c566b0b9254e4fad9ed3e5d3c6edc1e597c5",
+      "tokens": 18
+    },
+    {
+      "id": "skill-17",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-17/SKILL.md",
+      "sha256": "30621879ccdd401a2b8de75e0136451e0e41f84508429738474ce098f8688cea",
+      "tokens": 18
+    },
+    {
+      "id": "skill-18",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-18/SKILL.md",
+      "sha256": "87aeae35c84ca0e2fa036d056d3abc017af2e7fbfe13a56bfdd853a11b83f72c",
+      "tokens": 18
+    },
+    {
+      "id": "skill-19",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-19/SKILL.md",
+      "sha256": "14da5ebd779585ceada66611fb6874f9cb209328a7f6ce0126c66991a1bc634e",
+      "tokens": 18
+    },
+    {
+      "id": "skill-20",
+      "path": "tests/e2e/security-audit/fixtures/skills/skill-20/SKILL.md",
+      "sha256": "ffa53ae234d2ce8d3a3994f9d68ed3e084482e6444609ed425e5c3d9ead18ee8",
+      "tokens": 18
+    }
+  ]
+}

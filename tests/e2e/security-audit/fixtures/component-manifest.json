@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "name": "electron",
+      "version": "42.0.0",
+      "ed25519": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "node",
+      "version": "22.13.0",
+      "ed25519": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}
