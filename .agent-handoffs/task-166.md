@@ -62,7 +62,7 @@ From `C:\Users\Ayush\Desktop\ef-wt\task-166-brownfield-l0-repo-scanner`:
 - `pnpm --filter @ef-harness/brownfield typecheck` — pass (`tsc -b`)
 - `pnpm --filter @ef-harness/brownfield lint` — pass
 - `pnpm --filter @ef-harness/brownfield test -- l0-scan` — pass, 9 tests (Next.js hybrid, Express+Prisma, Python manifests, pnpm monorepo edges, non-git, sensitive skip canary, symlink/EPERM fallback, snapshot cache fast path, churn hotspots)
-- `node scripts/verify-harmony.mjs --task 166` — pending at commit time (runs via `agent-worktree commit 166`)
+- `node scripts/verify-harmony.mjs --task 166` — pass (`harmony ok for Task-166`, exit 0) at commit via `agent-worktree commit 166`
 
 ## Known Limitations / Follow-Ups
 
