@@ -1,0 +1,17 @@
+import "../review-trials/area-a.test.js";
+import "../review-trials/area-b.test.js";
+import "../review-trials/area-c.test.js";
+import "../review-trials/area-d.test.js";
+import "../review-trials/area-e.test.js";
+import "../review-trials/area-f.test.js";
+import "../review-trials/area-g.test.js";
+import "../review-trials/area-h.test.js";
+import "../review-trials/area-i.test.js";
+import "../review-trials/area-j.test.js";
+import "../review-trials/trial-1.test.js";
+import "../review-trials/trial-2.test.js";
+import "../review-trials/trial-3.test.js";
+import "../review-trials/trial-4.test.js";
+import "../review-trials/trial-5.test.js";
+import "../review-trials/trial-6.test.js";
+import "../review-trials/completeness.test.js";
