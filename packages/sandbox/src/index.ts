@@ -18,6 +18,7 @@ export {
   ProcessIdentityVerifier,
   SqliteProjectStateDb,
   WindowsJobManager,
+  WindowsJobObjectManager,
   assertJobLimits,
   assertTimeout,
   clampNestedLimits,

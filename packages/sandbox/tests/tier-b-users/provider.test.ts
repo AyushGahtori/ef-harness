@@ -88,6 +88,31 @@ describe("Tier B warm logon provider", () => {
     }
   });
 
+  it("revokes the slot on dispose and regrants it before the next acquire", async () => {
+    const tree = makeTree();
+    try {
+      const rig = harness(tree);
+      rig.acl.onEmptySlotCreated(tree.slot);
+      const spec = launchSpec(tree);
+      const instance = await rig.provider.acquireWarmInstance(spec);
+      await rig.provider.executeCommand(instance, { command: "node", args: ["--version"] });
+      expect(rig.aclPort.commands.some((command) => command.args.includes("/remove:g"))).toBe(false);
+      expect(rig.acl.requireSlotGrant(tree.slot).capabilitySid.length).toBeGreaterThan(0);
+      await rig.provider.disposeInstance(instance);
+      expect(rig.acl.grantFor(tree.slot)).toBeNull();
+      const removed = rig.aclPort.commands.filter(
+        (command) => command.args.includes("/remove:g") && command.ace.target === tree.slot,
+      );
+      expect(removed).toHaveLength(2);
+      expect(removed.every((command) => command.recursive === false && !command.args.includes("/T"))).toBe(true);
+      const again = await rig.provider.acquireWarmInstance(spec);
+      expect(rig.acl.requireSlotGrant(tree.slot).slotPath).toBe(tree.slot);
+      await rig.provider.disposeInstance(again);
+    } finally {
+      removeLater(tree.root);
+    }
+  });
+
   it("times out a hung command and refuses FAT32 volumes", async () => {
     const tree = makeTree();
     try {

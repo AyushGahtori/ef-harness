@@ -143,6 +143,7 @@ export class TierBSandboxUsersProvider implements SandboxTierProvider {
     const health = probeTierB(this.options.inspector, this.options.provisioner.firewallRules());
     if (!health.available) throw new TierBUnavailableError(health.missingComponents);
     this.assertPorts(spec.proxyPort, spec.mcpPort);
+    this.options.acl.regrantSlot(spec.worktree);
     const slot = this.options.acl.requireSlotGrant(spec.worktree);
     this.options.acl.ensureEmptyGrant(spec.tempDir, "temp");
     let instance = this.instances.find((item) => !this.busy.has(item.id));
@@ -227,17 +228,22 @@ export class TierBSandboxUsersProvider implements SandboxTierProvider {
 
   async disposeInstance(instance: SandboxInstance): Promise<void> {
     const warm = this.requireWarm(instance);
-    if (warm.attemptJob) {
-      await this.options.jobManager.terminateJob(warm.attemptJob, "dispose");
-      await warm.attemptJob.close();
-      warm.attemptJob = null;
+    const worktree = warm.spec?.worktree ?? null;
+    try {
+      if (warm.attemptJob) {
+        await this.options.jobManager.terminateJob(warm.attemptJob, "dispose");
+        await warm.attemptJob.close();
+        warm.attemptJob = null;
+      }
+      if (warm.tempDir) await wipeDirectoryContents(warm.tempDir);
+    } finally {
+      warm.attemptId = null;
+      warm.tempDir = null;
+      warm.spec = null;
+      warm.capabilitySid = null;
+      this.busy.delete(warm.id);
+      if (worktree) this.options.acl.revokeSlotGrant(worktree);
     }
-    if (warm.tempDir) await wipeDirectoryContents(warm.tempDir);
-    warm.attemptId = null;
-    warm.tempDir = null;
-    warm.spec = null;
-    warm.capabilitySid = null;
-    this.busy.delete(warm.id);
   }
 
   private async run(instance: SandboxInstance, cmdSpec: CommandSpec, token: string | null): Promise<CommandResult> {

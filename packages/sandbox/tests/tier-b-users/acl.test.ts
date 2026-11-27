@@ -78,6 +78,33 @@ describe("empty-slot ACL manager", () => {
     }
   });
 
+  it("removes a slot grant with icacls /remove:g and regrants a populated directory", () => {
+    const tree = makeTree();
+    try {
+      const rig = harness(tree);
+      rig.acl.onEmptySlotCreated(tree.slot);
+      const grant = rig.acl.requireSlotGrant(tree.slot);
+      fs.writeFileSync(path.join(tree.slot, "checked-out.txt"), "files");
+      rig.acl.revokeSlotGrant(tree.slot);
+      const removed = rig.aclPort.commands.filter((command) => command.args.includes("/remove:g"));
+      expect(removed.map((command) => command.args[2])).toEqual([`*${grant.accountSid}`, `*${grant.capabilitySid}`]);
+      expect(removed.every((command) => command.args[1] === "/remove:g" && command.recursive === false)).toBe(true);
+      expect(removed.every((command) => !command.args.includes("/T") && !command.args.includes("/t"))).toBe(true);
+      expect(rig.acl.grantFor(tree.slot)).toBeNull();
+      expect(rig.aclPort.list(tree.slot).some((ace) => ace.type === "allow" && ace.rights === "M")).toBe(false);
+      const restored = rig.acl.regrantSlot(tree.slot);
+      expect(restored.capabilitySid).toBe(grant.capabilitySid);
+      expect(rig.acl.requireSlotGrant(tree.slot).accountSid).toBe(grant.accountSid);
+      const userGrants = rig.aclPort.commands.filter(
+        (command) => command.ace.target === tree.slot && command.args.includes("/grant:r") && command.ace.sid === grant.accountSid,
+      );
+      expect(userGrants).toHaveLength(2);
+      rig.acl.assertDeveloperHomeUntouched();
+    } finally {
+      removeLater(tree.root);
+    }
+  });
+
   it("denies a read of another slot when the restricted capability SID differs", () => {
     const tree = makeTree();
     try {

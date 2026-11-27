@@ -36,6 +36,13 @@ export class RecordingAclPort implements AclPort {
     }
     this.commands.push(command);
     const key = comparablePath(command.ace.target);
+    if (command.args.includes("/remove:g")) {
+      const existing = this.byTarget.get(key) ?? [];
+      const retained = existing.filter((ace) => !(ace.type === "allow" && ace.sid === command.ace.sid));
+      if (retained.length === 0) this.byTarget.delete(key);
+      else this.byTarget.set(key, retained);
+      return;
+    }
     const existing = this.byTarget.get(key) ?? [];
     existing.push(command.ace);
     this.byTarget.set(key, existing);

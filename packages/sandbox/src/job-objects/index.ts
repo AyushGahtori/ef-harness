@@ -41,3 +41,4 @@ export {
   type TerminationReason,
 } from "./types.js";
 export { WindowsJobManager, type WindowsJobManagerOptions } from "./windows-job-manager.js";
+export { WindowsJobManager as WindowsJobObjectManager } from "./windows-job-manager.js";

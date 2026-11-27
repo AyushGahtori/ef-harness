@@ -25,18 +25,29 @@ export function grantRelaxesDeveloperHome(target: string, userProfile: string): 
   return null;
 }
 
+function assertNotRecursive(args: readonly string[]): void {
+  if (args.includes("/T") || args.includes("/t")) {
+    throw new TierBError("recursive_acl", "Recursive ACL propagation is forbidden");
+  }
+}
+
 function icaclsCommand(ace: AclAce): AclCommand {
   const rights = ace.rights === "DENY_WRITE" ? "(OI)(CI)(WD,AD,WA,WEA,DC,D)" : `(OI)(CI)(${ace.rights})`;
   const flag = ace.type === "deny" ? "/deny" : "/grant:r";
   const args = [ace.target, flag, `*${ace.sid}:${rights}`];
-  if (args.includes("/T") || args.includes("/t")) {
-    throw new TierBError("recursive_acl", "Recursive ACL propagation is forbidden");
-  }
+  assertNotRecursive(args);
+  return { program: "icacls", args, recursive: false, ace };
+}
+
+function icaclsRemoveGrant(ace: AclAce): AclCommand {
+  const args = [ace.target, "/remove:g", `*${ace.sid}`];
+  assertNotRecursive(args);
   return { program: "icacls", args, recursive: false, ace };
 }
 
 export class EmptySlotAclManager {
   private readonly grants = new Map<string, SlotGrant>();
+  private readonly revoked = new Map<string, SlotGrant>();
   private readonly applied: AclCommand[] = [];
 
   constructor(
@@ -93,9 +104,37 @@ export class EmptySlotAclManager {
   assertDeveloperHomeUntouched(): void {
     for (const command of this.applied) {
       if (command.ace.type !== "allow") continue;
+      if (command.args.includes("/remove:g")) continue;
       const reason = grantRelaxesDeveloperHome(command.ace.target, this.options.userProfile);
       if (reason) throw new DeveloperHomeAclError(command.ace.target, reason);
     }
+  }
+
+  revokeSlotGrant(target: string): void {
+    const resolved = canonicalizeAbsolute(target);
+    const key = comparablePath(resolved);
+    const grant = this.grants.get(key);
+    if (!grant) return;
+    this.issueRemove(resolved, grant.accountSid, "sandbox_user");
+    this.issueRemove(resolved, grant.capabilitySid, "slot_capability");
+    this.grants.delete(key);
+    this.revoked.set(key, grant);
+  }
+
+  regrantSlot(target: string): SlotGrant {
+    const current = this.grantFor(target);
+    if (current) return current;
+    const resolved = canonicalizeAbsolute(target);
+    const key = comparablePath(resolved);
+    const grant = this.revoked.get(key);
+    if (!grant) throw new SlotGrantMissingError(target);
+    this.assertHomeUntouched(resolved);
+    if (!fs.existsSync(resolved)) throw new EmptySlotMissingError(resolved);
+    this.applyAce(resolved, grant.accountSid, "allow", "M", "sandbox_user");
+    this.applyAce(resolved, grant.capabilitySid, "allow", "M", "slot_capability");
+    this.revoked.delete(key);
+    this.grants.set(key, grant);
+    return grant;
   }
 
   grantFor(target: string): SlotGrant | null {
@@ -163,6 +202,21 @@ export class EmptySlotAclManager {
     this.options.acl.apply(command);
     this.applied.push(command);
     return command;
+  }
+
+  private issueRemove(target: string, sid: string, role: AclAce["role"]): void {
+    const ace: AclAce = {
+      target,
+      sid,
+      type: "allow",
+      rights: "M",
+      inheritance: "(OI)(CI)",
+      recursive: false,
+      role,
+    };
+    const command = icaclsRemoveGrant(ace);
+    this.options.acl.apply(command);
+    this.applied.push(command);
   }
 }
 
