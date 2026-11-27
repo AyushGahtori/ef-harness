@@ -292,3 +292,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 63 passed (63)`, `Tests 369 passed (369)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+---
+
+## [C09] — Integer budget reservations, cross-db grants, and group-commit write queue
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `d33a322ff65f234cc29c30d86649731100731fc7` (`integrate: C09 bind budget grants and write queue`)
+- **Findings Fixed:** `F-012`, `F-013`, `F-047`, `F-065`, `F-081` (this seam only)
+
+### What Changed
+- Did not re-merge `origin/task/023-budget-reservation-ledger` (`96649df`), `origin/task/024-cross-db-grant-protocol` (`e16d754`), or `origin/task/025-idempotency-group-commit` (`b0a731a`). `git merge-base --is-ancestor` against `168f474` exited `0` for all three. No dirty patch for C09. `task-022.patch` was already applied and was not reapplied.
+- Kept the live classes `BudgetLedgerRepo`, `BrokerGrantIssuer`, `ProjectGrantReceiver`, and `CoordinatorWriteQueue`. Did not rename them to `BudgetReservationLedger`, `CrossDbGrantProtocol`, or `IdempotencyOpsManager`. `enqueue` stays private. The public queue methods are `submitOperation` (Promise) and `submitOperationSync` (one idempotent write when the writer is free).
+- Bound those classes to the open writers (`bindBudgetLedger`, `bindBrokerGrantIssuer`, `bindProjectGrantReceiver`, `bindCoordinatorWriteQueue`). None of the bind paths opens a second `DatabaseSync` or runs `ATTACH`.
+- Added `BudgetLedgerRepo.getScopeSnapshot`. A scope is `hardStop` when any currency row is overrun or has `remainingUnits === 0`. `raiseBudgetLimit` stays the limit writer. There is no `setHardStop` column in `schema/state.sql`.
+- `defaultComputeRequestHash` now calls `@ef-harness/shared-contracts` `computeRequestHash` (`sha256:` plus canonical NFC JSON). A repeated `op_id` with a different digest still throws `OpIdReusedError`.
+- `ledger/database.ts` and `grants/session.ts` already registered `@ef-harness/shared-contracts` `splitSearchText`. No local splitter remained on `168f474`.
+- `GrantSqlSession.adopt` uses the caller's writer and does not close it. `assertSingleDatabase` rejects attached databases other than `main` and `temp`.
+- Left `MigrationRunner`, the C07 knowledge/search/registry binds, and the C08 path leases alone. `path_leases.mode` stays `'intent' | 'granted'`. Did not edit `schema/**`, `packages/sim`, or Windows Job Object, DPAPI, named-pipe, or NSIS code. ipc adapters, integrator, cockpit, and portability package wiring stay in later waves.
+
+### What It Fixed
+- **F-012:** Budget reservations, grant issue/deposit, and the write queue share the open `ProjectStateDb` and `GlobalBrokerDb` writers instead of a second connection.
+- **F-013:** `CoordinatorWriteQueue` now has a synchronous receipt entrypoint and the existing Promise entrypoint, both keyed by the canonical request digest. ipc port adapters stay in a later wave.
+- **F-047:** `BudgetLedgerRepo.getScopeSnapshot` is the scope read `CompletionWaveController` can call later. Integrator wiring stays in that wave. Live reserve/settle/release names were not renamed.
+- **F-065:** The bound ledger is `BudgetLedgerRepo` on `state.db`, with integer `micro-USD` units. Steering's in-memory ledger stays in a later wave.
+- **F-081:** `BrokerGrantIssuer` is bound to `GlobalBrokerDb`'s writer and `global.db.grants`. Portability's in-memory grant store stays in a later wave.
+- **Idempotency:** operation payloads are stored as `sha256:<64-hex>`. Replaying the same `op_id` with a different payload is rejected and does not run the execute function again.
+- **Last unit:** 50 `reserveAcrossScopes` calls for the last `1` micro-USD on one project scope produced `1` winner and `49` `{ ok: false }` results, with `0` `SQLITE_BUSY` errors. The live result is `blockingScopes`, not a separate `InsufficientBudgetError` type.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `96649df`, `e16d754`, and `b0a731a`: exit `0` (all ancestors of `168f474`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 64 passed (64)`, `Tests 370 passed (370)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
