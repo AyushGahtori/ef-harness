@@ -1059,3 +1059,39 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C32.
 
+---
+
+## [C32] — Research facts in ProjectStateDb and a shared skeleton lock
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `2636b51f8fc1e728581d996bb36fdb815e982c0c` (`integrate: C32 wire research facts and the shared skeleton lock`)
+- **Findings Fixed:** `F-034` for `informs` edges written through `KnowledgeGraphRepo` (the v2 migration already seeds `informs`; this commit does not edit `schema/**`), `F-036` for durable research fact bodies, and `F-038` for one async feature-architecture writer that uses the system `SkeletonLockEnforcer` and persists `fields.names`. `task/082-research-engine-api-verifier` (`a6d8908`), `task/083-system-architecture-synthesizer` (`e753d6f`), and `task/084-feature-architecture-wireframes` (`8ce7ede`) were already ancestors. Did not re-merge those branches. Did not apply a dirty patch. Did not apply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C33.
+
+### What Changed
+- Re-verified on `21daf72b96a07a36b17aebfabd0b7f50d6007dd0`. `git merge-base --is-ancestor` succeeded for `a6d8908`, `e753d6f`, and `8ce7ede`. No task branch was merged.
+- `ResearchFactCache.putDurable` / `getDurable` store the fact body in `CasBlobStore` and the cache row in `global.db.research_cache`. A new cache instance over the same stores reloads the body from the artifact hash. `informs` targets become `research_fact` nodes and `informs` edges on `ProjectStateDb`. `typescript` is a runtime dependency. `FeatureResearchOrchestrator` calls `fetchCleanDoc` when the fetcher provides it, and `adaptSecureDocFetcher` maps `SecureDocFetcher.fetchDocs` onto that method.
+- `FeatureArchitectureSynthesizer` runs the existing feature draft, then asks the system `SkeletonLockEnforcer` before writing. Accepted graphs persist through `KnowledgeGraphRepo` with `fields.names` shaped as `{ kind, value }`. A second owner of the same name is rejected by `state.db.names`. A breaking column on a locked table is not written.
+
+### What It Fixed
+- **F-034:** Verified research facts can record `informs` edges on a `ProjectStateDb` that has already run the v2 edge-type migration.
+- **F-036:** Restarting `ResearchFactCache` over the same `ProjectStateDb` and `CasBlobStore` hits the cached fact with `0` network fetches. `typescript` is available as a production dependency, and doc fetch goes through `fetchCleanDoc`.
+- **F-038:** Feature architecture persistence uses the system skeleton lock and writes `fields.names` that the names trigger enforces. A locked breaking mutation is refused unless a CCR allows it.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor a6d8908 HEAD`: exit `0`
+- `git merge-base --is-ancestor e753d6f HEAD`: exit `0`
+- `git merge-base --is-ancestor 8ce7ede HEAD`: exit `0`
+- No dirty-worktree patch was assigned to C32. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/research-engine test`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/planner test -- system-arch feature-arch`: exit `0` — `Test Files 27 passed (27)`, `Tests 145 passed (145)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion test`: first run exit `1` — catalog layer timing `6.35 ms` against a `5 ms` budget (1 failed, 50 passed). Rerun exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped)
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C33.
+
