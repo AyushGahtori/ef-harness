@@ -964,3 +964,36 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C29.
 
+---
+
+## [C29] — Corpus pack loader for core, web-api-cli elaborations, and rules
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `b3056776d4f95e262b4e69321677a6a59b56fac2` (`integrate: C29 wire corpus pack loader for core, elaborations, and rules`)
+- **Findings Fixed:** `F-032` for the landed `075`–`077` corpus. `CorpusPackLoader.loadAllBundledPacks()` loads `core-data-auth`, `web-api-cli` questions and elaborations, `X-01`..`X-14`, `UP-01`..`UP-08`, and `S-01`..`S-10` with bounded YAML aliases and zero dangling option ids. `Task 103` and `Task 104` stay on C30. Did not re-merge `task/075`, `task/076`, or `task/077`. Did not apply a dirty patch. Did not apply `task-079.patch`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C30.
+
+### What Changed
+- Re-verified on `111614ad5818f2afe2f4c12dad56d8f406c8d100`. `task/075-corpus-loader-core-data-auth` (`db21117`), `task/076-corpus-web-api-cli-elaborations` (`8764a25`), and `task/077-cross-cutting-rules-seams-tags` (`b73f44c`) are ancestors. C29 names no merge and no dirty patch. No task branch was merged.
+- The discovery YAML parser accepts anchors, aliases, and `<<` merge keys. Alias expansion stops at 100. Duplicate keys and bad indentation still fail with a line number.
+- `CorpusPackLoader.load()` in `@ef-harness/discovery` still returns the 29 canonical core, data, and auth questions. It parses the other corpus YAML, skips `manifest.yaml` and `activation-table.yaml`, and does not treat a document without `kind` as a `075` question pack. The bundle hash of the repository corpus still matches the three canonical files.
+- The web-api-cli test loader adopts a sibling file only when every question has a string `pack`. `corpus/packs/core-data-auth/auth.yaml` is a `075` question pack, so the loader keeps `core_source: "task-075-port"` and does not require `pack` on those questions.
+- `@ef-harness/corpus` exports `CorpusPackLoader.loadAllBundledPacks()`. It parses with `yaml` (`merge: true`, `maxAliasCount: 100`), checks touches tags with `TouchesTagSchema`, and resolves elaboration and `conflicts_with` option ids against the bundled questions plus the authored core question file. `api.style` `stage_suitability` aliases resolve to `prototype`, `mvp`, and `production`.
+
+### What It Fixed
+- **F-032:** `loadCorpusPacks(repositoryCorpusRoot())` no longer throws `YamlParseError` on `corpus/packs/web-api-cli/api.yaml`. The web-api-cli suite no longer throws `auth.yaml: missing string pack`. The bundled catalog loads 18 core, 6 data, and 5 auth questions, the web, api, and cli questions, at least 60 elaborations, rules `X-01`..`X-14`, policies `UP-01`..`UP-08`, and seams `S-01`..`S-10`, with `danglingOptionIds` empty.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor db21117 HEAD`: exit `0`
+- `git merge-base --is-ancestor 8764a25 HEAD`: exit `0`
+- `git merge-base --is-ancestor b73f44c HEAD`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 6 passed (6)` (`0` skipped)
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 27 passed (27)`, `Tests 171 passed (171)` (`0` skipped)
+- `pnpm --filter @ef-harness/planner test -- tag-detector`: exit `0` — `Test Files 26 passed (26)`, `Tests 144 passed (144)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C30.
+
