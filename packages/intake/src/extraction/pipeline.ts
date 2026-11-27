@@ -4,7 +4,8 @@ import { SemanticEntailmentGate, type EntailmentModelPort } from "./entailment.j
 import type { ExtractorModel } from "./fake-model.js";
 import type { KnowledgeGraphPort, NodeCreate } from "./graph.js";
 import { isBlockedExit, parseIntakeExtractorJson } from "./intake-schema.js";
-import { blockCovering, charRangeOf, formatDocumentLocator } from "./locator.js";
+import { evidenceLocatorJson } from "../evidence-locator.js";
+import { blockCovering, charRangeOf, claimEvidenceLocator, formatDocumentLocator } from "./locator.js";
 import { MustAskPolicyFloor } from "./must-ask.js";
 import { LiveSpeechPrecedenceReconciler } from "./precedence.js";
 import { ExactQuoteEvidenceVerifier } from "./quote-verifier.js";
@@ -453,7 +454,7 @@ export class IntakeExtractionPipeline {
         sourceKind: "source",
         sourceRef: document.sourceId,
         sourceHash: document.sourceHash,
-        locator: { label: claim.locatorLabel, charStart: claim.charStart, charEnd: claim.charEnd },
+        locator: evidenceLocatorJson(claimEvidenceLocator(document, claim)),
         quote: claim.quote,
         verified: true,
       });

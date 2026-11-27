@@ -1,3 +1,5 @@
+import type { EvidenceLocator } from "@ef-harness/shared-contracts";
+import { parseEvidenceLocator } from "../evidence-locator.js";
 import type { IntakeLocator, NormalizedBlock, NormalizedDocument } from "./types.js";
 
 export function formatDocumentLocator(
@@ -82,4 +84,28 @@ export function pdfLocator(
   if (located.paragraph !== null) return { ...base, paragraph: located.paragraph };
   if (located.section) return { ...base, section: located.section };
   return base;
+}
+
+export function claimEvidenceLocator(
+  document: NormalizedDocument,
+  claim: {
+    readonly charStart: number;
+    readonly charEnd: number;
+    readonly pages: readonly number[];
+    readonly paragraph: number | null;
+  },
+): EvidenceLocator {
+  const charStart = claim.charStart;
+  const charEnd = claim.charEnd < claim.charStart ? claim.charStart : claim.charEnd;
+  const mime = document.mimeType.toLowerCase();
+  if ((mime.includes("docx") || mime.includes("wordprocessingml")) && claim.paragraph !== null && claim.paragraph >= 1) {
+    return parseEvidenceLocator({
+      kind: "docx",
+      paragraph: claim.paragraph,
+      charStart,
+      charEnd,
+    });
+  }
+  const page = claim.pages.find((value) => Number.isInteger(value) && value >= 1) ?? 1;
+  return parseEvidenceLocator({ kind: "pdf", page, charStart, charEnd });
 }

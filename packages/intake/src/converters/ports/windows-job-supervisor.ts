@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,8 +17,11 @@ export interface JobAttachment {
 
 export class WindowsJobSupervisor {
   async attach(request: JobAttachRequest): Promise<JobAttachment> {
-    if (process.platform !== "win32" || !request.killOnJobClose || request.network !== "deny") {
+    if (!request.killOnJobClose || request.network !== "deny") {
       return { assigned: false, async terminate() {} };
+    }
+    if (process.platform !== "win32") {
+      return assignLinuxLimit(request);
     }
     const directory = await mkdtemp(join(tmpdir(), "ef-intake-job-"));
     const scriptPath = join(directory, "assign-job.ps1");
@@ -48,6 +51,17 @@ export class WindowsJobSupervisor {
       },
     };
   }
+}
+
+function assignLinuxLimit(request: JobAttachRequest): JobAttachment {
+  if (process.platform !== "linux") {
+    return { assigned: false, async terminate() {} };
+  }
+  const address = Math.max(request.memoryLimitBytes, 64 * 1024 * 1024 * 1024);
+  const limited = spawnSync("prlimit", ["--pid", String(request.pid), `--as=${String(address)}`, "--cpu=60"], {
+    encoding: "utf8",
+  });
+  return { assigned: limited.status === 0, async terminate() {} };
 }
 
 function waitForAssignment(powershell: ReturnType<typeof spawn>): Promise<boolean> {

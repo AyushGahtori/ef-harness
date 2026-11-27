@@ -1,3 +1,4 @@
+import { evidenceLocatorJson, specEvidenceLocator } from "../evidence-locator.js";
 import type { KnowledgeGraphPort } from "./graph.js";
 import { isRecord, type ImportedContract, type ImportedEntity, type ImportedField, type Json, type SchemaFormat, type SchemaImportResult } from "./types.js";
 import { lineOfIndex, parseYaml, YamlSyntaxError } from "./yaml.js";
@@ -577,7 +578,7 @@ export class DeterministicSchemaContractImporter {
     const ids: string[] = [];
     const nodes = [
       ...result.entities.map((entity) => {
-        const id = graph.allocateEntityId("ENT");
+        const id = graph.allocateEntityId("SRC-");
         ids.push(id);
         return {
           op: "create" as const,
@@ -598,7 +599,7 @@ export class DeterministicSchemaContractImporter {
         };
       }),
       ...result.contracts.map((contract) => {
-        const id = graph.allocateEntityId("CON");
+        const id = graph.allocateEntityId("C-");
         ids.push(id);
         return {
           op: "create" as const,
@@ -635,7 +636,11 @@ export class DeterministicSchemaContractImporter {
         nodeVersion: node.version,
         sourceKind: "source",
         sourceRef: result.filename,
-        locator: { kind: "spec", pointer: typeof node.fields === "object" && node.fields && "pointer" in node.fields ? String(node.fields.pointer) : "/" },
+        locator: evidenceLocatorJson(
+          specEvidenceLocator(
+            typeof node.fields === "object" && node.fields && "pointer" in node.fields ? String(node.fields.pointer) : "/",
+          ),
+        ),
         quote: node.text,
         verified: true,
       });
@@ -652,3 +657,6 @@ export class DeterministicSchemaContractImporter {
     return { ok: true, filename, format, entities, contracts, errors: [], llmTokens: 0, modelCalls: 0 };
   }
 }
+
+/** Public name for the deterministic OpenAPI, SQL, and Prisma importer. */
+export class ExactSchemaImporter extends DeterministicSchemaContractImporter {}

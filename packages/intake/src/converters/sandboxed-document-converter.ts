@@ -9,6 +9,7 @@ import { createCanonicalHash, type CanonicalHash } from "./ports/canonical-hash.
 import { MemoryCasBlobStore, type CasBlobStore } from "./ports/cas-blob-store.js";
 import { NodeSandboxRunner, type SandboxRunner } from "./ports/sandbox-runner.js";
 import { ConverterProcessError, rehydrateConverterError } from "./errors.js";
+import { publishNormalizedDocument, type NormalizedDocument as PublishedDocument } from "../normalized-document.js";
 import type { ConvertRequest, NormalizedDocument, VisionCaptioner } from "./types.js";
 
 export interface SandboxReceipt {
@@ -23,6 +24,7 @@ export interface SandboxReceipt {
 
 export interface SandboxConversion {
   readonly document: NormalizedDocument;
+  readonly normalized: PublishedDocument;
   readonly cacheHit: boolean;
   readonly deduplicated: boolean;
   readonly engines: readonly string[];
@@ -79,6 +81,7 @@ export class SandboxedDocumentConverter {
       );
       return {
         document,
+        normalized: publishNormalizedDocument(document),
         cacheHit: true,
         deduplicated: true,
         engines: ["cache"],
@@ -116,6 +119,7 @@ export class SandboxedDocumentConverter {
       const document = await attachVision(this.cas, payload.document, request.bytes, request.visionCaptioner);
       return {
         document,
+        normalized: publishNormalizedDocument(document),
         cacheHit: false,
         deduplicated: false,
         engines: payload.engines,
