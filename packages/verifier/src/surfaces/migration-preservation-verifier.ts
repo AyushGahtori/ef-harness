@@ -4,13 +4,13 @@ import { createDefaultDatabaseEngine, type DatabaseEnginePort, type MigrationSes
 import { generateMigrationPredecessorFixture } from "./ports/synthetic-data.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { MigrationPreservationCheckSchema, type MigrationPreservationCheck } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 export interface MigrationDependencies {
   readonly database?: DatabaseEnginePort;
 }
 
-export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
+export class MigrationPreservationVerifier implements SurfaceCheckVerifier {
   readonly id = "migration-preservation";
   readonly surface = "migration";
 
@@ -90,7 +90,7 @@ export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
         columns: check.unchangedColumns,
         rows: postRows,
       });
-      const idempotence = this.idempotence(check, context, second, pre, post, upAnalysis);
+      const idempotence = this.idempotence(check, context, session, second, pre, post, upAnalysis);
       const results = [preservation, idempotence];
       if (check.downSql && downAnalysis && preservation.status === "pass" && idempotence.status === "pass") {
         results.push(await this.down(session, check, context, pre, downAnalysis));
@@ -176,6 +176,7 @@ export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
   private idempotence(
     check: MigrationPreservationCheck,
     context: SurfaceVerifierContext,
+    session: MigrationSession,
     second: { ok: boolean; timedOut: boolean; message?: string; statements: readonly string[] },
     pre: TableChecksum,
     post: TableChecksum,
@@ -191,6 +192,18 @@ export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
       });
     }
     if (!second.ok) {
+      if (check.allowCleanRefusalOnRerun && drift.length === 0) {
+        const integrity = session.validateIntegrity();
+        if (integrity.integrityOk && integrity.foreignKeyViolations === 0) {
+          return passing(checkId, context, `re-run refused cleanly without altering preserved data: ${second.message ?? ""}`, {
+            ...analysis,
+            dialect: check.dialect,
+            statements: second.statements,
+            cleanRefusal: true,
+            statementTimeoutMs: check.statementTimeoutMs,
+          });
+        }
+      }
       return implementationFailure(
         checkId,
         context,

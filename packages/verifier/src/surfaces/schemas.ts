@@ -178,6 +178,7 @@ export const MigrationPreservationCheckSchema = z.object({
   upSql: z.string().min(1),
   downSql: z.string().min(1).optional(),
   statementTimeoutMs: z.number().int().positive(),
+  allowCleanRefusalOnRerun: z.boolean().optional(),
   transformations: z.array(
     z.object({
       description: z.string().min(1),

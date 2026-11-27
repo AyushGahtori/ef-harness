@@ -162,6 +162,30 @@ describe("MigrationPreservationVerifier", () => {
     expect(idempotence?.status).toBe("fail");
   });
 
+  it("passes re-run idempotence on an explicit clean guard refusal when data and integrity are preserved", async () => {
+    const guardedSql = `
+CREATE TABLE dishes_next (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  note TEXT,
+  owner_id INTEGER,
+  created_at TEXT NOT NULL,
+  sku TEXT
+);
+INSERT INTO dishes_next (id, name, note, owner_id, created_at, sku)
+SELECT id, name, note, owner_id, created_at, 'SKU-' || id FROM dishes;
+CREATE INDEX dishes_next_owner_idx ON dishes_next(owner_id);`;
+    const results = await new MigrationPreservationVerifier().verify(
+      baseSpec(guardedSql, { allowCleanRefusalOnRerun: true }),
+      verifierContext("http://127.0.0.1"),
+    );
+    const preservation = results.find((result) => result.check_id.endsWith(":preservation"));
+    const idempotence = results.find((result) => result.check_id.endsWith(":idempotence"));
+    expect(preservation?.status).toBe("pass");
+    expect(idempotence?.status).toBe("pass");
+    expect(idempotence?.receipt.cleanRefusal).toBe(true);
+  });
+
   it("aborts a hanging migration at statement_timeout", async () => {
     const results = await new MigrationPreservationVerifier().verify(
       baseSpec("SELECT ef_sleep_ms(5000);", { statementTimeoutMs: 400, downSql: undefined }),

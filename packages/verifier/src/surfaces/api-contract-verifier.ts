@@ -10,7 +10,7 @@ import {
 import { appUrl, headerIncludes, joinUrl, requestJson } from "./http.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { ApiContractCheckSchema, type ApiContractCheck } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 type CallResult = { readonly status: number; readonly headers: Readonly<Record<string, string>>; readonly body: unknown };
 
@@ -22,7 +22,7 @@ function documentOf(spec: ApiContractCheck): OpenApiDocument {
   return spec.openapi as OpenApiDocument;
 }
 
-export class ApiContractVerifier implements SurfaceVerifierAdapter {
+export class ApiContractVerifier implements SurfaceCheckVerifier {
   readonly id = "api-contract";
   readonly surface = "api";
 

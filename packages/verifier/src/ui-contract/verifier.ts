@@ -28,7 +28,7 @@ import type {
   SurfaceCheckInput,
   SurfaceCheckResult,
   SurfaceCollectInput,
-  SurfaceVerifierAdapter,
+  UiCollectPort,
 } from "./ports.js";
 import { UiInteractionContractSchema } from "./schema.js";
 import { redactVerbatim, TextMatchNormalizer } from "./text-match.js";
@@ -84,7 +84,7 @@ interface NetworkPlan {
  * Missing visible controls stay a contract mismatch and do not touch the hint ladder.
  * Hidden seeded rows and ARIA snapshots are behavior failures.
  */
-export class UiInteractionContractVerifier implements SurfaceVerifierAdapter {
+export class UiInteractionContractVerifier implements UiCollectPort {
   readonly id = "ui-interaction-contract";
 
   constructor(
@@ -459,7 +459,9 @@ async function inspect(
     keyboardActivated.push(item.spec.name?.text ?? item.spec.testid ?? item.spec.role);
     await activateByPointer(item.spec, item.locator);
   }
-  return assertHidden(page, contract, request, secrets, keyboardActivated);
+  const postActionCrash = crashDraft(contract, pageErrors, consoleErrors, secrets, keyboardActivated);
+  if (postActionCrash) return postActionCrash;
+  return assertHidden(page, contract, request, pageErrors, consoleErrors, secrets, keyboardActivated);
 }
 
 async function assertState(
@@ -496,11 +498,15 @@ async function assertHidden(
   page: PwPage,
   contract: UiInteractionContract,
   request: UiVerificationRequest,
+  pageErrors: readonly string[],
+  consoleErrors: readonly string[],
   secrets: readonly string[],
   keyboardActivated: readonly string[],
 ): Promise<Draft> {
   const hidden = request.hidden;
   if (!hidden) {
+    const crash = crashDraft(contract, pageErrors, consoleErrors, secrets, keyboardActivated);
+    if (crash) return crash;
     return {
       passed: true,
       attribution: "pass",
@@ -546,6 +552,8 @@ async function assertHidden(
       );
     }
   }
+  const crash = crashDraft(contract, pageErrors, consoleErrors, secrets, keyboardActivated);
+  if (crash) return crash;
   return {
     passed: true,
     attribution: "pass",

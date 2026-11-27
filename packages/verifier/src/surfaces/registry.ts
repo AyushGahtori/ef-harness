@@ -7,7 +7,7 @@ import { InboundWebhookVerifier } from "./inbound-webhook-verifier.js";
 import { MigrationPreservationVerifier } from "./migration-preservation-verifier.js";
 import { RateLimitBurstVerifier } from "./rate-limit-burst-verifier.js";
 import { TimeBoundaryVerifier } from "./time-boundary-verifier.js";
-import type { SurfaceVerifierAdapter, SurfaceVerifierRegistry } from "./types.js";
+import type { SurfaceCheckVerifier, SurfaceVerifierRegistry } from "./types.js";
 
 export const CORE_SURFACE_VERIFIER_IDS = [
   "api-contract",
@@ -20,7 +20,7 @@ export const CORE_SURFACE_VERIFIER_IDS = [
 ] as const;
 
 export function createSurfaceVerifierRegistry(): SurfaceVerifierRegistry {
-  const adapters: SurfaceVerifierAdapter[] = [];
+  const adapters: SurfaceCheckVerifier[] = [];
   return {
     register(adapter) {
       if (adapters.some((existing) => existing.id === adapter.id)) {

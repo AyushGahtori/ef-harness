@@ -1,8 +1,7 @@
 /**
- * Local port of `SurfaceVerifierAdapter` and `SurfaceCheckResult` from Task 060.
- * Task 060 owns `packages/verifier/src/runner/**` and is not on this branch.
- * The shapes match `state.db.check_results` so `CleanVerifierRunner` can record
- * every check uniformly once that runner is wired.
+ * Domain check rows use `state.db.check_results` column names.
+ * The runner plug-in is `SurfaceVerifierAdapter` in `runner/ports.ts`.
+ * `integrated-surfaces.ts` adapts `verify` onto that plug-in.
  */
 
 export const CHECK_STATUSES = ["pass", "fail", "skip", "missing", "error"] as const;
@@ -49,13 +48,13 @@ export interface SurfaceVerifierContext {
   readonly recordedAt?: number;
 }
 
-export interface SurfaceVerifierAdapter {
+export interface SurfaceCheckVerifier {
   readonly id: string;
   readonly surface: string;
   verify(spec: unknown, context: SurfaceVerifierContext): Promise<readonly SurfaceCheckResult[]>;
 }
 
 export interface SurfaceVerifierRegistry {
-  register(adapter: SurfaceVerifierAdapter): void;
-  list(): readonly SurfaceVerifierAdapter[];
+  register(adapter: SurfaceCheckVerifier): void;
+  list(): readonly SurfaceCheckVerifier[];
 }

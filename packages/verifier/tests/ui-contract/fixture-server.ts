@@ -96,6 +96,11 @@ function htmlFor(pathname: string): string {
   if (pathname === "/kitchen-throw") {
     return page('<main><button type="button">Print</button><script>throw new Error("boom-unhandled");</script></main>');
   }
+  if (pathname === "/kitchen-post-action-throw") {
+    return page(
+      '<main><button type="button" id="print">Print</button></main><script>document.getElementById("print").addEventListener("click", () => { throw new Error("boom-after-click"); });</script>',
+    );
+  }
   if (pathname === "/kitchen-console") {
     return page('<main><button type="button">Print</button><script>console.error("severe-failure");</script></main>');
   }

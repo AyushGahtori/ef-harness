@@ -2,7 +2,7 @@ import { appropriateSessionSameSite, appUrl, joinUrl, parseSetCookie, requestJso
 import { InProcessOAuthMockProvider } from "./ports/oauth-mock.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { AuthCallbackCheckSchema, type AuthCallbackCheck } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 export interface AuthCallbackDependencies {
   readonly oauth?: InProcessOAuthMockProvider;
@@ -13,7 +13,7 @@ interface LoginMaterial {
   readonly authorizeUrl: string;
 }
 
-export class AuthCallbackVerifier implements SurfaceVerifierAdapter {
+export class AuthCallbackVerifier implements SurfaceCheckVerifier {
   readonly id = "auth-callback";
   readonly surface = "auth";
 

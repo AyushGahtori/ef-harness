@@ -75,7 +75,7 @@ export function auditBinderAdapter(source: string, fileName: string, check: Acce
     }
   }
 
-  const requireVerdict = auditRequireCalls(parsed, fileName, protectedSpecs);
+  const requireVerdict = auditRequireCalls(parsed, fileName, allowed, protectedSpecs);
   if (requireVerdict) return requireVerdict;
 
   const callVerdict = auditFreeCalls(parsed, entryNames, new Set(allowed.map((symbol) => symbol.name)));
@@ -160,26 +160,51 @@ function auditImport(
 function auditRequireCalls(
   source: ts.SourceFile,
   fileName: string,
+  allowed: readonly AllowedSymbol[],
   protectedSpecs: readonly string[],
 ): AdapterAudit | undefined {
   let verdict: AdapterAudit | undefined;
   const visit = (node: ts.Node): void => {
     if (verdict) return;
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const arg = node.arguments[0];
+      if (arg && ts.isStringLiteral(arg)) {
+        if (FILE_MUTATORS.has(arg.text)) {
+          verdict = fail("product_mutation", `Adapter dynamically imports ${arg.text}`);
+          return;
+        }
+        if (isProtectedModule(arg.text, fileName, protectedSpecs)) {
+          verdict = fail("expectation_import", `Adapter dynamically imports protected module ${arg.text}`);
+          return;
+        }
+      }
+      verdict = fail("undeclared_helper", "Dynamic import() is not allowed in binder adapters");
+      return;
+    }
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === "require"
     ) {
       const arg = node.arguments[0];
-      if (arg && ts.isStringLiteral(arg)) {
-        if (FILE_MUTATORS.has(arg.text)) {
-          verdict = fail("product_mutation", `Adapter requires ${arg.text}`);
-          return;
-        }
-        if (isProtectedModule(arg.text, fileName, protectedSpecs)) {
-          verdict = fail("expectation_import", `Adapter requires protected module ${arg.text}`);
-          return;
-        }
+      if (!arg || !ts.isStringLiteral(arg)) {
+        verdict = fail("undeclared_helper", "Dynamic require() is not allowed in binder adapters");
+        return;
+      }
+      if (FILE_MUTATORS.has(arg.text)) {
+        verdict = fail("product_mutation", `Adapter requires ${arg.text}`);
+        return;
+      }
+      if (isProtectedModule(arg.text, fileName, protectedSpecs)) {
+        verdict = fail("expectation_import", `Adapter requires protected module ${arg.text}`);
+        return;
+      }
+      if (!moduleAllowed(arg.text, fileName, allowed)) {
+        verdict = fail(
+          "undeclared_helper",
+          `require("${arg.text}") is not a declared contract entry or Phase 0 / base setup helper`,
+        );
+        return;
       }
     }
     ts.forEachChild(node, visit);

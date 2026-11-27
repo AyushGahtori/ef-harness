@@ -3,7 +3,7 @@ import { createAsyncBarrier } from "./ports/barrier.js";
 import { createOsCpuSampler, hostCpuPercent, percentileNearestRank, type HostCpuSampler } from "./ports/cpu.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { ConcurrencyPerfCheckSchema, type ConcurrencyPerfCheck } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 export interface ConcurrencyPerfDependencies {
   readonly hostCpu?: HostCpuSampler;
@@ -14,7 +14,7 @@ interface WriteResponse {
   readonly body: Record<string, unknown>;
 }
 
-export class ConcurrencyPerfVerifier implements SurfaceVerifierAdapter {
+export class ConcurrencyPerfVerifier implements SurfaceCheckVerifier {
   readonly id = "concurrency-perf";
   readonly surface = "concurrency";
 

@@ -61,10 +61,11 @@ export interface SurfaceCollectInput {
 }
 
 /**
- * Local stand-in for Task 060 `SurfaceVerifierAdapter`.
- * Register this object with `CleanVerifierRunner.registerSurfaceVerifier` after that branch lands.
+ * Domain collect port for interaction contracts.
+ * The runner plug-in is `SurfaceVerifierAdapter` in `runner/ports.ts`.
+ * `integrated-surfaces.ts` adapts this port onto that plug-in.
  */
-export interface SurfaceVerifierAdapter {
+export interface UiCollectPort {
   readonly id: string;
   supports(check: SurfaceCheckInput): boolean;
   collect(input: SurfaceCollectInput): Promise<readonly SurfaceCheckResult[]>;

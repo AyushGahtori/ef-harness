@@ -1,9 +1,9 @@
 import { appUrl, joinUrl, requestJson } from "./http.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { RateLimitBurstCheckSchema } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
-export class RateLimitBurstVerifier implements SurfaceVerifierAdapter {
+export class RateLimitBurstVerifier implements SurfaceCheckVerifier {
   readonly id = "rate-limit-burst";
   readonly surface = "rate-limit";
 

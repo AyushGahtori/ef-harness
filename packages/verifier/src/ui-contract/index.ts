@@ -15,7 +15,7 @@ export type {
   HintLadderPort,
   SurfaceCheckResult,
   SurfaceCollectInput,
-  SurfaceVerifierAdapter,
+  UiCollectPort,
 } from "./ports.js";
 export { UiInteractionContractSchema } from "./schema.js";
 export { redactVerbatim, TextMatchNormalizer } from "./text-match.js";

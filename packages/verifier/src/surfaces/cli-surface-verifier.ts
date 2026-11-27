@@ -1,13 +1,13 @@
 import { LocalHarnessRunEngine, type HarnessRunEngine } from "./ports/harness-run.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { CliSurfaceCheckSchema } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 export interface CliSurfaceDependencies {
   readonly harnessRun?: HarnessRunEngine;
 }
 
-export class CliSurfaceVerifier implements SurfaceVerifierAdapter {
+export class CliSurfaceVerifier implements SurfaceCheckVerifier {
   readonly id = "cli-surface";
   readonly surface = "cli";
 

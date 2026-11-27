@@ -64,7 +64,7 @@ export type {
   AttemptEnvironment,
   CheckResultRow,
   SurfaceCheckResult,
-  SurfaceVerifierAdapter,
+  SurfaceCheckVerifier,
   SurfaceVerifierContext,
   SurfaceVerifierRegistry,
 } from "./types.js";

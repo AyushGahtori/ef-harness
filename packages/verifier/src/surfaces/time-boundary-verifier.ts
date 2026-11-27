@@ -1,7 +1,7 @@
 import { appUrl, joinUrl, requestJson } from "./http.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { TimeBoundaryCheckSchema, type TimeBoundaryCheck } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 import {
   civilFromDateAndTime,
   cutoffDecision,
@@ -20,7 +20,7 @@ interface TimeObservation {
   readonly display?: Partial<CivilTime> & { readonly timeZone?: string };
 }
 
-export class TimeBoundaryVerifier implements SurfaceVerifierAdapter {
+export class TimeBoundaryVerifier implements SurfaceCheckVerifier {
   readonly id = "time-boundary";
   readonly surface = "time";
 

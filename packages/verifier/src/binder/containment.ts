@@ -4,6 +4,22 @@ import type { BinderWrite } from "./types.js";
 
 const CHECK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+export function hasUnsafePath(file: string): boolean {
+  const slash = file.replaceAll("\\", "/").trim();
+  if (slash.startsWith("/") || /^[A-Za-z]:/.test(slash)) return true;
+  let depth = 0;
+  for (const part of slash.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      depth -= 1;
+      if (depth < 0) return true;
+    } else {
+      depth += 1;
+    }
+  }
+  return false;
+}
+
 export function normalizeRel(file: string): string {
   const slash = file.replaceAll("\\", "/").trim();
   const noDot = slash.replace(/^\.\//, "");
@@ -34,6 +50,7 @@ export function adapterPath(checkId: string): string {
 }
 
 export function isBinderPath(file: string): boolean {
+  if (hasUnsafePath(file)) return false;
   const rel = normalizeRel(file);
   return rel === HARNESS_BINDER_DIR || rel.startsWith(`${HARNESS_BINDER_DIR}/`);
 }
@@ -80,8 +97,15 @@ export function applyBinderWrites(
 ): Record<string, string> {
   const next = cloneFiles(files);
   for (const write of writes) {
+    if (hasUnsafePath(write.path) || !isBinderPath(write.path)) {
+      throw new BindingDefectError(
+        "product_mutation",
+        `Binder modified ${write.path} outside ${HARNESS_BINDER_DIR}/**`,
+        "non_behavioral",
+      );
+    }
     const rel = normalizeRel(write.path);
-    if (!isBinderPath(rel) || rel === HARNESS_BINDER_DIR) {
+    if (rel === HARNESS_BINDER_DIR) {
       throw new BindingDefectError(
         "product_mutation",
         `Binder modified ${write.path} outside ${HARNESS_BINDER_DIR}/**`,

@@ -1,7 +1,7 @@
 import { appUrl, joinUrl, requestJson } from "./http.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { BackgroundJobCheckSchema, type BackgroundJobCheck } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 interface ObservationSnapshot {
   readonly count: number;
@@ -9,7 +9,7 @@ interface ObservationSnapshot {
   readonly eventTypes: readonly string[];
 }
 
-export class BackgroundJobVerifier implements SurfaceVerifierAdapter {
+export class BackgroundJobVerifier implements SurfaceCheckVerifier {
   readonly id = "background-job";
   readonly surface = "job";
 

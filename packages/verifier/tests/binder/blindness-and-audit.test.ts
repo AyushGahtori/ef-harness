@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyBinderWrites,
   auditBinderAdapter,
+  BindingDefectError,
   forbiddenFieldPaths,
+  isBinderPath,
   parseBlindBinderV1,
   sanitizeBinderInput,
   assembleBlindBinderPrompt,
@@ -97,6 +100,36 @@ describe("blindness firewall and adapter audit", () => {
         check,
       ).code,
     ).toBe("schema_mismatch");
+
+    expect(
+      auditBinderAdapter(
+        `const helper = require("../src/kitchen/internal-helper");\nimport { toPrintRows } from "../src/kitchen/to-print-rows";\nexport function observe(input: unknown) {\n  void helper;\n  const orderedRows = toPrintRows(input as never);\n  return { orderedRows };\n}\n`,
+        file,
+        check,
+      ).code,
+    ).toBe("undeclared_helper");
+
+    expect(
+      auditBinderAdapter(
+        `import { toPrintRows } from "../src/kitchen/to-print-rows";\nexport async function observe(input: unknown) {\n  await import("../src/kitchen/internal-helper");\n  const orderedRows = toPrintRows(input as never);\n  return { orderedRows };\n}\n`,
+        file,
+        check,
+      ).code,
+    ).toBe("undeclared_helper");
+  });
+
+  it("rejects leading slashes, drive letters, and parent traversal in binder write paths", () => {
+    for (const badPath of [
+      "../../.harness-binder/AC-31.adapter.ts",
+      "/.harness-binder/AC-31.adapter.ts",
+      "C:\\.harness-binder\\AC-31.adapter.ts",
+      ".harness-binder/../../src/evil.ts",
+    ]) {
+      expect(isBinderPath(badPath), badPath).toBe(false);
+      expect(() =>
+        applyBinderWrites({}, [{ path: badPath, contents: "// evil" }]),
+      ).toThrow(BindingDefectError);
+    }
   });
 
   it("rejects binder output that carries expected values", () => {

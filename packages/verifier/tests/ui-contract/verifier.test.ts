@@ -327,6 +327,20 @@ describe("UiInteractionContractVerifier", () => {
     expect(consoleFailure.message).toBe("Severe console error on /kitchen-console");
     expect(consoleFailure.consoleErrors.join(" ")).toContain("severe-failure");
     expect(ladder.calls).toHaveLength(0);
+
+    const postAction = await verifier().verify({
+      env: env(),
+      contract: {
+        contract: "kitchen-list/ui@1",
+        route: "/kitchen-post-action-throw",
+        as: { role: "kitchen_staff" },
+        actions: [{ button: "Print" }],
+      },
+    });
+    expect(postAction.passed).toBe(false);
+    expect(postAction.attribution).toBe("implementation");
+    expect(postAction.message).toBe("Unhandled page error on /kitchen-post-action-throw");
+    expect(postAction.pageErrors.join(" ")).toContain("boom-after-click");
   }, 40_000);
 
   it("treats a hidden Print button and a strict-mode duplicate as contract mismatches", async () => {

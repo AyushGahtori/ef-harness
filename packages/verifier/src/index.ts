@@ -27,6 +27,11 @@ export {
   sealExpectationDocument,
   sha256Hex,
 } from "./runner/index.js";
+export {
+  integratedSurfaceAdapters,
+  registerIntegratedSurfaceVerifiers,
+} from "./integrated-surfaces.js";
+export type { IntegratedSurfaceDeps } from "./integrated-surfaces.js";
 export type {
   AttemptLeaseView,
   AttributionInput,
@@ -73,6 +78,8 @@ export type {
   SurfaceCheckResult,
   SurfaceCollectInput,
   SurfaceVerifierAdapter,
+  SurfaceVerifierAdapter as SurfacesSurfaceVerifierAdapter,
+  SurfaceVerifierAdapter as UiContractSurfaceVerifierAdapter,
   TestEnvOrchestratorPort,
   VerificationOutcome,
   VerifierWorktreeSlot,
@@ -199,7 +206,7 @@ export type {
   StoredArtifact,
   SurfaceCheckResult as UiContractSurfaceCheckResult,
   SurfaceCollectInput as UiContractSurfaceCollectInput,
-  SurfaceVerifierAdapter as UiContractSurfaceVerifierAdapter,
+  UiCollectPort,
   TextSpec,
   UiInteractionContract,
   UiVerificationRequest,
@@ -267,7 +274,7 @@ export type {
   RateLimitBurstCheck,
   SandboxedCommandResult,
   SurfaceCheckResult as SurfacesSurfaceCheckResult,
-  SurfaceVerifierAdapter as SurfacesSurfaceVerifierAdapter,
+  SurfaceCheckVerifier,
   SurfaceVerifierContext,
   SurfaceVerifierRegistry,
   TimeBoundaryCheck,

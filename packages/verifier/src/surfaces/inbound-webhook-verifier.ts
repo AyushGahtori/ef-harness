@@ -2,13 +2,13 @@ import { appUrl, joinUrl, requestJson } from "./http.js";
 import { GenericWebhookDeliverer } from "./ports/webhook-deliverer.js";
 import { environmentFailure, implementationFailure, parseCheck, passing } from "./result.js";
 import { InboundWebhookCheckSchema } from "./schemas.js";
-import type { SurfaceCheckResult, SurfaceVerifierAdapter, SurfaceVerifierContext } from "./types.js";
+import type { SurfaceCheckResult, SurfaceCheckVerifier, SurfaceVerifierContext } from "./types.js";
 
 export interface WebhookDependencies {
   readonly deliverer?: GenericWebhookDeliverer;
 }
 
-export class InboundWebhookVerifier implements SurfaceVerifierAdapter {
+export class InboundWebhookVerifier implements SurfaceCheckVerifier {
   readonly id = "inbound-webhook";
   readonly surface = "webhook";
 
