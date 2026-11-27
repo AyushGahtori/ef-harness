@@ -1,7 +1,7 @@
 import path from "node:path";
 import tseslint from "typescript-eslint";
 import importPlugin from "eslint-plugin-import";
-import { LAYERS } from "./scripts/layers.mjs";
+import { DAG_RANK } from "./scripts/layers.mjs";
 
 const SOURCE_GLOBS = [
   "packages/**/*.ts",
@@ -43,7 +43,7 @@ const layerBoundary = {
       if (spec.startsWith("@ef-harness/")) {
         const rest = spec.slice("@ef-harness/".length);
         const [id, ...extra] = rest.split("/");
-        if (!id || LAYERS[id] === undefined) {
+        if (!id || DAG_RANK[id] === undefined) {
           context.report({ node, messageId: "unknown", data: { spec } });
           return;
         }
@@ -51,8 +51,8 @@ const layerBoundary = {
           context.report({ node, messageId: "deep", data: { spec } });
           return;
         }
-        const from = LAYERS[sourceId];
-        const to = LAYERS[id];
+        const from = DAG_RANK[sourceId];
+        const to = DAG_RANK[id];
         if (from === undefined || to === undefined || to >= from) {
           context.report({
             node,
@@ -66,8 +66,8 @@ const layerBoundary = {
       const resolved = path.resolve(path.dirname(context.filename), spec).replaceAll("\\", "/");
       const targetId = workspaceId(`${resolved}/file`);
       if (!targetId || targetId === sourceId) return;
-      const from = LAYERS[sourceId];
-      const to = LAYERS[targetId];
+      const from = DAG_RANK[sourceId];
+      const to = DAG_RANK[targetId];
       if (from === undefined || to === undefined || to >= from) {
         context.report({
           node,

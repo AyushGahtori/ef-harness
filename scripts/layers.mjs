@@ -1,6 +1,6 @@
 /**
  * Frozen workspace layout established by Task 001.
- * A package may import only from a strictly lower layer.
+ * A package may import only from a strictly lower DAG_RANK.
  * Packages with layer < 5 are the 28 library packages.
  */
 export const PACKAGE_LAYOUT = [
@@ -43,6 +43,48 @@ export const PACKAGE_LAYOUT = [
 
 /** @type {Record<string, number>} */
 export const LAYERS = Object.fromEntries(PACKAGE_LAYOUT.map(([id, layer]) => [id, layer]));
+
+/**
+ * Strict topological ordering for intra-tier acyclic workspace imports (F-001).
+ * @type {Record<string, number>}
+ */
+export const DAG_RANK = {
+  "shared-contracts": 0,
+  "shared-observability": 1,
+  db: 2,
+  "git-engine": 3,
+  ipc: 4,
+  sandbox: 5,
+  "test-env": 6,
+  "mcp-server": 7,
+  sim: 8,
+  "completeness-gate": 9,
+  "worker-loop": 10,
+  verifier: 11,
+  corpus: 12,
+  discovery: 13,
+  "spec-expansion": 14,
+  "research-engine": 15,
+  intake: 16,
+  brownfield: 17,
+  dictation: 18,
+  planner: 19,
+  governor: 20,
+  providers: 21,
+  integrator: 22,
+  steering: 23,
+  "runtime-adapters": 24,
+  "ship-deploy": 25,
+  investigations: 26,
+  portability: 27,
+  "meta-lab": 28,
+  daemon: 29,
+  desktop: 30,
+  renderer: 31,
+  spikes: 32,
+  benchmarks: 33,
+  e2e: 34,
+};
 
 /** @type {Record<string, string>} */
 export const PACKAGE_DIRS = Object.fromEntries(PACKAGE_LAYOUT.map(([id, , dir]) => [id, dir]));
