@@ -670,3 +670,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/worker-loop test`: exit `0` — `Test Files 25 passed (25)`, `Tests 137 passed (137)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+## [C22] — Edit safety fixes and executor recovery
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `9aedea0848c027fe65cbf318248ca54ccb3c9f91` (`integrate: C22 edit safety fixes and executor recovery`)
+- **Findings Fixed:** `F-023` task-056 and task-057 portion (CRLF `rangeHash` uses logical lines, a single-space blank context line is kept, `.git` / `node_modules` / `.harness` are denied case-insensitively, `unknown_timeout` throws `UnknownOutcomeReconciliationError`, unlocked `replace_lines` is admitted, a null fingerprint no longer resets `no_progress`, and `stuck` sets `countsAsFailedAttempt`). `F-021` was not reopened in `packages/mcp-server`; C22 only adds the worker-loop dependency. Did not apply `task-053.patch`. Did not edit `packages/db`. Did not re-merge `task/056` or `task/057`. Did not merge `main`. Did not open a pull request. Did not start C23.
+
+### What Changed
+- Re-verified on `81031712977f47bf3c63bd40b7258ffa658e7ab1`. `task/056-worker-loop-edit-applier` (`42aafc7`) and `task/057-worker-loop-executor-checkpoints` (`a3e3d60`) are ancestors. `git apply --stat` and `git apply --check` were clean for both patches, then `git apply` landed both deltas. `task-056.patch` is 5 edit files (`+66/−8`). `task-057.patch` is 7 executor files (`+271/−27`). They do not overlap.
+- Live class stays `EditToolDispatcher`. `NativeWorkerLoop.runAttempt(attemptId)` stays. C21 exports stay, including `@ef-harness/db`, `@ef-harness/shared-observability`, and `ToolOutputShrinker` defaulting to `StreamingRedactor`. `UnknownOutcomeReconciliationError` is exported from `executor/index.ts` by the patch and from `packages/worker-loop/src/index.ts` by hand.
+- After the patches, `assertInside` also denies a `.harness` path segment, case-insensitively. The patches did not. A new dispatcher test covers `.harness` and `.HARNESS`.
+- `@ef-harness/git-engine`, `@ef-harness/sandbox`, and `@ef-harness/mcp-server` are dependencies of `@ef-harness/worker-loop` only, on top of the C21 deps, with matching `tsconfig.json` project references. `pnpm-lock.yaml` adds those three `link:` entries under `packages/worker-loop` only. `path_leases.mode` stays `'intent' | 'granted'`. No Windows stub was added.
+- The patch's recovery test expected the raw `replace_lines` bytes after `runAttempt`. `prepareSubmit` still formats in-scope files, so the assertion now expects `export const value = 2;\n/*formatted*/\n` and `formatted === [["src/recover.ts"]]`. No assertion was removed.
+
+### What It Fixed
+- **F-023 (task-056):** `hashLineRange` hashes logical lines joined by `\n`, so a CRLF range matches Task 055 `rangeHash` and `replace_lines` keeps CRLF. `parseOpenAiApplyPatch` keeps a single-space blank context line. `.GIT` and `Node_Modules` writes throw `ProtectedPathError`. `.harness` and `.HARNESS` writes throw `ProtectedPathError`.
+- **F-023 (task-057):** `unknown_timeout` after transmit throws `UnknownOutcomeReconciliationError` and holds the reservation. `replace_lines` is allowed once `availableTools` unlocks it. Edit errors 1–3 return tool results (`NearestCandidateError`, `FreshRegionViewError`, `ReplaceLinesUnlockedError`); the fourth escalates to `stuck`. A null check fingerprint no longer resets the `no_progress` streak. `countsAsFailedAttempt` and `countsAsWorkerFailure` are true when the outcome is `stuck`.
+- **F-021 (dependency only):** `@ef-harness/worker-loop` can import `@ef-harness/mcp-server` (and git-engine and sandbox) through their barrels. `packages/mcp-server` was not edited. `NativeWorkerLoop` still takes injected ports.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor 42aafc7 HEAD`: exit `0`
+- `git merge-base --is-ancestor a3e3d60 HEAD`: exit `0`
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-056.patch`: exit `0` — `5 files changed, 66 insertions(+), 8 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-056.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-056.patch`: exit `0` (clean)
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-057.patch`: exit `0` — `7 files changed, 271 insertions(+), 27 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-057.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-057.patch`: exit `0` (clean)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/worker-loop test` (before the format-stamp expectation fix): exit `1` — `Test Files 1 failed | 24 passed (25)`, `Tests 1 failed | 145 passed (146)`
+- `pnpm --filter @ef-harness/worker-loop test` (after that expectation fix): exit `0` — `Test Files 25 passed (25)`, `Tests 146 passed (146)` (C21 was `137`; `9` new tests, `0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`

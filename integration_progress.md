@@ -28,7 +28,7 @@
 | C19 | Wave 2 | done | 0d86e53 | F-012, F-022 | build/typecheck/lint OK; test-env 84 passed, 3 failed, 3 skipped (same 3 as fc94482 on Linux); sandbox 169 passed, 14 skipped; schema 67/67 |
 | C20 | Wave 2 | done | a12f6fa | F-021, F-022 | build/typecheck/lint OK; test-env 87 passed, 3 skipped (Windows native assertion kept, not skipped); sandbox 169 passed, 14 skipped; schema 67/67 |
 | C21 | Wave 2 | done | 8103171 | F-011, F-023 | build/typecheck/lint OK; worker-loop 25 files 137 passed; schema 67/67 |
-| C22 | Wave 2 | pending | - | F-021, F-023 | - |
+| C22 | Wave 2 | done | 9aedea0 | F-021, F-023 | build/typecheck/lint OK; worker-loop 25 files 146 passed; schema 67/67 |
 | C23 | Wave 2 | pending | - | F-024 | - |
 | C24 | Wave 2 | pending | - | F-025 | - |
 | C25 | Wave 2 | pending | - | F-012, F-017, F-025 | - |
