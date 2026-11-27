@@ -25,7 +25,7 @@
 | C16 | Wave 2 | done | c9d1ab3 | F-022, F-060, F-070 | build/typecheck/lint OK; sandbox 150 passed, 9 failed, 20 skipped (same 9 as 1a94f8c); schema 67/67 |
 | C17 | Wave 2 | done | 1934625 | F-018, F-019, F-036, F-060 | build/typecheck/lint OK; sandbox 169 passed, 14 skipped, 0 failed; schema 67/67 |
 | C18 | Wave 2 | done | fc94482 | F-018, F-020, F-021, F-039, F-049 | build/typecheck/lint OK; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17 passed; schema 67/67 |
-| C19 | Wave 2 | pending | - | F-012, F-022 | - |
+| C19 | Wave 2 | done | 0d86e53 | F-012, F-022 | build/typecheck/lint OK; test-env 84 passed, 3 failed, 3 skipped (same 3 as fc94482 on Linux); sandbox 169 passed, 14 skipped; schema 67/67 |
 | C20 | Wave 2 | pending | - | F-021, F-022 | - |
 | C21 | Wave 2 | pending | - | F-011, F-023 | - |
 | C22 | Wave 2 | pending | - | F-021, F-023 | - |

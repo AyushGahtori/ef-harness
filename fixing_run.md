@@ -600,3 +600,25 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Windows-host checks still skipped on this Linux VM (assertions kept). The two `it.skipIf(process.platform !== "win32")` harness-run tests inject `NestedCommandJobManager`; the engine default does not.
+
+## [C19] — Port leases, env processes, and job-object registry
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-medium
+- **Commit on `harness/integration`:** `0d86e53494baac6930ad7bd9afa45e39a3605157` (`integrate: C19 wire port leases and env processes`)
+- **Findings Fixed:** `F-012` (test-env no longer opens a second writer on `global.db` / `state.db`), `F-022` (port leases go through `GlobalBrokerDb.leasePort`, `env_processes` go through `ProjectStateDb.writer`, Windows jobs use `WindowsJobObjectManager` with an injected registry). The third `ServiceProvider` in `packages/test-env/src/auth-payment-mocks` was not edited. Did not edit `packages/sandbox`. Did not add `@ef-harness/test-env` to `packages/mcp-server`. Did not re-apply `task-048.patch`. Did not start C20. Did not merge `main`. Did not open a pull request.
+
+### What Changed
+- Re-verified on `fc94482468252f5a5129061a2c6788dc5977e8db`. Did not re-merge `task/049-test-env-orchestrator-core` (`cc26926`) or `task/050-native-backing-services` (`57eca20`). Live orchestrator methods stay `create`, `handle.destroy`, and `reconcileOnStartup`. `path_leases.mode` stays `'intent' | 'granted'`.
+- Deleted `openGlobalDatabase` and `openStateDatabase`. `SqlitePortLeaseStore` leases through `GlobalBrokerDb.leasePort` / `releasePort` / `listPortLeases` inside `41000–48999`. `SqliteEnvProcessStore` reads and writes `env_processes` on `ProjectStateDb.writer` and is the sandbox `ProjectStateDb` registry (`insertEnvProcess`, `deleteEnvProcess`, `listEnvProcesses`). `createWindowsJobObjectManager(registry)` constructs `WindowsJobObjectManager` from the `@ef-harness/sandbox` barrel with `{ registry }` and does not pass `stateDbPath`.
+- `WindowsJobManager.reconcileOrphanedProcesses()` is zero-arg. The orchestrator no longer hands it rows. The test double and the sandbox manager both read start times from their own registry. On win32, `TrackingWindowsJobManager` assigns and reconciles through `WindowsJobObjectManager` and the PowerShell job-object host is gone. Off win32 it still tracks PIDs and signals them. `@ef-harness/db` and `@ef-harness/sandbox` are dependencies of `@ef-harness/test-env`. `@faker-js/faker` stays. The auth-payment-mocks `ServiceProvider` was left as its own interface.
+
+### What It Fixed
+- **F-012 / F-022:** A test environment can lease ports and record `(pid, start_time)` while `GlobalBrokerDb` and `ProjectStateDb` are the writers. Startup reconciliation compares `start_time` to the job manager's registry before any kill, so a recycled PID is not terminated. Service providers on Windows no longer simulate Job Objects in PowerShell.
+
+### Verification Run & Results
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/test-env test`: exit `1` — `Test Files 3 failed | 15 passed (18)`, `Tests 3 failed | 84 passed | 3 skipped (90)`. The same three failures are present at `fc94482468252f5a5129061a2c6788dc5977e8db` on this Linux VM: `tests/services/binary-launcher.test.ts` (`accounting.native` is false off win32), `tests/orchestrator/lifecycle.test.ts` (port 3000 ignore-port probe), and `tests/auth-payment-mocks/port-fallback.test.ts` (`EADDRINUSE 127.0.0.1:3000` when those files run together). Assertions were not weakened. Orchestrator lease, destroy, and `reconcileOnStartup` tests passed.
+- `pnpm --filter @ef-harness/sandbox test`: exit `0` — `Test Files 30 passed | 2 skipped (32)`, `Tests 169 passed | 14 skipped (183)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
