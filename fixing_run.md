@@ -359,3 +359,32 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 65 passed (65)`, `Tests 371 passed (371)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+## [C11] — Unified CasBlobStore, seekable logs, and secret purge
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `3d26ce9ba360874c349e65aa4bd68b49c266bf90` (`integrate: C11 unify CasBlobStore and secret purge`)
+- **Findings Fixed:** `F-007`, `F-010`, `F-011`, `F-012` (this seam only)
+
+### What Changed
+- Re-verified on `77877f0477abc7dcbb930c96b0eb3fcb9212be73`. Did not re-merge `origin/task/028-cas-artifact-store-gc` (`49ff155`), `origin/task/029-seekable-logs-retention-archive` (`e289bb9`), or `origin/task/030-secret-purge-engine` (`71bacaa`). `git merge-base --is-ancestor` exited `0` for all three. No dirty patch for C11.
+- One `CasBlobStore` now accepts `"zstd" | "zstd-seekable" | "raw"`. `zstd-seekable` writes store the caller's pre-framed bytes and do not compress them again. The key is still the SHA-256 of the uncompressed bytes. `normalizeCasHash` uses `@ef-harness/shared-contracts` `toBareSha256Hex`, so both `"sha256:<64-hex>"` and bare `<64-hex>` are accepted, and `cas_blobs.hash` stays bare. Reads and `forceDeletePurgedBlob` / `purgeDigestBytes` cover `.zst` and `.raw`.
+- Added `put`, `getBytes`, `openReadStream`, `has`, `deleteUnreferencedGc`, and `purgeDigestBytes` beside the existing `putBlob` / `getBlob` / `runGarbageCollection` / `forceDeletePurgedBlob` methods. `toArtifactCasPort` + `bindArtifactManager` and `toSecretPurgeCasPort` + `bindSecretPurgeEngine` are the sync views `ArtifactManager` and `SecretPurgeEngine` call. `RawFileCasBlobStore` reads and unlinks both `.zst` and `.raw`, and it can store a pre-framed `zstd-seekable` payload.
+- `SeekableLogArchiver` archives text logs through that store. Logs over 1 MB go in as `zstd-seekable`. `openReadStream(digest, { start, end })` returns an uncompressed byte range. `EffectsRepo` / `bindEffects` writes `state.db.effects` on the open `ProjectStateDb` writer using the schema states `intended | approved | sent | confirmed | failed | unknown`, stores `payload_hash` as bare hex, and rejects an idempotency key reused with a different hash.
+- `ensureSearchTextFunction` now calls `registerEfSearchText`, which is `@ef-harness/shared-contracts` `splitSearchText`. If a connection already has `ef_search_text`, the probe must match `splitSearchText("XMLHttpRequest")` or purge refuses to continue.
+- Left `bindOutbox`, `bindReadModels`, `appendEvent`, `readSinceSeq`, `ackDelivery`, `currentStreamEpoch`, `getBoardSnapshot`, `getFeatureRollups`, `recomputeRollupsAndVerifyZeroDrift`, the C09 grant binds, `MigrationRunner`, and `path_leases.mode` `'intent' | 'granted'` alone. Did not edit `schema/**`, `packages/ipc`, or `packages/sim`. Did not touch Windows Job Object, DPAPI, named-pipe, or NSIS code. Did not start C12.
+
+### What It Fixed
+- **F-007:** Packet `sha256:` digests and bare CAS hashes cross the store boundary through `toBareSha256Hex`. Rows and filenames stay bare 64-hex.
+- **F-010:** Secret-purge FTS rebuild no longer keeps a local tokenizer. Step 4 uses the canonical acronym split (`XMLHttpRequest` → `XML Http Request`).
+- **F-011:** `ArtifactManager` and `SecretPurgeEngine` run against the same `CasBlobStore`. A >1 MB log is stored as one pre-framed `.zst` seekable blob and a byte range reads back. Purge deletes both `.zst` and `.raw`, including a seekable blob that held the canary.
+- **F-012:** `EffectsRepo` shares the open `ProjectStateDb` writer. Artifact and purge binds keep the caller's project database handle and do not open a second `DatabaseSync` for `state.db`.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `49ff155`, `e289bb9`, and `71bacaa`: exit `0` (all ancestors of `77877f0477abc7dcbb930c96b0eb3fcb9212be73`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
