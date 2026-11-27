@@ -2,7 +2,7 @@ import { MigrationRegistryError } from "./errors.js";
 import type { MigrationDefinition, MigrationKind, TargetDb } from "./types.js";
 
 const KINDS: readonly MigrationKind[] = ["additive", "rebuild", "data"];
-const TARGETS: readonly TargetDb[] = ["global", "state"];
+const TARGETS: readonly TargetDb[] = ["global", "state", "code-index"];
 
 export function maxKnownSchemaVersion(
   migrations: readonly MigrationDefinition[],
@@ -37,10 +37,15 @@ export function validateMigrationRegistry(
     problems.push("baseline schema version must be a non-negative integer");
   }
   const names = new Set<string>();
-  const seenVersion: Record<TargetDb, Set<number>> = { global: new Set(), state: new Set() };
+  const seenVersion: Record<TargetDb, Set<number>> = {
+    global: new Set(),
+    state: new Set(),
+    "code-index": new Set(),
+  };
   const lastVersion: Record<TargetDb, number> = {
     global: baselineSchemaVersion,
     state: baselineSchemaVersion,
+    "code-index": baselineSchemaVersion,
   };
 
   for (const migration of migrations) {

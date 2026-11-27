@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { splitSearchText as canonicalSplitSearchText } from "@ef-harness/shared-contracts";
+import { splitSearchText } from "@ef-harness/shared-contracts";
+import { registerEfSearchText } from "../driver/search-text.js";
 import type { SqliteCorruptCode } from "./types.js";
 import { RecoveryError } from "./types.js";
 
@@ -82,12 +83,10 @@ export function openDatabase(filePath: string, readOnly: boolean): DatabaseSync 
   });
 }
 
-export function splitSearchText(value: SQLOutputValue): string {
-  return canonicalSplitSearchText(value);
-}
+export { splitSearchText };
 
 export function registerSearchText(db: DatabaseSync): void {
-  db.function("ef_search_text", { deterministic: true }, splitSearchText);
+  registerEfSearchText(db);
 }
 
 export function createDatabaseFromSchema(filePath: string, schemaSql: string): DatabaseSync {

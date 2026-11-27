@@ -6,7 +6,7 @@ export type RepairOption = (typeof REPAIR_OPTIONS)[number];
 
 export type MigrationKind = "additive" | "rebuild" | "data";
 
-export type TargetDb = "global" | "state";
+export type TargetDb = "global" | "state" | "code-index";
 
 export type ProjectStatus = "ok" | "needs_migration" | "needs_repair" | "offline" | "removed";
 

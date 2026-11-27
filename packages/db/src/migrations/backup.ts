@@ -229,3 +229,78 @@ export async function restoreVacuumBackup(livePath: string, backupPath: string):
     throw new BackupVerificationError(livePath, "restored file is not a bit-for-bit copy of the VACUUM INTO backup");
   }
 }
+
+function sleepSync(ms: number): void {
+  const view = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(view, 0, 0, ms);
+}
+
+function renameSyncWithRetry(from: string, to: string): void {
+  const maxAttempts = 10;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      const retry = RETRYABLE_RENAME.has(errorCode(error));
+      if (!retry || attempt === maxAttempts) throw error;
+      sleepSync(Math.min(1000, 50 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
+function removeSyncWithRetry(file: string): void {
+  if (!fs.existsSync(file)) return;
+  const maxAttempts = 10;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      fs.rmSync(file, { force: true });
+      return;
+    } catch (error) {
+      const retry = RETRYABLE_RENAME.has(errorCode(error));
+      if (!retry || attempt === maxAttempts) throw error;
+      sleepSync(Math.min(1000, 50 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
+function removeSidecarsSync(dbPath: string): void {
+  removeSyncWithRetry(`${dbPath}-wal`);
+  removeSyncWithRetry(`${dbPath}-shm`);
+  removeSyncWithRetry(`${dbPath}-journal`);
+}
+
+/** Synchronous restore for open() paths that cannot await the async rename retry. */
+export function restoreVacuumBackupSync(livePath: string, backupPath: string): void {
+  if (!fs.existsSync(backupPath)) {
+    throw new BackupVerificationError(backupPath, "backup file is missing");
+  }
+  const tempPath = `${livePath}.restore.tmp`;
+  const displaced = `${livePath}.displaced`;
+  fs.rmSync(tempPath, { force: true });
+  fs.copyFileSync(backupPath, tempPath);
+  removeSidecarsSync(livePath);
+  if (fs.existsSync(displaced)) fs.rmSync(displaced, { force: true });
+  renameSyncWithRetry(livePath, displaced);
+  try {
+    renameSyncWithRetry(tempPath, livePath);
+  } catch (error) {
+    try {
+      renameSyncWithRetry(displaced, livePath);
+    } catch (restoreError) {
+      throw new BackupVerificationError(
+        livePath,
+        `restore swap failed: ${errorText(error)}; rollback also failed: ${errorText(restoreError)}`,
+        { cause: error },
+      );
+    }
+    throw error;
+  }
+  fs.rmSync(displaced, { force: true });
+  removeSidecarsSync(livePath);
+  const live = fs.readFileSync(livePath);
+  const backup = fs.readFileSync(backupPath);
+  if (!live.equals(backup)) {
+    throw new BackupVerificationError(livePath, "restored file is not a bit-for-bit copy of the VACUUM INTO backup");
+  }
+}

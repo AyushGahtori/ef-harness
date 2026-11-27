@@ -95,6 +95,16 @@ export interface TaskLeaseManagerOptions {
 
 const DEFAULT_LIVE_EXTENSION_MS = 60_000;
 
+/**
+ * `path_leases.mode` is `'intent' | 'granted'` (`schema/state.sql`).
+ * A helper that says exclusive is stored as granted.
+ */
+export function pathLeaseModeForDatabase(mode: string): "intent" | "granted" | null {
+  if (mode === "intent") return "intent";
+  if (mode === "granted" || mode === "exclusive") return "granted";
+  return null;
+}
+
 const ACTIVE_HOLDER_STATES = new Set(["LEASED", "CODING"]);
 
 const RETIRE_CANCELLED_DEPENDENCIES_SQL = `
@@ -468,9 +478,9 @@ export class TaskLeaseManager {
   private readLeaseMode(leaseId: string): "intent" | "granted" {
     const row = this.stmt(READ_LEASE_SQL).get({ lease: leaseId });
     if (row === undefined || row === null) throw new Error(`unknown sweep lease ${leaseId}`);
-    const mode = asString(rowField(row, "mode"), "mode");
-    if (mode !== "intent" && mode !== "granted") {
-      throw new Error(`sweep lease ${leaseId} is in mode ${mode}`);
+    const mode = pathLeaseModeForDatabase(asString(rowField(row, "mode"), "mode"));
+    if (mode === null) {
+      throw new Error(`sweep lease ${leaseId} is in mode ${asString(rowField(row, "mode"), "mode")}`);
     }
     return mode;
   }

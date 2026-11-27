@@ -53,8 +53,11 @@ export class DeviceIdImmutableError extends AuxiliaryDbError {
 }
 
 export class GlobalSchemaVersionError extends AuxiliaryDbError {
-  constructor(actual: number) {
-    super("GLOBAL_SCHEMA_VERSION", `global.db user_version must be 1, received ${actual}`);
+  constructor(actual: number, supported = 1) {
+    super(
+      "GLOBAL_SCHEMA_VERSION",
+      `global.db user_version ${actual} is outside the supported range 1..${supported}`,
+    );
   }
 }
 

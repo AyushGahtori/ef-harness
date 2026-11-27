@@ -1,5 +1,15 @@
-/** Schema version this binary can open. A higher `PRAGMA user_version` is refused. */
-export const APP_SUPPORTED_SCHEMA_VERSION = 1;
+import { PRODUCTION_SCHEMA_VERSION, productionMigrations } from "../migrations/production.js";
+import { maxKnownSchemaVersion } from "../migrations/registry.js";
+
+/**
+ * Highest `state.db` user_version this binary opens.
+ * Lower versions run forward migrations. A higher version is refused.
+ */
+export const APP_SUPPORTED_SCHEMA_VERSION = maxKnownSchemaVersion(
+  productionMigrations,
+  "state",
+  PRODUCTION_SCHEMA_VERSION,
+);
 
 export const BOOTSTRAP_MIGRATION_NAME = "state-schema-v1";
 export const BOOTSTRAP_MIGRATION_KIND = "additive" as const;

@@ -1,10 +1,14 @@
 import fs from "node:fs";
+import path from "node:path";
 import {
   lookupNamedQuery,
   ReaderPool,
   type DbHandle,
   type SqliteConnection as DriverSqliteConnection,
 } from "../driver/index.js";
+import { DatabaseNewerThanAppError } from "../migrations/errors.js";
+import { upgradeDatabaseOnOpen } from "../migrations/open-upgrade.js";
+import { PRODUCTION_SCHEMA_VERSION } from "../migrations/production.js";
 import {
   APP_SUPPORTED_SCHEMA_VERSION,
   DEFAULT_APP_VERSION,
@@ -156,7 +160,7 @@ export class ProjectStateDb implements DbHandle {
       if (!fs.existsSync(this.paths.databasePath)) {
         this.publishNewDatabase();
       }
-      this.assertExistingVersion();
+      this.migrateForward();
       this.modeValue = "readwrite";
       this.session = openStateConnection(this.paths.databasePath, "readwrite");
       this.reconcileOwner();
@@ -399,7 +403,7 @@ export class ProjectStateDb implements DbHandle {
       projectId: this.projectId,
       nowMs: this.now(),
       appVersion: this.appVersion,
-      supportedSchemaVersion: this.supportedSchemaVersion,
+      supportedSchemaVersion: PRODUCTION_SCHEMA_VERSION,
       ...(this.beforePublish ? { beforePublish: this.beforePublish } : {}),
     };
     bootstrapStateDatabase(request);
@@ -413,7 +417,7 @@ export class ProjectStateDb implements DbHandle {
   private openReadonly(message: string): void {
     try {
       this.waitForPublishedDatabase();
-      this.assertExistingVersion();
+      this.assertOpenedVersion();
       this.modeValue = "readonly";
       this.session = openStateConnection(this.paths.databasePath, "readonly");
       this.logger.info("opened state.db read-only", {
@@ -460,10 +464,9 @@ export class ProjectStateDb implements DbHandle {
     }
   }
 
-  private assertExistingVersion(): void {
-    let version: number;
+  private readUserVersionOrThrow(): number {
     try {
-      version = probeUserVersion(this.paths.databasePath);
+      return probeUserVersion(this.paths.databasePath);
     } catch (error) {
       if (classifyWriteFailure(error) !== "corrupt") throw error;
       const code = sqliteErrorCode(error);
@@ -474,6 +477,11 @@ export class ProjectStateDb implements DbHandle {
         }),
       );
     }
+  }
+
+  /** Read-only opens must already be at the migrated version. */
+  private assertOpenedVersion(): void {
+    const version = this.readUserVersionOrThrow();
     this.userVersionValue = version;
     if (version > this.supportedSchemaVersion) {
       throw new DatabaseVersionTooNewError(
@@ -484,6 +492,49 @@ export class ProjectStateDb implements DbHandle {
     }
     if (version !== this.supportedSchemaVersion) {
       throw new DatabaseSchemaVersionError(version, this.supportedSchemaVersion);
+    }
+  }
+
+  /** Writer opens run forward migrations until `user_version` matches this binary. */
+  private migrateForward(): void {
+    const version = this.readUserVersionOrThrow();
+    if (version > this.supportedSchemaVersion) {
+      throw new DatabaseVersionTooNewError(
+        version,
+        this.supportedSchemaVersion,
+        this.paths.backupDirectory,
+      );
+    }
+    if (version < PRODUCTION_SCHEMA_VERSION) {
+      throw new DatabaseSchemaVersionError(version, this.supportedSchemaVersion);
+    }
+    if (version === this.supportedSchemaVersion) {
+      this.userVersionValue = version;
+      return;
+    }
+    try {
+      const outcome = upgradeDatabaseOnOpen({
+        dbPath: this.paths.databasePath,
+        targetDb: "state",
+        appVersion: this.appVersion,
+        backupsDir: this.paths.backupDirectory,
+        projectId: this.projectId,
+        globalDbPath: path.join(this.paths.rootDir, "global.db"),
+        clock: { now: () => this.now() },
+      });
+      this.userVersionValue = outcome.toVersion;
+    } catch (error) {
+      if (error instanceof DatabaseNewerThanAppError) {
+        throw new DatabaseVersionTooNewError(
+          error.userVersion,
+          error.maxKnownVersion,
+          this.paths.backupDirectory,
+        );
+      }
+      throw error;
+    }
+    if (this.userVersionValue !== this.supportedSchemaVersion) {
+      throw new DatabaseSchemaVersionError(this.userVersionValue, this.supportedSchemaVersion);
     }
   }
 

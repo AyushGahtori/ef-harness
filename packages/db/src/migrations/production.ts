@@ -1,9 +1,13 @@
 import type { MigrationDefinition } from "./types.js";
+import { codeIndexV2Migration, stateV2Migration } from "./v2.js";
 
 /**
- * schema/state.sql and schema/global.sql are schema version 1.
- * Real v2 changes stay out of this package; tests supply synthetic migrations.
+ * Frozen `schema/*.sql` files are version 1.
+ * Later shapes are forward migrations, not edits to those files.
  */
 export const PRODUCTION_SCHEMA_VERSION = 1;
 
-export const productionMigrations: readonly MigrationDefinition[] = Object.freeze([]);
+export const productionMigrations: readonly MigrationDefinition[] = Object.freeze([
+  stateV2Migration,
+  codeIndexV2Migration,
+]);

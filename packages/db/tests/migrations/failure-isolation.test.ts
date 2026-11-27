@@ -357,7 +357,7 @@ describe("migration failure isolation", () => {
       expect(caught).toBeInstanceOf(DatabaseNewerThanAppError);
       if (!(caught instanceof DatabaseNewerThanAppError)) return;
       expect(caught.userVersion).toBe(99);
-      expect(caught.maxKnownVersion).toBe(1);
+      expect(caught.maxKnownVersion).toBe(2);
       expect(caught.backupPaths).toEqual([older, newer]);
       expect(caught.message).toContain(statePath);
       expect(caught.message).toContain(older);

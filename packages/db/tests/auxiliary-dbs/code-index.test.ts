@@ -26,7 +26,10 @@ describe("code index database", () => {
     const canonical = fs.readFileSync(canonicalAssetAbsolute("codeIndexSql"), "utf8");
     expect(loadCanonicalSchema("codeIndex")).toBe(canonical);
     const db = open("code-index-bootstrap");
-    expect(db.schemaTables()).toEqual([...schemaTableNames(canonical)].sort());
+    expect(db.schemaTables()).toEqual(
+      [...schemaTableNames(canonical), "module_cards", "schema_migrations"].sort(),
+    );
+    expect(db.writer.get("PRAGMA user_version")).toMatchObject({ user_version: 2 });
     expect(db.attachedDatabaseNames()).toEqual(["main"]);
     db.verifyIsolatedConnection();
   });

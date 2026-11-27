@@ -25,7 +25,7 @@ export {
   repositoryRoot,
 } from "./query-catalog.js";
 export type { LeaseQueryName } from "./query-catalog.js";
-export { TaskLeaseManager } from "./task-lease-manager.js";
+export { TaskLeaseManager, pathLeaseModeForDatabase } from "./task-lease-manager.js";
 export type {
   ClaimRefusalReason,
   ClaimResult,

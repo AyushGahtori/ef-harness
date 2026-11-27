@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
 import { fileFingerprint } from "../../src/migrations/backup.js";
 import { connectGlobalBrokerDb, readProjectStatus } from "../../src/migrations/needs-repair.js";
 import { PRODUCTION_SCHEMA_VERSION, productionMigrations } from "../../src/migrations/production.js";
 import { FTS_PENDING_META_KEY } from "../../src/migrations/rebuild.js";
 import { rehearseMigration } from "../../src/migrations/rehearse.js";
 import { MigrationRunner } from "../../src/migrations/runner.js";
+import { CODE_INDEX_V2_MIGRATION_NAME, STATE_V2_MIGRATION_NAME } from "../../src/migrations/v2.js";
 import {
   APP_VERSION,
   CLOCK_NOW,
@@ -250,15 +252,28 @@ describe("forward-only migration", () => {
     });
   });
 
-  it("keeps the production schema pinned at version 1", async () => {
+  it("migrates a production state database from version 1 to version 2 and leaves global at version 1", async () => {
     await withDir(async (dir) => {
       const projectDir = path.join(dir, "alpha");
-      const statePath = createStateDb(projectDir, "state.db");
+      fs.mkdirSync(projectDir, { recursive: true });
+      const statePath = path.join(projectDir, "state.db");
+      const schema = fs.readFileSync(canonicalAssetAbsolute("stateSql"), "utf8");
+      withConnection(statePath, "state", false, (conn) => {
+        conn.exec(schema);
+        conn.exec("PRAGMA user_version = 1");
+        conn
+          .prepare(
+            "INSERT INTO schema_migrations(version, name, kind, app_version, applied_at) VALUES (1, 'state-schema-v1', 'additive', ?, ?)",
+          )
+          .run("0.0.0", 1);
+      });
       const globalPath = createGlobalDb(dir, [{ id: "alpha", stateDbPath: statePath, name: "Alpha" }]);
-      const beforeState = fileHash(statePath);
       const beforeGlobal = fileHash(globalPath);
       expect(PRODUCTION_SCHEMA_VERSION).toBe(1);
-      expect(productionMigrations).toEqual([]);
+      expect(productionMigrations.map((migration) => `${migration.targetDb}:${migration.version}:${migration.name}`)).toEqual([
+        `state:2:${STATE_V2_MIGRATION_NAME}`,
+        `code-index:2:${CODE_INDEX_V2_MIGRATION_NAME}`,
+      ]);
       const runner = new MigrationRunner({
         globalDbPath: globalPath,
         globalDb: connectGlobalBrokerDb(globalPath),
@@ -274,13 +289,20 @@ describe("forward-only migration", () => {
       const opened = await runner.openProject({ id: "alpha", stateDbPath: statePath });
       expect(opened.ok).toBe(true);
       if (!opened.ok) return;
-      expect(opened.toVersion).toBe(1);
-      expect(opened.applied).toEqual([]);
-      expect(opened.backupPath).toBeNull();
-      expect(fileHash(statePath)).toBe(beforeState);
+      expect(opened.toVersion).toBe(2);
+      expect(opened.applied.map((row) => row.name)).toEqual([STATE_V2_MIGRATION_NAME]);
+      expect(opened.backupPath).not.toBeNull();
+      expect(userVersion(statePath, "state")).toBe(2);
+      withConnection(statePath, "state", true, (conn) => {
+        expect(
+          scalar(conn, "SELECT count(*) AS c FROM edge_types WHERE type IN ('expands', 'contradicts', 'informs')"),
+        ).toBe(3);
+        for (const table of ["canvas_layout", "investigations", "sweep_symbol_maps", "stop_events"]) {
+          expect(scalar(conn, `SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' AND name = '${table}'`)).toBe(1);
+        }
+      });
       expect(fileHash(globalPath)).toBe(beforeGlobal);
       expect(readProjectStatus(globalPath, "alpha")).toBe("ok");
-      expect(fs.existsSync(path.join(projectDir, "backups"))).toBe(false);
     });
   });
 });

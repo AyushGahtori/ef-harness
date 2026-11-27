@@ -7,6 +7,10 @@ import {
   type DbHandle,
   type SqliteConnection as DriverSqliteConnection,
 } from "../driver/index.js";
+import { DatabaseNewerThanAppError } from "../migrations/errors.js";
+import { upgradeDatabaseOnOpen } from "../migrations/open-upgrade.js";
+import { PRODUCTION_SCHEMA_VERSION, productionMigrations } from "../migrations/production.js";
+import { maxKnownSchemaVersion } from "../migrations/registry.js";
 import { acquireBrokerLock, type BrokerLock } from "./broker-lock.js";
 import { ensureHarnessDataLayout, type HarnessDataLayout } from "./data-layout.js";
 import {
@@ -137,6 +141,23 @@ export class GlobalBrokerDb implements DbHandle {
         createGlobalDatabase(layout.globalDbPath, randomBytes(16).toString("hex"), now());
       } else if (fs.statSync(layout.globalDbPath).size === 0) {
         throw new GlobalDatabaseCorruptError("global.db is empty");
+      }
+      try {
+        upgradeDatabaseOnOpen({
+          dbPath: layout.globalDbPath,
+          targetDb: "global",
+          appVersion: "0.0.0",
+          backupsDir: path.join(layout.root, "backups"),
+          globalDbPath: layout.globalDbPath,
+        });
+      } catch (error) {
+        if (error instanceof DatabaseNewerThanAppError) {
+          throw new GlobalSchemaVersionError(error.userVersion, error.maxKnownVersion);
+        }
+        if (isSqliteCorruption(error)) {
+          throw new GlobalDatabaseCorruptError(error instanceof Error ? error.message : "corrupt");
+        }
+        throw error;
       }
       const conn = openVerifiedGlobal(layout.globalDbPath);
       try {
@@ -793,7 +814,10 @@ function openVerifiedGlobal(filePath: string): SqliteConnection {
     connection = openSqliteConnection(filePath, "global");
     assertQuickCheck(connection);
     const settings = readConnectionSettings(connection);
-    if (settings.userVersion !== 1) throw new GlobalSchemaVersionError(settings.userVersion);
+    const supported = maxKnownSchemaVersion(productionMigrations, "global", PRODUCTION_SCHEMA_VERSION);
+    if (settings.userVersion > supported || settings.userVersion < PRODUCTION_SCHEMA_VERSION) {
+      throw new GlobalSchemaVersionError(settings.userVersion, supported);
+    }
     if (settings.journalMode !== "wal") {
       throw new GlobalDatabaseCorruptError(`journal_mode is ${settings.journalMode}`);
     }

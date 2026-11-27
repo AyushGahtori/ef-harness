@@ -1,9 +1,11 @@
+import path from "node:path";
 import {
   lookupNamedQuery,
   ReaderPool,
   type DbHandle,
   type SqliteConnection as DriverSqliteConnection,
 } from "../driver/index.js";
+import { upgradeDatabaseOnOpen } from "../migrations/open-upgrade.js";
 import { AuxiliaryDbError, InvalidCodeIndexEntryError } from "./errors.js";
 import { createStderrAuxiliaryLogger } from "./logger.js";
 import {
@@ -55,16 +57,25 @@ export class CodeIndexDb implements DbHandle {
 
   static open(options: OpenCodeIndexDbOptions): CodeIndexDb {
     const logger = options.logger ?? createStderrAuxiliaryLogger();
-    const conn = openResilientDatabase({
+    const resilient = {
       filePath: options.filePath,
-      profile: "code-index",
-      schema: "codeIndex",
+      profile: "code-index" as const,
+      schema: "codeIndex" as const,
       requiredTable: "indexed_commits",
       logger,
       rebuildCode: "code_index_db_rebuilt",
       rebuildMessage:
         "code-index.db was corrupt and was recreated. The index is rebuildable and is excluded from backups.",
+    };
+    const prepared = openResilientDatabase(resilient);
+    prepared.close();
+    upgradeDatabaseOnOpen({
+      dbPath: options.filePath,
+      targetDb: "code-index",
+      appVersion: "0.0.0",
+      backupsDir: path.join(path.dirname(options.filePath), "backups"),
     });
+    const conn = openResilientDatabase(resilient);
     return new CodeIndexDb(conn, options.filePath);
   }
 

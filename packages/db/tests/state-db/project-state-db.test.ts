@@ -22,10 +22,12 @@ import {
   assertSqlHasNoAttach,
   openProjectStateDb,
   renameWithRetry,
+  APP_SUPPORTED_SCHEMA_VERSION,
   type SafeModeReason,
   type StateDbLogger,
 } from "../../src/state-db/index.js";
 import { openStateConnection } from "../../src/state-db/sqlite-session.js";
+import { STATE_V2_MIGRATION_NAME } from "../../src/migrations/v2.js";
 
 const require = createRequire(import.meta.url);
 const opened: ProjectStateDb[] = [];
@@ -43,11 +45,12 @@ afterEach(() => {
 });
 
 describe("state-db bootstrap", () => {
-  it("bootstraps state.db from schema/state.sql with meta, project_runtime, and user_version 1", () => {
+  it("bootstraps state.db from schema/state.sql and migrates it to the supported user_version", () => {
     const clock = 1_700_000_000_000;
     const db = open({ now: () => clock });
     expect(db.mode).toBe("readwrite");
-    expect(db.getUserVersion()).toBe(1);
+    expect(APP_SUPPORTED_SCHEMA_VERSION).toBe(2);
+    expect(db.getUserVersion()).toBe(2);
     expect(db.getLastQuickCheck()).toBe("ok");
     expect(db.isSafeMode()).toBe(false);
     expect(db.getMeta("project_id")).toBe(db.projectId);
@@ -68,6 +71,13 @@ describe("state-db bootstrap", () => {
         kind: "additive",
         appVersion: "0.0.0",
       }),
+      expect.objectContaining({
+        version: 2,
+        name: STATE_V2_MIGRATION_NAME,
+        kind: "additive",
+        appVersion: "0.0.0",
+        appliedAt: clock,
+      }),
     ]);
     expect(db.evaluateSearchText("camelCase")).toBe("camelCase camel Case");
     const owner = db.getOwner();
@@ -87,7 +97,7 @@ describe("state-db bootstrap", () => {
     const db = open({ projectId, rootDir: root });
     expect(fs.existsSync(path.join(projectDir, "state.db.init.tmp"))).toBe(false);
     expect(fs.existsSync(db.databasePath)).toBe(true);
-    expect(db.getUserVersion()).toBe(1);
+    expect(db.getUserVersion()).toBe(2);
   });
 
   it("removes the temp database when publication is interrupted", () => {
@@ -106,7 +116,7 @@ describe("state-db bootstrap", () => {
     expect(fs.existsSync(path.join(projectDir, "state.db"))).toBe(false);
     expect(fs.existsSync(path.join(projectDir, "state.db.init.tmp"))).toBe(false);
     const recovered = open({ projectId, rootDir: root });
-    expect(recovered.getUserVersion()).toBe(1);
+    expect(recovered.getUserVersion()).toBe(2);
   });
 
   it("refuses a newer user_version before running a query", () => {
@@ -115,7 +125,7 @@ describe("state-db bootstrap", () => {
     const projectDir = path.join(root, "projects", projectId);
     fs.mkdirSync(projectDir, { recursive: true });
     const raw = new DatabaseSync(path.join(projectDir, "state.db"));
-    raw.exec("PRAGMA user_version = 2");
+    raw.exec("PRAGMA user_version = 3");
     raw.close();
     expect(() => open({ projectId, rootDir: root })).toThrow(DatabaseVersionTooNewError);
     try {
@@ -123,11 +133,64 @@ describe("state-db bootstrap", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(DatabaseVersionTooNewError);
       if (error instanceof DatabaseVersionTooNewError) {
-        expect(error.dbVersion).toBe(2);
-        expect(error.supportedVersion).toBe(1);
+        expect(error.dbVersion).toBe(3);
+        expect(error.supportedVersion).toBe(2);
         expect(error.backupDirectory).toBe(path.join(projectDir, "backups"));
       }
     }
+  });
+
+  it("migrates user_version 1 to 2 and accepts expands, contradicts, and informs edges", () => {
+    const db = open();
+    expect(db.getUserVersion()).toBe(2);
+    const backups = fs.readdirSync(db.backupDirectory).filter((name) => name.startsWith("pre-migration-v1-to-v2-"));
+    expect(backups).toHaveLength(1);
+    const backupPath = path.join(db.backupDirectory, backups[0] ?? "");
+    const backup = new DatabaseSync(backupPath, { readOnly: true });
+    try {
+      const version = backup.prepare("PRAGMA user_version").get() as { user_version: number | bigint };
+      expect(Number(version.user_version)).toBe(1);
+      const seeded = backup.prepare("SELECT type FROM edge_types WHERE type = 'expands'").get();
+      expect(seeded).toBeUndefined();
+    } finally {
+      backup.close();
+    }
+    const tables = db.writer.all(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('canvas_layout', 'investigations', 'sweep_symbol_maps', 'stop_events') ORDER BY name",
+    ) as Array<{ name: string }>;
+    expect(tables.map((row) => row.name)).toEqual([
+      "canvas_layout",
+      "investigations",
+      "stop_events",
+      "sweep_symbol_maps",
+    ]);
+    const hash = "c".repeat(64);
+    db.writer.transaction(() => {
+      db.writer.run(
+        "INSERT INTO change_sets(id, rev, origin, author, created_at) VALUES (?, 1, 'planner', 'c06', 10)",
+        ["CS-1"],
+      );
+      const insertNode = db.writer.prepare(
+        `INSERT INTO nodes(id, kind, version, content_hash, title, text, fields, change_set, created_rev, updated_rev)
+         VALUES (?, 'task', 1, ?, ?, '', '{}', 'CS-1', 1, 1)`,
+      );
+      try {
+        insertNode.run(["T01", hash, "source"]);
+        insertNode.run(["T02", hash, "target"]);
+      } finally {
+        insertNode.finalize();
+      }
+      for (const type of ["expands", "contradicts", "informs"]) {
+        db.writer.run(
+          "INSERT INTO edges(src, type, dst, change_set, valid_from_rev) VALUES ('T01', ?, 'T02', 'CS-1', 1)",
+          [type],
+        );
+      }
+    });
+    const stored = db.writer.all(
+      "SELECT type FROM edges WHERE src = 'T01' ORDER BY type",
+    ) as Array<{ type: string }>;
+    expect(stored.map((row) => row.type)).toEqual(["contradicts", "expands", "informs"]);
   });
 
   it("rejects an uninitialized database instead of treating version 0 as current", () => {

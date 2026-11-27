@@ -6,6 +6,7 @@ import {
   listPreMigrationBackups,
   preMigrationBackupName,
   restoreVacuumBackup,
+  restoreVacuumBackupSync,
   statfsDiskSpace,
   vacuumBytesNeeded,
   vacuumInto,
@@ -34,6 +35,7 @@ import {
   setRecoveryBackupPath,
 } from "./rebuild.js";
 import { maxKnownSchemaVersion, pendingMigrations, validateMigrationRegistry } from "./registry.js";
+import { CODE_INDEX_BASELINE_NAME, SCHEMA_MIGRATIONS_DDL } from "./v2.js";
 import { errorText, isSqliteLocked, readUserVersion, rollbackIfOpen, setUserVersion, tableExists } from "./sql.js";
 import {
   REPAIR_OPTIONS,
@@ -55,6 +57,13 @@ import {
 
 const DEFAULT_READER_TIMEOUT_MS = 5_000;
 const UNPARKED_TASK_STATES = "('LEASED','CODING','STATIC_AUDIT','CLEAN_VERIFY')";
+
+export interface MigrateToLatestTarget {
+  readonly dbPath: string;
+  readonly targetDb: TargetDb;
+  readonly backupsDir?: string;
+  readonly projectId?: string;
+}
 
 export interface MigrationRunnerOptions {
   readonly globalDbPath: string;
@@ -107,6 +116,151 @@ export class MigrationRunner {
   /** Same lazy path as `migrateProject`, named for the open-project call site. */
   openProject(project: ProjectTarget): Promise<MigrationOutcome> {
     return this.migrateProject(project);
+  }
+
+  /**
+   * Forward-migrate an already open writer connection.
+   * The caller closes `conn`. This method closes it only when a failed
+   * migration must restore the pre-upgrade backup over the live file.
+   */
+  migrateToLatest(conn: SqliteConnection, target: MigrateToLatestTarget): MigrationSuccess {
+    const baseline = this.options.baselineSchemaVersion ?? PRODUCTION_SCHEMA_VERSION;
+    const maxKnown = maxKnownSchemaVersion(this.options.migrations, target.targetDb, baseline);
+    const clock = this.options.clock ?? systemClock;
+    const diskSpace = this.options.diskSpace ?? statfsDiskSpace;
+    const backupsDir = target.backupsDir ?? path.join(path.dirname(target.dbPath), "backups");
+    let userVersion = readUserVersion(conn);
+    if (target.targetDb === "code-index" && userVersion === 0 && tableExists(conn, "indexed_commits")) {
+      stampCodeIndexBaseline(conn, this.options.appVersion, clock.now());
+      userVersion = readUserVersion(conn);
+    }
+    if (!Number.isSafeInteger(userVersion) || userVersion < 0) {
+      throw new SchemaVersionGapError(target.dbPath, userVersion, baseline);
+    }
+    if (userVersion > maxKnown) {
+      throw new DatabaseNewerThanAppError({
+        dbPath: target.dbPath,
+        userVersion,
+        maxKnownVersion: maxKnown,
+        backupPaths: listPreMigrationBackups(backupsDir),
+      });
+    }
+    if (userVersion < baseline) {
+      throw new SchemaVersionGapError(target.dbPath, userVersion, baseline);
+    }
+    const pending = pendingMigrations(this.options.migrations, target.targetDb, userVersion);
+    const pendingSearchBackup = readSearchRebuildPending(conn);
+    if (pending.length === 0 && pendingSearchBackup === null) {
+      return success(target.targetDb, userVersion, userVersion, null, []);
+    }
+    if (target.targetDb === "state" && !target.projectId) {
+      throw new Error("State database migration requires a project id");
+    }
+    const drained = this.options.readers.drainAndClose(this.options.readerDrainTimeoutMs ?? DEFAULT_READER_TIMEOUT_MS);
+    if (isPromise(drained)) {
+      throw new ReadersActiveError("migrateToLatest requires readers to drain synchronously", {
+        dbPath: target.dbPath,
+      });
+    }
+    if (pending.length > 0 || pendingSearchBackup !== null) {
+      assertWorkParked(conn, target.dbPath);
+    }
+    const bytesNeeded = vacuumBytesNeeded(conn);
+    if (pending.length > 0) {
+      assertDiskSpace({
+        dbPath: target.dbPath,
+        directory: diskProbeDirectory(backupsDir, target.dbPath),
+        bytesNeeded,
+        diskSpace,
+      });
+    }
+
+    const fromVersion = userVersion;
+    const applied: AppliedMigration[] = [];
+    let migrationBackup: string | null = null;
+    let resumeBackup: string | null = null;
+    let startedMutation = false;
+    let locked = false;
+    try {
+      acquireExclusiveWriterLock(conn, target.dbPath);
+      locked = true;
+      if (pendingSearchBackup !== null) {
+        resumeBackup = pendingSearchBackup;
+        setRecoveryBackupPath(conn, pendingSearchBackup);
+        rebuildNodesSearchIndexes(conn);
+        clearSearchRebuildPending(conn);
+        resumeBackup = null;
+      }
+      if (pending.length > 0) {
+        const lastPending = pending[pending.length - 1];
+        if (!lastPending) throw new SchemaInvariantError("pending migration list was empty");
+        const backupPath = allocateBackupPath(backupsDir, fromVersion, lastPending.version, clock.now());
+        vacuumInto(conn, backupPath, target.targetDb, bytesNeeded);
+        migrationBackup = backupPath;
+        if (target.targetDb === "state" && target.projectId) {
+          const hashes = readArtifactHashes(conn);
+          this.options.globalDb.registerBackupCasPins({
+            projectId: target.projectId,
+            backupId: `${target.projectId}-backup-${path.basename(backupPath)}`,
+            hashes,
+            pinnedAt: clock.now(),
+          });
+        }
+        setRecoveryBackupPath(conn, backupPath);
+        startedMutation = true;
+        for (const migration of pending) {
+          const appliedAt = clock.now();
+          applyMigration(conn, migration, this.options.appVersion, appliedAt);
+          applied.push({
+            version: migration.version,
+            name: migration.name,
+            kind: migration.kind,
+            appVersion: this.options.appVersion,
+            appliedAt,
+          });
+        }
+        assertQuickCheck(conn);
+        assertForeignKeyCheck(conn);
+        assertNodesIntegerPrimaryKey(conn);
+      }
+      const toVersion = readUserVersion(conn);
+      releaseExclusiveWriterLock(conn);
+      locked = false;
+      return success(target.targetDb, fromVersion, toVersion, migrationBackup, applied);
+    } catch (error) {
+      if (locked) {
+        try {
+          rollbackIfOpen(conn);
+        } catch (rollbackError) {
+          void rollbackError;
+        }
+        try {
+          releaseExclusiveWriterLock(conn);
+        } catch (unlockError) {
+          void unlockError;
+        }
+      }
+      const restoreFrom = startedMutation ? migrationBackup : resumeBackup;
+      if (restoreFrom === null) throw error;
+      try {
+        conn.close();
+      } catch (closeError) {
+        void closeError;
+      }
+      try {
+        restoreVacuumBackupSync(target.dbPath, restoreFrom);
+      } catch (restoreError) {
+        throw new MigrationFailedError(
+          `Migration failed and the pre-migration backup could not be restored: ${errorText(restoreError)}`,
+          { cause: error, backupPath: restoreFrom, restored: false },
+        );
+      }
+      throw new MigrationFailedError(errorText(error), {
+        cause: error,
+        backupPath: restoreFrom,
+        restored: true,
+      });
+    }
   }
 
   private commonOptions(dbPath: string, targetDb: TargetDb): MigrateDatabaseOptions {
@@ -312,6 +466,27 @@ export async function migrateDatabase(options: MigrateDatabaseOptions): Promise<
     });
   } finally {
     write?.close();
+  }
+}
+
+function isPromise(value: unknown): value is Promise<void> {
+  return typeof value === "object" && value !== null && "then" in value && typeof value.then === "function";
+}
+
+function stampCodeIndexBaseline(conn: SqliteConnection, appVersion: string, appliedAt: number): void {
+  conn.exec("BEGIN IMMEDIATE");
+  try {
+    conn.exec(SCHEMA_MIGRATIONS_DDL);
+    conn
+      .prepare(
+        "INSERT OR IGNORE INTO schema_migrations(version, name, kind, app_version, applied_at) VALUES (1, ?, 'additive', ?, ?)",
+      )
+      .run(CODE_INDEX_BASELINE_NAME, appVersion, appliedAt);
+    setUserVersion(conn, 1);
+    conn.exec("COMMIT");
+  } catch (error) {
+    rollbackIfOpen(conn);
+    throw error;
   }
 }
 
