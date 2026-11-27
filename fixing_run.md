@@ -1095,3 +1095,42 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C33.
 
+---
+
+## [C33] — Views round-trip and requirement_change holds
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `c8547ac89c4d3623c4980c4e15763c22f1211267` (`integrate: C33 wire views round-trip and requirement_change holds`)
+- **Findings Fixed:** `F-037` for one `.harness/views/` manifest and `ef:node` grammar shared by export and import, and `F-039` for `HybridRevisionEngine` holds using `requirement_change`. `task/085-knowledge-views-exporter` (`b104c7b`), `task/086-markdown-direct-edit-importer` (`8adf0a5`), and `task/087-hybrid-revision-impact-engine` (`a1e4945`) were already ancestors. Did not re-merge those branches. Did not apply a dirty patch. Did not apply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C34.
+
+### What Changed
+- Re-verified on `2636b51f8fc1e728581d996bb36fdb815e982c0c`. `git merge-base --is-ancestor` succeeded for `b104c7b`, `8adf0a5`, and `a1e4945`. No task branch was merged.
+- Export and import manifests both carry `{ schemaVersion: 1, exportedAt: number, files: Record<relPath, { sha256, nodeIds }> }`. Each reader also accepts the other writer's rows, so an export manifest is no longer an empty import and an import manifest is no longer a corrupt export. Node rows keep the opener `base_hash`. File hashes compare with or without the `sha256:` prefix.
+- `<!-- ef:node id=… rev=… base_hash=sha256:… -->` is parsed by the importer, including the exporter's `sha256:` prefix, backslash escapes, and `<a id>` anchors (anchors stay out of prose). `LocalExportPauseLock` is the exporter's `ExportPauseLock`, so `pause` / `acquire` share one map. `MarkdownDirectEditImporter` scans edited view files with `SecretRedactor.scanForSecrets` before commit and opens a `base_hash` conflict when the opener does not match the manifest. `ProjectStateKnowledgeGraph` commits those edits through `KnowledgeGraphRepo` on `ProjectStateDb`.
+- `HybridRevisionEngine` places `requirement_change` holds. When an impact port is supplied, the blast radius is `KnowledgeGraphRepo.impactWalk`. `ProjectStateHoldWriter` writes those holds through `TaskHoldAndSubmissionRepo`.
+
+### What It Fixed
+- **F-037:** Exporting `.harness/views/` and importing the edited Markdown recognizes the same manifest, the same `ef:node` opener, and the same pause lock. A stale `base_hash` stays uncommitted. A scanned secret blocks the commit.
+- **F-039:** Revision holds use `requirement_change`, the reason in `schema/state.sql` `task_holds`. The slicer and `kb.*` tool-name half of this finding stays for C34.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor b104c7b HEAD`: exit `0`
+- `git merge-base --is-ancestor 8adf0a5 HEAD`: exit `0`
+- `git merge-base --is-ancestor a1e4945 HEAD`: exit `0`
+- No dirty-worktree patch was assigned to C33. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/planner test -- views-export views-import revision`: exit `0` — `Test Files 29 passed (29)`, `Tests 148 passed (148)` (`0` skipped). The pnpm `--` reaches vitest as an end-of-options marker, so this invocation runs the whole planner package. The previous package total recorded at C32 was 27 files / 145 tests; this adds the 2 C33 files and 3 C33 tests.
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts views-export views-import revision`: exit `0` — `Test Files 15 passed (15)`, `Tests 60 passed (60)` (`0` skipped)
+- `pnpm --filter @ef-harness/planner test -- system-arch feature-arch`: exit `0` — `Test Files 29 passed (29)`, `Tests 148 passed (148)` (`0` skipped; same whole-package run as above, which still covers the C32 145)
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts system-arch feature-arch`: exit `0` — `Test Files 8 passed (8)`, `Tests 30 passed (30)` (`0` skipped)
+- `pnpm --filter @ef-harness/research-engine test`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion test`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped). The 5 ms catalog budget was not changed.
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C34.
+
