@@ -229,3 +229,31 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`). Plain `pnpm lint` aborted with exit `134` on the default heap before reporting results.
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 61 passed (61)`, `Tests 362 passed (362)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+---
+
+## [C07] — Knowledge graph, FTS5 search, and name registry on ProjectStateDb
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-medium
+- **Commit on `harness/integration`:** `254f4db19d0103dda2132f5242dc51961aa31feb` (`integrate: C07 bind knowledge search and name registry`)
+- **Findings Fixed:** `F-007`, `F-010`, `F-012`, `F-038` (this seam only)
+
+### What Changed
+- Did not re-merge `origin/task/017-knowledge-graph-repo`, `origin/task/018-fts5-knowledge-search`, or `origin/task/019-name-registry-hygiene`. Bound the live classes `KnowledgeGraphRepo`, `KnowledgeSearchService`, and `NameRegistryService` to the open `ProjectStateDb` writer (`bindKnowledgeGraph`, `bindKnowledgeSearch`, `bindNameRegistry`). None of those classes opens a private `DatabaseSync`.
+- Knowledge and registry `queries.sql` parsing now uses the driver catalog (`parseQueryCatalog` / `lookupNamedQuery` / `loadCanonicalSqlAsset`). Removed the registry filesystem walker and its local `splitSearchText` wrapper. `openStateConnection` and `openMemoryStateDb` register `ef_search_text` through `registerEfSearchText`.
+- `nodes.content_hash` writes go through `toPrefixedSha256` (`sha256:<64-hex>`). `KnowledgeGraphRepo` stores `fields.names` as objects `{kind, value}` and rejects a bare string before the trigger. `NameRegistryService` already wrote that shape and now stores a prefixed content hash.
+- `KnowledgeSearchService` still tokenizes free text with `sanitizeFtsQuery` (quotes, `:`, `*`, `NEAR` never reach FTS5 as operators). Search reads on the bind path use the same writer connection as the graph.
+- Left `MigrationRunner` and frozen `user_version` 1 alone. Did not edit `packages/sim`, `path_leases.mode`, or Windows Job Object, DPAPI, named-pipe, or NSIS code. Planner `SkeletonLockEnforcer` / synthesizer conflicts in `F-038` stay in the planner wave.
+
+### What It Fixed
+- **F-007:** Graph and name-registry node writes persist `sha256:<64-hex>` content hashes. Bare hex from the registry hasher is prefixed at the write boundary.
+- **F-010:** This seam no longer has a local `ef_search_text` implementation. Inserts through `ProjectStateDb` and searches for `XMLHttpRequest` use the shared acronym split (`XML Http Request`).
+- **F-012:** The three repositories share one `ProjectStateDb` writer and the driver query catalog instead of a second connection and a private `queries.sql` parser.
+- **F-038:** `fields.names` committed by `KnowledgeGraphRepo` matches `schema/state.sql` (`json_each` of `{kind, value}`), so the `names` trigger fills and replaces registry rows in the same transaction. A duplicate name aborts the change set.
+
+### Verification Run & Results
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 62 passed (62)`, `Tests 364 passed (364)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
