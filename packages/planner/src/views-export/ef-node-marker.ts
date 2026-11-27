@@ -117,7 +117,11 @@ export function escapeMarkerText(text: string): string {
 }
 
 export function unescapeMarkerText(text: string): string {
-  return text.replaceAll("\\<!-- /ef:node -->", CLOSER_LITERAL).replaceAll("\\<!-- ef:node ", OPENER_LITERAL);
+  return text
+    .replaceAll("\\<!-- /ef:node -->", CLOSER_LITERAL)
+    .replaceAll("\\<!-- ef:node ", OPENER_LITERAL)
+    .replaceAll("<!-- ef:escaped /ef:node -->", CLOSER_LITERAL)
+    .replaceAll("<!-- ef:escaped ef:node ", OPENER_LITERAL);
 }
 
 export function parseEfNodeBlocks(markdown: string): ParsedEfNode[] {

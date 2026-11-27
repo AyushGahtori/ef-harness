@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { sameSha256 } from "../views-shared/digest.js";
 import { fileHash } from "./markers.js";
 import { normalizeViewPath, viewFilePath } from "./manifest.js";
 import type { DiskDelta, ViewManifest, ViewManifestHashScanner } from "./types.js";
@@ -23,7 +24,7 @@ export class LocalViewManifestHashScanner implements ViewManifestHashScanner {
         continue;
       }
       const diskSha256 = fileHash(fs.readFileSync(absolute, "utf8"));
-      if (diskSha256 !== file.contentSha256) {
+      if (!sameSha256(diskSha256, file.contentSha256)) {
         deltas.push({
           filePath,
           reason: "content_mismatch",

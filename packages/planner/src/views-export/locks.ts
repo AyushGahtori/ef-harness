@@ -14,12 +14,27 @@ export class ExportPauseLock {
     if (!this.reasons.has(key)) this.reasons.set(key, reason);
   }
 
+  /** Importer name for {@link pause}. The first reason wins. */
+  acquire(filePath: string, reason: string): void {
+    this.pause(filePath, reason);
+  }
+
   resume(filePath: string): void {
     this.reasons.delete(normalizeViewPath(filePath));
   }
 
+  /** Importer name for {@link resume}. */
+  release(filePath: string): void {
+    this.resume(filePath);
+  }
+
   isPaused(filePath: string): boolean {
     return this.reasons.has(normalizeViewPath(filePath));
+  }
+
+  /** Importer name for {@link isPaused}. */
+  isHeld(filePath: string): boolean {
+    return this.isPaused(filePath);
   }
 
   reason(filePath: string): string | null {
@@ -28,6 +43,11 @@ export class ExportPauseLock {
 
   pausedFiles(): readonly string[] {
     return [...this.reasons.keys()].sort(compareText);
+  }
+
+  /** Importer name for {@link pausedFiles}. */
+  heldFiles(): readonly string[] {
+    return this.pausedFiles();
   }
 }
 

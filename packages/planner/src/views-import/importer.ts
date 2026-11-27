@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { SecretRedactor } from "@ef-harness/shared-contracts";
+import { sameSha256 } from "../views-shared/digest.js";
 import { nodeAuditText, unifiedDiff } from "./diff.js";
 import { SafeDeleteRenameHandler, impactFromEdges } from "./delete-rename.js";
 import { canonicalJson, cloneFields, sameJson } from "./hash.js";
@@ -424,7 +426,13 @@ export class MarkdownDirectEditImporter {
         const remote = this.deps.graph.getNode(node.nodeId);
         if (!remote) continue;
         const base = this.baseNode(original, node.nodeId, remote, node.rev);
-        this.addNodeWork(session, filePath, node.nodeId, remote, base, node.title, node.prose, node.fields, knownIds);
+        const localFields = stripExportEnvelope(node.fields, remote);
+        this.addNodeWork(session, filePath, node.nodeId, remote, base, node.title, node.prose, localFields, knownIds);
+        const record = original.nodes.find((item) => item.filePath === filePath && item.nodeId === node.nodeId);
+        const work = session.works.find((item) => item.filePath === filePath && item.nodeId === node.nodeId);
+        if (record && work && !sameSha256(record.contentSha256, node.baseHash)) {
+          work.conflicts.push(staleBaseCard(filePath, node.nodeId, record.contentSha256, node.baseHash, remote.contentHash));
+        }
       }
       parsed.unmarked.forEach((section, index) => {
         if (consumed.has(section.heading)) return;
@@ -624,6 +632,16 @@ export class MarkdownDirectEditImporter {
 
     if (session.blockedBatch) return;
     if (mutations.length > 0 || edges.length > 0) {
+      if (readyFilesContainSecrets(this.deps.viewsRoot, ready)) {
+        session.schemaErrors.push({
+          filePath: ready[0] ?? "",
+          nodeId: null,
+          line: null,
+          message: "secret scan refused the markdown edit",
+        });
+        session.blockedBatch = true;
+        return;
+      }
       const changeSetId = `CS-MD-${String(this.sequence)}`;
       this.sequence += 1;
       const committed = this.deps.graph.commitChangeSet({
@@ -1093,4 +1111,53 @@ function readIfExists(viewsRoot: string, filePath: string): string | null {
 
 function unreachable(nodeId: string): never {
   throw new Error(`missing base snapshot for ${nodeId}`);
+}
+
+const EXPORT_ENVELOPE_KEYS = ["id", "kind", "status", "owner", "links"] as const;
+
+/** Drop exporter mirror keys that are not stored on the graph node. */
+function stripExportEnvelope(local: FieldMap, remote: GraphNode): FieldMap {
+  const next = cloneFields(local);
+  for (const key of EXPORT_ENVELOPE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(remote.fields, key)) continue;
+    if (key === "id" && next.id === remote.id) delete next.id;
+    else if (key === "kind" && next.kind === remote.kind) delete next.kind;
+    else if (key === "status" && next.status === remote.status) delete next.status;
+    else if (key === "owner" && next.owner === null) delete next.owner;
+    else if (key === "links" && Array.isArray(next.links) && next.links.length === 0) delete next.links;
+  }
+  return next;
+}
+
+function staleBaseCard(
+  filePath: string,
+  nodeId: string,
+  manifestHash: string,
+  markerHash: string,
+  currentHash: string,
+): ImportConflictCard {
+  return {
+    cardId: `conflict:${filePath}:${nodeId}:base_hash`,
+    kind: "field",
+    filePath,
+    nodeId,
+    field: "base_hash",
+    base: manifestHash,
+    basePresent: true,
+    yourEdit: markerHash,
+    yourEditPresent: true,
+    currentDb: currentHash,
+    currentDbPresent: true,
+    actions: ["keep_mine", "keep_current", "edit_merged"],
+    summary: `Stale base_hash for ${nodeId}. The Markdown opener does not match the exported manifest hash.`,
+  };
+}
+
+function readyFilesContainSecrets(viewsRoot: string, filePaths: readonly string[]): boolean {
+  const redactor = new SecretRedactor();
+  for (const filePath of filePaths) {
+    const text = readIfExists(viewsRoot, filePath);
+    if (text && redactor.scanForSecrets(text).length > 0) return true;
+  }
+  return false;
 }

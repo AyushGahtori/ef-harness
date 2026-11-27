@@ -4,6 +4,7 @@ export type { Scheduler } from "./debounced-propagator.js";
 export { EarlyCutoffReverifier } from "./early-cutoff.js";
 export { HybridRevisionEngine } from "./engine.js";
 export type { HybridRevisionEngineOptions } from "./engine.js";
+export { ProjectStateHoldWriter } from "./project-holds.js";
 export { canonicalFingerprint } from "./fingerprint.js";
 export { openRevisionDatabase, RevisionGraph } from "./graph.js";
 export { estimateDelta, formatUsd, RevisionImpactPreviewer } from "./impact-previewer.js";

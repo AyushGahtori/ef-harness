@@ -322,7 +322,7 @@ export class KnowledgeViewExporter {
         const previousNode = previous?.records.find(
           (record) => record.filePath === file.relativePath && record.nodeId === node.nodeId,
         );
-        records.push({
+        const nodeRecord = {
           filePath: file.relativePath,
           nodeId: node.nodeId,
           exportedRev: node.exportedRev,
@@ -330,7 +330,9 @@ export class KnowledgeViewExporter {
           fieldsSha256: node.fieldsSha256,
           proseSha256: node.proseSha256,
           exportedAt: previousNode && previousNode.contentSha256 === node.contentSha256 ? previousNode.exportedAt : stamp,
-        });
+        };
+        if (node.baseHash.length > 0) records.push({ ...nodeRecord, baseHash: node.baseHash });
+        else records.push(nodeRecord);
       }
     }
     if (previous) {

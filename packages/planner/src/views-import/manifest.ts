@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { asPrefixedSha256 } from "../views-shared/digest.js";
 import { fileHash, renderViewFile } from "./markers.js";
 import type { GraphNode, KnowledgeGraphRepo, ManifestFileRecord, ManifestNodeRecord, ViewManifest } from "./types.js";
 
@@ -16,18 +17,40 @@ export function emptyManifest(): ViewManifest {
 export function loadManifest(viewsRoot: string): ViewManifest {
   const full = manifestPath(viewsRoot);
   if (!fs.existsSync(full)) return emptyManifest();
-  const parsed: unknown = JSON.parse(fs.readFileSync(full, "utf8"));
-  if (!isRecord(parsed) || !Array.isArray(parsed.files) || !Array.isArray(parsed.nodes)) return emptyManifest();
-  return {
-    files: parsed.files.filter(isFileRecord),
-    nodes: parsed.nodes.filter(isNodeRecord),
-  };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(full, "utf8")) as unknown;
+  } catch {
+    return emptyManifest();
+  }
+  if (!isRecord(parsed)) return emptyManifest();
+  if (Array.isArray(parsed.fileRecords) && Array.isArray(parsed.nodes)) {
+    return { files: parsed.fileRecords.filter(isFileRecord), nodes: parsed.nodes.filter(isNodeRecord) };
+  }
+  if (Array.isArray(parsed.files) && Array.isArray(parsed.nodes)) {
+    return { files: parsed.files.filter(isFileRecord), nodes: parsed.nodes.filter(isNodeRecord) };
+  }
+  if (Array.isArray(parsed.records)) return manifestFromExportRecords(parsed.records, parsed.exportedAt);
+  if (isRecord(parsed.files)) return manifestFromCanonicalFiles(parsed.files, parsed.exportedAt);
+  return emptyManifest();
 }
 
 export function saveManifest(viewsRoot: string, manifest: ViewManifest): void {
   fs.mkdirSync(viewsRoot, { recursive: true });
-  const body = `${JSON.stringify(manifest, null, 2)}\n`;
-  fs.writeFileSync(manifestPath(viewsRoot), body, "utf8");
+  const files: Record<string, { sha256: string; nodeIds: readonly string[] }> = {};
+  let exportedAt = 0;
+  for (const file of manifest.files) {
+    files[file.filePath] = { sha256: asPrefixedSha256(file.contentSha256), nodeIds: [...file.nodeIds] };
+    if (file.exportedAt > exportedAt) exportedAt = file.exportedAt;
+  }
+  const body = {
+    schemaVersion: 1,
+    exportedAt,
+    files,
+    fileRecords: manifest.files,
+    nodes: manifest.nodes,
+  };
+  fs.writeFileSync(manifestPath(viewsRoot), `${JSON.stringify(body, null, 2)}\n`, "utf8");
 }
 
 export interface ViewFilePlan {
@@ -152,6 +175,87 @@ function isFileRecord(value: unknown): value is ManifestFileRecord {
     Array.isArray(value.nodeIds) &&
     value.nodeIds.every((id) => typeof id === "string")
   );
+}
+
+function manifestFromExportRecords(records: readonly unknown[], exportedAt: unknown): ViewManifest {
+  const nodeIds = new Map<string, string[]>();
+  const nodes: ManifestNodeRecord[] = [];
+  const fileHashes = new Map<string, { contentSha256: string; exportedRev: number; exportedAt: number }>();
+  for (const entry of records) {
+    if (!isRecord(entry) || typeof entry.filePath !== "string" || typeof entry.nodeId !== "string") continue;
+    const filePath = normalizeViewPath(entry.filePath);
+    const stamp = epochNumber(entry.exportedAt, exportedAt);
+    const exportedRev = typeof entry.exportedRev === "number" && Number.isFinite(entry.exportedRev) ? entry.exportedRev : 0;
+    if (entry.nodeId === "") {
+      if (typeof entry.contentSha256 === "string") {
+        fileHashes.set(filePath, { contentSha256: entry.contentSha256, exportedRev, exportedAt: stamp });
+      }
+      continue;
+    }
+    const ids = nodeIds.get(filePath) ?? [];
+    ids.push(entry.nodeId);
+    nodeIds.set(filePath, ids);
+    const baseHash = typeof entry.baseHash === "string" && entry.baseHash.length > 0 ? entry.baseHash : "";
+    const contentSha256 = baseHash.length > 0 ? baseHash : typeof entry.contentSha256 === "string" ? entry.contentSha256 : "";
+    nodes.push({
+      filePath,
+      nodeId: entry.nodeId,
+      exportedRev,
+      nodeVersion: exportedRev,
+      contentSha256,
+      fieldsSha256: typeof entry.fieldsSha256 === "string" ? entry.fieldsSha256 : "",
+      proseSha256: typeof entry.proseSha256 === "string" ? entry.proseSha256 : "",
+      exportedAt: stamp,
+    });
+  }
+  const files: ManifestFileRecord[] = [];
+  const paths = [...new Set([...fileHashes.keys(), ...nodeIds.keys()])].sort();
+  for (const filePath of paths) {
+    const file = fileHashes.get(filePath);
+    const ids = nodeIds.get(filePath) ?? [];
+    files.push({
+      filePath,
+      contentSha256: file?.contentSha256 ?? "",
+      exportedAt: file?.exportedAt ?? epochNumber(exportedAt, 0),
+      exportedRev: file?.exportedRev ?? 0,
+      featureId: null,
+      efFile: filePath.replace(/\.md$/, ""),
+      title: filePath,
+      nodeIds: ids,
+    });
+  }
+  return { files, nodes };
+}
+
+function manifestFromCanonicalFiles(files: Record<string, unknown>, exportedAt: unknown): ViewManifest {
+  const stamp = epochNumber(exportedAt, 0);
+  const records: ManifestFileRecord[] = [];
+  for (const filePath of Object.keys(files).sort()) {
+    const entry = files[filePath];
+    if (!isRecord(entry) || typeof entry.sha256 !== "string" || !Array.isArray(entry.nodeIds)) continue;
+    const nodeIds = entry.nodeIds.filter((id): id is string => typeof id === "string");
+    records.push({
+      filePath: normalizeViewPath(filePath),
+      contentSha256: entry.sha256,
+      exportedAt: stamp,
+      exportedRev: 0,
+      featureId: null,
+      efFile: normalizeViewPath(filePath).replace(/\.md$/, ""),
+      title: filePath,
+      nodeIds,
+    });
+  }
+  return { files: records, nodes: [] };
+}
+
+function epochNumber(value: unknown, fallback: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  if (typeof fallback === "number" && Number.isFinite(fallback)) return fallback;
+  return 0;
 }
 
 function isNodeRecord(value: unknown): value is ManifestNodeRecord {

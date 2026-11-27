@@ -7,7 +7,7 @@ const ESCAPED_CLOSER = "<!-- ef:escaped /ef:node -->";
 const OPEN_PREFIX = "<!-- ef:node ";
 const ESCAPED_OPEN = "<!-- ef:escaped ef:node ";
 
-const OPEN_PATTERN = /^<!-- ef:node id=(\S+) rev=(\d+) base_hash=([0-9a-f]{64}) -->$/;
+const OPEN_PATTERN = /^<!-- ef:node id=(\S+) rev=(\d+) base_hash=((?:sha256:)?[0-9a-f]{64}) -->$/;
 
 export interface ParsedNodeBlock {
   readonly nodeId: string;
@@ -44,7 +44,11 @@ export function escapeMarkerText(value: string): string {
 }
 
 export function unescapeMarkerText(value: string): string {
-  return value.replaceAll(ESCAPED_CLOSER, CLOSER).replaceAll(ESCAPED_OPEN, OPEN_PREFIX);
+  return value
+    .replaceAll(ESCAPED_CLOSER, CLOSER)
+    .replaceAll(ESCAPED_OPEN, OPEN_PREFIX)
+    .replaceAll("\\<!-- /ef:node -->", CLOSER)
+    .replaceAll("\\<!-- ef:node ", OPEN_PREFIX);
 }
 
 export function renderFields(fields: FieldMap): string {
@@ -240,9 +244,10 @@ function extractHeadingAndFields(body: string, bodyStartLine: number): {
       }
     }
   }
-  const proseLines = lines.filter((_line, index) => {
+  const proseLines = lines.filter((line, index) => {
     if (index === headingIndex) return false;
     if (fence && index >= fence.open && index <= fence.close) return false;
+    if (/^<a id="[^"]*"><\/a>$/.test(line.trim())) return false;
     return true;
   });
   const prose = trimProse(proseLines.join("\n"));

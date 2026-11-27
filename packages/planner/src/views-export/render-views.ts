@@ -29,6 +29,7 @@ export interface RenderedNode {
   readonly proseSha256: string;
   readonly fieldsYaml: string;
   readonly prose: string;
+  readonly baseHash: string;
 }
 
 export interface RenderedViewFile {
@@ -170,6 +171,7 @@ interface FormattedPlacement {
   readonly fieldsSha256: string;
   readonly proseSha256: string;
   readonly contentSha256: string;
+  readonly baseHash: string;
 }
 
 function renderNode(
@@ -192,11 +194,12 @@ function renderNode(
       const anchor = anchors.get(edge.dst) ?? slugify(edge.dst);
       return `- ${edge.type} [${edge.dst}](${relativeHref(filePath, target, anchor)})`;
     });
+  const baseHash = baseHashOf(node);
   const formatted = formatter.formatBlock({
     id: node.id,
     anchor: anchors.get(node.id) ?? slugify(node.id),
     version: node.version,
-    baseHash: baseHashOf(node),
+    baseHash,
     title: node.title,
     prose: node.text,
     kind: node.kind,
@@ -209,7 +212,7 @@ function renderNode(
     extraFields: fields,
     markdownLinks,
   });
-  return { node, ...formatted };
+  return { node, ...formatted, baseHash };
 }
 
 function renderMarkdown(
@@ -246,6 +249,7 @@ function toRecord(formatted: FormattedPlacement): RenderedNode {
     proseSha256: formatted.proseSha256,
     fieldsYaml: formatted.fieldsYaml,
     prose: formatted.prose,
+    baseHash: formatted.baseHash,
   };
 }
 

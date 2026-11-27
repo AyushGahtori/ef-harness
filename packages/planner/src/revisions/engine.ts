@@ -9,6 +9,7 @@ import {
   AcceptingContradictionEngine,
   LocalPremiseSupersessionReopener,
   type FiveLayerContradictionPort,
+  type KnowledgeGraphImpactPort,
   type PremiseSupersessionPort,
   type TaskHoldsPort,
 } from "./ports.js";
@@ -19,6 +20,7 @@ import {
   isActiveWorkingState,
   isMergedDoneState,
   isRequirementKind,
+  DEFAULT_IMPACT_MAX_DEPTH,
   MICRO_USD_PER_DELTA_TASK,
   type ClassifiedChange,
   type ConflictCard,
@@ -33,6 +35,8 @@ export interface HybridRevisionEngineOptions {
   readonly contradictionEngine?: FiveLayerContradictionPort;
   readonly premiseReopener?: PremiseSupersessionPort;
   readonly holds?: TaskHoldsPort;
+  /** When set, the blast radius comes from `KnowledgeGraphRepo.impactWalk`. */
+  readonly impact?: KnowledgeGraphImpactPort;
   readonly now?: () => number;
   readonly maxDepth?: number;
   readonly microUsdPerDeltaTask?: number;
@@ -49,7 +53,9 @@ export class HybridRevisionEngine implements RevisionCommitter {
   readonly contradictionEngine: FiveLayerContradictionPort;
   readonly premiseReopener: PremiseSupersessionPort;
   readonly holds: TaskHoldsPort;
+  private readonly impact: KnowledgeGraphImpactPort | null;
   private readonly now: () => number;
+  private readonly maxDepth: number;
   private readonly microUsdPerDeltaTask: number;
 
   constructor(options: HybridRevisionEngineOptions) {
@@ -60,7 +66,9 @@ export class HybridRevisionEngine implements RevisionCommitter {
     this.contradictionEngine = options.contradictionEngine ?? new AcceptingContradictionEngine();
     this.premiseReopener = options.premiseReopener ?? new LocalPremiseSupersessionReopener();
     this.holds = options.holds ?? new GraphTaskHolds(this.graph);
+    this.impact = options.impact ?? null;
     this.now = options.now ?? (() => Date.now());
+    this.maxDepth = options.maxDepth ?? DEFAULT_IMPACT_MAX_DEPTH;
     this.microUsdPerDeltaTask = options.microUsdPerDeltaTask ?? MICRO_USD_PER_DELTA_TASK;
   }
 
@@ -90,14 +98,26 @@ export class HybridRevisionEngine implements RevisionCommitter {
     let earlyCutoffNodeIds: string[] = [];
     if (propagating.length > 0) {
       const roots = propagating.map((change) => change.edit.nodeId);
-      const walk = this.walker.walkCombined(roots);
-      const pruned = this.cutoff.prune({
-        roots,
-        walkIds: new Set(walk.nodes.map((node) => node.id)),
-        upstreamToken: canonicalFingerprint(roots.map((id) => input.edits.find((edit) => edit.nodeId === id)?.afterText ?? id)),
-      });
-      impactedNodeIds = [...pruned.impactedNodeIds].sort();
-      earlyCutoffNodeIds = [...pruned.earlyCutoffNodeIds];
+      if (this.impact) {
+        const best = new Map<string, number>();
+        for (const root of roots) {
+          for (const node of this.impact.impactWalk(root, this.maxDepth)) {
+            const previous = best.get(node.id);
+            if (previous === undefined || node.depth < previous) best.set(node.id, node.depth);
+          }
+        }
+        impactedNodeIds = [...best.keys()].sort();
+        earlyCutoffNodeIds = [];
+      } else {
+        const walk = this.walker.walkCombined(roots);
+        const pruned = this.cutoff.prune({
+          roots,
+          walkIds: new Set(walk.nodes.map((node) => node.id)),
+          upstreamToken: canonicalFingerprint(roots.map((id) => input.edits.find((edit) => edit.nodeId === id)?.afterText ?? id)),
+        });
+        impactedNodeIds = [...pruned.impactedNodeIds].sort();
+        earlyCutoffNodeIds = [...pruned.earlyCutoffNodeIds];
+      }
     }
 
     const blast = describeBlast(this.graph, impactedNodeIds);
@@ -127,7 +147,7 @@ export class HybridRevisionEngine implements RevisionCommitter {
         for (const task of blast.activeTasks) {
           this.holds.placeHold({
             taskId: task.id,
-            reason: "revision_in_flight",
+            reason: "requirement_change",
             source: revisionId,
             createdAt,
           });
@@ -213,7 +233,7 @@ class GraphTaskHolds implements TaskHoldsPort {
 
   placeHold(input: {
     readonly taskId: string;
-    readonly reason: "revision_in_flight";
+    readonly reason: "requirement_change";
     readonly source: string;
     readonly createdAt: number;
   }): void {

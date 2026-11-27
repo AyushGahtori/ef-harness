@@ -1,13 +1,13 @@
 import type { ContradictionFinding, RevisionEdit } from "./types.js";
 
 /**
- * Local stand-in for Task 021 `TaskHoldAndSubmissionRepo.placeHold`.
- * `revision_in_flight` is not in that task's `HOLD_REASONS` yet.
+ * Port of Task 021 `TaskHoldAndSubmissionRepo.placeHold`.
+ * Revision batches use the schema reason `requirement_change`.
  */
 export interface TaskHoldsPort {
   placeHold(input: {
     readonly taskId: string;
-    readonly reason: "revision_in_flight";
+    readonly reason: "requirement_change";
     readonly source: string;
     readonly createdAt: number;
   }): void;
