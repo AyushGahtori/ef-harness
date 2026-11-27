@@ -20,6 +20,7 @@
   "dependencies": {
     "@ef-harness/completeness-gate": "workspace:*",
     "@ef-harness/db": "workspace:*",
+    "@ef-harness/discovery": "workspace:*",
     "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "@ef-harness/verifier": "workspace:*",

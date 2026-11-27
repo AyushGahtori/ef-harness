@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { HiddenCheckResult } from "./types.ts";
+import type { HiddenCheckResult } from "./types.js";
 
 export interface ForensicsInput {
   checks: HiddenCheckResult[];

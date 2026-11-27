@@ -1,15 +1,20 @@
-import { runCertifiedReplay, runLiveCertification } from "./runner.ts";
-import { renderReport } from "./report.ts";
+import { releaseSpecExpansionZ3 } from "@ef-harness/spec-expansion";
+import { runCertifiedReplay, runLiveCertification } from "./runner.js";
+import { renderReport } from "./report.js";
 
 async function main(): Promise<number> {
-  if (process.argv.includes("--live")) {
-    const live = await runLiveCertification();
-    process.stdout.write(`${JSON.stringify(live)}\n`);
-    return live.claimedCertification ? 0 : 2;
+  try {
+    if (process.argv.includes("--live")) {
+      const live = await runLiveCertification();
+      process.stdout.write(`${JSON.stringify(live)}\n`);
+      return live.claimedCertification ? 0 : 2;
+    }
+    const report = await runCertifiedReplay();
+    process.stdout.write(`${renderReport(report)}\n`);
+    return report.gate.exitCode;
+  } finally {
+    await releaseSpecExpansionZ3();
   }
-  const report = await runCertifiedReplay();
-  process.stdout.write(`${renderReport(report)}\n`);
-  return report.gate.exitCode;
 }
 
 main().then((code) => {

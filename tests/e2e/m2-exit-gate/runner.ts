@@ -4,13 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripCutoffGuard, stripExactTotals } from "./defects.ts";
-import { FORENSICS_DIR, writeFailureForensics } from "./forensics.ts";
-import { runHiddenSuite } from "./hidden-suite.ts";
-import { bootKitchen, isAlive, stopChild } from "./kitchen-process.ts";
-import { leasePort } from "./lease.ts";
-import { MailpitProvider } from "./mailpit.ts";
-import { executePipeline, OPENING_PREFIX, traceDigest } from "./pipeline.ts";
+import { stripCutoffGuard, stripExactTotals } from "./defects.js";
+import { FORENSICS_DIR, writeFailureForensics } from "./forensics.js";
+import { runHiddenSuite } from "./hidden-suite.js";
+import { bootKitchen, isAlive, stopChild } from "./kitchen-process.js";
+import { leasePort } from "./lease.js";
+import { MailpitProvider } from "./mailpit.js";
+import { executePipeline, OPENING_PREFIX, traceDigest } from "./pipeline.js";
 import {
   evaluateExitGate,
   paperworkPct,
@@ -20,13 +20,20 @@ import {
   signingView,
   totalTokens,
   validateBaselineMetrics,
-} from "./report.ts";
-import type { HiddenCheckResult, LiveCertification, M2ExitGateReport, SuiteOutcome } from "./types.ts";
+} from "./report.js";
+import type { HiddenCheckResult, LiveCertification, M2ExitGateReport, SuiteOutcome } from "./types.js";
 
 export { OPENING_PREFIX, traceDigest };
 export { FORENSICS_DIR, evaluateExitGate, paperworkPct, renderReport };
 
 function repoRoot(): string {
+  let cursor = path.dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (fs.existsSync(path.join(cursor, "pnpm-workspace.yaml"))) return cursor;
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 }
 
@@ -51,16 +58,8 @@ async function removeDir(dir: string): Promise<void> {
   }
 }
 
-function copyProduction(root: string, dir: string): void {
-  const from = path.join(root, "benchmarks", "m2-kitchen-e2e", "fixture");
-  fs.mkdirSync(dir, { recursive: true });
-  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-    if (entry.name === "dev-only") continue;
-    const src = path.join(from, entry.name);
-    const dest = path.join(dir, entry.name);
-    if (entry.isDirectory()) fs.cpSync(src, dest, { recursive: true });
-    else fs.copyFileSync(src, dest);
-  }
+async function buildKitchenApp(root: string, dir: string): Promise<void> {
+  await executePipeline(root, dir);
 }
 
 async function bootCopy(dir: string, serverSource: string, defect: string | undefined, timeoutMs: number, only?: string[]): Promise<SuiteOutcome> {
@@ -111,7 +110,7 @@ export async function runCertifiedReplay(root = repoRoot()): Promise<M2ExitGateR
   let kitchenPid = 0;
   let stopKitchen: (() => Promise<void>) | null = null;
   try {
-    const trace = executePipeline(root, projectDir);
+    const trace = await executePipeline(root, projectDir);
     const appPort = await leasePort();
     const mailPort = await leasePort([appPort]);
     mailpit = new MailpitProvider(mailPort);
@@ -205,7 +204,7 @@ export async function runDefectCutoff(): Promise<HiddenCheckResult[]> {
   const root = repoRoot();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2-cutoff-"));
   try {
-    copyProduction(root, dir);
+    await buildKitchenApp(root, dir);
     const source = fs.readFileSync(path.join(dir, "server.mjs"), "utf8");
     const outcome = await bootCopy(dir, stripCutoffGuard(source), undefined, 4000, ["H-M2-05", "H-M2-29"]);
     return outcome.checks;
@@ -218,7 +217,7 @@ export async function runEmailMismatch(): Promise<{ hiddenPass: boolean; oracleP
   const root = repoRoot();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2-email-"));
   try {
-    copyProduction(root, dir);
+    await buildKitchenApp(root, dir);
     const source = fs.readFileSync(path.join(dir, "server.mjs"), "utf8");
     const outcome = await bootCopy(dir, stripExactTotals(source), undefined, 4000, ["H-M2-17"]);
     const hidden = outcome.checks.find((check) => check.id === "H-M2-17");
@@ -233,7 +232,7 @@ export async function runForensicsDrill(dir: string): Promise<{ passRate: number
   const root = repoRoot();
   const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "m2-forensics-"));
   try {
-    copyProduction(root, appDir);
+    await buildKitchenApp(root, appDir);
     const dbPath = path.join(appDir, "kitchen.db");
     const appPort = await leasePort();
     const mailPort = await leasePort([appPort]);

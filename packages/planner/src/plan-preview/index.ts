@@ -21,22 +21,37 @@ export {
 export { PlanPreviewError } from "./errors.js";
 export { FirstBuildApprovalGate } from "./first-build-approval-gate.js";
 export type { FirstBuildDecision, FirstBuildInput } from "./first-build-approval-gate.js";
-export {
-  InteractivePlanEditor,
-} from "./interactive-plan-editor.js";
+export { InteractivePlanEditor } from "./interactive-plan-editor.js";
 export type { DelegatedOverrideResult, DelegatedOverrideRoute, EditOutcome } from "./interactive-plan-editor.js";
 export {
   LocalCrewPresetProfileEngine,
   LocalHeftCriticalPathScheduler,
   LocalPaperworkEnvelopeAllocator,
   LocalRevisionImpactPreviewer,
+  bindBoundedDeferralPolicy,
+  bindChosenForYouLedger,
+  bindCrewPresetProfileEngine,
+  bindExpectedCostLevelSelector,
+  bindHeftCriticalPathScheduler,
+  bindHonestReadinessCalculator,
+  bindMasterPlanOrchestrator,
+  bindPaperworkBudgetAllocator,
+  bindReadinessCalculator,
+  bindRevisionImpactPreviewer,
+  createPlanPreviewSources,
   defaultPlanPreviewSources,
+  planRequestFromMasterPlan,
 } from "./local-ports.js";
 export type {
   BoundedDeferralPort,
   ChosenForYouLedgerPort,
+  CreatePlanPreviewSourcesOptions,
+  CrewLevelAssignmentView,
+  CrewPresetBindingOptions,
   CrewPresetProfileEnginePort,
   HeftCriticalPathSchedulerPort,
+  MasterPlanPreviewOptions,
+  MasterPlanPreviewPort,
   PaperworkBudgetPort,
   PlanPreviewSources,
   ReadinessCalculatorPort,
@@ -57,7 +72,18 @@ export {
 export { allocatePaperwork } from "./paperwork.js";
 export { PlanPreviewBuilder } from "./plan-preview-builder.js";
 export { PlanSnapshotDiffer, reverifiedLabel, taskDeltaLabel } from "./plan-snapshot-diff.js";
-export { OWNER_AUTO_START_DEFAULTS, RevisionAutoStartPolicy } from "./revision-auto-start-policy.js";
+export {
+  AUTO_START_HISTORY_SETTING_KEY,
+  AUTO_START_SETTINGS_SETTING_KEY,
+  OWNER_AUTO_START_DEFAULTS,
+  RevisionAutoStartPolicy,
+  bindGlobalBrokerAutoStartStore,
+} from "./revision-auto-start-policy.js";
+export type {
+  AutoStartHistoryStorePort,
+  GlobalBrokerAutoStartStoreOptions,
+  RevisionAutoStartPolicyOptions,
+} from "./revision-auto-start-policy.js";
 export {
   assignLevel,
   computeHeft,
@@ -70,7 +96,17 @@ export {
   rankOf,
   workerCap,
 } from "./schedule.js";
-export { createPlanRequest } from "./types.js";
+export {
+  CREW_PRESETS,
+  WORKER_TIERS,
+  coercePlanPreviewLevel,
+  coercePlanPreviewPreset,
+  createPlanRequest,
+  isCrewPreset,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+} from "./types.js";
 export type {
   ActiveSlotSample,
   AutoStartDecision,
@@ -84,7 +120,9 @@ export type {
   ChosenForYouView,
   ConnectionKind,
   CrewLevel,
+  CrewLevelInput,
   CrewPreset,
+  CrewPresetInput,
   DecisionBasis,
   DeferredItem,
   DestructiveMigrationKind,
@@ -92,6 +130,7 @@ export type {
   ExternalEffect,
   GraceAction,
   GraceStatus,
+  GuardStatus,
   HardStopTrigger,
   HeftSchedule,
   ImpactLevel,
@@ -116,4 +155,5 @@ export type {
   RevisionCandidate,
   RevisionRoute,
   SpendGuard,
+  WorkerTier,
 } from "./types.js";

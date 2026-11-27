@@ -31,6 +31,8 @@ export interface FeatureArchitecturePersistResult {
   readonly nameCount: number;
   readonly blocked: readonly LockDecision[];
   readonly drafted: SynthesisResult;
+  /** Present when a name or node-id collision kept an accepted draft out of `state.db`. */
+  readonly conflict?: string;
 }
 
 /**
@@ -51,16 +53,27 @@ export class FeatureArchitectureSynthesizer {
       return { persisted: false, nameCount: countNames(this.stateDb), blocked, drafted };
     }
     const repo = bindKnowledgeGraph(this.stateDb);
-    const nodes = drafted.nodes.map((node) => ({
-      op: "create" as const,
-      id: node.id,
-      kind: node.kind,
-      title: node.title,
-      text: node.text,
-      status: "active" as const,
-      fields: persistedFields(node.fields),
-    }));
-    const ids = new Set(nodes.map((node) => node.id));
+    // Architecture synthesis is additive: requirements, spec items and edge cases may already
+    // exist from discovery, spec expansion or an earlier wave, and must not be re-created.
+    const existing = new Set<string>();
+    const existingRows = this.stateDb.writer.prepare("SELECT id FROM nodes").all() as ReadonlyArray<{
+      id?: unknown;
+    }>;
+    for (const row of existingRows) {
+      if (typeof row.id === "string") existing.add(row.id);
+    }
+    const nodes = drafted.nodes
+      .filter((node) => !existing.has(node.id))
+      .map((node) => ({
+        op: "create" as const,
+        id: node.id,
+        kind: node.kind,
+        title: node.title,
+        text: node.text,
+        status: "active" as const,
+        fields: persistedFields(node.fields),
+      }));
+    const ids = new Set<string>([...nodes.map((node) => node.id), ...existing]);
     const edges = drafted.edges.filter((edge) => keepEdge(edge, ids));
     try {
       repo.commitChangeSet({
@@ -72,7 +85,13 @@ export class FeatureArchitectureSynthesizer {
       });
     } catch (error) {
       if (error instanceof DuplicateLogicalNameError || error instanceof DuplicateNodeIdError) {
-        return { persisted: false, nameCount: countNames(this.stateDb), blocked, drafted };
+        return {
+          persisted: false,
+          nameCount: countNames(this.stateDb),
+          blocked,
+          drafted,
+          conflict: error.message,
+        };
       }
       throw error;
     }

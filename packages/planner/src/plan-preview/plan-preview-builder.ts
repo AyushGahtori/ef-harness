@@ -1,28 +1,44 @@
+import type { MasterPlan } from "../master-plan/index.js";
 import { PHASE0_STEPS } from "./constants.js";
 import { PlanPreviewError } from "./errors.js";
-import { defaultPlanPreviewSources, type PlanPreviewSources } from "./local-ports.js";
+import {
+  defaultPlanPreviewSources,
+  planRequestFromMasterPlan,
+  type CrewLevelAssignmentView,
+  type MasterPlanPreviewOptions,
+  type PlanPreviewSources,
+} from "./local-ports.js";
 import {
   honestPointLabel,
   honestRangeLabel,
   honestShortLabel,
   shortRangeLabel,
 } from "./money.js";
-import { costMicroForLevel, costPpmForLevel, durationForLevel, plannedWallClockLabel, projectedWallClockLabel, rankOf } from "./schedule.js";
-import type {
-  ChosenForYouEntry,
-  ChosenForYouPreviewEntry,
-  ConnectionKind,
-  CrewLevel,
-  DeferredItem,
-  Phase0Step,
-  PlanPreview,
-  PlanPreviewRequest,
-  PlannedTaskInput,
-  PlannedTaskView,
-  ProjectedFeatureInput,
-  ProjectedFeatureView,
-  ReadinessView,
-  RevisionRoute,
+import {
+  costMicroForLevel,
+  costPpmForLevel,
+  durationForLevel,
+  plannedWallClockLabel,
+  projectedWallClockLabel,
+  rankOf,
+} from "./schedule.js";
+import {
+  coercePlanPreviewLevel,
+  coercePlanPreviewPreset,
+  type ChosenForYouEntry,
+  type ChosenForYouPreviewEntry,
+  type ConnectionKind,
+  type CrewLevel,
+  type DeferredItem,
+  type Phase0Step,
+  type PlanPreview,
+  type PlanPreviewRequest,
+  type PlannedTaskInput,
+  type PlannedTaskView,
+  type ProjectedFeatureInput,
+  type ProjectedFeatureView,
+  type ReadinessView,
+  type RevisionRoute,
 } from "./types.js";
 
 function route(label: "Change" | "Override", entry: ChosenForYouEntry): RevisionRoute {
@@ -77,15 +93,23 @@ function validateProjected(feature: ProjectedFeatureInput): void {
 export class PlanPreviewBuilder {
   constructor(private readonly sources: PlanPreviewSources = defaultPlanPreviewSources()) {}
 
+  buildFromMasterPlan(plan: MasterPlan, options: MasterPlanPreviewOptions = {}): PlanPreview {
+    return this.build(planRequestFromMasterPlan(plan, options));
+  }
+
   build(request: PlanPreviewRequest): PlanPreview {
+    const preset = coercePlanPreviewPreset(request.preset);
     const tasks = this.compileTasks(request);
-    const levels = new Map(this.sources.presets.apply(request.preset, tasks).map((row) => [row.id, row.crewLevel]));
-    const views = tasks.map((task) => this.toPlannedTask(request, task, levels));
+    const assignments = new Map<string, CrewLevelAssignmentView>(
+      this.sources.presets.apply(preset, tasks).map((row) => [row.id, row]),
+    );
+    const views = tasks.map((task) => this.toPlannedTask(request, task, assignments));
     const resolved = tasks.map((task) => {
-      const override = request.levelOverrides[task.id];
-      const presetLevel = levels.get(task.id);
-      if (!presetLevel) throw new PlanPreviewError("unknown_task", `Missing crew level for ${task.id}`);
-      return { task, level: override ?? presetLevel };
+      const rawOverride = request.levelOverrides[task.id];
+      const override = rawOverride === undefined ? undefined : coercePlanPreviewLevel(rawOverride);
+      const presetAssignment = assignments.get(task.id);
+      if (!presetAssignment) throw new PlanPreviewError("unknown_task", `Missing crew level for ${task.id}`);
+      return { task, level: override ?? coercePlanPreviewLevel(presetAssignment.crewLevel) };
     });
     const schedule = this.sources.scheduler.schedule({
       tasks: resolved.map(({ task, level }) => ({
@@ -93,7 +117,7 @@ export class PlanPreviewBuilder {
         durationMinutes: durationForLevel(task.durationMinutes, level),
         dependsOn: task.dependsOn,
       })),
-      preset: request.preset,
+      preset,
       widthCap: request.widthCap,
     });
     const plannedMicro = resolved.reduce(
@@ -118,7 +142,7 @@ export class PlanPreviewBuilder {
     const budgetUnits = request.connection === "api" ? request.totalBudgetMicroUsd : BigInt(request.totalBudgetPpm);
     const paperwork = this.sources.paperwork.allocate(budgetUnits, request.connection);
     const guard = guardStatus(request, plannedMicro, plannedPpm, projectedMicro.high, projectedPpm.high);
-    const       projectedCostLabel =
+    const projectedCostLabel =
       waves.length === 0
         ? null
         : honestRangeLabel(request.connection, projectedMicro.low, projectedMicro.high, projectedPpm.low, projectedPpm.high);
@@ -128,7 +152,7 @@ export class PlanPreviewBuilder {
       workItemId: request.workItemId,
       revision: request.revision,
       connection: request.connection,
-      preset: request.preset,
+      preset,
       llmCalls: 0,
       startBuild: { label: "Start build", requiresExplicitClick: true, autoStart: false },
       costLabel: honestPointLabel(request.connection, plannedMicro, plannedPpm),
@@ -169,6 +193,7 @@ export class PlanPreviewBuilder {
 
   private compileTasks(request: PlanPreviewRequest): PlannedTaskInput[] {
     const seen = new Set<string>();
+    const normalized: PlannedTaskInput[] = [];
     for (const task of request.tasks) {
       if (seen.has(task.id)) throw new PlanPreviewError("duplicate_task", `Duplicate task ${task.id}`);
       seen.add(task.id);
@@ -182,28 +207,37 @@ export class PlanPreviewBuilder {
       } else if (task.phase0Step) {
         throw new PlanPreviewError("invalid_wave", `${task.id} is Wave 1 and cannot carry a Phase 0 step`);
       }
+      normalized.push({
+        ...task,
+        balancedLevel: coercePlanPreviewLevel(task.balancedLevel),
+        safetyFloor: coercePlanPreviewLevel(task.safetyFloor),
+      });
     }
     for (const feature of request.projected) validateProjected(feature);
-    return [...request.tasks];
+    return normalized;
   }
 
   private toPlannedTask(
     request: PlanPreviewRequest,
     task: PlannedTaskInput,
-    levels: ReadonlyMap<string, CrewLevel>,
+    assignments: ReadonlyMap<string, CrewLevelAssignmentView>,
   ): PlannedTaskView {
-    const presetLevel = levels.get(task.id);
-    if (!presetLevel) throw new PlanPreviewError("unknown_task", `Missing crew level for ${task.id}`);
-    const override = request.levelOverrides[task.id];
+    const presetAssignment = assignments.get(task.id);
+    if (!presetAssignment) throw new PlanPreviewError("unknown_task", `Missing crew level for ${task.id}`);
+    const presetLevel = coercePlanPreviewLevel(presetAssignment.crewLevel);
+    const rawOverride = request.levelOverrides[task.id];
+    const override = rawOverride === undefined ? undefined : coercePlanPreviewLevel(rawOverride);
     const crewLevel = override ?? presetLevel;
-    if (rankOf(crewLevel) < rankOf(task.safetyFloor)) {
+    const safetyFloor = coercePlanPreviewLevel(task.safetyFloor);
+    if (rankOf(crewLevel) < rankOf(safetyFloor)) {
       throw new PlanPreviewError(
         "safety_floor",
-        `Rejected: ${task.safetyFloor} safety floor (Task 106) — cannot assign ${crewLevel} to ${task.title}`,
+        `Rejected: ${safetyFloor} safety floor (Task 106) — cannot assign ${crewLevel} to ${task.title}`,
       );
     }
     const micro = costMicroForLevel(task.juniorCostMicroUsd, crewLevel);
     const ppm = costPpmForLevel(task.juniorCostPpm, crewLevel);
+    const modelId = override === undefined ? presetAssignment.modelId : undefined;
     return {
       id: task.id,
       title: task.title,
@@ -213,9 +247,10 @@ export class PlanPreviewBuilder {
       phase0Step: task.phase === "phase0" ? (task.phase0Step ?? null) : null,
       wave: task.phase === "phase0" ? 0 : 1,
       crewLevel,
+      ...(modelId === undefined ? {} : { modelId }),
       writeScope: [...task.writeScope],
       criticalPath: task.criticalPath,
-      safetyFloor: task.safetyFloor,
+      safetyFloor,
       durationMinutes: durationForLevel(task.durationMinutes, crewLevel),
       precision: "exact",
       pendingRevision: request.pendingRevisionTaskIds.includes(task.id),
@@ -325,7 +360,7 @@ export class PlanPreviewBuilder {
 }
 
 function countLevels(tasks: readonly PlannedTaskView[]): Record<CrewLevel, number> {
-  const counts: Record<CrewLevel, number> = { Junior: 0, Mid: 0, Senior: 0 };
+  const counts: Record<CrewLevel, number> = { Junior: 0, Mid: 0, Senior: 0, Principal: 0 };
   for (const task of tasks) counts[task.crewLevel] += 1;
   return counts;
 }

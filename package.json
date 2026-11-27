@@ -21,7 +21,9 @@
     "worktree:commit": "node scripts/agent-worktree.mjs commit",
     "sim:replay": "node --import tsx packages/sim/src/m0/replay-cli.ts",
     "test:m0-exit": "node --import tsx packages/sim/src/m0/certify-cli.ts",
-    "dev:m1": "node apps/daemon/src/bootstrap/dev-m1.mjs"
+    "dev:m1": "node apps/daemon/src/bootstrap/dev-m1.mjs",
+    "test:m2-exit-gate:replay": "pnpm --filter @ef-harness/e2e exec node --import tsx m2-exit-gate/run-m2-suite.ts",
+    "test:m2-exit-gate:live": "pnpm --filter @ef-harness/e2e exec node --import tsx m2-exit-gate/run-m2-suite.ts --live"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^2.8.0",

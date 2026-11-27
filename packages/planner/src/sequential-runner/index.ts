@@ -27,6 +27,7 @@ export {
 } from "./types.js";
 export type {
   AttemptReceipt,
+  AuditResult,
   BriefManifest,
   CleanVerifierHarnessPort,
   CompiledFeatureSpec,

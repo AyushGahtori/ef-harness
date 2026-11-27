@@ -9,6 +9,7 @@ export function packageIdentity(): {
 }
 
 export {
+  BrokerResearchCache,
   DAY_MS,
   FeatureResearchOrchestrator,
   INSTALLED_TYPES_COMPILER,
@@ -16,6 +17,7 @@ export {
   LOCAL_RESEARCHER_DOC_HOSTS,
   MemoryGlobalResearchCache,
   MemoryKnowledgeGraph,
+  ProjectStateKnowledgeGraph,
   QUOTE_MIN_ALIGNMENT_PERCENT,
   QUOTE_MIN_CHARS,
   RESEARCHER_ROLE,
@@ -26,7 +28,10 @@ export {
   ResearchFactCache,
   RiskTriggeredTopicGenerator,
   TokenBasedQuoteMatcher,
+  adaptSecureDocFetcher,
   canonicalTopicHash,
+  casFactBodies,
+  fetchCleanDoc,
   hostAllowed,
   majorMinor,
   parseFeatureResearcherV1,
@@ -47,6 +52,7 @@ export type {
   CachedResearchRecord,
   DocFetchOutcome,
   DocFetchResult,
+  FactBodyStore,
   FeatureResearcherBlocked,
   FeatureResearcherModel,
   FeatureResearcherOutput,
@@ -73,6 +79,7 @@ export type {
   ResearchClaim,
   ResearchDiagnostic,
   ResearchFact,
+  ResearchFactCacheOptions,
   ResearchNote,
   ResearchRunRequest,
   ResearchRunResult,

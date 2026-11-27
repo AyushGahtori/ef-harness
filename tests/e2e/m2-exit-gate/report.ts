@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import type { BaselineMetrics, GateDecision, M2ExitGateReport, TokenSplit } from "./types.ts";
+import type { BaselineMetrics, GateDecision, M2ExitGateReport, TokenSplit } from "./types.js";
 
 export const M2_EXIT_GATE_REPORT_SCHEMA = "m2-exit-gate-report@1" as const;
 

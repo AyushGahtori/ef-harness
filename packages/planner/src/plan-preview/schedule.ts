@@ -1,51 +1,72 @@
 import { LEVEL_COST_PERCENT, PRESET_PEAK_WORKERS } from "./constants.js";
 import { PlanPreviewError } from "./errors.js";
-import type {
-  ActiveSlotSample,
-  CrewLevel,
-  CrewPreset,
-  HeftSchedule,
-  PlannedTaskInput,
+import {
+  coercePlanPreviewLevel,
+  coercePlanPreviewPreset,
+  type ActiveSlotSample,
+  type CrewLevel,
+  type CrewLevelInput,
+  type CrewPreset,
+  type CrewPresetInput,
+  type HeftSchedule,
+  type PlannedTaskInput,
 } from "./types.js";
 
-export function rankOf(level: CrewLevel): number {
-  if (level === "Junior") return 0;
-  if (level === "Mid") return 1;
-  return 2;
+export function rankOf(level: CrewLevel | CrewLevelInput | string): number {
+  const canonical = coercePlanPreviewLevel(level);
+  if (canonical === "Junior") return 0;
+  if (canonical === "Mid") return 1;
+  if (canonical === "Senior") return 2;
+  return 3;
 }
 
 export function levelFromRank(rank: number): CrewLevel {
   if (rank <= 0) return "Junior";
   if (rank === 1) return "Mid";
-  return "Senior";
+  if (rank === 2) return "Senior";
+  return "Principal";
 }
 
-export function assignLevel(task: PlannedTaskInput, preset: CrewPreset): CrewLevel {
-  const floor = rankOf(task.safetyFloor);
+export function assignLevel(
+  task: PlannedTaskInput,
+  preset: CrewPreset | CrewPresetInput | string,
+): CrewLevel {
+  const canonicalPreset = coercePlanPreviewPreset(preset);
+  const floorLevel = coercePlanPreviewLevel(task.safetyFloor);
+  const floor = rankOf(floorLevel);
   const balanced = Math.max(rankOf(task.balancedLevel), floor);
-  if (preset === "Cheapest") return task.safetyFloor;
-  if (preset === "Balanced") return levelFromRank(balanced);
-  const raised = task.criticalPath ? Math.min(2, balanced + 1) : balanced;
+  if (canonicalPreset === "Cheapest") return floorLevel;
+  if (canonicalPreset === "Balanced") return levelFromRank(balanced);
+  const raised = task.criticalPath ? Math.min(3, balanced + 1) : balanced;
   return levelFromRank(Math.max(raised, floor));
 }
 
-export function durationForLevel(midMinutes: number, level: CrewLevel): number {
+export function durationForLevel(midMinutes: number, level: CrewLevel | CrewLevelInput | string): number {
+  const canonical = coercePlanPreviewLevel(level);
   const mid = Math.max(1, Math.round(midMinutes));
-  if (level === "Junior") return Math.max(1, Math.round((mid * 3) / 2));
-  if (level === "Senior") return Math.max(1, Math.round((mid * 7) / 10));
+  if (canonical === "Junior") return Math.max(1, Math.round((mid * 3) / 2));
+  if (canonical === "Senior") return Math.max(1, Math.round((mid * 7) / 10));
+  if (canonical === "Principal") return Math.max(1, Math.round((mid * 5) / 10));
   return mid;
 }
 
-export function costMicroForLevel(juniorMicroUsd: bigint, level: CrewLevel): bigint {
-  return (juniorMicroUsd * BigInt(LEVEL_COST_PERCENT[level])) / 100n;
+export function costMicroForLevel(juniorMicroUsd: bigint, level: CrewLevel | CrewLevelInput | string): bigint {
+  const canonical = coercePlanPreviewLevel(level);
+  return (juniorMicroUsd * BigInt(LEVEL_COST_PERCENT[canonical])) / 100n;
 }
 
-export function costPpmForLevel(juniorPpm: number, level: CrewLevel): number {
-  return Math.round((juniorPpm * LEVEL_COST_PERCENT[level]) / 100);
+export function costPpmForLevel(juniorPpm: number, level: CrewLevel | CrewLevelInput | string): number {
+  const canonical = coercePlanPreviewLevel(level);
+  return Math.round((juniorPpm * LEVEL_COST_PERCENT[canonical]) / 100);
 }
 
-export function workerCap(preset: CrewPreset, widthCap: number | null, taskCount: number): number {
-  const presetCap = PRESET_PEAK_WORKERS[preset];
+export function workerCap(
+  preset: CrewPreset | CrewPresetInput | string,
+  widthCap: number | null,
+  taskCount: number,
+): number {
+  const canonical = coercePlanPreviewPreset(preset);
+  const presetCap = PRESET_PEAK_WORKERS[canonical];
   const capped = widthCap === null ? presetCap : Math.min(presetCap, Math.max(1, widthCap));
   if (taskCount <= 0) return capped;
   return Math.max(1, Math.min(capped, taskCount));

@@ -256,6 +256,7 @@ export interface CompiledLeafSpec {
   dependsOn?: readonly string[];
   snapshotId: string;
   level?: string;
+  implementsRequirements?: readonly string[];
 }
 
 export interface CompiledFeatureSpec {

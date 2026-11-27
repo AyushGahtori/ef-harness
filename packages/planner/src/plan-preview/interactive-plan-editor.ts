@@ -1,16 +1,20 @@
 import { defaultPlanPreviewSources, type PlanPreviewSources } from "./local-ports.js";
 import { PlanPreviewBuilder } from "./plan-preview-builder.js";
 import { costMicroForLevel, rankOf } from "./schedule.js";
-import type {
-  BudgetCap,
-  ChosenForYouEntry,
-  CrewLevel,
-  CrewPreset,
-  PlanPreview,
-  PlanPreviewRequest,
-  PlannedTaskInput,
-  ProjectedFeatureInput,
-  SpendGuard,
+import {
+  coercePlanPreviewLevel,
+  coercePlanPreviewPreset,
+  type BudgetCap,
+  type ChosenForYouEntry,
+  type CrewLevel,
+  type CrewLevelInput,
+  type CrewPreset,
+  type CrewPresetInput,
+  type PlanPreview,
+  type PlanPreviewRequest,
+  type PlannedTaskInput,
+  type ProjectedFeatureInput,
+  type SpendGuard,
 } from "./types.js";
 
 export interface EditOutcome {
@@ -54,39 +58,42 @@ export class InteractivePlanEditor {
     return this.builder.build(this.request);
   }
 
-  switchPreset(preset: CrewPreset): EditOutcome {
+  switchPreset(preset: CrewPreset | CrewPresetInput | string): EditOutcome {
     const started = performance.now();
-    this.request = { ...this.request, preset };
-    return this.finish(true, `Switched to ${preset}`, started);
+    const canonical = coercePlanPreviewPreset(preset);
+    this.request = { ...this.request, preset: canonical };
+    return this.finish(true, `Switched to ${canonical}`, started);
   }
 
-  overrideTaskTier(taskId: string, level: CrewLevel): EditOutcome {
+  overrideTaskTier(taskId: string, level: CrewLevel | CrewLevelInput | string): EditOutcome {
     const started = performance.now();
+    const canonicalLevel = coercePlanPreviewLevel(level);
     const task = this.request.tasks.find((item) => item.id === taskId);
     if (!task) return this.finish(false, `Unknown task ${taskId}`, started);
-    const blocked = floorMessage(task, level);
+    const blocked = floorMessage(task, canonicalLevel);
     if (blocked) return this.finish(false, blocked, started);
     this.request = {
       ...this.request,
-      levelOverrides: { ...this.request.levelOverrides, [taskId]: level },
+      levelOverrides: { ...this.request.levelOverrides, [taskId]: canonicalLevel },
     };
-    return this.finish(true, `Assigned ${level} to ${task.title}`, started);
+    return this.finish(true, `Assigned ${canonicalLevel} to ${task.title}`, started);
   }
 
-  overrideFeatureTier(featureId: string, level: CrewLevel): EditOutcome {
+  overrideFeatureTier(featureId: string, level: CrewLevel | CrewLevelInput | string): EditOutcome {
     const started = performance.now();
+    const canonicalLevel = coercePlanPreviewLevel(level);
     const tasks = this.request.tasks.filter((task) => task.featureId === featureId);
     if (tasks.length === 0) {
       return this.finish(false, `Feature ${featureId} has no compiled tasks to retier`, started);
     }
     for (const task of tasks) {
-      const blocked = floorMessage(task, level);
+      const blocked = floorMessage(task, canonicalLevel);
       if (blocked) return this.finish(false, blocked, started);
     }
     const levelOverrides = { ...this.request.levelOverrides };
-    for (const task of tasks) levelOverrides[task.id] = level;
+    for (const task of tasks) levelOverrides[task.id] = canonicalLevel;
     this.request = { ...this.request, levelOverrides };
-    return this.finish(true, `Assigned ${level} to ${featureId}`, started);
+    return this.finish(true, `Assigned ${canonicalLevel} to ${featureId}`, started);
   }
 
   reorderOptionalWave(featureId: string, priority: number): EditOutcome {
@@ -286,8 +293,8 @@ function cloneTask(task: PlannedTaskInput): PlannedTaskInput {
     featureTitle: task.featureTitle,
     phase: task.phase,
     writeScope: [...task.writeScope],
-    balancedLevel: task.balancedLevel,
-    safetyFloor: task.safetyFloor,
+    balancedLevel: coercePlanPreviewLevel(task.balancedLevel),
+    safetyFloor: coercePlanPreviewLevel(task.safetyFloor),
     criticalPath: task.criticalPath,
     juniorCostMicroUsd: task.juniorCostMicroUsd,
     juniorCostPpm: task.juniorCostPpm,
@@ -299,8 +306,13 @@ function cloneTask(task: PlannedTaskInput): PlannedTaskInput {
 }
 
 function cloneRequest(request: PlanPreviewRequest): PlanPreviewRequest {
+  const levelOverrides: Record<string, CrewLevel> = {};
+  for (const [taskId, level] of Object.entries(request.levelOverrides)) {
+    levelOverrides[taskId] = coercePlanPreviewLevel(level);
+  }
   return {
     ...request,
+    preset: coercePlanPreviewPreset(request.preset),
     tasks: request.tasks.map(cloneTask),
     projected: request.projected.map((feature) => ({
       ...feature,
@@ -316,7 +328,7 @@ function cloneRequest(request: PlanPreviewRequest): PlanPreviewRequest {
         : { ...entry },
     ),
     deferred: request.deferred.map((item) => ({ ...item })),
-    levelOverrides: { ...request.levelOverrides },
+    levelOverrides,
     deferredFeatureIds: [...request.deferredFeatureIds],
     priorityOverrides: { ...request.priorityOverrides },
     hiddenCriterionIds: [...request.hiddenCriterionIds],

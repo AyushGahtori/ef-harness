@@ -1,9 +1,11 @@
 import {
   DeterministicGraphCompiler,
+  firstPatternIntersection,
   normalizeWritePattern,
   patternsOverlap,
   type CompilationDiagnostic,
   type CompilationInput,
+  type NormalizedPattern,
   type PlanTask,
 } from "../graph-compiler/index.js";
 import type { ScheduleGraph } from "./types.js";
@@ -72,8 +74,19 @@ function pairCompilationInput(
   };
 }
 
+const normalizedCache = new Map<string, NormalizedPattern>();
+
+function cachedNormalize(pattern: string): NormalizedPattern {
+  let cached = normalizedCache.get(pattern);
+  if (cached === undefined) {
+    cached = normalizeWritePattern(pattern, "windows");
+    if (normalizedCache.size < 4096) normalizedCache.set(pattern, cached);
+  }
+  return cached;
+}
+
 export function normalizePattern(pattern: string): readonly string[] {
-  return normalizeWritePattern(pattern, "windows").segments;
+  return cachedNormalize(pattern).segments;
 }
 
 export function writeScopesOverlap(
@@ -82,9 +95,17 @@ export function writeScopesOverlap(
   compiler: DeterministicGraphCompiler = defaultCompiler,
 ): boolean {
   if (left.length === 0 || right.length === 0) return true;
-  const nonEmptyLeft = left.filter((pattern) => normalizeWritePattern(pattern, "windows").posix !== "");
-  const nonEmptyRight = right.filter((pattern) => normalizeWritePattern(pattern, "windows").posix !== "");
+  const nonEmptyLeft = left.filter((pattern) => cachedNormalize(pattern).posix !== "");
+  const nonEmptyRight = right.filter((pattern) => cachedNormalize(pattern).posix !== "");
   if (nonEmptyLeft.length === 0 || nonEmptyRight.length === 0) return false;
+  if (compiler === defaultCompiler) {
+    return (
+      firstPatternIntersection(
+        nonEmptyLeft.map(cachedNormalize),
+        nonEmptyRight.map(cachedNormalize),
+      ) !== null
+    );
+  }
   const diagnostics = compiler.validateDisjointWriteScopes(
     pairCompilationInput(nonEmptyLeft, nonEmptyRight),
   );

@@ -32,6 +32,14 @@ type NamedQuery = (typeof NAMED_QUERIES)[number];
 type Writer = ProjectStateDb["writer"];
 type SqlStatement = ReturnType<Writer["prepare"]>;
 
+/**
+ * The knowledge repo allocates `CS-<n>` identifiers for its own change sets, so the runner
+ * keeps a separate namespace instead of squatting on the shared one.
+ */
+function runnerChangeSetId(rev: number): string {
+  return `CS-runner-${rev}`;
+}
+
 export interface LeafDraft {
   id: string;
   feature: string;
@@ -45,6 +53,7 @@ export interface LeafDraft {
   snapshotId?: string | null;
   level?: string;
   state?: string;
+  implementsRequirements?: readonly string[];
 }
 
 export class StateDb {
@@ -80,8 +89,11 @@ export class StateDb {
       queries[name] = this.writer.prepare(this.state.query(name));
     }
     this.queries = queries;
-    const row = this.one("SELECT COALESCE(MAX(updated_rev), 0) AS n FROM task_runtime");
-    this.revCounter = row ? numberValue(row.n) : 0;
+    // Revisions must continue past every change set already committed to the shared
+    // state.db (discovery, spec expansion, revisions), not just this runner's own rows.
+    const taskRow = this.one("SELECT COALESCE(MAX(updated_rev), 0) AS n FROM task_runtime");
+    const changeRow = this.one("SELECT COALESCE(MAX(rev), 0) AS n FROM change_sets");
+    this.revCounter = Math.max(taskRow ? numberValue(taskRow.n) : 0, changeRow ? numberValue(changeRow.n) : 0);
   }
 
   static open(filename = ":memory:"): StateDb {
@@ -161,14 +173,19 @@ export class StateDb {
   addFeature(input: { id: string; title: string; wave: number; branch: string; state?: string }): void {
     this.transaction(() => {
       const rev = this.changeSet(`feature ${input.id}`);
-      this.insertNode({
-        id: input.id,
-        kind: "feature",
-        title: input.title,
-        text: input.title,
-        fields: { feature: input.id },
-        rev,
-      });
+      // Architecture synthesis may already have persisted this feature node into the shared
+      // state.db; the runner then only registers runtime state instead of duplicating the node.
+      const existing = this.one("SELECT id FROM nodes WHERE id = ?", input.id);
+      if (!existing) {
+        this.insertNode({
+          id: input.id,
+          kind: "feature",
+          title: input.title,
+          text: input.title,
+          fields: { feature: input.id },
+          rev,
+        });
+      }
       this.run(
         `INSERT INTO feature_runtime(feature, state, wave, branch, updated_rev)
          VALUES (?, ?, ?, ?, ?)`,
@@ -237,6 +254,20 @@ export class StateDb {
         rev,
       });
       this.insertEdge(input.id, "implements", requirementId, rev);
+      // Compiled specs may also name the real requirements the leaf satisfies, so a merged
+      // leaf marks those (spec items, edge cases, journeys) as passing in the done gate.
+      for (const implemented of input.implementsRequirements ?? []) {
+        if (implemented === requirementId) continue;
+        const known = this.one("SELECT id FROM nodes WHERE id = ?", implemented);
+        if (!known) continue;
+        const already = this.one(
+          "SELECT src FROM edges WHERE src = ? AND type = 'implements' AND dst = ? AND valid_to_rev IS NULL",
+          input.id,
+          implemented,
+        );
+        if (already) continue;
+        this.insertEdge(input.id, "implements", implemented, rev);
+      }
       for (const dependency of input.dependsOn ?? []) {
         this.insertEdge(input.id, "depends_on", dependency, rev);
       }
@@ -282,6 +313,7 @@ export class StateDb {
         ...(task.dependsOn ? { dependsOn: task.dependsOn } : {}),
         snapshotId: task.snapshotId,
         ...(task.level ? { level: task.level } : {}),
+        ...(task.implementsRequirements ? { implementsRequirements: task.implementsRequirements } : {}),
       });
     }
   }
@@ -749,7 +781,7 @@ export class StateDb {
       receipt.attemptId,
       receipt.detail,
       JSON.stringify(fields),
-      `CS-${changeSet}`,
+      runnerChangeSetId(changeSet),
       changeSet,
       id,
     );
@@ -977,14 +1009,29 @@ export class StateDb {
   }
 
   private changeSet(summary: string): number {
-    const rev = this.bumpRev();
+    // Change sets share one revision space with discovery, spec expansion, feature architecture
+    // and revisions, so allocate against the live maximum rather than a stale private counter.
+    const row = this.one("SELECT COALESCE(MAX(rev), 0) AS n FROM change_sets");
+    const live = row ? numberValue(row.n) : 0;
+    let rev = Math.max(live, this.revCounter) + 1;
+    // The knowledge repo also allocates `CS-<n>` identifiers, so skip any identifier or
+    // revision that another subsystem already owns.
+    while (this.one("SELECT rev FROM change_sets WHERE id = ? OR rev = ?", runnerChangeSetId(rev), rev)) {
+      rev += 1;
+    }
+    this.revCounter = rev;
     this.run(
       `INSERT INTO change_sets(id, rev, origin, author, created_at, summary)
        VALUES (?, ?, 'planner', 'sequential-runner', ?, ?)`,
-      `CS-${rev}`,
+      runnerChangeSetId(rev),
       rev,
       rev,
       summary,
+    );
+    this.run(
+      `INSERT INTO meta(key, value) VALUES ('last_rev', ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      String(rev),
     );
     return rev;
   }
@@ -1013,7 +1060,7 @@ export class StateDb {
       input.title,
       input.text,
       fields,
-      `CS-${input.rev}`,
+      runnerChangeSetId(input.rev),
       input.rev,
       input.rev,
     );
@@ -1025,7 +1072,7 @@ export class StateDb {
       src,
       type,
       dst,
-      `CS-${rev}`,
+      runnerChangeSetId(rev),
       rev,
     );
   }

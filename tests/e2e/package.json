@@ -5,12 +5,12 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     }
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json --pretty false",
     "typecheck": "tsc -b --pretty false",
@@ -19,20 +19,30 @@
   },
   "dependencies": {
     "@ef-harness/completeness-gate": "workspace:*",
+    "@ef-harness/corpus": "workspace:*",
     "@ef-harness/daemon": "workspace:*",
     "@ef-harness/db": "workspace:*",
+    "@ef-harness/discovery": "workspace:*",
     "@ef-harness/git-engine": "workspace:*",
+    "@ef-harness/intake": "workspace:*",
+    "@ef-harness/integrator": "workspace:*",
     "@ef-harness/ipc": "workspace:*",
     "@ef-harness/mcp-server": "workspace:*",
+    "@ef-harness/planner": "workspace:*",
+    "@ef-harness/research-engine": "workspace:*",
     "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/shared-observability": "workspace:*",
+    "@ef-harness/spec-expansion": "workspace:*",
     "@ef-harness/test-env": "workspace:*",
     "@ef-harness/verifier": "workspace:*",
     "@ef-harness/worker-loop": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "axe-core": "^4.10.0",
     "eslint": "catalog:",
+    "playwright": "^1.55.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

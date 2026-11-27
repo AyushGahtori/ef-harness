@@ -1,3 +1,5 @@
+import type { WorkerTier } from "@ef-harness/shared-contracts";
+
 /** Owner defaults from the 17 November 2026 auto-start decision. Settings may only tighten these. */
 export const DELTA_TASK_CEILING = 5;
 export const DELTA_COST_CEILING_MICRO_USD = 1_000_000n;
@@ -31,8 +33,9 @@ export const PRESET_PEAK_WORKERS = {
   Cheapest: 3,
 } as const;
 
-export const LEVEL_COST_PERCENT = {
+export const LEVEL_COST_PERCENT: Readonly<Record<WorkerTier, number>> = {
   Junior: 100,
   Mid: 180,
   Senior: 320,
-} as const;
+  Principal: 640,
+};

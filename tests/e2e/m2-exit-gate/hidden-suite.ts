@@ -3,8 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { designTokenLint, productionBundleClean } from "./audit.ts";
-import type { HiddenCheckResult, SuiteOutcome, SuiteTarget } from "./types.ts";
+import { designTokenLint, productionBundleClean } from "./audit.js";
+import type { HiddenCheckResult, SuiteOutcome, SuiteTarget } from "./types.js";
 
 const OPEN = Date.parse("2026-03-02T10:59:00-05:00");
 const BOUNDARY = Date.parse("2026-03-02T11:00:00-05:00");
@@ -53,6 +53,13 @@ interface BrowserLike {
 }
 
 function repoRoot(): string {
+  let cursor = path.dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (fs.existsSync(path.join(cursor, "pnpm-workspace.yaml"))) return cursor;
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 }
 
@@ -83,11 +90,9 @@ async function signIn(origin: string, role: string, name: string): Promise<strin
 async function call(origin: string, method: string, pathname: string, cookie: string, body?: unknown): Promise<JsonResponse> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (cookie) headers.cookie = cookie;
-  const response = await fetch(`${origin}${pathname}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  const response = await fetch(`${origin}${pathname}`, init);
   const text = await response.text();
   return { status: response.status, json: text ? (JSON.parse(text) as Record<string, unknown>) : {} };
 }

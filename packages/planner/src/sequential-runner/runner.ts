@@ -74,6 +74,16 @@ export interface SequentialRunnerDependencies {
   leaseMs?: number;
   reserveMicroUsd?: number;
   smokeTimeoutMs?: number;
+  /**
+   * Renders the commit message the runner writes for a worker attempt and for landing an
+   * accepted candidate. Callers use it to attach the harness EF-* trailers to every commit.
+   */
+  commitMessage?: (input: {
+    readonly kind: "attempt" | "land" | "checkpoint";
+    readonly taskId: string;
+    readonly attemptId: string;
+    readonly step?: number;
+  }) => string;
 }
 
 export class SequentialBuildRunner {
@@ -101,6 +111,7 @@ export class SequentialBuildRunner {
   private readonly leaseMs: number;
   private readonly reserveMicroUsd: number;
   private readonly smokeTimeoutMs: number;
+  private readonly commitMessage: SequentialRunnerDependencies["commitMessage"];
 
   private statusValue: RunnerStatus = "idle";
   private statusWaiters: Array<{ status: RunnerStatus; resolve: () => void }> = [];
@@ -144,6 +155,7 @@ export class SequentialBuildRunner {
     this.leaseMs = deps.leaseMs ?? 30 * 60 * 1000;
     this.reserveMicroUsd = deps.reserveMicroUsd ?? 1_000;
     this.smokeTimeoutMs = deps.smokeTimeoutMs ?? 30_000;
+    this.commitMessage = deps.commitMessage;
     this.queue = new ExplicitFirstReadyQueue(deps.db);
     this.briefs = new AttemptBriefMaterializer(deps.db, deps.slicer ?? new LocalKnowledgePacketSlicer());
   }
@@ -357,7 +369,13 @@ export class SequentialBuildRunner {
       this.emit(task.id, "ESCALATED", open.attemptId, task.branch, "budget hit");
       return { close: "settle", cost: result.costMicroUsd };
     }
-    const candidate = result.ok ? this.git.commitAll(slot, `attempt ${open.attemptId}`) : null;
+    const candidate = result.ok
+      ? this.git.commitAll(
+          slot,
+          this.commitMessage?.({ kind: "attempt", taskId: task.id, attemptId: open.attemptId }) ??
+            `attempt ${open.attemptId}`,
+        )
+      : null;
     if (!candidate) {
       this.failCode(open, receipt, result.message ?? "worker produced an empty diff");
       return { close: "settle", cost: result.costMicroUsd };
@@ -498,7 +516,12 @@ export class SequentialBuildRunner {
     });
     if (!inserted) return { ok: false, message: "candidate rejected" };
     this.db.markAccepted(open.task.id, open.attemptId, open.epoch, this.now());
-    return this.git.land(open.task.branch, candidate, `land ${open.attemptId}`);
+    return this.git.land(
+      open.task.branch,
+      candidate,
+      this.commitMessage?.({ kind: "land", taskId: open.task.id, attemptId: open.attemptId }) ??
+        `land ${open.attemptId}`,
+    );
   }
 
   private failCode(open: OpenAttempt, receipt: AttemptReceipt, message: string): void {
@@ -547,7 +570,11 @@ export class SequentialBuildRunner {
     step: number,
     brief: { text: string; manifest: unknown },
   ): string {
-    const sha = this.git.commitAll(slot, `checkpoint ${attemptId} ${step}`);
+    const sha = this.git.commitAll(
+      slot,
+      this.commitMessage?.({ kind: "checkpoint", taskId: attemptId, attemptId, step }) ??
+        `checkpoint ${attemptId} ${step}`,
+    );
     const ref = `refs/harness/checkpoints/${attemptId}/${step}`;
     if (sha) this.git.point(ref, sha);
     this.db.writeCheckpoint({

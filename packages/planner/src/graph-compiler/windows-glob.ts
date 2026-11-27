@@ -84,6 +84,13 @@ function segmentOverlap(left: string, right: string): boolean {
 }
 
 export function patternsOverlap(left: readonly string[], right: readonly string[]): boolean {
+  const minLen = Math.min(left.length, right.length);
+  for (let i = 0; i < minLen; i += 1) {
+    const a = left[i] ?? "";
+    const b = right[i] ?? "";
+    if (a.includes("*") || b.includes("*")) break;
+    if (a !== b) return false;
+  }
   const memo = new Map<string, boolean>();
   const walk = (i: number, j: number): boolean => {
     const key = `${i}:${j}`;

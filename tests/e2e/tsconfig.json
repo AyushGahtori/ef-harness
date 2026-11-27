@@ -1,16 +1,48 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "rootDir": ".",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "m2-exit-gate/**/*.ts"
   ],
   "references": [
     {
       "path": "../../packages/shared-contracts"
+    },
+    {
+      "path": "../../packages/shared-observability"
+    },
+    {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/git-engine"
+    },
+    {
+      "path": "../../corpus"
+    },
+    {
+      "path": "../../packages/discovery"
+    },
+    {
+      "path": "../../packages/spec-expansion"
+    },
+    {
+      "path": "../../packages/research-engine"
+    },
+    {
+      "path": "../../packages/intake"
+    },
+    {
+      "path": "../../packages/planner"
+    },
+    {
+      "path": "../../packages/integrator"
     }
   ]
 }

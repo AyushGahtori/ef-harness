@@ -569,6 +569,9 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../db
+      '@ef-harness/discovery':
+        specifier: workspace:*
+        version: link:../discovery
       '@ef-harness/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -960,27 +963,51 @@ importers:
       '@ef-harness/completeness-gate':
         specifier: workspace:*
         version: link:../../packages/completeness-gate
+      '@ef-harness/corpus':
+        specifier: workspace:*
+        version: link:../../corpus
       '@ef-harness/daemon':
         specifier: workspace:*
         version: link:../../apps/daemon
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ef-harness/discovery':
+        specifier: workspace:*
+        version: link:../../packages/discovery
       '@ef-harness/git-engine':
         specifier: workspace:*
         version: link:../../packages/git-engine
+      '@ef-harness/intake':
+        specifier: workspace:*
+        version: link:../../packages/intake
+      '@ef-harness/integrator':
+        specifier: workspace:*
+        version: link:../../packages/integrator
       '@ef-harness/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
       '@ef-harness/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
+      '@ef-harness/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
+      '@ef-harness/research-engine':
+        specifier: workspace:*
+        version: link:../../packages/research-engine
       '@ef-harness/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../../packages/shared-observability
+      '@ef-harness/spec-expansion':
+        specifier: workspace:*
+        version: link:../../packages/spec-expansion
       '@ef-harness/test-env':
         specifier: workspace:*
         version: link:../../packages/test-env
@@ -994,9 +1021,15 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
+      axe-core:
+        specifier: ^4.10.0
+        version: 4.14.1
       eslint:
         specifier: 'catalog:'
         version: 9.39.5(jiti@2.7.0)
+      playwright:
+        specifier: ^1.55.0
+        version: 1.65.1
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

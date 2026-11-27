@@ -3,11 +3,12 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { expect, it } from "vitest";
-import { secretFindings } from "../m2-exit-gate/audit.ts";
-import { leasePort, PORT_MAX, PORT_MIN } from "../m2-exit-gate/lease.ts";
-import { executePipeline, OPENING_PREFIX, traceDigest } from "../m2-exit-gate/pipeline.ts";
-import { canonical, evaluateExitGate, paperworkPct, signingView, signReport } from "../m2-exit-gate/report.ts";
+import { afterAll, expect, it } from "vitest";
+import { releaseSpecExpansionZ3 } from "@ef-harness/spec-expansion";
+import { secretFindings } from "../m2-exit-gate/audit.js";
+import { leasePort, PORT_MAX, PORT_MIN } from "../m2-exit-gate/lease.js";
+import { executePipeline, OPENING_PREFIX, traceDigest } from "../m2-exit-gate/pipeline.js";
+import { canonical, evaluateExitGate, paperworkPct, signingView, signReport } from "../m2-exit-gate/report.js";
 import {
   harnessRoot,
   leakedPidProbe,
@@ -17,7 +18,7 @@ import {
   runEmailMismatch,
   runForensicsDrill,
   runLiveCertification,
-} from "../m2-exit-gate/runner.ts";
+} from "../m2-exit-gate/runner.js";
 
 const passingGate = {
   hiddenPassCount: 29,
@@ -33,6 +34,10 @@ const passingGate = {
   hiddenLeak: false,
 };
 
+afterAll(async () => {
+  await releaseSpecExpansionZ3();
+});
+
 it("keeps ci-replay gate math, ports, and prompt isolation deterministic", async () => {
   expect(canonical({ b: 1, a: { d: 1, c: 2 } })).toBe('{"a":{"c":2,"d":1},"b":1}');
   expect(paperworkPct({ discovery: 1000, spec: 3000, research: 5000, architecture: 5000, planning: 3000, audit: 1000, coding: 82000 })).toBe(0.18);
@@ -47,8 +52,8 @@ it("keeps ci-replay gate math, ports, and prompt isolation deterministic", async
   const first = fs.mkdtempSync(path.join(os.tmpdir(), "m2-pipe-a-"));
   const second = fs.mkdtempSync(path.join(os.tmpdir(), "m2-pipe-b-"));
   try {
-    const left = executePipeline(root, first);
-    const right = executePipeline(root, second);
+    const left = await executePipeline(root, first);
+    const right = await executePipeline(root, second);
     expect(traceDigest(left)).toBe(traceDigest(right));
     expect(left.settled.platform).toBe("responsive-web");
     expect(left.settled.cutoff).toBe("11:00");

@@ -50,7 +50,7 @@ export { InMemoryFeatureLifecycle, bindLifecycleRepo, bindProjectLifecycle } fro
 export type { LifecycleBindingOptions } from "./lifecycle-port.js";
 export { bindRefLeaseManager, createGitRefCas } from "./ref-cas.js";
 export { parseFeatureIntegratorV1 } from "./schema.js";
-export { buildTrailers, parseEfTrailers, receiptSha, renderCommitMessage } from "./trailers.js";
+export { buildTrailers, parseEfTrailers, receiptSha, renderCommitMessage, trailerLines } from "./trailers.js";
 export { verifyRouteResolution } from "./route-verify.js";
 export { FeatureIntegratorEngine, adaptFeatureIntegratorModel } from "./engine.js";
 export type { FeatureIntegratorEngineDeps } from "./engine.js";

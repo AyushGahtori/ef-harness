@@ -1,8 +1,61 @@
+import {
+  CREW_PRESETS,
+  WORKER_TIERS,
+  isCrewPreset,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+  type CrewPreset,
+  type WorkerTier,
+} from "@ef-harness/shared-contracts";
 import { PHASE0_STEPS } from "./constants.js";
+import { PlanPreviewError } from "./errors.js";
+
+export {
+  CREW_PRESETS,
+  WORKER_TIERS,
+  isCrewPreset,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+};
+export type { CrewPreset, WorkerTier };
 
 export type Phase0Step = (typeof PHASE0_STEPS)[number];
-export type CrewLevel = "Junior" | "Mid" | "Senior";
-export type CrewPreset = "Fastest" | "Balanced" | "Cheapest";
+export type CrewLevel = WorkerTier;
+export type CrewLevelInput =
+  | CrewLevel
+  | "junior"
+  | "mid"
+  | "senior"
+  | "principal"
+  | "jr"
+  | "sr"
+  | "manager";
+export type CrewPresetInput =
+  | CrewPreset
+  | "fastest"
+  | "balanced"
+  | "cheapest"
+  | "budget"
+  | "thorough";
+
+export function coercePlanPreviewLevel(value: string): CrewLevel {
+  const normalized = normalizeWorkerTier(value);
+  if (normalized === undefined) {
+    throw new PlanPreviewError("invalid_tier", `Unknown worker tier: ${value}`);
+  }
+  return normalized;
+}
+
+export function coercePlanPreviewPreset(value: string): CrewPreset {
+  const normalized = normalizeCrewPreset(value);
+  if (normalized === undefined) {
+    throw new PlanPreviewError("invalid_preset", `Unknown crew preset: ${value}`);
+  }
+  return normalized;
+}
+
 export type ConnectionKind = "api" | "subscription";
 export type DecisionBasis = "delegated" | "defaulted";
 export type ImpactLevel = "critical" | "high" | "medium" | "low";
@@ -156,12 +209,12 @@ export interface PlanRequestInit {
   readonly totalBudgetPpm: number;
   readonly workItemId?: string;
   readonly revision?: number;
-  readonly preset?: CrewPreset;
+  readonly preset?: CrewPreset | CrewPresetInput;
   readonly projected?: readonly ProjectedFeatureInput[];
   readonly chosenForYou?: readonly ChosenForYouEntry[];
   readonly deferred?: readonly DeferredItem[];
   readonly widthCap?: number | null;
-  readonly levelOverrides?: Readonly<Record<string, CrewLevel>>;
+  readonly levelOverrides?: Readonly<Record<string, CrewLevel | CrewLevelInput>>;
   readonly deferredFeatureIds?: readonly string[];
   readonly priorityOverrides?: Readonly<Record<string, number>>;
   readonly budgetCap?: BudgetCap | null;
@@ -173,20 +226,30 @@ export interface PlanRequestInit {
 }
 
 export function createPlanRequest(init: PlanRequestInit): PlanPreviewRequest {
+  const normalizedOverrides: Record<string, CrewLevel> = {};
+  if (init.levelOverrides) {
+    for (const [taskId, level] of Object.entries(init.levelOverrides)) {
+      normalizedOverrides[taskId] = coercePlanPreviewLevel(level);
+    }
+  }
   return {
     projectId: init.projectId,
     workItemId: init.workItemId ?? init.projectId,
     revision: init.revision ?? 1,
     connection: init.connection,
-    preset: init.preset ?? "Balanced",
+    preset: init.preset === undefined ? "Balanced" : coercePlanPreviewPreset(init.preset),
     totalBudgetMicroUsd: init.totalBudgetMicroUsd,
     totalBudgetPpm: init.totalBudgetPpm,
-    tasks: init.tasks,
+    tasks: init.tasks.map((task) => ({
+      ...task,
+      balancedLevel: coercePlanPreviewLevel(task.balancedLevel),
+      safetyFloor: coercePlanPreviewLevel(task.safetyFloor),
+    })),
     projected: init.projected ?? [],
     chosenForYou: init.chosenForYou ?? [],
     deferred: init.deferred ?? [],
     widthCap: init.widthCap ?? null,
-    levelOverrides: init.levelOverrides ?? {},
+    levelOverrides: normalizedOverrides,
     deferredFeatureIds: init.deferredFeatureIds ?? [],
     priorityOverrides: init.priorityOverrides ?? {},
     budgetCap: init.budgetCap ?? null,
@@ -229,6 +292,7 @@ export interface PlannedTaskView {
   readonly phase0Step: Phase0Step | null;
   readonly wave: 0 | 1;
   readonly crewLevel: CrewLevel;
+  readonly modelId?: string;
   readonly writeScope: readonly string[];
   readonly criticalPath: boolean;
   readonly safetyFloor: CrewLevel;
@@ -346,7 +410,7 @@ export interface PlanPreview {
 
 export interface ImpactPreviewInput {
   readonly contractCount: number;
-  readonly activeTasks: readonly { readonly title: string }[];
+  readonly activeTasks: readonly { readonly id?: string; readonly title: string }[];
   readonly finishedTaskCount: number;
   readonly untouchedTaskCount: number;
   readonly deltaTasks: number;
