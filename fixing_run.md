@@ -447,3 +447,25 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/ipc test`: exit `0` — `Test Files 15 passed (15)`, `Tests 66 passed (66)`
 - `pnpm --filter @ef-harness/sim test`: exit `0` — `Test Files 2 passed (2)`, `Tests 19 passed (19)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+
+## [Wave 1 Proof Gate] — C05–C13 Verified
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7-medium
+- **Commit on `harness/integration`:** `e0ed3c6891ce80527515ed3a21fc72cfe0cbb901` (`integrate: C13 bind streams to CAS and sim to the kernel`)
+
+### What Was Done
+- Verified `harness/integration` at `e0ed3c6891ce80527515ed3a21fc72cfe0cbb901` with a clean `git status --short`. Product code was not changed. C14 was not started, `main` was not merged, and no pull request was opened.
+- `@ef-harness/spikes test` was not run. It is outside this gate and rewrites `REPORT.md` files.
+- `integration_progress.md` has no Wave 1 gate row, so the ledger rows were left unchanged. C14 stays pending.
+
+### Verification Run & Results
+- `pnpm build`: exit `0` (`tsc -b --pretty false`)
+- `pnpm typecheck`: exit `0` (`tsc -b --pretty false`)
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint`: exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`
+- `pnpm --filter @ef-harness/ipc test`: exit `0` — `Test Files 15 passed (15)`, `Tests 66 passed (66)`
+- `pnpm --filter @ef-harness/sim test`: exit `0` — `Test Files 2 passed (2)`, `Tests 19 passed (19)`
+- `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
+- `git status --short`: exit `0` — clean (empty output)
