@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   ARRAY_MAX_ITEMS,
   idSchema,
@@ -25,7 +25,7 @@ import {
 } from "./intents.js";
 
 const pathListSchema = z.array(pathSchema).max(ARRAY_MAX_ITEMS);
-const intentList = <T extends z.ZodType>(item: T) => z.array(item).max(ARRAY_MAX_ITEMS);
+const intentList = <T extends z.ZodTypeAny>(item: T) => z.array(item).max(ARRAY_MAX_ITEMS);
 
 export const TaskPacketV1Schema = withinJsonByteLimit(
   z
@@ -44,6 +44,7 @@ export const TaskPacketV1Schema = withinJsonByteLimit(
       contracts: z.array(ContractUseSchema).max(ARRAY_MAX_ITEMS),
       checks_visible: z.array(idSchema).max(ARRAY_MAX_ITEMS),
       checks_hidden_count: z
+        .number()
         .int()
         .nonnegative()
         .refine((value) => !Object.is(value, -0), {
@@ -88,9 +89,9 @@ export const ExportChangeSchema = z
 
 export const DiffstatSchema = z
   .object({
-    files: z.int().nonnegative(),
-    insertions: z.int().nonnegative(),
-    deletions: z.int().nonnegative(),
+    files: z.number().int().nonnegative(),
+    insertions: z.number().int().nonnegative(),
+    deletions: z.number().int().nonnegative(),
   })
   .strict()
   .refine(
@@ -139,6 +140,7 @@ export const EventV1Schema = withinJsonByteLimit(
       schema: z.literal("event@1"),
       id: idSchema,
       seq: z
+        .number()
         .int()
         .nonnegative()
         .refine((value) => !Object.is(value, -0), {
@@ -146,6 +148,7 @@ export const EventV1Schema = withinJsonByteLimit(
         }),
       type: idSchema,
       revision: z
+        .number()
         .int()
         .nonnegative()
         .refine((value) => !Object.is(value, -0), {

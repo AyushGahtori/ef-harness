@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  EvidenceLocatorSchema,
+  ImageRegionSchema,
+  type EvidenceLocator,
+} from "../packets/locators.js";
 
 export const APPROVED_BASES = [
   "explicit",
@@ -144,83 +149,37 @@ export const ScopePredicateSchema = z
     }
   });
 
-export const LocatorSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("turn"),
-      turn: IdSchema,
-      start: NonNegativeIntSchema,
-      end: PositiveIntSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("pdf"),
-      page: PositiveIntSchema,
-      char_start: NonNegativeIntSchema,
-      char_end: PositiveIntSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("docx"),
-      paragraph: PositiveIntSchema,
-      char_start: NonNegativeIntSchema,
-      char_end: PositiveIntSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("text"),
-      line_start: PositiveIntSchema,
-      line_end: PositiveIntSchema,
-      char_start: NonNegativeIntSchema,
-      char_end: PositiveIntSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("image"),
-      x: z.number().nonnegative(),
-      y: z.number().nonnegative(),
-      w: z.number().positive(),
-      h: z.number().positive(),
-      ocr_text: z.string().nullable(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("spec"),
-      pointer: TextSchema,
-    })
-    .strict(),
-]);
-
-export type Locator = z.infer<typeof LocatorSchema>;
+export { ImageRegionSchema };
+export const LocatorSchema = EvidenceLocatorSchema;
+export type Locator = EvidenceLocator;
 
 export function refineLocator(
   locator: Locator,
   ctx: z.RefinementCtx,
   path: (string | number)[],
 ): void {
-  if (
-    locator.kind === "turn" ||
-    locator.kind === "pdf" ||
-    locator.kind === "docx" ||
-    locator.kind === "text"
-  ) {
-    const start = locator.kind === "turn" ? locator.start : locator.char_start;
-    const end = locator.kind === "turn" ? locator.end : locator.char_end;
+  if (locator.kind === "turn") {
+    if (locator.end <= locator.start) {
+      addIssue(ctx, [...path, "end"], "end must be greater than start");
+    }
+    return;
+  }
+  if (locator.kind === "pdf" || locator.kind === "docx" || locator.kind === "text") {
+    const start = "charStart" in locator ? locator.charStart : locator.char_start;
+    const end = "charEnd" in locator ? locator.charEnd : locator.char_end;
+    const endField = "charEnd" in locator ? "charEnd" : "char_end";
     if (end <= start) {
-      addIssue(
-        ctx,
-        [...path, locator.kind === "turn" ? "end" : "char_end"],
-        "end must be greater than start",
-      );
+      addIssue(ctx, [...path, endField], "end must be greater than start");
     }
   }
-  if (locator.kind === "text" && locator.line_end < locator.line_start) {
-    addIssue(ctx, [...path, "line_end"], "line_end must be >= line_start");
+  if (locator.kind === "text") {
+    const lineStart = "lineStart" in locator ? locator.lineStart : locator.line_start;
+    const lineEnd = "lineEnd" in locator ? locator.lineEnd : locator.line_end;
+    const lineEndField = "lineEnd" in locator ? "lineEnd" : "line_end";
+    const lineStartField = "lineStart" in locator ? "lineStart" : "line_start";
+    if (lineEnd < lineStart) {
+      addIssue(ctx, [...path, lineEndField], `${lineEndField} must be >= ${lineStartField}`);
+    }
   }
 }
 

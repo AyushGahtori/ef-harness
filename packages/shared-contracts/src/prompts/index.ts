@@ -7,6 +7,7 @@ export {
   EARS_TEXT_PATTERN,
   HttpUrlSchema,
   IdSchema,
+  ImageRegionSchema,
   IsoDateSchema,
   LocatorSchema,
   OpeningRubricIdSchema,
@@ -18,6 +19,7 @@ export {
   TouchesTagSchema,
   TurnEvidenceSchema,
   VerbatimTextSchema,
+  refineLocator,
 } from "./common.js";
 export type { ApprovedBasis, Locator, TouchesTag } from "./common.js";
 export {

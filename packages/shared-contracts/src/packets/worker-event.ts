@@ -1,12 +1,12 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   idSchema,
+  integerUnits,
   jsonValueSchema,
   microUsdSchema,
   nonNegativeIntSchema,
   noteSchema,
   pathSchema,
-  ppmSchema,
   shortTextSchema,
   unixMsSchema,
   ARRAY_MAX_ITEMS,
@@ -85,6 +85,7 @@ export const WorkerEventSchema = z.discriminatedUnion("type", [
       type: z.literal("tool.completed"),
       result: noteSchema,
       exit_code: z
+        .number()
         .int()
         .min(0)
         .max(2_147_483_647)
@@ -135,7 +136,7 @@ export const WorkerEventSchema = z.discriminatedUnion("type", [
       type: z.literal("rate_limit"),
       status: idSchema,
       resets_at: unixMsSchema.optional(),
-      used_ppm: ppmSchema.max(1_000_000).optional(),
+      used_ppm: integerUnits({ max: 1_000_000 }).optional(),
     })
     .strict(),
   z

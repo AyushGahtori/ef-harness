@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   idSchema,
   microUsdSchema,
@@ -138,6 +138,7 @@ export const LocalCheckSchema = z
   .object({
     cmd: z.string().min(1).max(SHORT_TEXT_MAX_CHARS),
     exit: z
+      .number()
       .int()
       .min(0)
       .max(2_147_483_647)

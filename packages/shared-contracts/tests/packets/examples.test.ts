@@ -7,7 +7,9 @@ import {
   MergeInstructionsV1Schema,
   TaskPacketV1Schema,
   formatZodError,
+  normalizeEvidenceLocator,
 } from "../../src/packets/index.js";
+import { LocatorSchema } from "../../src/index.js";
 
 const taskPacket = {
   schema: "task-packet@1",
@@ -169,6 +171,85 @@ describe("core packet examples", () => {
         jsonPointer: "/paths/~1orders/post/responses/409",
       }),
     ).toMatchObject({ kind: "spec" });
+  });
+
+  it("unifies LocatorSchema with EvidenceLocatorSchema and losslessly normalizes snake_case locators", () => {
+    expect(LocatorSchema).toBe(EvidenceLocatorSchema);
+    const turnSnake = EvidenceLocatorSchema.parse({ kind: "turn", turn: "T2", start: 1, end: 8 });
+    expect(normalizeEvidenceLocator(turnSnake)).toEqual({
+      kind: "turn",
+      turnId: "T2",
+      start: 1,
+      end: 8,
+    });
+    const pdfSnake = EvidenceLocatorSchema.parse({
+      kind: "pdf",
+      page: 12,
+      char_start: 1840,
+      char_end: 1912,
+    });
+    expect(normalizeEvidenceLocator(pdfSnake)).toEqual({
+      kind: "pdf",
+      page: 12,
+      charStart: 1840,
+      charEnd: 1912,
+    });
+    const docxSnake = EvidenceLocatorSchema.parse({
+      kind: "docx",
+      paragraph: 4,
+      char_start: 1,
+      char_end: 8,
+    });
+    expect(normalizeEvidenceLocator(docxSnake)).toEqual({
+      kind: "docx",
+      paragraph: 4,
+      charStart: 1,
+      charEnd: 8,
+    });
+    const textSnake = EvidenceLocatorSchema.parse({
+      kind: "text",
+      line_start: 2,
+      line_end: 4,
+      char_start: 0,
+      char_end: 20,
+    });
+    expect(normalizeEvidenceLocator(textSnake)).toEqual({
+      kind: "text",
+      lineStart: 2,
+      lineEnd: 4,
+      charStart: 0,
+      charEnd: 20,
+    });
+    const imageCoords = EvidenceLocatorSchema.parse({
+      kind: "image",
+      x: 1,
+      y: 2,
+      w: 30,
+      h: 40,
+      ocr_text: "Orders",
+    });
+    expect(normalizeEvidenceLocator(imageCoords)).toEqual({
+      kind: "image",
+      region: [1, 2, 30, 40],
+      ocrText: "Orders",
+    });
+    const imageRegion = EvidenceLocatorSchema.parse({
+      kind: "image",
+      region: [0, 0, 120, 40],
+      ocr_text: null,
+    });
+    expect(normalizeEvidenceLocator(imageRegion)).toEqual({
+      kind: "image",
+      region: [0, 0, 120, 40],
+    });
+    const specSnake = EvidenceLocatorSchema.parse({
+      kind: "spec",
+      pointer: "/paths/~1orders/post/responses/409",
+    });
+    expect(normalizeEvidenceLocator(specSnake)).toEqual({
+      kind: "spec",
+      jsonPointer: "/paths/~1orders/post/responses/409",
+    });
   });
 });
 

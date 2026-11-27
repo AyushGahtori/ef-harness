@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AttemptCheckpointSchema,
   AttemptCheckpointV0Schema,
+  CheckOutcomeSchema,
   CheckpointUpcasterRegistry,
   VerificationReceiptSchema,
   WorkerEventSchema,
@@ -147,6 +148,32 @@ describe("receipts and worker events", () => {
         static_audit: undefined,
         sandbox: { tier: null, unsandboxed: true },
         counts: { pass: 2, fail: 0, skip: 0, missing: 0, error: 0 },
+      }).success,
+    ).toBe(false);
+    expect(CheckOutcomeSchema.safeParse({ status: "pass", collected_count: 0 }).success).toBe(false);
+    expect(
+      CheckOutcomeSchema.safeParse({
+        check_id: "AC-31",
+        check_version: 2,
+        artifact_digest: "sha256:abc",
+        status: "pass",
+        collected_count: 0,
+      }).success,
+    ).toBe(false);
+    expect(
+      VerificationReceiptSchema.safeParse({
+        ...receipt,
+        checks: [
+          {
+            check_id: "AC-31",
+            check_version: 2,
+            artifact_digest: "sha256:abc",
+            status: "pass",
+            collected_count: 0,
+          },
+        ],
+        counts: { pass: 1, fail: 0, skip: 0, missing: 0, error: 0 },
+        static_audit: undefined,
       }).success,
     ).toBe(false);
   });

@@ -10,8 +10,11 @@ import {
   FeaturePlannerV1Schema,
   FeatureResearcherV1Schema,
   FinalProjectAuditorV1Schema,
+  IntakeExtractorV1Schema,
   InvestigatorV1Schema,
+  IssueTriageV1Schema,
   LeafWorkerV1Schema,
+  LocatorSchema,
   PROMPT_CONTRACTS,
   PROMPT_CONTRACT_IDS,
   ReviewerV1Schema,
@@ -387,5 +390,73 @@ describe("prompt output schemas", () => {
         ],
       }),
     ).not.toBe("ok");
+  });
+
+  it("accepts Task 008 candidate@1 intent shapes and external-intake region image locators", () => {
+    const worker = VALID_OUTPUTS["leaf-worker@1"] as Record<string, unknown>;
+    expect(
+      explain(LeafWorkerV1Schema, {
+        ...worker,
+        dependency_intents: [{ package: "zod", version: "^3.25.0", reason: "schemas" }],
+        migration_intents: [
+          {
+            table: "orders",
+            change: { add_column: { name: "pickup_slot", type: "text", nullable: true } },
+            reason: "SI-401",
+          },
+        ],
+        wiring_needs: [
+          { kind: "route", path: "/kitchen", component: "KitchenPage" },
+          { kind: "barrel", module: "src/index.ts", export_name: "KitchenPage" },
+          { kind: "lockfile", package: "zod" },
+          { kind: "schema_index", name: "orders" },
+        ],
+      }),
+    ).toBe("ok");
+    expect(
+      explain(IntakeExtractorV1Schema, {
+        statements: [
+          {
+            text: "Cutoff banner",
+            locator: { kind: "image", region: [0, 0, 120, 40], ocr_text: "Cutoff 10:45" },
+            kind: "rule",
+            criterion_id: null,
+            value: null,
+          },
+          {
+            text: "Cutoff paragraph",
+            locator: { kind: "pdf", page: 12, charStart: 10, charEnd: 40 },
+            kind: "rule",
+            criterion_id: null,
+            value: null,
+          },
+        ],
+        suspicious_instructions: [],
+      }),
+    ).toBe("ok");
+    expect(
+      explain(IntakeExtractorV1Schema, {
+        statements: [
+          {
+            text: "Zero-length span",
+            locator: { kind: "turn", turn: "T1", start: 4, end: 4 },
+            kind: "rule",
+            criterion_id: null,
+            value: null,
+          },
+        ],
+        suspicious_instructions: [],
+      }),
+    ).not.toBe("ok");
+    expect(
+      explain(IssueTriageV1Schema, {
+        ...(VALID_OUTPUTS["issue-triage@1"] as Record<string, unknown>),
+        title: {
+          text: "Blank title span",
+          locator: { kind: "docx", paragraph: 1, charStart: 5, charEnd: 5 },
+        },
+      }),
+    ).not.toBe("ok");
+    expect(LocatorSchema.safeParse({ kind: "spec", pointer: "/paths/~1orders" }).success).toBe(true);
   });
 });

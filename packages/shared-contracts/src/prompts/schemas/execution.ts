@@ -4,21 +4,84 @@ import { IdSchema, NonNegativeIntSchema, TextSchema, addIssue } from "../common.
 
 export const CANDIDATE_NOTE_MAX_CHARS = 2000;
 
-const DependencyIntentSchema = z
-  .object({
-    name: TextSchema,
-    range: z.string().nullable(),
-    reason: TextSchema,
-  })
-  .strict();
+const DependencyIntentSchema = z.union([
+  z
+    .object({
+      package: TextSchema,
+      version: TextSchema,
+      reason: TextSchema,
+    })
+    .strict(),
+  z
+    .object({
+      name: TextSchema,
+      range: z.string().nullable(),
+      reason: TextSchema,
+    })
+    .strict(),
+]);
 
-const WiringNeedSchema = z
-  .object({
-    kind: z.enum(["route", "page", "export", "migration", "env", "component"]),
-    path: TextSchema,
-    component: z.string().nullable(),
-  })
-  .strict();
+const MigrationIntentSchema = z.union([
+  z
+    .object({
+      table: IdSchema,
+      change: z
+        .object({
+          add_column: z
+            .object({
+              name: IdSchema,
+              type: TextSchema,
+              nullable: z.boolean(),
+            })
+            .strict(),
+        })
+        .strict(),
+      reason: TextSchema,
+    })
+    .strict(),
+  z
+    .object({
+      id: IdSchema,
+      text: TextSchema,
+    })
+    .strict(),
+]);
+
+const WiringNeedSchema = z.union([
+  z
+    .object({
+      kind: z.literal("route"),
+      path: TextSchema,
+      component: IdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("barrel"),
+      module: TextSchema,
+      export_name: IdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("lockfile"),
+      package: TextSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("schema_index"),
+      name: IdSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.enum(["route", "page", "export", "migration", "env", "component"]),
+      path: TextSchema,
+      component: z.string().nullable(),
+    })
+    .strict(),
+]);
 
 const LeafWorkerSuccessSchema = z
   .object({
@@ -29,16 +92,7 @@ const LeafWorkerSuccessSchema = z
     commit: TextSchema,
     changed_paths: z.array(TextSchema),
     dependency_intents: z.array(DependencyIntentSchema),
-    migration_intents: z
-      .array(
-        z
-          .object({
-            id: IdSchema,
-            text: TextSchema,
-          })
-          .strict(),
-      )
-      .default([]),
+    migration_intents: z.array(MigrationIntentSchema).default([]),
     wiring_needs: z.array(WiringNeedSchema),
     local_checks: z.array(
       z

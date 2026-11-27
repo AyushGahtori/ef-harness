@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   ARRAY_MAX_ITEMS,
   digestSchema,
@@ -50,7 +50,11 @@ export const CheckOutcomeSchema = z
     status: z.enum(CHECK_STATUSES),
     collected_count: nonNegativeIntSchema,
   })
-  .strict();
+  .strict()
+  .refine((check) => !(check.status === "pass" && check.collected_count === 0), {
+    message: "a passing check must collect at least one case (missing or zero collected tests never pass)",
+    path: ["collected_count"],
+  });
 
 export const CheckCountsSchema = z
   .object({
@@ -109,7 +113,7 @@ export const VerificationReceiptSchema = withinJsonByteLimit(
       for (const status of CHECK_STATUSES) {
         if (tally[status] !== receipt.counts[status]) {
           ctx.addIssue({
-            code: "custom",
+            code: z.ZodIssueCode.custom,
             path: ["counts", status],
             message: `counts.${status} must equal the number of ${status} checks`,
           });
@@ -117,7 +121,7 @@ export const VerificationReceiptSchema = withinJsonByteLimit(
       }
       if (receipt.static_audit && receipt.static_audit.artifact_digest !== receipt.artifact_digest) {
         ctx.addIssue({
-          code: "custom",
+          code: z.ZodIssueCode.custom,
           path: ["static_audit", "artifact_digest"],
           message: "static audit artifact_digest must match the receipt",
         });

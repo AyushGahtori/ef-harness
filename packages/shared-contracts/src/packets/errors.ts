@@ -1,4 +1,4 @@
-import type { ZodError } from "zod/v4";
+import type { ZodError } from "zod";
 
 export interface PacketValidationIssue {
   path: string;

@@ -5,14 +5,23 @@ import {
   FrameHeaderSchema,
   JSON_RPC_CHANNEL,
   JsonRpcRequestSchema,
+  JsonRpcResponseSchema,
   JsonRpcSuccessResponseSchema,
   MUTATING_RPC_METHODS,
   READ_ONLY_RPC_METHODS,
   RPC_METHODS,
+  RpcRequestSchema,
+  RpcResponseSchema,
+  SnapshotGetResultSchema,
+  StreamCancelNotificationSchema,
+  StreamControlNotificationSchema,
   StreamCreditGrantSchema,
+  StreamCreditNotificationSchema,
+  StreamEndNotificationSchema,
+  StreamErrorNotificationSchema,
   TelemetryNotificationSchema,
   decodeFrameHeader,
-} from "../../src/packets/index.js";
+} from "../../src/index.js";
 
 const readParams = {
   "session.hello": {
@@ -171,6 +180,94 @@ describe("window daemon RPC", () => {
         params: { stream_id: 7, credits: 4 },
       }).params.credits,
     ).toBe(4);
+    expect(StreamCreditNotificationSchema).toBe(StreamCreditGrantSchema);
+    expect(
+      StreamControlNotificationSchema.parse({
+        jsonrpc: "2.0",
+        method: "stream.cancel",
+        params: { stream_id: 7, reason: "closed" },
+      }).method,
+    ).toBe("stream.cancel");
+    expect(
+      StreamCancelNotificationSchema.parse({
+        jsonrpc: "2.0",
+        method: "stream.cancel",
+        params: { stream_id: 7 },
+      }).params.stream_id,
+    ).toBe(7);
+    expect(
+      StreamEndNotificationSchema.parse({
+        jsonrpc: "2.0",
+        method: "stream.end",
+        params: { stream_id: 7, bytes_sent: 1024, sha256: "a".repeat(64) },
+      }).params.bytes_sent,
+    ).toBe(1024);
+    expect(
+      StreamErrorNotificationSchema.parse({
+        jsonrpc: "2.0",
+        method: "stream.error",
+        params: { stream_id: 7, code: "CAS_BLOB_MISSING", message: "missing blob" },
+      }).params.code,
+    ).toBe("CAS_BLOB_MISSING");
+  });
+
+  it("supports project scoping, stream_epoch, snapshot pagination, and response aliases", () => {
+    expect(RpcRequestSchema).toBe(JsonRpcRequestSchema);
+    expect(RpcResponseSchema).toBe(JsonRpcResponseSchema);
+    expect(
+      JsonRpcRequestSchema.parse({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "events.subscribe",
+        params: { project: "P1", topics: ["ui"], since_seq: 10, stream_epoch: 3 },
+      }).method,
+    ).toBe("events.subscribe");
+    expect(
+      JsonRpcRequestSchema.parse({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "snapshot.get",
+        params: { project: "P1", views: ["board"], cursor: "cur-1" },
+      }).method,
+    ).toBe("snapshot.get");
+    expect(
+      JsonRpcRequestSchema.parse({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "artifact.open",
+        params: { project: "P1", id: "ART-1" },
+      }).method,
+    ).toBe("artifact.open");
+    expect(
+      JsonRpcRequestSchema.parse({
+        jsonrpc: "2.0",
+        id: 5,
+        method: "chat.send",
+        op_id: "op-chat",
+        params: { project: "P1", target: null, text: "Hello", clauses: [] },
+      }).method,
+    ).toBe("chat.send");
+    expect(
+      SnapshotGetResultSchema.parse({
+        as_of_seq: 42,
+        stream_epoch: 2,
+        sections: { board: { cards: [] } },
+        nextCursor: null,
+      }).stream_epoch,
+    ).toBe(2);
+    expect(
+      SnapshotGetResultSchema.parse({
+        as_of_seq: 42,
+        views: [{ name: "board", section: { cards: [] } }],
+      }).as_of_seq,
+    ).toBe(42);
+    expect(
+      JsonRpcResponseSchema.parse({
+        jsonrpc: "2.0",
+        id: 9,
+        error: { code: -32601, message: "Method not found" },
+      }),
+    ).toMatchObject({ id: 9, error: { code: -32601 } });
   });
 
   it("keeps unknown response fields from a newer minor protocol", () => {
