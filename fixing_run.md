@@ -931,3 +931,36 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 
+---
+
+## [C28] — Discovery session coordinator, observed pre-settlement, and exact readiness counts
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `111614ad5818f2afe2f4c12dad56d8f406c8d100` (`integrate: C28 wire discovery session coordinator on ProjectStateDb`)
+- **Findings Fixed:** `F-029` (selector, depth, and readiness now share one session over `ProjectStateDb` and the C27 decision payload). `F-074` only for the discovery port: `preSettleObservedCriteria({ workItemId, settlements })` is on `DiscoverySessionCoordinator` for `BrownfieldOpeningController`. The brownfield package silos, ambient `git`, and in-memory `work_items` stay on C60 and C61. Did not re-merge `task/072`, `task/073`, or `task/074`. Did not apply a dirty patch. Did not apply `task-079.patch`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C29. Did not fix the two corpus import failures (`F-032`).
+
+### What Changed
+- Re-verified on `f73ec3739638700b6114c41d0b9c2af8d96970c7`. `task/072-adaptive-question-selector` (`7f8f233`), `task/073-discovery-depth-controls` (`47801e2`), and `task/074-honest-readiness-calculator` (`27758b5`) are ancestors. C28 names no merge and no dirty patch. No task branch was merged.
+- `DiscoverySessionCoordinator` (`startSession`, `ingestUserTurn`, `acceptRecommendedDefaults`, `preSettleObservedCriteria`, `getReadinessSnapshot`) runs on an open `ProjectStateDb`. Decision and stage nodes commit through `@ef-harness/db` `KnowledgeGraphRepo`. Work items, scopes, turns, batches, and change-set rows commit through `CoordinatorWriteQueue`.
+- Stored decisions keep the depth fields and also `criterionId`, `groupId`, `scopeId`, `scope_id`, and, once settled, `selectedOptionId`. `parseDecisionFields` accepts that payload. `acceptRecommendedDefaults` writes `basis: "delegated"` and refuses `explicit`. Observed settlements write `basis: "observed"` and are left out of the next `selectNextBatch`. A second observed call skips a criterion that is already settled.
+- `HonestReadinessCalculator.snapshot` returns integer counts `{ explicitCount, confirmedCount, delegatedChosenForYouCount, observedCount, blockingUnsettledCount, deferredCount, readyToPlan }`. `confirmedCount` is the derived-basis count. `delegatedChosenForYouCount` is delegated plus defaulted. `readyToPlan` is false while any blocker remains. No percentage is emitted.
+- Question batches use `selectNextBatch` and are stored in `discovery_batches`. Accept-all's batch picker is `GreedyQuestionSelector`, not the depth-local stand-in. `StageDepthController` is exported as `DiscoveryDepthController`. `GreedyQuestionSelector` is exported as `AdaptiveQuestionSelector`.
+
+### What It Fixed
+- **F-029:** An opening turn, delegated defaults, and an observed pre-settlement share one `ProjectStateDb` and one decision payload. Delegated storage is `basis: "delegated"` with `selectedOptionId: "sqlite"`. The must-ask auth criterion stays open. The observed repository criterion is not asked again.
+- **F-074 (discovery port only):** `preSettleObservedCriteria({ workItemId, settlements })` is the call `BrownfieldOpeningController` was missing on discovery. Brownfield's own barrel, git runner, and in-memory stores are unchanged.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor 7f8f233 HEAD`: exit `0`
+- `git merge-base --is-ancestor 47801e2 HEAD`: exit `0`
+- `git merge-base --is-ancestor 27758b5 HEAD`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/discovery exec vitest run --config vitest.config.ts tests/core tests/prompts tests/entailment tests/depth tests/readiness tests/selector tests/session tests/smoke.test.ts`: exit `0` — `Test Files 22 passed (22)`, `Tests 136 passed (136)` (`0` skipped)
+- `pnpm --filter @ef-harness/discovery test`: exit `1` — `Test Files 2 failed | 25 passed (27)`, `Tests 151 passed (151)`. The two failures are import-time and were not introduced here: `tests/corpus-loader/corpus-loader.test.ts` (`YamlParseError` on `corpus/packs/web-api-cli/api.yaml`) and `tests/corpus-web-api-cli/corpus-web-api-cli.test.ts` (`corpus/packs/core-data-auth/auth.yaml: missing string pack`). That is `F-032`, which stays on C29.
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C29.
+
