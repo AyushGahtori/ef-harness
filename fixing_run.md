@@ -622,3 +622,27 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/test-env test`: exit `1` — `Test Files 3 failed | 15 passed (18)`, `Tests 3 failed | 84 passed | 3 skipped (90)`. The same three failures are present at `fc94482468252f5a5129061a2c6788dc5977e8db` on this Linux VM: `tests/services/binary-launcher.test.ts` (`accounting.native` is false off win32), `tests/orchestrator/lifecycle.test.ts` (port 3000 ignore-port probe), and `tests/auth-payment-mocks/port-fallback.test.ts` (`EADDRINUSE 127.0.0.1:3000` when those files run together). Assertions were not weakened. Orchestrator lease, destroy, and `reconcileOnStartup` tests passed.
 - `pnpm --filter @ef-harness/sandbox test`: exit `0` — `Test Files 30 passed | 2 skipped (32)`, `Tests 169 passed | 14 skipped (183)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+## [C20] — OAuth, Stripe, and template clones on the attempt server
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-medium
+- **Commit on `harness/integration`:** `a12f6fabf5dd9c806cb839580763bc57590087b7` (`integrate: C20 wire attempt mocks and port attribution`)
+- **Findings Fixed:** `F-021` (`@ef-harness/test-env` is now a dependency of `@ef-harness/mcp-server` only; `createKernelAttemptMcpDeps` provisions per-attempt isolation before `harness.run` and `harness.start_service`), `F-022` (`LocalOAuthMockProvider` and `StripeMockAndWebhookProvider` adapt onto the C19 `ServiceProvider`; `TemplateDatabaseManager.ensureTemplate` / `cloneFromTemplate` supply the sqlite clone). Did not re-apply `task-048.patch`. Did not add `@ef-harness/db` to `@ef-harness/sandbox`. Did not edit harness-run. Did not merge `main`. Did not open a pull request. Did not start C21.
+
+### What Changed
+- Re-verified on `0d86e53494baac6930ad7bd9afa45e39a3605157`. Did not re-merge `task/051-oauth-stripe-mocks-port-fallback` (`9c562b8`) or `task/052-template-db-synthetic-data` (`1c3bb83`); both are ancestors. Live classes stay `LocalOAuthMockProvider`, `StripeMockAndWebhookProvider`, and `TemplateDatabaseManager`. There is no `LocalWebhookMockProvider`. Directories stay `auth-payment-mocks/` and `synthetic-data/`. C19 `GlobalBrokerDb.leasePort` and `ProjectStateDb.writer` binds were not reverted. `path_leases.mode` stays `'intent' | 'granted'`. Port `3000` is not inserted into `port_leases` (`41000–48999` only). Template sqlite files stay on their own `DatabaseSync`.
+- The test-env barrel now exports `adaptAuthPaymentProvider`, `adaptTemplateDatabase`, `registerAttemptMockProviders`, and `AttemptIsolationHost`. `AttemptMcpServer` kernel deps call that host so each attempt gets a distinct template clone plus loopback OAuth and Stripe mock URLs. `harness.run` was not reopened.
+- Linux attributes a listening socket to its pid through `/proc/net/tcp`, so the ignore-port probe can see that the child bound `127.0.0.1:3000`, and an HTTP/TCP readiness probe accepts a listener only when that pid is the child. The hard-coded port `3000` bind waits out `EADDRINUSE` instead of sharing the port with the other file. `accounting.native === true` remains the win32 assertion; on Linux the same test still launches the real node child and checks the tracked pid.
+
+### What It Fixed
+- **F-021:** `harness.run` and `oauth` / `stripe` / `sqlite` `harness.start_service` on the kernel dependency factory provision an isolated sqlite clone and local mock endpoints for that attempt.
+- **F-022:** Auth and payment mocks register on the frozen orchestrator `ServiceProvider`. Template clones do not open `state.db`.
+- The two port `3000` failures no longer fail when `lifecycle.test.ts` and `port-fallback.test.ts` run together. The Windows job-accounting assertion is unchanged and is not a skip.
+
+### Verification Run & Results
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/test-env test`: exit `0` — `Test Files 18 passed (18)`, `Tests 87 passed | 3 skipped (90)`. The 3 skips are the pre-existing missing-binary cases (`postgres`, `mailpit`, `redis`). `accounting.native` is still asserted on win32 and was not skipped; Linux does not require `native === true`.
+- `pnpm --filter @ef-harness/sandbox test`: exit `0` — `Test Files 30 passed | 2 skipped (32)`, `Tests 169 passed | 14 skipped (183)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
