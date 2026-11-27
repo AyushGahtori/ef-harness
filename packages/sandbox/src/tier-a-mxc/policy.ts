@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { MxcModeError, MxcPolicyPathError } from "./errors.js";
-import { assertSafeTempDir, canonicalizeAbsolute, isSameOrInside } from "./paths.js";
+import { assertSafeTempDir, canonicalizeAbsolute, isSameOrInside, platformPath } from "./paths.js";
 import type {
   AccessDecision,
   AccessKind,
@@ -43,8 +43,8 @@ function assertPort(port: number, label: string): void {
   }
 }
 
-function discoverGitDir(worktree: string): string | null {
-  const pointer = path.join(worktree, ".git");
+function discoverGitDir(worktree: string, fsPath: path.PlatformPath): string | null {
+  const pointer = fsPath.join(worktree, ".git");
   if (!fs.existsSync(pointer)) return null;
   let stat: fs.Stats;
   try {
@@ -65,11 +65,11 @@ function discoverGitDir(worktree: string): string | null {
   if (target.split(/[\\/]/).some((segment) => segment === "..")) {
     throw new MxcPolicyPathError("path_traversal", target);
   }
-  return path.resolve(worktree, target);
+  return fsPath.resolve(worktree, target);
 }
 
-function discoverCommonDir(gitDir: string): string | null {
-  const file = path.join(gitDir, "commondir");
+function discoverCommonDir(gitDir: string, fsPath: path.PlatformPath): string | null {
+  const file = fsPath.join(gitDir, "commondir");
   if (!fs.existsSync(file)) return null;
   let text = "";
   try {
@@ -83,11 +83,11 @@ function discoverCommonDir(gitDir: string): string | null {
     }
     return null;
   }
-  return path.resolve(gitDir, text);
+  return fsPath.resolve(gitDir, text);
 }
 
-function geminiLoginFolder(userProfile: string): string {
-  return path.join(userProfile, ".gemini");
+function geminiLoginFolder(userProfile: string, fsPath: path.PlatformPath): string {
+  return fsPath.join(userProfile, ".gemini");
 }
 
 function rejectionCode(resolved: string, checkout: string, projects: string): string {
@@ -104,6 +104,7 @@ export function compileMxcPolicy(spec: SandboxLaunchSpec, frozenAt = new Date().
   }
 
   const worktree = canonicalizeAbsolute(spec.worktree);
+  const fsPath = platformPath(worktree);
   const tempDir = canonicalizeAbsolute(spec.tempDir);
   const buildOutputDir = canonicalizeAbsolute(spec.buildOutputDir);
   const developerCheckout = canonicalizeAbsolute(spec.developerCheckout);
@@ -112,7 +113,7 @@ export function compileMxcPolicy(spec: SandboxLaunchSpec, frozenAt = new Date().
   const localAppData = canonicalizeAbsolute(spec.localAppData);
   const appData = canonicalizeAbsolute(spec.appData);
   const pnpmStore = canonicalizeAbsolute(spec.pnpmStore);
-  const projects = path.join(harnessDataRoot, "projects");
+  const projects = fsPath.join(harnessDataRoot, "projects");
   const toolchainRoots = spec.toolchainRoots.map((root) => canonicalizeAbsolute(root));
   const otherWorktrees = spec.otherWorktrees.map((root) => canonicalizeAbsolute(root));
 
@@ -122,19 +123,19 @@ export function compileMxcPolicy(spec: SandboxLaunchSpec, frozenAt = new Date().
   }
 
   const secretRoots = [
-    path.join(userProfile, ".ssh"),
-    path.join(userProfile, ".aws"),
-    path.join(userProfile, ".azure"),
-    path.join(userProfile, ".gnupg"),
-    path.join(userProfile, ".npmrc"),
-    path.join(localAppData, "Google", "Chrome", "User Data"),
-    path.join(localAppData, "Microsoft", "Edge", "User Data"),
-    path.join(localAppData, "BraveSoftware", "Brave-Browser", "User Data"),
-    path.join(appData, "Mozilla", "Firefox", "Profiles"),
-    path.join(appData, "Microsoft", "Credentials"),
-    path.join(appData, "Microsoft", "Protect"),
-    path.join(localAppData, "Microsoft", "Vault"),
-    path.join(localAppData, "Microsoft", "Credentials"),
+    fsPath.join(userProfile, ".ssh"),
+    fsPath.join(userProfile, ".aws"),
+    fsPath.join(userProfile, ".azure"),
+    fsPath.join(userProfile, ".gnupg"),
+    fsPath.join(userProfile, ".npmrc"),
+    fsPath.join(localAppData, "Google", "Chrome", "User Data"),
+    fsPath.join(localAppData, "Microsoft", "Edge", "User Data"),
+    fsPath.join(localAppData, "BraveSoftware", "Brave-Browser", "User Data"),
+    fsPath.join(appData, "Mozilla", "Firefox", "Profiles"),
+    fsPath.join(appData, "Microsoft", "Credentials"),
+    fsPath.join(appData, "Microsoft", "Protect"),
+    fsPath.join(localAppData, "Microsoft", "Vault"),
+    fsPath.join(localAppData, "Microsoft", "Credentials"),
   ];
   const blockedContainers = [developerCheckout, projects, ...secretRoots, ...otherWorktrees];
   for (const candidate of [worktree, tempDir, buildOutputDir]) {
@@ -145,13 +146,13 @@ export function compileMxcPolicy(spec: SandboxLaunchSpec, frozenAt = new Date().
     }
   }
 
-  const nodeModules = path.join(worktree, "node_modules");
-  const worktreeGit = path.join(worktree, ".git");
-  const linkedGit = spec.gitDirLink ? canonicalizeAbsolute(spec.gitDirLink) : discoverGitDir(worktree);
+  const nodeModules = fsPath.join(worktree, "node_modules");
+  const worktreeGit = fsPath.join(worktree, ".git");
+  const linkedGit = spec.gitDirLink ? canonicalizeAbsolute(spec.gitDirLink) : discoverGitDir(worktree, fsPath);
   const commonGit = spec.gitCommonDir
     ? canonicalizeAbsolute(spec.gitCommonDir)
     : linkedGit
-      ? discoverCommonDir(linkedGit)
+      ? discoverCommonDir(linkedGit, fsPath)
       : null;
 
   const rules: PolicyRule[] = [
@@ -162,11 +163,11 @@ export function compileMxcPolicy(spec: SandboxLaunchSpec, frozenAt = new Date().
     { id: "read_only_pnpm_store", kind: "read_only", path: pnpmStore },
     { id: "read_only_git", kind: "read_only", path: worktreeGit },
     { id: "deny_write_git", kind: "deny_write", path: worktreeGit },
-    { id: "deny_read_ssh", kind: "deny_read", path: secretRoots[0] ?? path.join(userProfile, ".ssh") },
-    { id: "deny_read_aws", kind: "deny_read", path: secretRoots[1] ?? path.join(userProfile, ".aws") },
-    { id: "deny_read_azure", kind: "deny_read", path: secretRoots[2] ?? path.join(userProfile, ".azure") },
-    { id: "deny_read_gnupg", kind: "deny_read", path: secretRoots[3] ?? path.join(userProfile, ".gnupg") },
-    { id: "deny_read_npmrc", kind: "deny_read", path: secretRoots[4] ?? path.join(userProfile, ".npmrc") },
+    { id: "deny_read_ssh", kind: "deny_read", path: secretRoots[0] ?? fsPath.join(userProfile, ".ssh") },
+    { id: "deny_read_aws", kind: "deny_read", path: secretRoots[1] ?? fsPath.join(userProfile, ".aws") },
+    { id: "deny_read_azure", kind: "deny_read", path: secretRoots[2] ?? fsPath.join(userProfile, ".azure") },
+    { id: "deny_read_gnupg", kind: "deny_read", path: secretRoots[3] ?? fsPath.join(userProfile, ".gnupg") },
+    { id: "deny_read_npmrc", kind: "deny_read", path: secretRoots[4] ?? fsPath.join(userProfile, ".npmrc") },
     { id: "deny_read_chrome", kind: "deny_read", path: secretRoots[5] ?? localAppData },
     { id: "deny_read_edge", kind: "deny_read", path: secretRoots[6] ?? localAppData },
     { id: "deny_read_brave", kind: "deny_read", path: secretRoots[7] ?? localAppData },
@@ -197,7 +198,7 @@ export function compileMxcPolicy(spec: SandboxLaunchSpec, frozenAt = new Date().
     rules.push({
       id: "read_only_gemini_login",
       kind: "read_only",
-      path: geminiLoginFolder(userProfile),
+      path: geminiLoginFolder(userProfile, fsPath),
     });
   }
 
@@ -238,7 +239,9 @@ function pathsOf(rules: readonly PolicyRule[], kind: PolicyRule["kind"]): string
 }
 
 function comparableKey(input: string): string {
-  return process.platform === "win32" ? path.normalize(input).toLowerCase() : path.normalize(input);
+  const api = platformPath(input);
+  const normalized = api.normalize(input);
+  return api === path.win32 ? normalized.toLowerCase() : normalized;
 }
 
 function comparableBlocked(left: string, right: string): boolean {
@@ -264,14 +267,16 @@ export function evaluateAccess(policy: CompiledMxcPolicy, target: string, access
   if (target.split(/[\\/]/).some((segment) => segment === "..")) {
     return { allowed: false, errno: "EACCES", ruleId: "path_traversal", access };
   }
-  const resolved = path.resolve(target);
+  const api = platformPath(target);
+  const resolved = api.resolve(target);
   const needle = comparableKey(resolved);
   let winner: PolicyRule | null = null;
   let winnerLength = -1;
   for (const rule of policy.rules) {
     if (!applies(rule, access)) continue;
     const ruleKey = comparableKey(rule.path);
-    const inside = needle === ruleKey || needle.startsWith(ruleKey.endsWith(path.sep) ? ruleKey : `${ruleKey}${path.sep}`);
+    const separator = platformPath(rule.path).sep;
+    const inside = needle === ruleKey || needle.startsWith(ruleKey.endsWith(separator) ? ruleKey : `${ruleKey}${separator}`);
     if (!inside) continue;
     const length = ruleKey.length;
     if (

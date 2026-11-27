@@ -23,7 +23,11 @@ describe("Tier B warm logon provider", () => {
       fs.writeFileSync(path.join(tree.temp, "residue.txt"), "left-over");
       const result = await rig.provider.executeCommand(instance, { command: "node", args: ["--version"] });
       expect(result.account).toBe(SANDBOX_OFFLINE_ACCOUNT);
-      expect(result.desktop).toBe("EFHarnessSandboxWinSta\\EFHarnessSandboxDesktop");
+      if (process.platform === "win32") {
+        expect(result.desktop).toBe("EFHarnessSandboxWinSta\\EFHarnessSandboxDesktop");
+      } else {
+        expect(result.desktop).toBeNull();
+      }
       expect(fs.existsSync(path.join(tree.temp, "residue.txt"))).toBe(false);
       expect(rig.provisioner.executionCount).toBe(0);
       const plan = rig.logon.launches[0];

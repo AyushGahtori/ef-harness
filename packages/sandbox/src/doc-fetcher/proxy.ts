@@ -2,6 +2,9 @@ import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
 import { createBrotliDecompress, createGunzip, createInflate, type BrotliDecompress, type Gunzip, type Inflate } from "node:zlib";
+import { AllowlistProxyServer as LoopbackAllowlistProxy } from "../proxy/allowlist-proxy-server.js";
+import { ProxyFetchError } from "../proxy/pinned-fetch.js";
+import { PORT_LEASE_MAX, PORT_LEASE_MIN, type PortLease } from "../proxy/types.js";
 import { DocFetchError, DownloadTooLargeError, SsrfBlockedError } from "./errors.js";
 import { DOC_FETCH_USER_AGENT, assertReadOnlyMethod, isBlockedAddress, isIpLiteral } from "./policy.js";
 
@@ -34,6 +37,82 @@ export interface ProxyConnectInfo {
 export interface DirectProxyOptions {
   readonly testOnlyLoopbackOverride?: boolean;
   readonly onConnect?: (info: ProxyConnectInfo) => void;
+}
+
+let nextResearcherPort = PORT_LEASE_MIN;
+
+function researcherLease(now: number): PortLease {
+  const port = nextResearcherPort;
+  nextResearcherPort = nextResearcherPort >= PORT_LEASE_MAX ? PORT_LEASE_MIN : nextResearcherPort + 1;
+  return {
+    port,
+    projectId: "researcher-doc",
+    environment: "doc-fetcher",
+    leasedAt: now,
+    expiresAt: null,
+  };
+}
+
+export class BoundResearcherAllowlistProxy implements AllowlistProxyServer {
+  readonly server: LoopbackAllowlistProxy;
+  private readonly testOnlyLoopbackOverride: boolean;
+  private readonly onConnect: ((info: ProxyConnectInfo) => void) | null;
+
+  constructor(options: DirectProxyOptions = {}) {
+    this.testOnlyLoopbackOverride = options.testOnlyLoopbackOverride === true;
+    this.onConnect = options.onConnect ?? null;
+    this.server = new LoopbackAllowlistProxy({
+      portLease: researcherLease(Date.now()),
+      ...(this.testOnlyLoopbackOverride ? { testOnlyPrivateIpAllowlist: ["127.0.0.1", "::1"] } : {}),
+    });
+  }
+
+  get proxyUrl(): string {
+    return this.server.proxyUrl;
+  }
+
+  async fetch(request: AllowlistProxyRequest): Promise<AllowlistProxyResponse> {
+    assertReadOnlyMethod(request.method);
+    if (request.profile !== "researcher") {
+      throw new DocFetchError("PROFILE", "documentation fetches use the researcher profile");
+    }
+    const url = new URL(request.url);
+    const port = url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new DocFetchError("BAD_PORT", "invalid port");
+    }
+    const allowLoopback = this.testOnlyLoopbackOverride && !isIpLiteral(request.servername);
+    if (isBlockedAddress(request.pinnedAddress, { allowLoopbackFixture: allowLoopback })) {
+      throw new SsrfBlockedError(request.pinnedAddress);
+    }
+    this.onConnect?.({ address: request.pinnedAddress, host: request.servername, port });
+    try {
+      const response = await this.server.fetch(request.url, {
+        method: request.method,
+        profile: "researcher",
+        attemptId: "researcher-doc",
+        pinnedAddress: request.pinnedAddress,
+        servername: request.servername,
+        timeoutMs: request.timeoutMs,
+        maxBytes: request.maxBytes,
+      });
+      return { status: response.status, headers: response.headers, body: response.body };
+    } catch (error) {
+      if (error instanceof ProxyFetchError && error.code === "private_ip") {
+        throw new SsrfBlockedError(request.pinnedAddress);
+      }
+      if (error instanceof ProxyFetchError && error.code === "response_too_large") {
+        throw new DownloadTooLargeError(request.maxBytes);
+      }
+      if (error instanceof ProxyFetchError && error.code === "timeout") {
+        throw new DocFetchError("TIMEOUT", "doc fetch timed out", { cause: error });
+      }
+      if (error instanceof ProxyFetchError) {
+        throw new DocFetchError("NETWORK", error.message, { cause: error });
+      }
+      throw error;
+    }
+  }
 }
 
 export class DirectResearcherAllowlistProxy implements AllowlistProxyServer {

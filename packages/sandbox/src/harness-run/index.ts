@@ -14,7 +14,7 @@ export {
 export { resolveContainedCwd } from "./cwd.js";
 export { MemoryDenialLogger } from "./denial-log.js";
 export { HarnessRunEngine } from "./engine.js";
-export type { HarnessRunEngineDeps } from "./engine.js";
+export type { HarnessRunEngineDeps, OsCommandSupervisor } from "./engine.js";
 export { buildScrubbedEnv } from "./env.js";
 export {
   CommandDeniedError,

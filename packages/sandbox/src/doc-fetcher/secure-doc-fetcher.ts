@@ -25,7 +25,7 @@ import {
   registryDocUrl,
   toVersionRange,
 } from "./policy.js";
-import { type AllowlistProxyServer, DirectResearcherAllowlistProxy, type ProxyConnectInfo } from "./proxy.js";
+import { type AllowlistProxyServer, BoundResearcherAllowlistProxy, type ProxyConnectInfo } from "./proxy.js";
 import { type HeadlessDocRenderer, PlaywrightDocRenderer } from "./renderer.js";
 import { sanitizeHtmlToQuotedMarkdown, sanitizeTextToQuotedMarkdown, type SanitizeMeta, wrapUntrustedData } from "./sanitize.js";
 import { needsJsRender } from "./spa.js";
@@ -101,7 +101,7 @@ export class SecureDocFetcher {
     this.testAllowedHosts = this.testOnlyLoopbackOverride ? (options.testAllowedHosts ?? []) : [];
     this.proxy =
       options.proxy ??
-      new DirectResearcherAllowlistProxy({
+      new BoundResearcherAllowlistProxy({
         testOnlyLoopbackOverride: this.testOnlyLoopbackOverride,
         ...(options.onConnect ? { onConnect: options.onConnect } : {}),
       });

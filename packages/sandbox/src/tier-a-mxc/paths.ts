@@ -7,15 +7,26 @@ export function containsDotDotSegment(input: string): boolean {
   return input.split(/[\\/]/).some((segment) => segment === DOT_DOT);
 }
 
+function isDriveOrUnc(input: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(input) || input.startsWith("\\\\");
+}
+
+export function platformPath(input: string): path.PlatformPath {
+  if (process.platform === "win32" || isDriveOrUnc(input)) return path.win32;
+  return path;
+}
+
 export function comparablePath(input: string): string {
-  const normalized = path.normalize(path.resolve(input));
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  const api = platformPath(input);
+  const normalized = api.normalize(api.resolve(input));
+  return api === path.win32 ? normalized.toLowerCase() : normalized;
 }
 
 export function isSameOrInside(child: string, parent: string): boolean {
+  const api = platformPath(child);
   const left = comparablePath(child);
   const right = comparablePath(parent);
-  const separator = path.sep;
+  const separator = api.sep;
   return left === right || left.startsWith(right.endsWith(separator) ? right : `${right}${separator}`);
 }
 
@@ -26,10 +37,11 @@ export function canonicalizeAbsolute(input: string): string {
   if (containsDotDotSegment(input)) {
     throw new MxcPolicyPathError("path_traversal", input);
   }
-  if (!path.isAbsolute(input)) {
+  const api = platformPath(input);
+  if (!api.isAbsolute(input)) {
     throw new MxcPolicyPathError("path_not_absolute", input);
   }
-  const resolved = path.resolve(input);
+  const resolved = api.resolve(input);
   if (containsDotDotSegment(resolved)) {
     throw new MxcPolicyPathError("path_traversal", input);
   }

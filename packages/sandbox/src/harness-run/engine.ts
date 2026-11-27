@@ -2,6 +2,9 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { WindowsJobManager as OsWindowsJobManager } from "../job-objects/windows-job-manager.js";
+import type { JobHandle, JobSpec } from "../job-objects/types.js";
+import type { SandboxTierSelector as IsolationTierSelector } from "../tier-c-d-selector/selector.js";
 import { LocalArtifactManager } from "./artifacts.js";
 import { CommandOutputCapture } from "./capture.js";
 import { CommandPolicyEvaluator, type PolicySegment } from "./command-policy.js";
@@ -14,9 +17,10 @@ import {
 import { resolveContainedCwd, resolveInsideWorktree } from "./cwd.js";
 import { MemoryDenialLogger } from "./denial-log.js";
 import { buildScrubbedEnv, envEntries, markNodeModulesReadOnly } from "./env.js";
-import { CommandDeniedError, CwdEscapeDeniedError } from "./errors.js";
+import { CommandDeniedError, CommandLaunchError, CwdEscapeDeniedError, SandboxTierHoldError } from "./errors.js";
 import { computeFailureFingerprint } from "./fingerprint.js";
 import { NestedCommandJobManager } from "./job-host.js";
+import { PosixCommandJobManager } from "./posix-command.js";
 import { WarmExecutionPool } from "./pool.js";
 import { StreamingSecretRedactor } from "./redactor.js";
 import { serverRejectionHint } from "./server-hint.js";
@@ -24,7 +28,9 @@ import { OutputSummarizer } from "./summarizer.js";
 import { InMemoryLocalTracer, TelemetryDb } from "./telemetry.js";
 import type {
   ArtifactManager,
+  CommandJob,
   DenialLogger,
+  JobLimits,
   JobStep,
   LocalTracer,
   SandboxTier,
@@ -36,9 +42,16 @@ import type {
   WindowsJobManager,
 } from "./types.js";
 
+export interface OsCommandSupervisor {
+  createJob(spec: JobSpec): Promise<JobHandle>;
+  closeJob(job: JobHandle): Promise<void>;
+}
+
 export interface HarnessRunEngineDeps {
   readonly selector?: SandboxTierSelector;
   readonly jobs?: WindowsJobManager;
+  readonly isolation?: IsolationTierSelector;
+  readonly osJobs?: OsCommandSupervisor;
   readonly artifacts?: ArtifactManager;
   readonly tracer?: LocalTracer;
   readonly denialLog?: DenialLogger;
@@ -74,11 +87,15 @@ export class HarnessRunEngine {
   private readonly policy = new CommandPolicyEvaluator();
   private readonly ownsTelemetry: boolean;
   private readonly pool: WarmExecutionPool | null;
+  private readonly isolation: IsolationTierSelector | null;
+  private readonly osJobs: OsCommandSupervisor | null;
 
   constructor(deps: HarnessRunEngineDeps = {}) {
     this.pool = deps.selector === undefined ? new WarmExecutionPool() : null;
     this.selector = deps.selector ?? this.pool ?? new WarmExecutionPool();
-    this.jobs = deps.jobs ?? new NestedCommandJobManager();
+    this.jobs = deps.jobs ?? (process.platform === "win32" ? new NestedCommandJobManager() : new PosixCommandJobManager());
+    this.isolation = deps.isolation ?? null;
+    this.osJobs = deps.osJobs ?? null;
     this.artifacts =
       deps.artifacts ??
       new LocalArtifactManager(deps.artifactRoot ?? path.join(os.tmpdir(), "ef-harness-artifacts"));
@@ -188,13 +205,25 @@ export class HarnessRunEngine {
       attemptId: request.attemptId,
     });
     bind({ tier: slot.tier, mode: slot.mode });
-    const job = this.jobs.createJob({
+    const limits: JobLimits = {
       memoryBytes: request.memoryBytes ?? DEFAULT_MEMORY_BYTES,
       activeProcessLimit: request.processLimit ?? DEFAULT_PROCESS_LIMIT,
       killOnJobClose: true,
       timeoutMs: request.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    });
+    };
+    let job: CommandJob | null = null;
+    let osHandle: JobHandle | null = null;
+    let reportedTier = slot.tier;
+    let reportedMode = slot.mode;
     try {
+      const isolated = await this.resolveIsolation(request, commandId, decision.segments);
+      if (isolated) {
+        reportedTier = isolated.tier;
+        reportedMode = isolated.mode;
+        bind({ tier: reportedTier, mode: reportedMode });
+      }
+      osHandle = await this.openOsJob(commandId, limits);
+      job = this.jobs.createJob(limits);
       markNodeModulesReadOnly(request.worktreePath);
       const attemptTemp =
         request.attemptTempDir ?? path.join(os.tmpdir(), "ef-harness-attempts", safeId(request.attemptId));
@@ -240,8 +269,8 @@ export class HarnessRunEngine {
             : "completed";
       const failing = run.exitCode !== 0;
       return {
-        tier: slot.tier,
-        mode: slot.mode,
+        tier: reportedTier,
+        mode: reportedMode,
         exitCode: run.exitCode,
         timedOut,
         oomKilled: run.oomKilled,
@@ -270,9 +299,57 @@ export class HarnessRunEngine {
         commandId,
       };
     } finally {
-      job.close();
+      job?.close();
+      if (osHandle && this.osJobs) await this.osJobs.closeJob(osHandle);
       slot.release();
     }
+  }
+
+  private async resolveIsolation(
+    request: SandboxedCommandRequest,
+    commandId: string,
+    segments: readonly PolicySegment[],
+  ): Promise<{ tier: SandboxTier; mode: SandboxedCommandResult["mode"] } | null> {
+    if (!this.isolation) return null;
+    const argv = segments[0]?.argv ?? [];
+    const executable = argv[0] ?? commandTextOf(request.command);
+    const decision = await this.isolation.resolve({
+      task: {
+        taskId: request.taskId ?? request.attemptId,
+        attemptId: request.attemptId,
+        projectId: request.projectId ?? request.attemptId,
+        projectPath: request.worktreePath,
+        worktreePath: request.worktreePath,
+        tempPath: request.attemptTempDir ?? request.worktreePath,
+        commands: [request.command],
+      },
+      runtime: { kind: "own_loop", runtimeId: "harness-run" },
+      command: {
+        commandId,
+        executable,
+        args: argv.slice(1),
+      },
+    });
+    if (decision.kind === "hold") throw new SandboxTierHoldError(decision.hold.explanation);
+    return { tier: decision.tier, mode: decision.mode };
+  }
+
+  private async openOsJob(commandId: string, limits: JobLimits): Promise<JobHandle | null> {
+    const supervisor = this.osJobs;
+    if (!supervisor) return null;
+    if (supervisor instanceof OsWindowsJobManager && process.platform !== "win32") {
+      throw new CommandLaunchError("Windows Job Objects require win32");
+    }
+    const spec: JobSpec = {
+      name: `harness-run-${commandId}`,
+      kind: "command",
+      limits: {
+        memoryBytes: limits.memoryBytes,
+        activeProcessLimit: limits.activeProcessLimit,
+      },
+      timeoutMs: limits.timeoutMs,
+    };
+    return supervisor.createJob(spec);
   }
 
   private toStep(segment: PolicySegment, worktreePath: string, cwd: string): JobStep {

@@ -17,6 +17,8 @@ export type {
   NetworkPolicyProfile,
   PortLease,
   ProxyDiagnosticsSnapshot,
+  ProxyFetchInit,
+  ProxyFetchResponse,
   ProxyTokenHandle,
   ResolvedAddress,
   SecretFinding,
@@ -43,3 +45,4 @@ export type { ProfileAccessDecision, ProfileAccessRequest } from "./profiles.js"
 export { resolveHostDefault } from "./resolve-host.js";
 export { CanaryVaultSecretRedactor, findBuiltinSecretSpans } from "./secret-scan.js";
 export { AllowlistProxyServer, ProxyConfigError } from "./allowlist-proxy-server.js";
+export { ProxyFetchError } from "./pinned-fetch.js";

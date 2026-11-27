@@ -109,6 +109,23 @@ export interface ProxyDiagnosticsSnapshot {
   readonly deniedByReason: Readonly<Record<string, number>>;
 }
 
+export interface ProxyFetchInit {
+  readonly method?: "GET" | "HEAD";
+  readonly profile?: NetworkPolicyProfile;
+  readonly attemptId?: string;
+  readonly pinnedAddress?: string;
+  readonly servername?: string;
+  readonly timeoutMs?: number;
+  readonly maxBytes?: number;
+}
+
+export interface ProxyFetchResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: Uint8Array;
+  readonly finalUrl: string;
+}
+
 export interface AllowlistProxyServerOptions {
   readonly portLease: PortLease;
   readonly logger?: StructuredLogger;

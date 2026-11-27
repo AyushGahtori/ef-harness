@@ -46,6 +46,7 @@ export {
   type LocalPackageSource,
 } from "./local-package.js";
 export {
+  BoundResearcherAllowlistProxy,
   DirectResearcherAllowlistProxy,
   type AllowlistProxyRequest,
   type AllowlistProxyResponse,

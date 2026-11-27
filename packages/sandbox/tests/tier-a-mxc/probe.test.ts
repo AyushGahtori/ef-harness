@@ -75,6 +75,13 @@ describe("probeMxcAvailability", () => {
   });
 
   it("reports the live host without claiming a helper that is not linked", async () => {
+    if (process.platform !== "win32") {
+      const live = await probeMxcAvailability();
+      expect(live.available).toBe(false);
+      expect(live.reason).toBe("not_windows");
+      expect(live.osBuild).toBe(process.platform);
+      return;
+    }
     const live = await probeMxcAvailability();
     expect(live.osBuild).toMatch(/^\d+\.\d+$/);
     if (!live.buildEligible) {

@@ -147,9 +147,9 @@ describe("compileMxcPolicy", () => {
 
   it("adds the Gemini login folder only for wrapped Gemini and keeps provider hosts on the proxy", () => {
     const plain = compileMxcPolicy(policySpec());
-    expect(plain.readOnly.some((entry) => entry.endsWith(`${path.sep}.gemini`))).toBe(false);
+    expect(plain.readOnly.some((entry) => entry.endsWith(`${path.win32.sep}.gemini`) || entry.endsWith(`${path.posix.sep}.gemini`))).toBe(false);
     const wrapped = compileMxcPolicy(policySpec({ mode: "wrapped", vendor: "gemini" }));
-    expect(wrapped.readOnly.some((entry) => entry.endsWith(`${path.sep}.gemini`))).toBe(true);
+    expect(wrapped.readOnly.some((entry) => entry.endsWith(`${path.win32.sep}.gemini`) || entry.endsWith(`${path.posix.sep}.gemini`))).toBe(true);
     expect(evaluateAccess(wrapped, "C:\\Users\\dev\\.gemini\\oauth_creds.json", "read").allowed).toBe(true);
     expect(evaluateAccess(wrapped, "C:\\Users\\dev\\.gemini\\oauth_creds.json", "write").errno).toBe("EPERM");
     expect(wrapped.network.providerHosts).toEqual(["generativelanguage.googleapis.com"]);

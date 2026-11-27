@@ -11,7 +11,8 @@ import type {
   ServerResponse,
 } from "node:http";
 import { ProxyAuditLog } from "./audit-log.js";
-import { canonicalIp, everyAddressPermitted } from "./ip-policy.js";
+import { addressPermitted, canonicalIp, everyAddressPermitted } from "./ip-policy.js";
+import { ProxyFetchError, fetchPinned } from "./pinned-fetch.js";
 import {
   DEFAULT_ATTEMPT_LIMITS,
   RESEARCHER_DOCUMENTATION_HOSTS,
@@ -38,6 +39,8 @@ import {
   type NetworkPolicyProfile,
   type PortLease,
   type ProxyDiagnosticsSnapshot,
+  type ProxyFetchInit,
+  type ProxyFetchResponse,
   type ProxyTokenHandle,
   type ResolvedAddress,
   type SecretRedactor,
@@ -211,6 +214,64 @@ export class AllowlistProxyServer {
     const address = this.server.address();
     if (address && typeof address !== "string") return address.port;
     return this.lease.port;
+  }
+
+  get proxyUrl(): string {
+    return `http://${BIND_HOST}:${this.port}`;
+  }
+
+  async fetch(url: string, init: ProxyFetchInit = {}): Promise<ProxyFetchResponse> {
+    const method = init.method ?? "GET";
+    if (method !== "GET" && method !== "HEAD") {
+      throw new ProxyFetchError("method_not_allowed", "researcher fetch allows only GET and HEAD");
+    }
+    let target: URL;
+    try {
+      target = new URL(url);
+    } catch (error) {
+      throw new ProxyFetchError("bad_url", error instanceof Error ? error.message : "bad url");
+    }
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw new ProxyFetchError("bad_url", "fetch allows only http and https");
+    }
+    const port = target.port === "" ? (target.protocol === "https:" ? 443 : 80) : Number(target.port);
+    const seed = this.seed(method, { hostname: target.hostname, port, search: target.search }, "");
+    seed.attemptId = init.attemptId ?? "researcher-doc";
+    seed.profile = init.profile ?? "researcher";
+    const pinned = init.pinnedAddress ? pinnedFromCaller(init.pinnedAddress) : await this.pin(target.hostname);
+    if (!pinned.ok) {
+      this.finish(seed, "deny", pinned.reason);
+      throw new ProxyFetchError(pinned.reason === "private_ip" ? "private_ip" : "dns_failed", pinned.reason);
+    }
+    if (!addressPermitted(pinned.address, this.testOnlyPrivateIps)) {
+      this.finish(seed, "deny", "private_ip");
+      throw new ProxyFetchError("private_ip", "blocked address");
+    }
+    try {
+      const result = await fetchPinned({
+        method,
+        url: target,
+        pinnedAddress: pinned.address,
+        family: pinned.family,
+        servername: init.servername ?? target.hostname,
+        timeoutMs: init.timeoutMs ?? 10_000,
+        maxBytes: init.maxBytes ?? 5 * 1024 * 1024,
+        rejectUnauthorized: this.rejectUnauthorized,
+      });
+      seed.bytesOut = result.bytesOut;
+      const allowed = result.status >= 200 && result.status < 400;
+      this.finish(seed, allowed ? "allow" : "deny", allowed ? "allowlisted" : "upstream_status");
+      return {
+        status: result.status,
+        headers: result.headers,
+        body: result.body,
+        finalUrl: target.href,
+      };
+    } catch (error) {
+      const code = error instanceof ProxyFetchError ? error.code : "network";
+      this.finish(seed, "deny", code);
+      throw error;
+    }
   }
 
   get listeningAddress(): string {
@@ -955,6 +1016,12 @@ const noopLogger: StructuredLogger = {
     return undefined;
   },
 };
+
+function pinnedFromCaller(address: string): PinSuccess | PinFailure {
+  const family = net.isIP(address);
+  if (family !== 4 && family !== 6) return { ok: false, reason: "private_ip" };
+  return { ok: true, address, family };
+}
 
 function validateLease(lease: PortLease, now: () => number): PortLease {
   if (!Number.isInteger(lease.port) || lease.port < PORT_LEASE_MIN || lease.port > PORT_LEASE_MAX) {

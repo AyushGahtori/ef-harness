@@ -6,7 +6,10 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { LocalArtifactManager } from "../../src/harness-run/artifacts.js";
 import { MemoryDenialLogger } from "../../src/harness-run/denial-log.js";
 import { HarnessRunEngine } from "../../src/harness-run/engine.js";
-import { CommandDeniedError, CwdEscapeDeniedError } from "../../src/harness-run/errors.js";
+import { CommandDeniedError, CwdEscapeDeniedError, SandboxTierHoldError } from "../../src/harness-run/errors.js";
+import { WarmExecutionPool } from "../../src/harness-run/pool.js";
+import type { JobHandle, JobSpec } from "../../src/job-objects/types.js";
+import { SandboxTierSelector } from "../../src/tier-c-d-selector/selector.js";
 import { ensureJobHostExe } from "../../src/harness-run/job-host.js";
 import { InMemoryLocalTracer, TelemetryDb } from "../../src/harness-run/telemetry.js";
 
@@ -29,6 +32,7 @@ function alive(pid: number): boolean {
 }
 
 beforeAll(async () => {
+  if (process.platform !== "win32") return;
   await ensureJobHostExe();
 }, 60_000);
 
@@ -233,7 +237,7 @@ process.stdout.write(lines.join("\\n") + "\\n");
     ctx.engine.close();
   }, 60_000);
 
-  it("kills a detached grandchild and closes inherited pipes when the main process exits", async () => {
+  it.skipIf(process.platform !== "win32")("kills a detached grandchild and closes inherited pipes when the main process exits", async () => {
     const ctx = await openEngine(makeRoot());
     const sleeper = path.join(ctx.worktree, "sleeper.js");
     const spawner = path.join(ctx.worktree, "spawn-detached.js");
@@ -350,7 +354,7 @@ setTimeout(() => process.exit(2), 5000);
     ctx.engine.close();
   }, 30_000);
 
-  it("caps a 2 MB line and hints when a dev server times out", async () => {
+  it("caps a 2 MB line", async () => {
     const ctx = await openEngine(makeRoot());
     const wide = path.join(ctx.worktree, "wide.js");
     fs.writeFileSync(wide, "process.stdout.write('A'.repeat(2000000) + '\\n');");
@@ -365,7 +369,12 @@ setTimeout(() => process.exit(2), 5000);
     );
     const wideLines = await ctx.artifacts.readLogRange(wideResult.artifactId, 1, 1);
     expect(wideLines.lines[0]?.length).toBe(2_000_000);
+    ctx.telemetry.close();
+    ctx.engine.close();
+  }, 40_000);
 
+  it.skipIf(process.platform !== "win32")("hints when a Windows dev server times out", async () => {
+    const ctx = await openEngine(makeRoot());
     const server = path.join(ctx.worktree, "vite.cmd");
     fs.writeFileSync(server, "@echo off\r\necho Local: http://localhost:5173/\r\nping 127.0.0.1 -n 30 >NUL\r\n");
     const dev = await ctx.engine.executeSandboxedCommand({
@@ -381,6 +390,102 @@ setTimeout(() => process.exit(2), 5000);
     ctx.telemetry.close();
     ctx.engine.close();
   }, 40_000);
+
+  it("releases the warm slot when creating the command job throws", async () => {
+    const root = makeRoot();
+    const pool = new WarmExecutionPool({ size: 1 });
+    const artifacts = new LocalArtifactManager(path.join(root, "artifacts"));
+    const telemetry = new TelemetryDb(path.join(root, "telemetry.db"));
+    const engine = new HarnessRunEngine({
+      selector: pool,
+      jobs: {
+        createJob() {
+          throw new Error("job failed");
+        },
+      },
+      artifacts,
+      telemetry,
+    });
+    closers.push(() => {
+      telemetry.close();
+      engine.close();
+    });
+    const worktree = path.join(root, "wt");
+    fs.mkdirSync(worktree, { recursive: true });
+    await expect(
+      engine.executeSandboxedCommand({
+        attemptId: "leak",
+        worktreePath: worktree,
+        command: [process.execPath, "-e", "process.exit(0)"],
+      }),
+    ).rejects.toThrow(/job failed/);
+    const acquired = await Promise.race([
+      pool.acquire({ priority: "worker", attemptId: "next" }).then((slot) => {
+        slot.release();
+        return "acquired";
+      }),
+      new Promise<string>((resolve) => {
+        setTimeout(() => resolve("leaked"), 500);
+      }),
+    ]);
+    expect(acquired).toBe("acquired");
+  });
+
+  it("holds execution when SandboxTierSelector.resolve has no available tier", async () => {
+    const ctx = await openEngine(makeRoot());
+    const held = new HarnessRunEngine({
+      artifacts: ctx.artifacts,
+      telemetry: ctx.telemetry,
+      isolation: new SandboxTierSelector({ providers: {} }),
+    });
+    closers.push(() => held.close());
+    await expect(
+      held.executeSandboxedCommand({
+        attemptId: "hold",
+        worktreePath: ctx.worktree,
+        attemptTempDir: ctx.attemptTemp,
+        command: [process.execPath, "-e", "process.exit(0)"],
+      }),
+    ).rejects.toBeInstanceOf(SandboxTierHoldError);
+  });
+
+  it("opens and closes the OS job supervisor around the command", async () => {
+    const ctx = await openEngine(makeRoot());
+    const events: string[] = [];
+    const engine = new HarnessRunEngine({
+      artifacts: ctx.artifacts,
+      telemetry: ctx.telemetry,
+      osJobs: {
+        async createJob(spec: JobSpec): Promise<JobHandle> {
+          events.push(spec.kind);
+          return {
+            id: "job-test",
+            name: spec.name,
+            kind: spec.kind,
+            parentId: null,
+            limits: spec.limits,
+            requestedLimits: spec.limits,
+            limitsClamped: false,
+            timeoutMs: spec.timeoutMs ?? null,
+          };
+        },
+        async closeJob(): Promise<void> {
+          events.push("close");
+        },
+      },
+    });
+    closers.push(() => engine.close());
+    const script = path.join(ctx.worktree, "os.js");
+    fs.writeFileSync(script, "process.stdout.write('ok\\n');");
+    const result = await engine.executeSandboxedCommand({
+      attemptId: "os",
+      worktreePath: ctx.worktree,
+      attemptTempDir: ctx.attemptTemp,
+      command: [process.execPath, script],
+    });
+    expect(result.exitCode).toBe(0);
+    expect(events).toEqual(["command", "close"]);
+  });
 });
 
 describe("denial errors", () => {

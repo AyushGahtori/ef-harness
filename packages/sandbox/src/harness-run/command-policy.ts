@@ -440,7 +440,23 @@ function pathInside(worktreePath: string, cwd: string, target: string): boolean 
   return resolveInsideWorktree(worktreePath, cwd, target) !== null && containsLexically(worktreePath, cwd, target);
 }
 
+function isDriveOrUnc(input: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(input) || input.startsWith("\\\\");
+}
+
 function containsLexically(worktreePath: string, cwd: string, target: string): boolean {
+  if (process.platform !== "win32" && isDriveOrUnc(target)) {
+    if (!isDriveOrUnc(worktreePath)) return false;
+    const root = path.win32.resolve(worktreePath);
+    const base = isDriveOrUnc(cwd) ? cwd : root;
+    const lexical = path.win32.resolve(base, target);
+    const relative = path.win32.relative(root, lexical);
+    const inside =
+      relative === "" ||
+      (relative !== ".." && !relative.startsWith("..\\") && !path.win32.isAbsolute(relative));
+    if (!inside) return false;
+    return relative !== ".git" && !relative.startsWith(".git\\");
+  }
   const root = path.resolve(worktreePath);
   const lexical = path.resolve(cwd, target);
   return isPathInside(root, lexical) && !isGitInternal(root, lexical);
