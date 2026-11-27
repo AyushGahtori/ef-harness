@@ -1278,3 +1278,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1` pre-commit `verify-harmony.mjs`: exit `0` — `harmony ok`
 - Stopped before C38.
+
+## [C38] — phase 0, design system, and sequential runner on real workers
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `13e9b60e538f655232161debd626f3014f541152` (`integrate: C38 wire phase0, design system, and sequential runner`)
+- **Branches merged:** `origin/task/093-phase0-controller-gate0` (`1d460bd67c8c3d996197c11c427a446aeac3e493`) as `785613ad52d930d8797e13bfd56bf930a74eb031`, then `origin/task/094-ui-design-system-pipeline` (`0e553ab3190576b30a2b7ead0c24848a10c7434e`) as `392346a87bc737eb84b6f0a877d8825d55f20eb3`, then `origin/task/095-sequential-task-dispatcher` (`769e91a74b34942c9f2c6cb915de10101652742c`) as `8b55ddc6f8d6da2b66fff5a47ac16bd15714e5fd`, all `git merge --no-ff`. No dirty-worktree patch was assigned. Did not reapply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**`. `path_leases.mode` stays `intent|granted`. No `doc_span` arm. Did not merge `main`. Did not open a pull request. Did not start C39.
+- **Findings Fixed:** the C38 slice of `F-040` for canonical project kinds and barrel exports of phase 0, the design system, and the sequential runner, `F-041` for deleting the private Phase 0 and sequential SQLite schemas, `F-042` for sandboxed Gate 0 commands, kernel install vetting, and Playwright styleguide screenshots, and `F-043` for `ProjectStateDb` receipts, harness smoke, and CLI/API features with zero UI journeys.
+
+### What Changed
+- Merged task 093, then 094, then 095 onto `3c1f290`. `Phase0StateStore` keeps the run on one `plan` node in `ProjectStateDb`. `Phase0KernelInstaller` vets dependencies through `KernelPackageInstaller`. Gate 0 commands and post-merge smoke run in `HarnessRunEngine`. `/__styleguide` screenshots are Chromium captures stored as `sha256:` digests. `cli_tool` and `backend_api` skip `P0.4` and `P0.8`. `web_fullstack` still runs `P0.1` before the later Phase 0 tasks.
+- `SequentialBuildRunner` persists attempt receipts as `comment` nodes on `ProjectStateDb`, with canonical `sha256:` content hashes and the shared `ef_search_text` function. A feature with zero journeys completes, and a feature that declares journeys completes after its leaves merge. The default verifier and static audit check sources through `HarnessRunEngine`. `CandidateAcceptanceCoordinator` is constructed on the same writer. A `NativeWorkerLoop` passed as the worker is driven by `runAttempt`.
+- `@ef-harness/planner` exports `Phase0ExecutionController`, `StyleguideRouteVerifier`, and `SequentialBuildRunner`. Offline Playwright remains available when a unit test injects it. No `doc_span` arm was added.
+
+### What It Fixed
+- **F-040:** Phase 0 and the design system normalize project kinds through `@ef-harness/shared-contracts`. Headless and API projects do not scaffold UI Phase 0 tasks. The three modules are exported from the planner barrel.
+- **F-041:** Private `phase0_*` tables and `sequential_attempt_receipts` are gone. Both stores use the open `ProjectStateDb` writer.
+- **F-042:** Phase 0 does not spawn host commands. Install decisions go through `KernelPackageInstaller`. Styleguide screenshots come from Chromium, not a one-color buffer, and land in content-addressed storage.
+- **F-043:** Default smoke executes through `HarnessRunEngine`. A CLI or API feature with `journeys === 0` is accepted, and a UI feature with journeys is accepted after its leaves merge.
+
+### Verification Run & Results
+- No dirty-worktree patch was assigned to C38. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm exec vitest run --config vitest.config.ts` in `packages/planner`: exit `0` — `Test Files 51 passed (51)`, `Tests 269 passed (269)` (`0` skipped). The previous 43 files / 211 tests still pass inside this run.
+- `pnpm --filter @ef-harness/intake exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 18 passed (18)`, `Tests 73 passed (73)` (`0` skipped)
+- `pnpm --filter @ef-harness/mcp-server exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)` (`0` skipped)
+- `pnpm --filter @ef-harness/research-engine exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped). The 5 ms catalog budget was not changed.
+- `pnpm --filter @ef-harness/discovery exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1` pre-commit `verify-harmony.mjs`: exit `0` — `harmony ok`
+- Stopped before C39.
