@@ -133,7 +133,7 @@ export function parseOpenAiApplyPatch(patch: string): ParsedPatch {
       let builder: HunkBuilder = { headers: [], oldLines: [], newLines: [], insertedLines: [] };
       while (index < lines.length && !(lines[index] ?? "").startsWith("***")) {
         const hunkLine = lines[index] ?? "";
-        if (hunkLine.trim() === "") {
+        if (hunkLine === "") {
           index += 1;
           continue;
         }

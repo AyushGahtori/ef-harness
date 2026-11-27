@@ -336,6 +336,7 @@ export {
   SENIOR_MAX_STEPS,
   STREAM_STALL_MS,
   SUBAGENT_TOOL_NAMES,
+  UnknownOutcomeReconciliationError,
   collectModelTurn,
   emptyWorkingMemory as executorEmptyWorkingMemory,
   generateHandoffNote,

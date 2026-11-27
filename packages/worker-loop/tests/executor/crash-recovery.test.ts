@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CrashInjectorPort } from "../../src/executor/ports.js";
-import { CrashInjectedError, type CrashPoint } from "../../src/executor/types.js";
+import {
+  CrashInjectedError,
+  LocalTurnFailure,
+  UnknownOutcomeReconciliationError,
+  type CrashPoint,
+} from "../../src/executor/types.js";
 import {
   createFixture,
   editThenSubmit,
@@ -90,6 +95,30 @@ describe("checkpoint crash recovery", () => {
     expect(crashed.files.dump()).toEqual(clean.files.dump());
     expect(crashed.coordinator.turns(crashed.id).map((turn) => turn.step)).toEqual([1, 2, 3, 4]);
     expect(crashed.events.filter((event) => event === "run")).toHaveLength(1);
+  });
+
+  it("throws UnknownOutcomeReconciliationError on unknown_timeout and reconciles on resume", async () => {
+    let timedOut = false;
+    const fixture = createFixture({
+      reconcile: { action: "settle", actualUnits: 25 },
+      script: (call) => {
+        if (call === 0 && !timedOut) {
+          timedOut = true;
+          return {
+            error: new LocalTurnFailure("unknown_timeout", "request timed out after transmit"),
+          };
+        }
+        return editThenSubmit(call - 1);
+      },
+    });
+    await expect(fixture.loop.runAttempt(fixture.id)).rejects.toBeInstanceOf(
+      UnknownOutcomeReconciliationError,
+    );
+    expect(fixture.coordinator.checkpoint(fixture.id)?.pendingEffects[0]?.kind).toBe("model_in_flight");
+    const resumed = await fixture.loop.resumeAttemptFromCheckpoint(fixture.id);
+    expect(resumed.outcome).toBe("submitted");
+    expect(fixture.events).toContain("reconcile");
+    expect(fixture.budget.spent).toBe(55);
   });
 });
 

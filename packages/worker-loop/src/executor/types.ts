@@ -330,6 +330,18 @@ export class CrashInjectedError extends Error {
   }
 }
 
+export class UnknownOutcomeReconciliationError extends Error {
+  readonly clientRequestId: string;
+  readonly step: number;
+
+  constructor(clientRequestId: string, step: number) {
+    super(`Timeout after request transmitted (${clientRequestId}); hold reservation for reconciliation`);
+    this.name = "UnknownOutcomeReconciliationError";
+    this.clientRequestId = clientRequestId;
+    this.step = step;
+  }
+}
+
 export class LocalTurnFailure extends Error {
   readonly kind: ModelFailureKind;
   readonly retryAfterMs: number | null;

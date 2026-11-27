@@ -81,6 +81,8 @@ export function createFixture(options: FixtureOptions): LoopFixture {
   const budget = new FakeBudget(options.maxReserves ?? 100, events, options.reconcile);
   const model = new ScriptedModel(options.script, events, options.onStreamStart);
   const onTool = options.onTool ?? (() => undefined);
+  let editMisses = 0;
+  let replaceLinesUnlocked = false;
   const packet = packetFor(options.tools ?? [...NATIVE_TOOL_CATALOG], options.must);
   const attempt = attemptFor(id, options.level ?? "junior", options.maxSteps ?? null, packet, options.memory, options.contextWindow);
   coordinator.registerAttempt(attempt);
@@ -105,7 +107,10 @@ export function createFixture(options: FixtureOptions): LoopFixture {
       },
     },
     edits: {
-      availableTools: () => ["str_replace", "write_new_file"],
+      availableTools: (relativePath) =>
+        replaceLinesUnlocked && relativePath === "src/recover.ts"
+          ? ["str_replace", "write_new_file", "replace_lines"]
+          : ["str_replace", "write_new_file"],
       async applyPatch(patch) {
         onTool("apply_patch");
         events.push("edit");
@@ -115,6 +120,28 @@ export function createFixture(options: FixtureOptions): LoopFixture {
       async strReplace(path, _oldText, newText) {
         onTool("str_replace");
         if (path === "stuck") {
+          const error = new Error("ladder exhausted");
+          error.name = "EditStuckEscalation";
+          throw error;
+        }
+        if (path === "src/recover.ts" && _oldText === "miss") {
+          editMisses += 1;
+          if (editMisses === 1) {
+            const error = new Error("Your search text wasn't found. Closest match at lines 1–2");
+            error.name = "NearestCandidateError";
+            throw error;
+          }
+          if (editMisses === 2) {
+            const error = new Error("L0001: export const value = 1;\nUse a smaller hunk.");
+            error.name = "FreshRegionViewError";
+            throw error;
+          }
+          if (editMisses === 3) {
+            replaceLinesUnlocked = true;
+            const error = new Error("replace_lines unlocked; range_hash=abc123");
+            error.name = "ReplaceLinesUnlockedError";
+            throw error;
+          }
           const error = new Error("ladder exhausted");
           error.name = "EditStuckEscalation";
           throw error;

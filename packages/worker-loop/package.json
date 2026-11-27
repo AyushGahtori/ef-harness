@@ -23,6 +23,9 @@
   },
   "dependencies": {
     "@ef-harness/db": "workspace:*",
+    "@ef-harness/git-engine": "workspace:*",
+    "@ef-harness/mcp-server": "workspace:*",
+    "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "@ef-harness/shared-observability": "workspace:*"
   },

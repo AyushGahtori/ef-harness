@@ -18,6 +18,7 @@ import {
   SMALLER_HUNK_HINT,
   StaleRangeHashError,
   WriteScopeDeniedError,
+  hashFileContent,
   hashLineRange,
   parseOpenAiApplyPatch,
 } from "../../src/edits/index.js";
@@ -407,5 +408,56 @@ describe("EditToolDispatcher", () => {
     expect(error).toBeInstanceOf(AmbiguousEditMatchError);
     expect(error.matchLineNumbers).toEqual([14, 48]);
     expect(readFile(root, "src/a.ts")).toBe(original);
+  });
+
+  it("preserves single-space blank context lines in apply_patch hunks", () => {
+    const root = tempWorktree();
+    writeFile(root, "src/blank.ts", "const a = 1;\n\nconst b = 2;\n");
+    const { edit } = harness({ root, editFormat: "apply_patch", writeScope: ["src/**"] });
+    edit.applyPatch(
+      [
+        "*** Begin Patch",
+        "*** Update File: src/blank.ts",
+        "@@",
+        "-const a = 1;",
+        "+const a = 10;",
+        " ",
+        "-const b = 2;",
+        "+const b = 20;",
+        "*** End Patch",
+      ].join("\n"),
+    );
+    expect(readFile(root, "src/blank.ts")).toBe("const a = 10;\n\nconst b = 20;\n");
+  });
+
+  it("rejects mixed-case .GIT and Node_Modules paths", () => {
+    const root = tempWorktree();
+    const { edit } = harness({ root, editFormat: "str_replace", writeScope: ["**"] });
+    expect(() => edit.strReplace(".GIT/config", "[core]", "[no]")).toThrow(ProtectedPathError);
+    expect(() => edit.strReplace("Node_Modules/pkg/index.js", "1", "2")).toThrow(ProtectedPathError);
+  });
+
+  it("rejects .harness and .HARNESS writes", () => {
+    const root = tempWorktree();
+    const { edit } = harness({ root, editFormat: "str_replace", writeScope: ["**"] });
+    expect(() => edit.strReplace(".harness/state.json", "a", "b")).toThrow(ProtectedPathError);
+    expect(() => edit.strReplace(".HARNESS/state.json", "a", "b")).toThrow(ProtectedPathError);
+  });
+
+  it("matches Task 055 logical-line rangeHash on CRLF files and preserves CRLF in replace_lines", () => {
+    const root = tempWorktree();
+    const crlf = "alpha\r\nbeta\r\ngamma\r\n";
+    writeFile(root, "src/crlf.ts", crlf);
+    const { edit } = harness({ root, editFormat: "str_replace", writeScope: ["src/**"] });
+    const logicalHash = hashFileContent("alpha\nbeta");
+    expect(hashLineRange(crlf, 1, 2, "src/crlf.ts")).toBe(logicalHash);
+
+    for (let i = 0; i < 3; i += 1) {
+      expect(() => edit.strReplace("src/crlf.ts", "missing", "x")).toThrow();
+    }
+    edit.replaceLines("src/crlf.ts", 1, 2, "ALPHA\nBETA", logicalHash);
+    const updated = readFile(root, "src/crlf.ts");
+    expect(updated).toBe("ALPHA\r\nBETA\r\ngamma\r\n");
+    expect(updated).not.toMatch(/(?<!\r)\n/);
   });
 });

@@ -13,6 +13,15 @@
       "path": "../db"
     },
     {
+      "path": "../git-engine"
+    },
+    {
+      "path": "../mcp-server"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
       "path": "../shared-contracts"
     },
     {

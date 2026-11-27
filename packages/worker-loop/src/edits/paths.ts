@@ -15,7 +15,12 @@ function assertInside(rootReal: string, candidate: string, requested: string): s
   }
   const posix = normalizePosix(relative);
   const segments = posix.split("/");
-  if (segments.includes(".git") || segments.includes("node_modules")) {
+  if (
+    segments.some((segment) => {
+      const lower = segment.toLowerCase();
+      return lower === ".git" || lower === ".harness" || lower === "node_modules";
+    })
+  ) {
     throw new ProtectedPathError(posix);
   }
   return posix;
@@ -42,9 +47,13 @@ export function resolveEditPath(worktreePath: string, requested: string): Resolv
     throw new PathEscapeDeniedError(requested, "null byte");
   }
   const rootReal = fs.realpathSync(worktreePath);
-  const absolute = path.resolve(worktreePath, requested);
-  const lexical = path.relative(rootReal, absolute);
-  if (lexical.startsWith("..") || path.isAbsolute(lexical)) {
+  const worktreeResolved = path.resolve(worktreePath);
+  const absolute = path.resolve(rootReal, requested);
+  const lexicalFromReal = path.relative(rootReal, absolute);
+  const lexicalFromWorktree = path.relative(worktreeResolved, absolute);
+  const escapesReal = lexicalFromReal.startsWith("..") || path.isAbsolute(lexicalFromReal);
+  const escapesWorktree = lexicalFromWorktree.startsWith("..") || path.isAbsolute(lexicalFromWorktree);
+  if (escapesReal && escapesWorktree) {
     throw new PathEscapeDeniedError(requested, "path escapes the worktree");
   }
   if (fs.existsSync(absolute)) {

@@ -823,6 +823,15 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
+      '@ef-harness/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts

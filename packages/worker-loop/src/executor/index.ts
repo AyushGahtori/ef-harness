@@ -17,6 +17,7 @@ export {
   SENIOR_MAX_STEPS,
   STREAM_STALL_MS,
   SUBAGENT_TOOL_NAMES,
+  UnknownOutcomeReconciliationError,
   emptyWorkingMemory,
 } from "./types.js";
 export type {

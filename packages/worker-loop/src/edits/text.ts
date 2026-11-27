@@ -104,8 +104,12 @@ export function lineRangeBounds(
 }
 
 export function hashLineRange(content: string, startLine: number, endLine: number, path = ""): string {
-  const bounds = lineRangeBounds(content, startLine, endLine, path);
-  return hashFileContent(content.slice(bounds.start, bounds.end));
+  const spans = lineSpans(content);
+  if (startLine < 1 || endLine < startLine || endLine > spans.length) {
+    throw new ReplaceLinesBoundsError(path, startLine, endLine, spans.length);
+  }
+  const selected = spans.slice(startLine - 1, endLine).map((span) => span.text);
+  return hashFileContent(selected.join("\n"));
 }
 
 export function stripTrailingHorizontal(line: string): string {

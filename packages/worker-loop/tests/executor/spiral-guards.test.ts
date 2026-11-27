@@ -206,4 +206,149 @@ describe("spiral and stall guards", () => {
     expect(JSON.parse(result.handoffArtifact).llmTokens).toBe(0);
     assertReserveBeforeStream(fixture.events);
   });
+
+  it("sticks on no_progress when alternating read_file and failing checks without tree edits", async () => {
+    const fixture = createFixture({
+      script: (call): ScriptedTurn => {
+        if (call % 2 === 0) {
+          return {
+            tools: [
+              {
+                name: "harness.run",
+                arguments: { command: `npm test ${call} fingerprint=ac-31 fail=AC-31` },
+              },
+            ],
+          };
+        }
+        return {
+          tools: [{ name: "read_file", arguments: { path: `src/f-${call}.ts` } }],
+        };
+      },
+    });
+    const result = await fixture.loop.runAttempt(fixture.id);
+    expect(result.outcome).toBe("stuck");
+    expect(result.reason).toBe("no_progress");
+    expect(result.countsAsFailedAttempt).toBe(true);
+    expect(result.countsAsWorkerFailure).toBe(true);
+    expect(fixture.coordinator.turns(fixture.id)).toHaveLength(8);
+  });
+
+  it("resets the no-progress streak when a check run passes", async () => {
+    const fixture = createFixture({
+      script: (call): ScriptedTurn => {
+        if (call < 6) {
+          return {
+            tools: [
+              {
+                name: "harness.run",
+                arguments: { command: `npm test ${call} fingerprint=ac-31 fail=AC-31` },
+              },
+            ],
+          };
+        }
+        if (call === 6) {
+          return { tools: [{ name: "harness.run", arguments: { command: "npm test pass" } }] };
+        }
+        if (call < 10) {
+          return {
+            tools: [
+              {
+                name: "harness.run",
+                arguments: { command: `npm test ${call} fingerprint=ac-31 fail=AC-31` },
+              },
+            ],
+          };
+        }
+        return { tools: [{ name: "harness.submit_candidate", arguments: {} }] };
+      },
+    });
+    const result = await fixture.loop.runAttempt(fixture.id);
+    expect(result.outcome).toBe("submitted");
+    expect(result.countsAsFailedAttempt).toBe(false);
+  });
+
+  it("clears pendingEffects when rejecting a malformed tool in a multi-tool response", async () => {
+    const executed: string[] = [];
+    const fixture = createFixture({
+      tools: ["read_file", "harness.submit_candidate"],
+      onTool: (name) => executed.push(name),
+      script: (call): ScriptedTurn => {
+        if (call === 0) {
+          return {
+            tools: [
+              { name: "bash", arguments: { cmd: "ls" } },
+              { name: "read_file", arguments: { path: "src/app.ts" } },
+            ],
+          };
+        }
+        if (call === 1) {
+          return { tools: [{ name: "read_file", arguments: { path: "src/app.ts" } }] };
+        }
+        return { tools: [{ name: "harness.submit_candidate", arguments: {} }] };
+      },
+    });
+    const result = await fixture.loop.runAttempt(fixture.id);
+    expect(result.outcome).toBe("submitted");
+    expect(executed).toEqual(["read_file"]);
+    expect(fixture.model.calls).toHaveLength(3);
+    const turns = fixture.coordinator.turns(fixture.id);
+    expect(turns[0]?.resultSummary).toContain("Available tools:");
+    expect(fixture.coordinator.checkpoint(fixture.id)?.pendingEffects).toEqual([]);
+  });
+
+  it("recovers across edit errors 1-3 via tool results and escalates to stuck on failure 4", async () => {
+    const recovered = createFixture({
+      tools: ["read_file", "str_replace", "harness.submit_candidate"],
+      files: { "src/recover.ts": "export const value = 1;\n" },
+      script: (call): ScriptedTurn => {
+        if (call < 3) {
+          return {
+            tools: [
+              {
+                name: "str_replace",
+                arguments: { path: "src/recover.ts", oldText: "miss", newText: "x" },
+              },
+            ],
+          };
+        }
+        if (call === 3) {
+          return {
+            tools: [
+              {
+                name: "replace_lines",
+                arguments: { path: "src/recover.ts", start: 1, end: 1, content: "export const value = 2;\n", rangeHash: "abc123" },
+              },
+            ],
+          };
+        }
+        return { tools: [{ name: "harness.submit_candidate", arguments: {} }] };
+      },
+    });
+    const okResult = await recovered.loop.runAttempt(recovered.id);
+    expect(okResult.outcome).toBe("submitted");
+    const recoverTurns = recovered.coordinator.turns(recovered.id);
+    expect(recoverTurns[0]?.resultSummary).toBe("error: NearestCandidateError");
+    expect(recoverTurns[1]?.resultSummary).toBe("error: FreshRegionViewError");
+    expect(recoverTurns[2]?.resultSummary).toBe("error: ReplaceLinesUnlockedError");
+    expect(recovered.files.read("src/recover.ts")).toBe("export const value = 2;\n/*formatted*/\n");
+    expect(recovered.formatted).toEqual([["src/recover.ts"]]);
+
+    const escalated = createFixture({
+      files: { "src/recover.ts": "export const value = 1;\n" },
+      script: (): ScriptedTurn => ({
+        tools: [
+          {
+            name: "str_replace",
+            arguments: { path: "src/recover.ts", oldText: "miss", newText: "x" },
+          },
+        ],
+      }),
+    });
+    const stuckResult = await escalated.loop.runAttempt(escalated.id);
+    expect(stuckResult.outcome).toBe("stuck");
+    expect(stuckResult.reason).toBe("edit_recovery");
+    expect(stuckResult.countsAsFailedAttempt).toBe(true);
+    expect(stuckResult.countsAsWorkerFailure).toBe(true);
+    expect(escalated.coordinator.turns(escalated.id)).toHaveLength(4);
+  });
 });

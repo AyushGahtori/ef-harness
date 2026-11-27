@@ -28,6 +28,7 @@ import {
   CrashInjectedError,
   MODEL_CALL_RESERVE_UNITS,
   STREAM_STALL_MS,
+  UnknownOutcomeReconciliationError,
   toolBody,
   type AttemptExecutionResult,
   type AttemptRecord,
@@ -210,7 +211,7 @@ export class NativeWorkerLoop {
         if (!failure) throw error;
         if (failure.kind === "unknown_timeout") {
           await this.deps.budget.markReservationUnknown(reservation.reservationId);
-          throw new CrashInjectedError("during_model_call", site.nextStep, null);
+          throw new UnknownOutcomeReconciliationError(failure.clientRequestId, site.nextStep);
         }
         await this.settlePartial(reservation.reservationId, failure);
         this.writeCursor(this.deps.coordinator.getAttempt(attempt.id), []);
@@ -310,8 +311,13 @@ export class NativeWorkerLoop {
       const name = canonicalToolName(original.name, current.profile.editFormat);
       const call: ToolCall = { ...original, name };
       const allowed = allowedTools(current.packet.tools, current.profile.editFormat);
-      if (call.malformed || !allowed.includes(name)) {
-        return this.rejectTool(current, response, call, allowed);
+      const targetPath = stringField(call.arguments, "path") ?? stringField(call.arguments, "file");
+      const unlockedReplaceLines =
+        name === "replace_lines" &&
+        targetPath !== null &&
+        this.deps.edits.availableTools(targetPath).includes("replace_lines");
+      if (call.malformed || (!allowed.includes(name) && !unlockedReplaceLines)) {
+        return this.rejectTool(current, response, call, allowed, index);
       }
       if (isEditTool(name) && current.additiveSteer && !current.additiveSteer.acknowledged) {
         if (acknowledgesSteer(response.text, current.additiveSteer.id)) {
@@ -377,20 +383,31 @@ export class NativeWorkerLoop {
           );
         }
       } catch (error) {
-        if (!isEditStuckError(error)) throw error;
-        await this.commitStep(
-          current,
-          response,
-          call,
-          toolBody({
+        if (error instanceof CrashInjectedError) throw error;
+        if (isEditStuckError(error)) {
+          await this.commitStep(
+            current,
+            response,
+            call,
+            toolBody({
+              ok: false,
+              summary: "edit_stuck: edit recovery ladder exhausted",
+              output: error.message,
+            }),
+            index,
+            null,
+          );
+          return { type: "terminal", result: await this.finish(current.id, "stuck", "edit_recovery", true) };
+        }
+        if (error instanceof Error) {
+          body = toolBody({
             ok: false,
-            summary: "edit_stuck: edit recovery ladder exhausted",
+            summary: `error: ${error.name}`,
             output: error.message,
-          }),
-          index,
-          null,
-        );
-        return { type: "terminal", result: await this.finish(current.id, "stuck", "edit_recovery", true) };
+          });
+        } else {
+          throw error;
+        }
       }
       this.writeCursor(current, [this.toolCursor("tool_done_unlogged", response, index, site.nextStep)]);
       if (this.shouldCrash("after_tool_before_log", site)) {
@@ -458,6 +475,7 @@ export class NativeWorkerLoop {
     response: RecordedResponse,
     call: ToolCall,
     allowed: readonly string[],
+    index: number,
   ): Promise<Signal> {
     const prior = countPrefixed(this.deps.coordinator.turns(attempt.id), "malformed:");
     const reason = call.malformed
@@ -469,8 +487,9 @@ export class NativeWorkerLoop {
         response,
         call,
         toolBody({ ok: false, summary: `malformed: repeated ${reason}`, output: reason }),
-        0,
+        index,
         null,
+        true,
       );
       return { type: "terminal", result: await this.finish(attempt.id, "stuck", "malformed_tool", true) };
     }
@@ -480,8 +499,9 @@ export class NativeWorkerLoop {
       response,
       call,
       toolBody({ ok: false, summary: `malformed: ${message}`, output: message }),
-      0,
+      index,
       null,
+      true,
     );
     return { type: "continue" };
   }
@@ -508,6 +528,7 @@ export class NativeWorkerLoop {
     body: ToolBody,
     index: number,
     preset: CheckpointCommit | null,
+    clearPending = false,
   ): Promise<string | null> {
     const current = this.deps.coordinator.getAttempt(attempt.id);
     const step = this.deps.coordinator.turns(current.id).length + 1;
@@ -521,6 +542,7 @@ export class NativeWorkerLoop {
       }));
     const tree = await this.deps.snapshots.treeSha();
     const changed = await this.deps.snapshots.changedPathsSinceBase();
+    const hasCheckRun = body.checkResults.length > 0 || body.failingCheckFingerprint !== null;
     const progress = nextProgress(
       {
         streak: current.progressStreak,
@@ -529,6 +551,7 @@ export class NativeWorkerLoop {
       },
       tree,
       body.failingCheckFingerprint,
+      hasCheckRun,
     );
     const memory = body.memory ?? current.workingMemory;
     const checks = body.checkResults.length > 0 ? body.checkResults : current.lastCheckResults;
@@ -547,7 +570,7 @@ export class NativeWorkerLoop {
       changedFiles: changed,
       lastCheckResults: checks,
     });
-    const more = index + 1 < response.toolCalls.length;
+    const more = !clearPending && index + 1 < response.toolCalls.length;
     const pending: PendingEffect[] = more ? [this.responseCursor(response, index + 1)] : [];
     this.deps.coordinator.transaction(() => {
       this.deps.coordinator.appendTurn({
@@ -728,8 +751,8 @@ export class NativeWorkerLoop {
       step: existing?.step ?? 0,
       wipRef: existing?.wipRef ?? null,
       handoffArtifact: note,
-      countsAsFailedAttempt: false,
-      countsAsWorkerFailure: false,
+      countsAsFailedAttempt: outcome === "stuck",
+      countsAsWorkerFailure: outcome === "stuck",
       settledUnits: await this.deps.budget.getSpentUnits(attemptId),
       changedFiles: [...attempt.changedFiles],
       routedTo: attempt.routedTo,

@@ -50,13 +50,21 @@ export function nextProgress(
   cursor: ProgressCursor,
   tree: string,
   fingerprint: string | null,
+  hasCheckRun = fingerprint !== null,
 ): ProgressCursor & { stuck: boolean } {
-  if (fingerprint === null) {
-    return { streak: 0, tree, fingerprint: null, stuck: false };
+  if (hasCheckRun) {
+    if (fingerprint === null) {
+      return { streak: 0, tree, fingerprint: null, stuck: false };
+    }
+    if (cursor.tree === tree && cursor.fingerprint === fingerprint) {
+      const streak = cursor.streak + 1;
+      return { streak, tree, fingerprint, stuck: streak >= NO_PROGRESS_STEP_LIMIT };
+    }
+    return { streak: 1, tree, fingerprint, stuck: false };
   }
-  if (cursor.tree === tree && cursor.fingerprint === fingerprint) {
+  if (cursor.tree === tree && cursor.fingerprint !== null) {
     const streak = cursor.streak + 1;
-    return { streak, tree, fingerprint, stuck: streak >= NO_PROGRESS_STEP_LIMIT };
+    return { streak, tree, fingerprint: cursor.fingerprint, stuck: streak >= NO_PROGRESS_STEP_LIMIT };
   }
-  return { streak: 1, tree, fingerprint, stuck: false };
+  return { streak: 0, tree, fingerprint: null, stuck: false };
 }

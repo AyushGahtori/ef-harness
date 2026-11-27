@@ -158,7 +158,7 @@ export class EditToolDispatcher {
     const content = this.readDisk(resolved);
     if (content === null) throw new FileNotFoundForEditError(resolved.relativePath);
     const bounds = lineRangeBounds(content, start, end, resolved.relativePath);
-    const currentRangeHash = hashFileContent(content.slice(bounds.start, bounds.end));
+    const currentRangeHash = hashLineRange(content, start, end, resolved.relativePath);
     if (currentRangeHash !== rangeHash) {
       throw new StaleRangeHashError({
         path: resolved.relativePath,
