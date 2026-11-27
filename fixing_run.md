@@ -200,3 +200,32 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 61 passed (61)`, `Tests 361 passed (361)`
 - `pnpm --filter @ef-harness/db build`: exit `0` — copied `state.sql`, `global.sql`, `telemetry.sql`, `code-index.sql`, and `queries.sql` into `packages/db/dist/schema`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+---
+
+## [C06] — Forward user_version migrations
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `5103b12dc285a3ac800a06edafe1b3573429aba3` (`integrate: C06 forward user_version migrations`)
+- **Findings Fixed:** `F-009`, `F-034`, `F-065`, `F-068`, `F-073`, `F-074`, `F-078`, `F-079`
+
+### What Changed
+- Wired `MigrationRunner.migrateToLatest` into `ProjectStateDb.open`, `GlobalBrokerDb.open`, and `CodeIndexDb.open` through `upgradeDatabaseOnOpen`. Added `"code-index"` to `TargetDb`.
+- Frozen `schema/*.sql` stays at `user_version` 1. Production migrations now apply additive v2: `state.db` seeds `edge_types` `expands`, `contradicts`, and `informs` and creates `canvas_layout`, `investigations`, `sweep_symbol_maps`, and `stop_events`; `code-index.db` creates `module_cards` plus `schema_migrations`. A `user_version` above the known maximum is still refused. `global.db` has no v2 migration and stays at version 1.
+- `packages/db/src/migrations/search-text.ts` and `packages/db/src/recovery/sqlite-io.ts` register `@ef-harness/shared-contracts` `splitSearchText` (recovery calls `registerEfSearchText`).
+- `path_leases.mode` stays `'intent' | 'granted'`. `pathLeaseModeForDatabase` maps a helper value `exclusive` to `granted` and does not write `exclusive`.
+- Did not edit `packages/sim`, and did not change Windows Job Object, DPAPI, named-pipe, or NSIS code.
+
+### What It Fixed
+- **F-009:** Opening a v1 `state.db` or `code-index.db` runs the forward migration (with a pre-upgrade `VACUUM INTO` backup) instead of rejecting `user_version !== 1`. `user_version` 3 on `state.db` still throws `DatabaseVersionTooNewError`.
+- **F-034:** After migration, inserting edges of type `expands`, `contradicts`, and `informs` succeeds with foreign keys on. The v1 backup does not contain those types, and `schema/state.sql` is unchanged.
+- **F-065 / F-068 / F-078:** `stop_events`, `canvas_layout`, `investigations`, and `sweep_symbol_maps` are created by the state v2 migration so later packages do not invent those tables on a private connection. Renderer, steering, and investigations package wiring stays in later tasks.
+- **F-073:** `code-index.db` gains `module_cards` (`file_path`, `file_content_sha256`, `prompt_version`, `card_json`) at `user_version` 2. `schema/code-index.sql` is unchanged.
+- **F-074 / F-079:** `work_items` was already in frozen `schema/state.sql`. Sweep lease mode stays `intent` then `granted`. Brownfield package wiring stays in later tasks.
+
+### Verification Run & Results
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`). Plain `pnpm lint` aborted with exit `134` on the default heap before reporting results.
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 61 passed (61)`, `Tests 362 passed (362)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
