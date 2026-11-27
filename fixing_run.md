@@ -857,3 +857,40 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/e2e exec vitest run --config vitest.config.ts tests/m1-exit-gate.test.ts`: exit `0` — `Test Files 1 passed (1)`, `Tests 2 passed (2)` (`0` skipped)
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+---
+
+## [Wave 2 Proof Gate] — C14–C26 Verified
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `40201d11ab38446c014f0065a3e4565f1a76e6cf` (`integrate: C26 wire daemon, desktop pipes, and the M1 exit gate`)
+- **Product fix SHA:** none
+
+### What Was Done
+- Verified `harness/integration` at `40201d11ab38446c014f0065a3e4565f1a76e6cf` with a clean `git status --short` before the gate. Did not redo C26. Did not start C27. Did not merge `main`. Did not open a pull request. Did not edit product code. `path_leases.mode` was not touched. No spike test rewrote `REPORT.md` or `report.json`.
+- The Wave 2 proof-gate command in `combination_task.md` is `pnpm --filter @ef-harness/e2e test -- m1`. The same run also executed the Wave 2 unit-scope package suites (`git-engine`, `sandbox`, `mcp-server`, `test-env`, `worker-loop`, `completeness-gate`, `verifier`, `daemon`, `desktop`).
+- `pnpm lint` with the default Node heap aborted (`exit 134`, ineffective mark-compacts near the ~2GB heap limit). The same `eslint .` command passed with `NODE_OPTIONS=--max-old-space-size=4096`. That is an environment heap limit, not a product defect.
+- `pnpm --filter @ef-harness/verifier test` first failed because Playwright Chromium was not installed (`HumanStepRequired('install_playwright_chromium')` from `tests/ui-contract/verifier.test.ts` `beforeAll`, which skipped the 11 tests in that file). `pnpm exec playwright install chromium` downloaded the browser. The same verifier command then passed `188/188`. No test was weakened and no product file was changed. A later sandbox re-run stayed `169` passed and `14` skipped.
+
+### Verification Run & Results
+- `git rev-parse HEAD`: `40201d11ab38446c014f0065a3e4565f1a76e6cf` (branch `harness/integration`)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/git-engine test`: exit `0` — `Test Files 17 passed (17)`, `Tests 121 passed (121)`
+- `pnpm --filter @ef-harness/sandbox test`: exit `0` — `Test Files 30 passed | 2 skipped (32)`, `Tests 169 passed | 14 skipped (183)`. Re-run after the Chromium install: exit `0`, same counts.
+- `pnpm --filter @ef-harness/mcp-server test`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)`
+- `pnpm --filter @ef-harness/test-env test`: exit `0` — `Test Files 18 passed (18)`, `Tests 87 passed | 3 skipped (90)`
+- `pnpm --filter @ef-harness/worker-loop test`: exit `0` — `Test Files 25 passed (25)`, `Tests 146 passed (146)`
+- `pnpm --filter @ef-harness/completeness-gate test`: exit `0` — `Test Files 7 passed (7)`, `Tests 50 passed (50)`
+- `pnpm --filter @ef-harness/verifier test` (before Playwright Chromium was installed): exit `1` — `Test Files 1 failed | 33 passed (34)`, `Tests 177 passed | 11 skipped (188)`
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm --filter @ef-harness/verifier test` (after that install): exit `0` — `Test Files 34 passed (34)`, `Tests 188 passed (188)`
+- `pnpm --filter @ef-harness/daemon test`: exit `0` — `Test Files 3 passed (3)`, `Tests 18 passed (18)`
+- `pnpm --filter @ef-harness/desktop test`: exit `0` — `Test Files 2 passed (2)`, `Tests 2 passed (2)`
+- `pnpm --filter @ef-harness/e2e test -- m1`: exit `0` — `Test Files 2 passed (2)`, `Tests 3 passed (3)` (`tests/m1-exit-gate.test.ts` 2 tests, `tests/smoke.test.ts` 1 test)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
+- `git status --short`: exit `0` — clean (empty output)
+

@@ -3,6 +3,7 @@
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
 - **Current Verified `harness/integration` `HEAD`:** `40201d11ab38446c014f0065a3e4565f1a76e6cf` (`integrate: C26 wire daemon, desktop pipes, and the M1 exit gate`)
+- **Wave 2 proof gate:** pass at `40201d11ab38446c014f0065a3e4565f1a76e6cf`. No product commit. `C27` stays pending. Workspace build/typecheck/lint OK (lint needed `NODE_OPTIONS=--max-old-space-size=4096` after a default-heap OOM). git-engine 17 files 121/121; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17/17; test-env 87 passed, 3 skipped; worker-loop 25 files 146/146; completeness-gate 7 files 50/50; verifier 34 files 188/188 after `pnpm exec playwright install chromium` (first run exit 1, missing Chromium); daemon 3 files 18/18; desktop 2 files 2/2; e2e `-- m1` 2 files 3/3; schema 67/67; diagrams 31 merged, 1219 lines. `git status --short` clean.
 - **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
 
 | Task | Wave | Status | Commit SHA | Findings Resolved | Proof Summary |
