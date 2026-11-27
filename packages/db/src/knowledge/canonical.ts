@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { splitSearchText } from "@ef-harness/shared-contracts";
 import { CanonicalizationError, EntityIdError } from "./errors.js";
+
+export { splitSearchText };
 
 /**
  * Local binding of Task 007 until `@ef-harness/shared-contracts` exports
@@ -68,16 +71,6 @@ export function computeNodeContentHash(node: NodeContent): string {
     fields: node.fields === undefined ? {} : node.fields,
   };
   return digestSha256(canonicalizeJson(normalizeNfc(payload)));
-}
-
-export function splitSearchText(value: unknown): string {
-  if (!value) return "";
-  const original = typeof value === "string" ? value : String(value);
-  const extra = original
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[_\-./:]+/g, " ");
-  return `${original} ${extra}`;
 }
 
 function digestSha256(text: string): string {

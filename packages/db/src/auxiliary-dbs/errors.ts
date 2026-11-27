@@ -1,3 +1,11 @@
+export {
+  AttachedDatabaseForbiddenError,
+  ConnectionClosedError,
+  NestedImmediateTransactionError as NestedWriteTransactionError,
+  PragmaMismatchError,
+  WalModeRequiredError,
+} from "../driver/errors.js";
+
 export class AuxiliaryDbError extends Error {
   readonly code: string;
 
@@ -5,33 +13,6 @@ export class AuxiliaryDbError extends Error {
     super(message);
     this.name = new.target.name;
     this.code = code;
-  }
-}
-
-export class AttachedDatabaseForbiddenError extends AuxiliaryDbError {
-  constructor() {
-    super(
-      "ATTACHED_DATABASE_FORBIDDEN",
-      "ATTACH DATABASE is forbidden; global.db, state.db, telemetry.db, and code-index.db never share a transaction",
-    );
-  }
-}
-
-export class WalModeRequiredError extends AuxiliaryDbError {
-  constructor(actual: string) {
-    super("WAL_MODE_REQUIRED", `journal_mode must be wal, received ${actual}`);
-  }
-}
-
-export class NestedWriteTransactionError extends AuxiliaryDbError {
-  constructor() {
-    super("NESTED_WRITE_TRANSACTION", "write transactions cannot nest BEGIN IMMEDIATE");
-  }
-}
-
-export class ConnectionClosedError extends AuxiliaryDbError {
-  constructor() {
-    super("CONNECTION_CLOSED", "SQLite connection is closed");
   }
 }
 
@@ -161,11 +142,5 @@ export class InvalidTelemetryEventError extends AuxiliaryDbError {
 export class InvalidCodeIndexEntryError extends AuxiliaryDbError {
   constructor(detail: string) {
     super("INVALID_CODE_INDEX_ENTRY", detail);
-  }
-}
-
-export class PragmaMismatchError extends AuxiliaryDbError {
-  constructor(name: string, expected: string, actual: string) {
-    super("PRAGMA_MISMATCH", `${name} must be ${expected}, received ${actual}`);
   }
 }

@@ -1,3 +1,9 @@
+import {
+  lookupNamedQuery,
+  ReaderPool,
+  type DbHandle,
+  type SqliteConnection as DriverSqliteConnection,
+} from "../driver/index.js";
 import { AuxiliaryDbError, InvalidTelemetryEventError } from "./errors.js";
 import { createStderrAuxiliaryLogger } from "./logger.js";
 import { assertSafeInteger, optionalText, requiredInt, requiredText } from "./rows.js";
@@ -46,8 +52,9 @@ export interface TelemetryConnectionSettings {
   readonly synchronous: string;
 }
 
-export class TelemetryDb {
+export class TelemetryDb implements DbHandle {
   private closed = false;
+  private readersPool: ReaderPool | undefined;
   private readonly queue: QueuedTelemetry[] = [];
   private dropped = 0;
   private flushed = 0;
@@ -96,6 +103,29 @@ export class TelemetryDb {
         "telemetry.db was corrupt and was recreated. Telemetry is lossy, so only detail was lost.",
     });
     return new TelemetryDb(conn, options.filePath, now, queueCap, flushIntervalMs);
+  }
+
+  get writer(): DriverSqliteConnection {
+    this.assertOpen();
+    return this.conn.driver;
+  }
+
+  get readers(): ReaderPool {
+    this.assertOpen();
+    if (this.readersPool === undefined) {
+      this.readersPool = new ReaderPool({
+        location: this.filePath,
+        role: "telemetry",
+        size: 2,
+        lazy: true,
+      });
+    }
+    return this.readersPool;
+  }
+
+  query(name: string): string {
+    this.assertOpen();
+    return lookupNamedQuery(name);
   }
 
   enqueue(input: TelemetryEventInput): TelemetryEnqueueResult {
@@ -216,16 +246,19 @@ export class TelemetryDb {
     clearInterval(this.timer);
     if (this.immediate !== undefined) clearImmediate(this.immediate);
     this.immediate = undefined;
+    const readers = this.readersPool;
+    this.readersPool = undefined;
+    if (readers) void readers.close();
     try {
       this.flushQueued();
       try {
-        this.conn.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+        this.conn.close({ skipCheckpoint: this.conn.inTransaction() });
       } catch (error) {
         if (!isSqliteCorruption(error)) throw error;
       }
     } finally {
       this.closed = true;
-      this.conn.close();
+      this.conn.close({ skipCheckpoint: true });
     }
   }
 
@@ -256,8 +289,12 @@ export class TelemetryDb {
           const statement = this.conn.prepare(
             "INSERT INTO telemetry(attempt, ts, kind, data) VALUES (?, ?, ?, ?)",
           );
-          for (const row of batch) {
-            statement.run(row.attempt, row.ts, row.kind, row.data);
+          try {
+            for (const row of batch) {
+              statement.run(row.attempt, row.ts, row.kind, row.data);
+            }
+          } finally {
+            statement.finalize?.();
           }
         });
       } catch (error) {

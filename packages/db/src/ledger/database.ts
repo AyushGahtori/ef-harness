@@ -1,4 +1,5 @@
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
+import { splitSearchText } from "@ef-harness/shared-contracts";
 import { loadCanonicalQueries } from "./canonical-queries.js";
 
 export function openLedgerDatabase(filename = ":memory:"): DatabaseSync {
@@ -7,14 +8,7 @@ export function openLedgerDatabase(filename = ":memory:"): DatabaseSync {
   if (filename !== ":memory:") {
     db.exec("PRAGMA journal_mode = WAL");
   }
-  db.function("ef_search_text", { deterministic: true }, splitSearchText);
+  db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));
   db.exec(loadCanonicalQueries().stateSchema);
   return db;
-}
-
-function splitSearchText(value: SQLOutputValue): string {
-  if (value === null || value === undefined) return "";
-  const text = String(value);
-  const extra = text.replace(/([a-z0-9])([A-Z])/gu, "$1 $2").replace(/[_\-./:]+/gu, " ");
-  return `${text} ${extra}`;
 }

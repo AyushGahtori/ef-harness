@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import type { SqliteConnection } from "./connection.js";
+import type { SqliteConnection } from "./types.js";
 import { isMemoryLocation } from "./sql.js";
 
 export type CheckpointMode = "PASSIVE" | "RESTART" | "TRUNCATE";

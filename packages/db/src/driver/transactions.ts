@@ -1,5 +1,5 @@
 import { getRandomValues } from "node:crypto";
-import type { SqliteConnection } from "./connection.js";
+import type { SavepointOptions, SqliteConnection, TransactionOptions } from "./types.js";
 import {
   ForeignKeyConstraintError,
   isForeignKeyConstraint,
@@ -10,15 +10,7 @@ import {
 } from "./errors.js";
 import { firstCell, pragmaEquals } from "./values.js";
 
-export interface TransactionOptions {
-  readonly maxAttempts?: number;
-  readonly sleep?: (ms: number) => void;
-  readonly random?: () => number;
-}
-
-export interface SavepointOptions {
-  readonly name?: string;
-}
+export type { SavepointOptions, TransactionOptions };
 
 const DEFAULT_ATTEMPTS = 4;
 

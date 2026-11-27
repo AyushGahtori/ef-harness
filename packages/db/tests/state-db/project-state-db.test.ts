@@ -414,7 +414,7 @@ describe("state-db bootstrap", () => {
     try {
       const pid = child.pid;
       if (pid === undefined) throw new Error("live owner process did not start");
-      const started = windowsProcessStart(pid);
+      const started = ownerProcessStart(pid);
       tamperOwner(databasePath, (owner) => {
         owner.pid = pid;
         owner.processStartTime = started;
@@ -634,6 +634,18 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+function ownerProcessStart(pid: number): string {
+  if (process.platform === "win32") return windowsProcessStart(pid);
+  const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+  const close = stat.lastIndexOf(")");
+  const fields = stat.slice(close + 2).split(" ");
+  const startTicks = fields[19] ?? "";
+  if (!/^\d+$/.test(startTicks)) {
+    throw new Error(`could not read process start time for ${pid}`);
+  }
+  return startTicks;
 }
 
 function windowsProcessStart(pid: number): string {

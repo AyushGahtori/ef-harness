@@ -1,5 +1,10 @@
 import type { SafeModeDiagnostics, SafeModeReason } from "./types.js";
 
+export {
+  AttachedDatabaseForbiddenError,
+  NestedImmediateTransactionError as NestedWriteTransactionError,
+} from "../driver/errors.js";
+
 export class ProjectSafeModeError extends Error {
   readonly reason: SafeModeReason;
   readonly diagnostics: SafeModeDiagnostics;
@@ -77,19 +82,5 @@ export class WorldReadableProjectPathError extends Error {
     );
     this.name = "WorldReadableProjectPathError";
     this.projectDir = projectDir;
-  }
-}
-
-export class AttachedDatabaseForbiddenError extends Error {
-  constructor() {
-    super("ATTACH DATABASE is forbidden. Each database file has its own connection.");
-    this.name = "AttachedDatabaseForbiddenError";
-  }
-}
-
-export class NestedWriteTransactionError extends Error {
-  constructor() {
-    super("Nested BEGIN IMMEDIATE is forbidden.");
-    this.name = "NestedWriteTransactionError";
   }
 }

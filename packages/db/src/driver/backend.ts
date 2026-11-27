@@ -66,10 +66,12 @@ export function createNodeSqliteBackend(options: SqliteBackendOpenOptions): Sqli
     defensive: true,
     limits: { attach: 0 },
   });
-  db.setAuthorizer((actionCode) => {
-    if (actionCode === constants.SQLITE_ATTACH) return constants.SQLITE_DENY;
-    return constants.SQLITE_OK;
-  });
+  if (typeof db.setAuthorizer === "function") {
+    db.setAuthorizer((actionCode) => {
+      if (actionCode === constants.SQLITE_ATTACH) return constants.SQLITE_DENY;
+      return constants.SQLITE_OK;
+    });
+  }
   return new NodeSqliteBackend(db);
 }
 

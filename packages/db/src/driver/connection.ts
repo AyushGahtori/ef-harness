@@ -1,7 +1,6 @@
 import {
   createNodeSqliteBackend,
   type SqliteBackend,
-  type SqliteBackendFactory,
   type SqliteBackendStatement,
   type SqliteFunction,
 } from "./backend.js";
@@ -14,51 +13,29 @@ import {
   StatementFinalizedError,
   WalModeRequiredError,
 } from "./errors.js";
-import { resolveSplitSearchText } from "./search-text.js";
+import { registerEfSearchText } from "./search-text.js";
 import { bindParameters, inspectSql, isMemoryLocation, isMutatingSql } from "./sql.js";
+import { runImmediateTx, runSavepoint } from "./transactions.js";
+import type {
+  CheckpointController,
+  DatabaseAccess,
+  DatabaseRole,
+  OpenDatabaseOptions,
+  SavepointOptions,
+  SqliteConnection,
+  SqliteStatement,
+  TransactionOptions,
+} from "./types.js";
 import { firstCell, normalizeCell, normalizeRunResult, pragmaEquals, type RunResult, type SqlParams } from "./values.js";
 
-export type DatabaseRole = "state" | "global" | "telemetry" | "code-index";
-export type DatabaseAccess = "writer" | "readonly";
-
-export interface OpenDatabaseOptions {
-  readonly location: string;
-  readonly role: DatabaseRole;
-  readonly access?: DatabaseAccess;
-  readonly backend?: SqliteBackendFactory;
-}
-
-export interface SqliteStatement {
-  readonly sql: string;
-  get(params?: SqlParams): unknown;
-  all(params?: SqlParams): unknown[];
-  run(params?: SqlParams): RunResult;
-  iterate(params?: SqlParams): Iterable<unknown>;
-  finalize(): void;
-}
-
-export interface CheckpointController {
-  stop(): void;
-}
-
-export interface SqliteConnection {
-  readonly location: string;
-  readonly role: DatabaseRole;
-  readonly access: DatabaseAccess;
-  readonly open: boolean;
-  readonly inTransaction: boolean;
-  readonly inImmediateTransaction: boolean;
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  get(sql: string, params?: SqlParams): unknown;
-  all(sql: string, params?: SqlParams): unknown[];
-  run(sql: string, params?: SqlParams): RunResult;
-  pragma(source: string): unknown;
-  registerFunction(name: string, fn: SqliteFunction, options?: { deterministic?: boolean }): void;
-  addWriteListener(listener: () => void): () => void;
-  attachCheckpointScheduler(scheduler: CheckpointController): void;
-  close(): void;
-}
+export type {
+  CheckpointController,
+  DatabaseAccess,
+  DatabaseRole,
+  OpenDatabaseOptions,
+  SqliteConnection,
+  SqliteStatement,
+};
 
 const WRITER_PRAGMAS = [
   ["synchronous", 2],
@@ -81,10 +58,7 @@ export function openDatabase(options: OpenDatabaseOptions): SqliteConnection {
     applyConnectionPragmas(backend, options.role, access, options.location);
     const connection = new SqliteDatabase(options.location, options.role, access, backend);
     if (options.role === "state") {
-      const splitSearchText = resolveSplitSearchText();
-      connection.registerFunction("ef_search_text", (value) => splitSearchText(value), {
-        deterministic: true,
-      });
+      registerEfSearchText(connection);
     }
     return connection;
   } catch (error) {
@@ -173,6 +147,14 @@ class SqliteDatabase implements SqliteConnection {
     this.backend.registerFunction(name, fn, { deterministic: options?.deterministic ?? false });
   }
 
+  transaction<T>(work: () => T, options?: TransactionOptions): T {
+    return runImmediateTx(this, work, options);
+  }
+
+  savepoint<T>(work: () => T, options?: SavepointOptions): T {
+    return runSavepoint(this, work, options);
+  }
+
   addWriteListener(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => {
@@ -184,13 +166,19 @@ class SqliteDatabase implements SqliteConnection {
     this.#scheduler = scheduler;
   }
 
-  close(): void {
+  close(options?: { readonly skipCheckpoint?: boolean }): void {
     if (this.#closed) return;
     this.#scheduler?.stop();
     this.#scheduler = undefined;
     for (const statement of this.#statements) statement.finalize();
     this.#statements.clear();
-    if (this.access === "writer" && !isMemoryLocation(this.location) && this.backend.open) {
+    if (
+      !options?.skipCheckpoint &&
+      this.access === "writer" &&
+      !isMemoryLocation(this.location) &&
+      this.backend.open &&
+      !this.backend.inTransaction
+    ) {
       try {
         this.backend.pragma("PRAGMA wal_checkpoint(TRUNCATE)");
       } catch (checkpointError: unknown) {

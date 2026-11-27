@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { constants, DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
+import { splitSearchText } from "@ef-harness/shared-contracts";
 import {
   AttachedDatabaseForbiddenError,
   MissingQueryParameterError,
@@ -18,22 +19,41 @@ const ATTACH_SQL = /\bATTACH\b/i;
 const WRITE_SQL = /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i;
 const TRANSACTION_SQL = /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|END)\b/i;
 
-export function installCrossDatabaseAttachGuard(db: DatabaseSync): void {
-  db.setAuthorizer((actionCode) => {
-    if (actionCode === constants.SQLITE_ATTACH || actionCode === constants.SQLITE_DETACH) {
-      return constants.SQLITE_DENY;
-    }
-    return constants.SQLITE_OK;
-  });
-}
+const ATTACH_OR_DETACH_SQL = /\b(?:ATTACH|DETACH)\b/i;
 
-function efSearchText(value: SQLInputValue): string {
-  if (value === null || value === undefined) {
-    return "";
+export function installCrossDatabaseAttachGuard(db: DatabaseSync): void {
+  if (typeof db.setAuthorizer === "function") {
+    db.setAuthorizer((actionCode) => {
+      if (actionCode === constants.SQLITE_ATTACH || actionCode === constants.SQLITE_DETACH) {
+        return constants.SQLITE_DENY;
+      }
+      return constants.SQLITE_OK;
+    });
+    return;
   }
-  const text = String(value);
-  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${text} ${extra}`;
+  const exec = db.exec.bind(db);
+  const prepare = db.prepare.bind(db);
+  const denyAttached = (sql: string): void => {
+    if (ATTACH_OR_DETACH_SQL.test(sql)) {
+      throw new Error("not authorized");
+    }
+  };
+  Object.defineProperty(db, "exec", {
+    configurable: true,
+    writable: true,
+    value(sql: string) {
+      denyAttached(sql);
+      exec(sql);
+    },
+  });
+  Object.defineProperty(db, "prepare", {
+    configurable: true,
+    writable: true,
+    value(sql: string) {
+      denyAttached(sql);
+      return prepare(sql);
+    },
+  });
 }
 
 function changeCount(changes: number | bigint): number {
@@ -86,7 +106,7 @@ export class GrantSqlSession {
     const session = new GrantSqlSession(role, resolved, db, catalog);
     session.applyWriterPragmas();
     if (role === "state") {
-      db.function("ef_search_text", { deterministic: true }, efSearchText);
+      db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));
     }
     session.applySchemaIfEmpty();
     session.assertRole();

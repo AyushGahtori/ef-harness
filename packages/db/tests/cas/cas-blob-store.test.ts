@@ -119,7 +119,9 @@ describe("CAS layout and hash key", () => {
     const stored = await readFile(result.absolutePath);
     expect(sha(stored)).not.toBe(result.hash);
     expect((await stat(result.absolutePath)).mode & 0o222).toBe(0);
-    await expect(open(result.absolutePath, "a")).rejects.toMatchObject({ code: "EPERM" });
+    await expect(open(result.absolutePath, "a")).rejects.toMatchObject({
+      code: process.platform === "win32" ? "EPERM" : "EACCES",
+    });
     expect(await store.getBlob(result.hash, "evidence")).toEqual(content);
 
     const again = await store.putBlob(content, { holderKind: "backup", holderId: "P-backup-3" });
@@ -506,7 +508,9 @@ describe("garbage collection", () => {
       holderId: "P",
     });
     expect((await stat(stored.absolutePath)).mode & 0o222).toBe(0);
-    await expect(open(stored.absolutePath, "a")).rejects.toMatchObject({ code: "EPERM" });
+    await expect(open(stored.absolutePath, "a")).rejects.toMatchObject({
+      code: process.platform === "win32" ? "EPERM" : "EACCES",
+    });
     if (process.platform === "win32") {
       const del = spawnSync("cmd.exe", ["/d", "/c", "del", stored.absolutePath], { encoding: "utf8" });
       expect(`${del.stdout}\n${del.stderr}`).toMatch(/Access is denied/i);

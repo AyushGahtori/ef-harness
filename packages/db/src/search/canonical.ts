@@ -1,22 +1,10 @@
 import { createHash } from "node:crypto";
+import { splitSearchText } from "@ef-harness/shared-contracts";
 import type { SearchCanonical, SearchResultRef } from "./types.js";
 
-const HASH_PREFIX = "sha256:";
+export { splitSearchText };
 
-/**
- * Canonical `ef_search_text` splitter.
- * Same algorithm as Task 007 `splitSearchText` and `schema/schema-test.js` `splitWords`,
- * including acronym boundaries (`XMLHttpRequest` → `XML Http Request`).
- */
-export function splitSearchText(value: unknown): string {
-  if (!value) return "";
-  const original = typeof value === "string" ? value : String(value);
-  const extra = original
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[_\-./:]+/g, " ");
-  return `${original} ${extra}`;
-}
+const HASH_PREFIX = "sha256:";
 
 class CanonicalizationError extends Error {
   constructor(message: string) {

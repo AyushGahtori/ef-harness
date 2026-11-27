@@ -136,6 +136,37 @@ describe("transactions and savepoints", () => {
     expect(db.get("SELECT count(*) AS n FROM child")).toEqual({ n: 0 });
     expect(() => db.exec("BEGIN")).toThrow(DeferredBeginForbiddenError);
   });
+
+  it("supports connection.transaction(), connection.savepoint(), positional arrays, and named params", () => {
+    const db = track(openDatabase({ location: ":memory:", role: "telemetry" }));
+    db.exec("CREATE TABLE docs(id INTEGER PRIMARY KEY, body TEXT NOT NULL)");
+    db.transaction(() => {
+      const insert = db.prepare("INSERT INTO docs(id, body) VALUES (:id, :body)");
+      try {
+        insert.run({ id: 1, body: "named" });
+      } finally {
+        insert.finalize();
+      }
+      db.savepoint(() => {
+        const pos = db.prepare("INSERT INTO docs(id, body) VALUES (?, ?)");
+        try {
+          pos.run([2, "positional"]);
+        } finally {
+          pos.finalize();
+        }
+      });
+      expect(() =>
+        db.savepoint(() => {
+          db.run("INSERT INTO docs(id, body) VALUES (?, ?)", [3, "rolled-back"]);
+          throw new Error("abort savepoint");
+        }),
+      ).toThrow("abort savepoint");
+    });
+    expect(db.all("SELECT id, body FROM docs ORDER BY id")).toEqual([
+      { id: 1, body: "named" },
+      { id: 2, body: "positional" },
+    ]);
+  });
 });
 
 function track<T extends { close: () => void }>(db: T): T {

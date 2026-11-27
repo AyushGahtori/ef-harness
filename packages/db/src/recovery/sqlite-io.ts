@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { splitSearchText as canonicalSplitSearchText } from "@ef-harness/shared-contracts";
 import type { SqliteCorruptCode } from "./types.js";
 import { RecoveryError } from "./types.js";
 
@@ -82,10 +83,7 @@ export function openDatabase(filePath: string, readOnly: boolean): DatabaseSync 
 }
 
 export function splitSearchText(value: SQLOutputValue): string {
-  if (value == null) return "";
-  const text = typeof value === "string" ? value : String(value);
-  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${text} ${extra}`;
+  return canonicalSplitSearchText(value);
 }
 
 export function registerSearchText(db: DatabaseSync): void {

@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { splitSearchText as canonicalSplitSearchText } from "@ef-harness/shared-contracts";
 
 const RELATIONS_QUERY = "relations_in_fields";
 
@@ -28,12 +29,9 @@ function readSchemaFile(name: "state.sql" | "queries.sql"): string {
   return fs.readFileSync(path.join(repositoryRoot(), "schema", name), "utf8").replaceAll("\r\n", "\n");
 }
 
-/** Same word split the schema triggers expect from `ef_search_text`. */
+/** Canonical `ef_search_text` splitter shared with every state.db connection. */
 export function splitSearchText(value: SQLOutputValue): string {
-  if (!value) return "";
-  const text = typeof value === "string" ? value : String(value);
-  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${text} ${extra}`;
+  return canonicalSplitSearchText(value);
 }
 
 export function stateSchemaSql(): string {

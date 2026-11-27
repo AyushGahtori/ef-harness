@@ -1,3 +1,9 @@
+import {
+  lookupNamedQuery,
+  ReaderPool,
+  type DbHandle,
+  type SqliteConnection as DriverSqliteConnection,
+} from "../driver/index.js";
 import { AuxiliaryDbError, InvalidCodeIndexEntryError } from "./errors.js";
 import { createStderrAuxiliaryLogger } from "./logger.js";
 import {
@@ -38,8 +44,9 @@ export interface CommitSymbol extends CodeSymbol {
   readonly path: string;
 }
 
-export class CodeIndexDb {
+export class CodeIndexDb implements DbHandle {
   private closed = false;
+  private readersPool: ReaderPool | undefined;
 
   private constructor(
     private readonly conn: SqliteConnection,
@@ -59,6 +66,29 @@ export class CodeIndexDb {
         "code-index.db was corrupt and was recreated. The index is rebuildable and is excluded from backups.",
     });
     return new CodeIndexDb(conn, options.filePath);
+  }
+
+  get writer(): DriverSqliteConnection {
+    this.assertOpen();
+    return this.conn.driver;
+  }
+
+  get readers(): ReaderPool {
+    this.assertOpen();
+    if (this.readersPool === undefined) {
+      this.readersPool = new ReaderPool({
+        location: this.filePath,
+        role: "code-index",
+        size: 2,
+        lazy: true,
+      });
+    }
+    return this.readersPool;
+  }
+
+  query(name: string): string {
+    this.assertOpen();
+    return lookupNamedQuery(name);
   }
 
   upsertCommit(input: IndexedCommit): void {
@@ -104,8 +134,12 @@ export class CodeIndexDb {
         `INSERT INTO symbols(file_hash, name, kind, line, signature, exported)
          VALUES (?, ?, ?, ?, ?, ?)`,
       );
-      for (const row of rows) {
-        statement.run(row.fileHash, row.name, row.kind, row.line, row.signature, row.exported ? 1 : 0);
+      try {
+        for (const row of rows) {
+          statement.run(row.fileHash, row.name, row.kind, row.line, row.signature, row.exported ? 1 : 0);
+        }
+      } finally {
+        statement.finalize?.();
       }
     });
   }
@@ -122,7 +156,11 @@ export class CodeIndexDb {
       const statement = this.conn.prepare(
         "INSERT INTO refs(file_hash, name, line) VALUES (?, ?, ?)",
       );
-      for (const row of rows) statement.run(row.fileHash, row.name, row.line);
+      try {
+        for (const row of rows) statement.run(row.fileHash, row.name, row.line);
+      } finally {
+        statement.finalize?.();
+      }
     });
   }
 
@@ -258,12 +296,14 @@ export class CodeIndexDb {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    const readers = this.readersPool;
+    this.readersPool = undefined;
+    if (readers) void readers.close();
     try {
-      this.conn.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      this.conn.close({ skipCheckpoint: this.conn.inTransaction() });
     } catch (error) {
       if (!isSqliteCorruption(error)) throw error;
     }
-    this.conn.close();
   }
 
   private write<T>(fn: () => T): T {

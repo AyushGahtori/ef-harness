@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { constants, DatabaseSync, type StatementSync } from "node:sqlite";
-import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
+import { canonicalAssetAbsolute, splitSearchText } from "@ef-harness/shared-contracts";
 import { RollupWriteForbiddenError } from "./errors.js";
 import type { SqlRow, SqlValue } from "./values.js";
 
@@ -106,6 +106,7 @@ export class ReadModelConnection {
 
   markSchemaReady(): void {
     this.schemaReady = true;
+    if (typeof this.db.setAuthorizer !== "function") return;
     this.db.setAuthorizer((action, arg1, _arg2, _dbName, triggerOrView) => {
       if (triggerOrView) return constants.SQLITE_OK;
       if (this.healDepth > 0) return constants.SQLITE_OK;
@@ -147,12 +148,6 @@ export function openReadModelDatabase(
 
 export function readQueriesSql(queriesPath?: string): string {
   return fs.readFileSync(queriesPath ?? canonicalAssetAbsolute("queriesSql"), "utf8");
-}
-
-function splitSearchText(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0) return "";
-  const extra = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${value} ${extra}`;
 }
 
 function translateRollupDenial(error: unknown, sql: string): Error {

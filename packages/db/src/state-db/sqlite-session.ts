@@ -1,57 +1,52 @@
 import fs from "node:fs";
 import { DatabaseSync, type SQLInputValue, type SQLOutputValue } from "node:sqlite";
-import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
 import {
-  JOURNAL_SIZE_LIMIT_BYTES,
-  SCHEMA_VIEWS,
-  WRITER_BUSY_TIMEOUT_MS,
-} from "./constants.js";
-import {
-  AttachedDatabaseForbiddenError,
-  NestedWriteTransactionError,
-  WalModeRequiredError,
-} from "./errors.js";
+  openDatabase,
+  registerEfSearchText,
+  resolveCanonicalSqlAsset,
+  type SqliteConnection as DriverSqliteConnection,
+} from "../driver/index.js";
+import { inspectSql } from "../driver/sql.js";
+import { firstCell } from "../driver/values.js";
+import { SCHEMA_VIEWS, WRITER_BUSY_TIMEOUT_MS } from "./constants.js";
+import { AttachedDatabaseForbiddenError } from "./errors.js";
 import type { DatabaseMode } from "./types.js";
-import { isNoTransaction, sqliteErrorCode } from "./writer-lock.js";
+import { sqliteErrorCode } from "./writer-lock.js";
 
 export type SqlParam = SQLInputValue;
 
 export class StateConnection {
-  private writing = false;
-
   constructor(
-    private readonly db: DatabaseSync,
+    readonly driver: DriverSqliteConnection,
     readonly mode: DatabaseMode,
   ) {}
 
   exec(sql: string): void {
-    assertSqlHasNoAttach(sql);
-    this.db.exec(sql);
+    this.driver.exec(sql);
   }
 
   get(sql: string, params: readonly SqlParam[] = []): Record<string, SQLOutputValue> | undefined {
-    assertSqlHasNoAttach(sql);
-    return this.db.prepare(sql).get(...params);
+    return this.driver.get(sql, params as readonly (string | number | bigint | null | Uint8Array)[]) as
+      | Record<string, SQLOutputValue>
+      | undefined;
   }
 
   all(sql: string, params: readonly SqlParam[] = []): Record<string, SQLOutputValue>[] {
-    assertSqlHasNoAttach(sql);
-    return this.db.prepare(sql).all(...params);
+    return this.driver.all(sql, params as readonly (string | number | bigint | null | Uint8Array)[]) as Record<
+      string,
+      SQLOutputValue
+    >[];
   }
 
   run(sql: string, params: readonly SqlParam[] = []): void {
-    assertSqlHasNoAttach(sql);
-    this.db.prepare(sql).run(...params);
+    this.driver.run(sql, params as readonly (string | number | bigint | null | Uint8Array)[]);
   }
 
   pragmaValue(name: string): SQLOutputValue | undefined {
     if (!/^[a-z0-9_]+$/i.test(name)) {
       throw new Error(`Unsupported pragma ${name}.`);
     }
-    const row = this.get(`PRAGMA ${name}`);
-    if (!row) return undefined;
-    const values = Object.values(row);
-    return values[0];
+    return firstCell(this.driver.pragma(name)) as SQLOutputValue | undefined;
   }
 
   pragmaText(name: string): string {
@@ -64,56 +59,28 @@ export class StateConnection {
   }
 
   immediate<T>(work: () => T): T {
-    if (this.writing) throw new NestedWriteTransactionError();
-    this.exec("BEGIN IMMEDIATE");
-    this.writing = true;
-    try {
-      const result = work();
-      this.exec("COMMIT");
-      this.writing = false;
-      return result;
-    } catch (error) {
-      this.writing = false;
-      rollbackQuietly(this);
-      throw error;
-    }
+    return this.driver.transaction(work);
   }
 
   checkpointTruncate(): void {
     this.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   }
 
-  close(): void {
-    this.db.close();
+  close(options?: { readonly skipCheckpoint?: boolean }): void {
+    this.driver.close(options);
   }
 }
 
 export function openStateConnection(filePath: string, mode: DatabaseMode): StateConnection {
-  const db =
-    mode === "readonly"
-      ? new DatabaseSync(filePath, { readOnly: true, readBigInts: false, timeout: WRITER_BUSY_TIMEOUT_MS })
-      : new DatabaseSync(filePath, { readBigInts: false, timeout: WRITER_BUSY_TIMEOUT_MS });
-  const connection = new StateConnection(db, mode);
-  try {
-    registerSearchText(db);
-    if (mode === "readonly") {
-      applyReadonlyPragmas(connection);
-    } else {
-      applyWriterPragmas(connection);
-    }
-    return connection;
-  } catch (error) {
-    try {
-      db.close();
-    } catch (closeError) {
-      const message = closeError instanceof Error ? closeError.message : String(closeError);
-      if (!/not open|already closed/i.test(message)) throw error;
-    }
-    throw error;
-  }
+  const driver = openDatabase({
+    location: filePath,
+    role: "state",
+    access: mode === "readonly" ? "readonly" : "writer",
+  });
+  return new StateConnection(driver, mode);
 }
 
-export function loadStateSchemaSql(schemaPath = canonicalAssetAbsolute("stateSql")): string {
+export function loadStateSchemaSql(schemaPath = resolveCanonicalSqlAsset("stateSql")): string {
   return fs.readFileSync(schemaPath, "utf8");
 }
 
@@ -123,6 +90,7 @@ export function probeUserVersion(filePath: string): number {
     readOnly: true,
     readBigInts: false,
     timeout: WRITER_BUSY_TIMEOUT_MS,
+    limits: { attach: 0 },
   });
   try {
     db.exec("PRAGMA query_only = ON");
@@ -135,46 +103,11 @@ export function probeUserVersion(filePath: string): number {
 }
 
 export function registerSearchText(db: DatabaseSync): void {
-  db.function("ef_search_text", { deterministic: true }, (value: SQLOutputValue) => efSearchText(value));
-}
-
-export function efSearchText(value: SQLOutputValue): string {
-  if (typeof value !== "string") {
-    if (value === null) return "";
-    if (typeof value === "number" || typeof value === "bigint") return efSearchText(String(value));
-    return "";
-  }
-  const extra = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${value} ${extra}`;
+  registerEfSearchText(db);
 }
 
 export function assertSqlHasNoAttach(sql: string): void {
-  if (/\battach\s+database\b/i.test(sql)) throw new AttachedDatabaseForbiddenError();
-}
-
-export function applyWriterPragmas(connection: StateConnection): void {
-  const journalMode = connection.pragmaText("journal_mode");
-  connection.exec("PRAGMA journal_mode = WAL");
-  const applied = connection.pragmaText("journal_mode").toLowerCase();
-  if (applied !== "wal") throw new WalModeRequiredError(applied || journalMode);
-  connection.exec("PRAGMA synchronous = FULL");
-  connection.exec("PRAGMA foreign_keys = ON");
-  connection.exec(`PRAGMA busy_timeout = ${WRITER_BUSY_TIMEOUT_MS}`);
-  connection.exec("PRAGMA secure_delete = ON");
-  connection.exec(`PRAGMA journal_size_limit = ${JOURNAL_SIZE_LIMIT_BYTES}`);
-  connection.exec("PRAGMA temp_store = MEMORY");
-  if (connection.pragmaInteger("foreign_keys") !== 1) {
-    throw new Error("PRAGMA foreign_keys did not stay enabled on state.db.");
-  }
-}
-
-export function applyReadonlyPragmas(connection: StateConnection): void {
-  connection.exec("PRAGMA foreign_keys = ON");
-  connection.exec("PRAGMA query_only = ON");
-  connection.exec(`PRAGMA busy_timeout = ${WRITER_BUSY_TIMEOUT_MS}`);
-  if (connection.pragmaInteger("query_only") !== 1) {
-    throw new Error("PRAGMA query_only did not stay enabled on the read-only state.db connection.");
-  }
+  if (inspectSql(sql).attach) throw new AttachedDatabaseForbiddenError();
 }
 
 export function readIntegrityReport(connection: StateConnection, kind: "quick_check" | "integrity_check"): string {
@@ -221,12 +154,4 @@ export function classifyWriteFailure(error: unknown): "disk" | "corrupt" | "othe
   }
   if (/malformed|corrupt|not a database/i.test(message)) return "corrupt";
   return "other";
-}
-
-function rollbackQuietly(connection: StateConnection): void {
-  try {
-    connection.exec("ROLLBACK");
-  } catch (error) {
-    if (isNoTransaction(error)) return;
-  }
 }

@@ -1,10 +1,14 @@
-import { constants, DatabaseSync, type StatementSync } from "node:sqlite";
+import {
+  openDatabase,
+  type SqliteConnection as DriverSqliteConnection,
+  type SqliteStatement as DriverSqliteStatement,
+  type SqlValue as DriverSqlValue,
+} from "../driver/index.js";
+import { firstCell } from "../driver/values.js";
 import {
   AttachedDatabaseForbiddenError,
   AuxiliaryDbError,
   ConnectionClosedError,
-  NestedWriteTransactionError,
-  WalModeRequiredError,
 } from "./errors.js";
 import { bigintToNumber } from "./integers.js";
 import type { SqlRow, SqlValue } from "./sql-types.js";
@@ -20,13 +24,11 @@ export interface SqliteStatement {
   get(...params: readonly SqlValue[]): SqlRow | undefined;
   all(...params: readonly SqlValue[]): SqlRow[];
   run(...params: readonly SqlValue[]): RunResult;
+  finalize?(): void;
 }
 
-/**
- * Local stand-in for Task 012's `SqliteConnection`.
- * The handoff records the barrel swap onto `packages/db/src/driver` once that task is integrated.
- */
 export interface SqliteConnection {
+  readonly driver: DriverSqliteConnection;
   readonly filePath: string;
   exec(sql: string): void;
   prepare(sql: string): SqliteStatement;
@@ -37,14 +39,12 @@ export interface SqliteConnection {
   inTransaction(): boolean;
   runImmediate<T>(fn: () => T): T;
   databaseNames(): readonly string[];
-  close(): void;
+  close(options?: { readonly skipCheckpoint?: boolean }): void;
 }
 
 export type ConnectionProfile = "global" | "state" | "telemetry" | "code-index";
 
-const ATTACH_SQL = /\battach\s+database\b/i;
 const PRAGMA_NAME = /^[a-z_]+$/;
-const PRAGMA_TOKEN = /^[A-Za-z0-9_]+$/;
 
 const SQLITE_BUSY = 5;
 const SQLITE_CONSTRAINT = 19;
@@ -77,116 +77,63 @@ export function isSqliteCorruption(error: unknown): boolean {
 }
 
 export function openSqliteConnection(filePath: string, profile: ConnectionProfile): SqliteConnection {
-  const db = new DatabaseSync(filePath, {
-    timeout: 5000,
-    readBigInts: false,
-    enableForeignKeyConstraints: true,
+  const driver = openDatabase({
+    location: filePath,
+    role: profile,
+    access: "writer",
   });
-  const connection = new NodeSqliteConnection(db, filePath);
-  try {
-    connection.applyProfile(profile);
-    return connection;
-  } catch (error) {
-    connection.close();
-    throw error;
-  }
+  return new DriverBackedConnection(driver);
 }
 
-class NodeSqliteConnection implements SqliteConnection {
-  private closed = false;
+class DriverBackedConnection implements SqliteConnection {
+  constructor(readonly driver: DriverSqliteConnection) {}
 
-  constructor(
-    private readonly db: DatabaseSync,
-    readonly filePath: string,
-  ) {}
-
-  applyProfile(profile: ConnectionProfile): void {
-    this.setPragma("foreign_keys", "ON");
-    this.setPragma("busy_timeout", 5000);
-    this.setPragma("journal_mode", "WAL");
-    const journal = String(this.readPragma("journal_mode") ?? "").toLowerCase();
-    if (journal !== "wal") throw new WalModeRequiredError(journal);
-    if (profile === "telemetry" || profile === "code-index") {
-      this.setPragma("synchronous", "NORMAL");
-    } else {
-      this.setPragma("synchronous", "FULL");
-      this.setPragma("secure_delete", "ON");
-      this.setPragma("journal_size_limit", 67_108_864);
-      this.setPragma("temp_store", "MEMORY");
-    }
-    this.db.limits.attach = 0;
-    this.db.enableDefensive(true);
-    this.db.setAuthorizer((actionCode) => {
-      if (actionCode === constants.SQLITE_ATTACH) return constants.SQLITE_DENY;
-      return constants.SQLITE_OK;
-    });
+  get filePath(): string {
+    return this.driver.location;
   }
 
   exec(sql: string): void {
-    this.assertOpen();
-    rejectAttach(sql);
-    this.db.exec(sql);
+    this.driver.exec(sql);
   }
 
   prepare(sql: string): SqliteStatement {
-    this.assertOpen();
-    rejectAttach(sql);
-    return new NodeSqliteStatement(this.db.prepare(sql));
+    return new DriverBackedStatement(this.driver.prepare(sql));
   }
 
   get(sql: string, ...params: readonly SqlValue[]): SqlRow | undefined {
-    return this.prepare(sql).get(...params);
+    const row = this.driver.get(sql, toDriverParams(params));
+    return row === undefined ? undefined : toRow(row);
   }
 
   all(sql: string, ...params: readonly SqlValue[]): SqlRow[] {
-    return this.prepare(sql).all(...params);
+    return this.driver.all(sql, toDriverParams(params)).map((row) => toRow(row));
   }
 
   run(sql: string, ...params: readonly SqlValue[]): RunResult {
-    return this.prepare(sql).run(...params);
+    const result = this.driver.run(sql, toDriverParams(params));
+    return {
+      changes: result.changes,
+      lastInsertRowid:
+        typeof result.lastInsertRowid === "bigint"
+          ? bigintToNumber(result.lastInsertRowid)
+          : result.lastInsertRowid,
+    };
   }
 
   readPragma(name: string): SqlValue | null {
-    this.assertOpen();
+    if (!this.driver.open) throw new ConnectionClosedError();
     assertPragmaName(name);
-    const row = this.db.prepare(`PRAGMA ${name}`).get();
-    if (row === undefined) return null;
-    if (Object.prototype.hasOwnProperty.call(row, name)) {
-      const named = row[name];
-      if (named !== undefined) return named;
-    }
-    // Some pragmas report a different column (`PRAGMA busy_timeout` returns `timeout`).
-    const values = Object.values(row);
-    const value = values[0];
-    return values.length === 1 && value !== undefined ? value : null;
+    const cell = firstCell(this.driver.pragma(name));
+    return cell === undefined ? null : (cell as SqlValue);
   }
 
   inTransaction(): boolean {
-    this.assertOpen();
-    return this.db.isTransaction;
+    if (!this.driver.open) throw new ConnectionClosedError();
+    return this.driver.inTransaction;
   }
 
   runImmediate<T>(fn: () => T): T {
-    this.assertOpen();
-    if (this.db.isTransaction) throw new NestedWriteTransactionError();
-    this.exec("BEGIN IMMEDIATE");
-    try {
-      const result = fn();
-      this.exec("COMMIT");
-      return result;
-    } catch (error) {
-      if (this.db.isOpen && this.db.isTransaction) {
-        try {
-          this.db.exec("ROLLBACK");
-        } catch (rollbackError) {
-          throw new AuxiliaryDbError(
-            "ROLLBACK_FAILED",
-            rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
-          );
-        }
-      }
-      throw error;
-    }
+    return this.driver.transaction(fn);
   }
 
   databaseNames(): readonly string[] {
@@ -199,62 +146,59 @@ class NodeSqliteConnection implements SqliteConnection {
     });
   }
 
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    if (this.db.isOpen) this.db.close();
-  }
-
-  private setPragma(name: string, value: string | number): void {
-    assertPragmaName(name);
-    if (typeof value === "number") {
-      if (!Number.isFinite(value)) {
-        throw new AuxiliaryDbError("PRAGMA_VALUE", `unsafe pragma value for ${name}`);
-      }
-      this.db.exec(`PRAGMA ${name} = ${value}`);
-      return;
-    }
-    if (!PRAGMA_TOKEN.test(value)) {
-      throw new AuxiliaryDbError("PRAGMA_VALUE", `unsafe pragma value for ${name}`);
-    }
-    this.db.exec(`PRAGMA ${name} = ${value}`);
-  }
-
-  private assertOpen(): void {
-    if (this.closed || !this.db.isOpen) throw new ConnectionClosedError();
+  close(options?: { readonly skipCheckpoint?: boolean }): void {
+    this.driver.close(options);
   }
 }
 
-class NodeSqliteStatement implements SqliteStatement {
-  constructor(private readonly statement: StatementSync) {}
+class DriverBackedStatement implements SqliteStatement {
+  constructor(private readonly statement: DriverSqliteStatement) {}
 
   get(...params: readonly SqlValue[]): SqlRow | undefined {
-    const row = this.statement.get(...params);
+    const row = this.statement.get(toDriverParams(params));
     return row === undefined ? undefined : toRow(row);
   }
 
   all(...params: readonly SqlValue[]): SqlRow[] {
-    return this.statement.all(...params).map((row) => toRow(row));
+    return this.statement.all(toDriverParams(params)).map((row) => toRow(row));
   }
 
   run(...params: readonly SqlValue[]): RunResult {
-    const result = this.statement.run(...params);
+    const result = this.statement.run(toDriverParams(params));
     return {
-      changes: typeof result.changes === "bigint" ? bigintToNumber(result.changes) : result.changes,
+      changes: result.changes,
       lastInsertRowid:
         typeof result.lastInsertRowid === "bigint"
           ? bigintToNumber(result.lastInsertRowid)
           : result.lastInsertRowid,
     };
   }
+
+  finalize(): void {
+    this.statement.finalize();
+  }
 }
 
-function toRow(row: Record<string, import("node:sqlite").SQLOutputValue>): SqlRow {
-  return row;
+function toRow(row: unknown): SqlRow {
+  return row as SqlRow;
 }
 
-function rejectAttach(sql: string): void {
-  if (ATTACH_SQL.test(sql)) throw new AttachedDatabaseForbiddenError();
+function toDriverParams(params: readonly SqlValue[]): readonly DriverSqlValue[] | undefined {
+  if (params.length === 0) return undefined;
+  return params.map(toDriverValue);
+}
+
+function toDriverValue(value: SqlValue): DriverSqlValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint"
+  ) {
+    return value;
+  }
+  if (value instanceof Uint8Array) return value;
+  return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 }
 
 function assertPragmaName(name: string): void {

@@ -1,12 +1,11 @@
-import fs from "node:fs";
-import { canonicalAssetAbsolute, type CanonicalAssetKey } from "@ef-harness/shared-contracts";
+import { loadCanonicalSqlAsset, type SqlAssetKey } from "../driver/index.js";
 import { AuxiliaryDbError } from "./errors.js";
 
 const SCHEMA_KEYS = {
   global: "globalSql",
   telemetry: "telemetrySql",
   codeIndex: "codeIndexSql",
-} as const satisfies Record<string, CanonicalAssetKey>;
+} as const satisfies Record<string, SqlAssetKey>;
 
 export type SchemaKind = keyof typeof SCHEMA_KEYS;
 
@@ -15,8 +14,7 @@ const cache = new Map<SchemaKind, string>();
 export function loadCanonicalSchema(kind: SchemaKind): string {
   const cached = cache.get(kind);
   if (cached !== undefined) return cached;
-  const filePath = canonicalAssetAbsolute(SCHEMA_KEYS[kind]);
-  const sql = fs.readFileSync(filePath, "utf8");
+  const sql = loadCanonicalSqlAsset(SCHEMA_KEYS[kind]);
   if (!sql.includes("CREATE TABLE")) {
     throw new AuxiliaryDbError("SCHEMA_EMPTY", `canonical schema ${SCHEMA_KEYS[kind]} has no tables`);
   }

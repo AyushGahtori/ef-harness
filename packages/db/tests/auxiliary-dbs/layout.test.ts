@@ -32,7 +32,7 @@ describe("harness data layout", () => {
   });
 
   it("creates the per-user directory tree and a project folder", () => {
-    const root = makeTempRoot("layout");
+    const root = privateLayoutRoot();
     roots.push(root);
     const layout = ensureHarnessDataLayout({ root, projectIds: ["p1"] });
     expect(layout.root).toBe(path.resolve(root));
@@ -88,3 +88,13 @@ describe("harness data layout", () => {
     expect(() => normalizeProjectPath("foo")).toThrow(/absolute/);
   });
 });
+
+function privateLayoutRoot(): string {
+  if (process.platform === "win32") return makeTempRoot("layout");
+  const parent = path.join(os.homedir(), ".ef-harness-private-roots");
+  fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+  fs.chmodSync(parent, 0o700);
+  const root = fs.mkdtempSync(path.join(parent, "layout-"));
+  fs.chmodSync(root, 0o700);
+  return root;
+}
