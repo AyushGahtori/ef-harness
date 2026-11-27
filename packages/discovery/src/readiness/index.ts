@@ -35,7 +35,7 @@ export type {
   StageDepthPort,
 } from "./types.js";
 
-export { openReadinessDatabase, namedQuery } from "./sql.js";
+export { READINESS_COUNTS_SQL, openReadinessDatabase, namedQuery } from "./sql.js";
 export { patchNodeFields } from "./graph.js";
 export { ReadinessCalculator } from "./readiness-calculator.js";
 export { DenominatorDeltaExplainer } from "./denominator-delta-explainer.js";

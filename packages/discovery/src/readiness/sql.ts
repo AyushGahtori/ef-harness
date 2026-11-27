@@ -47,7 +47,7 @@ classed AS (
 )
 `;
 
-const COUNTS_SQL = `
+export const READINESS_COUNTS_SQL = `
 ${CLASSIFIED}
 SELECT
   coalesce(sum(CASE WHEN bucket = 'settled' AND fields ->> '$.basis' = 'explicit' THEN 1 ELSE 0 END), 0) AS settled_explicit,
@@ -271,7 +271,7 @@ export function collectForces(
 }
 
 export function queryCounts(db: DatabaseSync, args: TallyArgs): ReadinessCounts {
-  const row = asRow(db.prepare(COUNTS_SQL).get(bindScope(args)));
+  const row = asRow(db.prepare(READINESS_COUNTS_SQL).get(bindScope(args)));
   return {
     settledExplicit: cellNumber(row, "settled_explicit"),
     settledDerived: cellNumber(row, "settled_derived"),

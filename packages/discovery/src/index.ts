@@ -516,3 +516,17 @@ export type {
   UniversalPolicyManifest,
   UniversalPolicyPackManifest,
 } from "./corpus-loader/index.js";
+export {
+  AdaptiveBatchSelector,
+  DiscoverySessionCoordinator,
+  HonestReadinessCalculator,
+} from "./session/index.js";
+export type {
+  DiscoverySessionStart,
+  HonestReadinessCounts,
+  IngestedDiscoveryTurn,
+  ObservedCriterionSettlement,
+  ObservedSettlementResult,
+} from "./session/index.js";
+export { GreedyQuestionSelector as AdaptiveQuestionSelector } from "./selector/index.js";
+export { StageDepthController as DiscoveryDepthController } from "./depth/index.js";
