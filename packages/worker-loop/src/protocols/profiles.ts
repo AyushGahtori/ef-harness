@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 
 const SMALL_CONTEXT_TOKENS = 32_768;
+const MIN_CODING_CONTEXT_TOKENS = 16_384;
 
 export class ModelProfileError extends Error {
   constructor(message: string) {
@@ -54,7 +55,7 @@ export class ModelProfileRegistry {
 
   canAssignCodingTask(id: string): boolean {
     const profile = this.get(id);
-    return profile.supportsToolCalling && !profile.smallContext;
+    return profile.supportsToolCalling && profile.contextWindow >= MIN_CODING_CONTEXT_TOKENS;
   }
 }
 
@@ -224,9 +225,6 @@ function assertProfile(input: ModelProfile): void {
     throw new ModelProfileError("invalid toolCallReliabilityTier");
   }
   const routes = input.routeConstraints;
-  if (routes.protocol !== input.routeConstraints.protocol) {
-    throw new ModelProfileError("route protocol mismatch");
-  }
   if (routes.allowedRoutes.length === 0) {
     throw new ModelProfileError("allowedRoutes must not be empty");
   }

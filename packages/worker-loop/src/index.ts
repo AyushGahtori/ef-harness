@@ -241,6 +241,7 @@ export type {
   SymbolKind,
   SymbolOutlineEntry,
   TestFailureSummary,
+  ToolOutputShrinkerDeps,
   WindowedFileReaderOptions,
 } from "./read-tools/index.js";
 export {

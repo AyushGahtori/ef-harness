@@ -108,8 +108,8 @@ function classifyKind(
   if (providerCode === USAGE_LIMIT_CODE || bodyText.includes(USAGE_LIMIT_CODE))
     return "usage_limit";
   if (status === 401) return "auth";
-  if (status === 429) return "rate_limit";
   if (status === 402 || hasCode(providerCode, bodyText, BILLING_CODES)) return "billing";
+  if (status === 429) return "rate_limit";
   if (status === 503 || status === 529) return "overloaded";
   if (hasCode(providerCode, bodyText, CONTEXT_CODES) || /prompt is too long/i.test(bodyText)) {
     return "context_overflow";

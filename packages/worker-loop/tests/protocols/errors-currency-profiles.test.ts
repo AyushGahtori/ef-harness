@@ -78,6 +78,14 @@ describe("provider error classifier", () => {
         ...ids,
       }).kind,
     ).toBe("billing");
+    const quota429 = classifyProviderFailure({
+      status: 429,
+      headers: new Headers(),
+      bodyText: JSON.stringify({ error: { code: "insufficient_quota", message: "billing" } }),
+      ...ids,
+    });
+    expect(quota429.kind).toBe("billing");
+    expect(quota429.isProviderSchedulingError).toBe(false);
     expect(
       classifyProviderFailure({
         status: 529,
@@ -140,6 +148,18 @@ describe("ModelProfileRegistry", () => {
     expect(ollama.smallContext).toBe(true);
     expect(ollama.routeConstraints.protocol).toBe("openai_compatible_chat");
     expect(registry.canAssignCodingTask("ollama-local-8k")).toBe(false);
+
+    const lmStudio = registry.get("lm-studio-local");
+    expect(lmStudio.smallContext).toBe(true);
+    expect(registry.canAssignCodingTask("lm-studio-local")).toBe(true);
+
+    registry.register({
+      ...lmStudio,
+      id: "small-8k-tool-model",
+      contextWindow: 8_192,
+      supportsToolCalling: true,
+    });
+    expect(registry.canAssignCodingTask("small-8k-tool-model")).toBe(false);
 
     const siwc = registry.get("gpt-5-siwc");
     expect(siwc.editFormat).toBe("apply_patch");

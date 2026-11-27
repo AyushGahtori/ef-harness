@@ -49,7 +49,7 @@ export type { KbNodeView, ShrunkKbOutput } from "./shrink-kb.js";
 export { shrinkTestOutput } from "./shrink-test.js";
 export type { ShrunkTestOutput, TestFailureSummary } from "./shrink-test.js";
 export { ToolOutputShrinker } from "./tool-output-shrinker.js";
-export type { HistoryToolInput, PreparedHistory } from "./tool-output-shrinker.js";
+export type { HistoryToolInput, PreparedHistory, ToolOutputShrinkerDeps } from "./tool-output-shrinker.js";
 export { WindowedFileReader } from "./windowed-file-reader.js";
 export type {
   FileReadResult,

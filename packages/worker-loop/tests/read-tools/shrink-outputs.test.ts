@@ -51,7 +51,7 @@ function playwrightLog(): string {
 }
 
 describe("shrinkTestOutput", () => {
-  it("condenses a 4,000-line Vitest failure and keeps harness.read_log usable", () => {
+  it("condenses a 4,000-line Vitest failure and keeps harness.read_log usable", async () => {
     const raw = vitestLog({ noise: 3998 });
     expect(raw.split("\n").length).toBeGreaterThanOrEqual(4000);
     const artifactId = "ART-42";
@@ -69,7 +69,7 @@ describe("shrinkTestOutput", () => {
     store.put(artifactId, raw);
     const lookedUp = new ReadLogTool(store).readLog(artifactId, { startLine: 3, endLine: 5 });
     expect(lookedUp.lines.map((line) => line.text)).toEqual(raw.split("\n").slice(2, 5));
-    const history = new ToolOutputShrinker(largeProfile()).shrinkForHistory({
+    const history = await new ToolOutputShrinker(largeProfile()).shrinkForHistory({
       kind: "test",
       output: raw,
       artifactId,

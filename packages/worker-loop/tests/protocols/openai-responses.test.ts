@@ -559,4 +559,131 @@ describe("OpenAIResponsesAdapter", () => {
       },
     );
   });
+
+  it("seeds added function calls and deduplicates done plus completed events", async () => {
+    await withMock(
+      (res) => {
+        writeSse(
+          res,
+          sse("response.output_item.added", {
+            type: "response.output_item.added",
+            item: {
+              type: "function_call",
+              id: "fc_1",
+              call_id: "call_1",
+              name: "read_file",
+              arguments: "",
+            },
+          }) +
+            sse("response.function_call_arguments.delta", {
+              type: "response.function_call_arguments.delta",
+              item_id: "fc_1",
+              delta: '{"path":"src/a.ts"}',
+            }) +
+            sse("response.output_item.done", {
+              type: "response.output_item.done",
+              item: {
+                type: "function_call",
+                id: "fc_1",
+                call_id: "call_1",
+                name: "read_file",
+                arguments: '{"path":"src/a.ts"}',
+              },
+            }) +
+            sse("response.completed", {
+              type: "response.completed",
+              response: {
+                output: [
+                  {
+                    type: "function_call",
+                    id: "fc_1",
+                    call_id: "call_1",
+                    name: "read_file",
+                    arguments: '{"path":"src/a.ts"}',
+                  },
+                ],
+                usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+              },
+            }),
+        );
+      },
+      async (origin) => {
+        const events = await collect(
+          adapter.stream(
+            request({ model: "gpt-5", profile: roster["gpt-5"]!, route: "api_key" }),
+            callOptions(origin),
+          ),
+        );
+        expect(events.filter((event) => event.type === "malformed_tool_args")).toHaveLength(0);
+        const deltas = events.filter((event) => event.type === "tool_call_delta");
+        expect(deltas).toEqual([
+          {
+            type: "tool_call_delta",
+            callId: "call_1",
+            name: "read_file",
+            argumentsDelta: '{"path":"src/a.ts"}',
+          },
+        ]);
+        const calls = events.filter((event) => event.type === "tool_call");
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toMatchObject({
+          type: "tool_call",
+          call: { callId: "call_1", name: "read_file", arguments: { path: "src/a.ts" } },
+        });
+      },
+    );
+  });
+
+  it("places replayed reasoning items before the assistant function_call and tool output", async () => {
+    const reasoning = opaqueReplayItem({
+      type: "reasoning",
+      id: "rs_turn1",
+      encrypted_content: "enc-turn-1",
+      summary: [],
+    });
+    await withMock(
+      (res, captured) => {
+        const parsed = JSON.parse(captured.body) as { input: Array<{ type?: string; role?: string }> };
+        const reasoningIdx = parsed.input.findIndex((item) => item.type === "reasoning");
+        const callIdx = parsed.input.findIndex((item) => item.type === "function_call");
+        const outputIdx = parsed.input.findIndex((item) => item.type === "function_call_output");
+        expect(reasoningIdx).toBeGreaterThan(0);
+        expect(callIdx).toBeGreaterThan(reasoningIdx);
+        expect(outputIdx).toBeGreaterThan(callIdx);
+        writeSse(
+          res,
+          sse("response.output_text.delta", { type: "response.output_text.delta", delta: "done" }) +
+            sse("response.completed", {
+              type: "response.completed",
+              response: { usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 } },
+            }),
+        );
+      },
+      async (origin) => {
+        const events = await collect(
+          adapter.stream(
+            request({
+              model: "gpt-5",
+              profile: roster["gpt-5"]!,
+              route: "api_key",
+              messages: [
+                { role: "user", text: "Read src/a.ts" },
+                {
+                  role: "assistant",
+                  text: "",
+                  toolCalls: [{ callId: "call_1", name: "read_file", rawArguments: '{"path":"src/a.ts"}' }],
+                },
+                { role: "tool", toolCallId: "call_1", text: "file contents" },
+              ],
+              replayItems: [reasoning],
+            }),
+            callOptions(origin),
+          ),
+        );
+        expect(events.some((event) => event.type === "text_delta" && event.text === "done")).toBe(
+          true,
+        );
+      },
+    );
+  });
 });

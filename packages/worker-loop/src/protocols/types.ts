@@ -139,6 +139,7 @@ export interface ConversationMessage {
   readonly toolCallId?: string;
   readonly name?: string;
   readonly toolCalls?: readonly AssistantToolCall[];
+  readonly replayItems?: readonly OpaqueReplayItem[];
   readonly thinkingBlocks?: readonly ThinkingBlock[];
   readonly thoughtParts?: readonly OpaqueReplayItem[];
 }

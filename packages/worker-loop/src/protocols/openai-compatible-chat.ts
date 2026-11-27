@@ -128,10 +128,6 @@ class ChatTranslator implements SseTranslator {
     if (frame.data === "[DONE]") return this.flushTools();
     const record = parseJsonRecord(frame.data);
     if (!record) return [];
-    const costText = readDecimal(frame.data, "cost");
-    if (costText !== null) {
-      this.usageValue = { ...this.usageValue, costMicroUsd: usdToMicroUnits(costText) };
-    }
     const usage = asRecord(record.usage);
     if (usage) this.usageValue = usageFromChat(usage, this.usageValue.costMicroUsd);
     const choice = Array.isArray(record.choices) ? asRecord(record.choices[0]) : null;
@@ -212,12 +208,13 @@ class ChatTranslator implements SseTranslator {
   }
 }
 
-function usageFromChat(usage: Record<string, unknown>, costMicroUsd: number | null): TokenUsage {
+function usageFromChat(usage: Record<string, unknown>, fallbackCostMicroUsd: number | null): TokenUsage {
   const inputTokens = readIntegerField(usage, "prompt_tokens") ?? 0;
   const outputTokens = readIntegerField(usage, "completion_tokens") ?? 0;
   const cacheReadInputTokens =
     readIntegerField(asRecord(usage.prompt_tokens_details), "cached_tokens") ?? 0;
   const totalTokens = readIntegerField(usage, "total_tokens") ?? inputTokens + outputTokens;
+  const costMicroUsd = parseUsageCostMicroUsd(usage.cost) ?? fallbackCostMicroUsd;
   return {
     inputTokens,
     outputTokens,
@@ -229,7 +226,21 @@ function usageFromChat(usage: Record<string, unknown>, costMicroUsd: number | nu
   };
 }
 
-function readDecimal(raw: string, key: string): string | null {
-  const match = new RegExp(`"${key}"\\s*:\\s*(\\d+(?:\\.\\d+)?)`).exec(raw);
-  return match?.[1] ?? null;
+function parseUsageCostMicroUsd(raw: unknown): number | null {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw < 0 || raw > 9_000_000_000) return null;
+    return usdToMicroUnits(raw.toFixed(6));
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) return null;
+    try {
+      return usdToMicroUnits(trimmed);
+    } catch {
+      const numeric = Number(trimmed.replace(/^\$/, ""));
+      if (!Number.isFinite(numeric) || numeric < 0 || numeric > 9_000_000_000) return null;
+      return usdToMicroUnits(numeric.toFixed(6));
+    }
+  }
+  return null;
 }

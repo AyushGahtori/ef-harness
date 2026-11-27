@@ -182,4 +182,50 @@ describe("OpenAICompatibleChatAdapter", () => {
       },
     );
   });
+
+  it("ignores cost strings in assistant text and handles sub-micro usage.cost safely", async () => {
+    await withMock(
+      (res) => {
+        writeSse(
+          res,
+          sseData({
+            choices: [
+              {
+                index: 0,
+                delta: { content: 'example {"cost": 999.5}' },
+                finish_reason: "stop",
+              },
+            ],
+          }) +
+            sseData({
+              choices: [],
+              usage: {
+                prompt_tokens: 4,
+                completion_tokens: 2,
+                total_tokens: 6,
+                cost: 1.5e-7,
+              },
+            }) +
+            "data: [DONE]\n\n",
+        );
+      },
+      async (origin) => {
+        const events = await collect(
+          adapter.stream(
+            request({
+              model: "anthropic/claude",
+              profile: roster["openrouter-chat"]!,
+              route: "openrouter",
+            }),
+            callOptions(origin),
+          ),
+        );
+        const usage = events.find((event) => event.type === "usage");
+        expect(usage).toMatchObject({
+          type: "usage",
+          usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, costMicroUsd: 0 },
+        });
+      },
+    );
+  });
 });

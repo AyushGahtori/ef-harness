@@ -75,14 +75,23 @@ export function prepareOpenAIResponses(
     }
   }
   const replay = exemptReplayItems(request.replayItems);
+  const opaque = new Set<unknown>(replay.opaque);
   const input: unknown[] = [
     { role: "system", content: `${request.prefix.zone1}\n${request.prefix.zone2}` },
   ];
   const messages = [...request.messages];
-  const splitAt = messages.length > 0 ? messages.length - 1 : 0;
-  for (const message of messages.slice(0, splitAt)) appendResponsesMessage(input, message);
+  let lastAssistantIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === "assistant") {
+      lastAssistantIdx = i;
+      break;
+    }
+  }
+  const splitAt =
+    lastAssistantIdx >= 0 ? lastAssistantIdx : messages.length > 0 ? messages.length - 1 : 0;
+  for (const message of messages.slice(0, splitAt)) appendResponsesMessage(input, message, opaque);
   for (const item of replay.values) input.push(item);
-  for (const message of messages.slice(splitAt)) appendResponsesMessage(input, message);
+  for (const message of messages.slice(splitAt)) appendResponsesMessage(input, message, opaque);
 
   const body: Record<string, unknown> = {
     model: request.model,
@@ -113,7 +122,7 @@ export function prepareOpenAIResponses(
       request.idempotencyKey,
     ),
     body,
-    opaque: replay.opaque,
+    opaque,
     outputBudget: localOutputBudget(request),
     clientRequestId: request.clientRequestId,
     idempotencyKey: request.idempotencyKey,
@@ -123,18 +132,31 @@ export function prepareOpenAIResponses(
   };
 }
 
-function appendResponsesMessage(target: unknown[], message: ConversationMessage): void {
-  if (message.role === "assistant" && message.toolCalls && message.toolCalls.length > 0) {
-    if (message.text.length > 0) target.push({ role: "assistant", content: message.text });
-    for (const call of message.toolCalls) {
-      target.push({
-        type: "function_call",
-        call_id: call.callId,
-        name: call.name,
-        arguments: call.rawArguments,
-      });
+function appendResponsesMessage(
+  target: unknown[],
+  message: ConversationMessage,
+  opaque: Set<unknown>,
+): void {
+  if (message.role === "assistant") {
+    if (message.replayItems && message.replayItems.length > 0) {
+      const perTurn = exemptReplayItems(message.replayItems);
+      for (const item of perTurn.values) {
+        opaque.add(item);
+        target.push(item);
+      }
     }
-    return;
+    if (message.toolCalls && message.toolCalls.length > 0) {
+      if (message.text.length > 0) target.push({ role: "assistant", content: message.text });
+      for (const call of message.toolCalls) {
+        target.push({
+          type: "function_call",
+          call_id: call.callId,
+          name: call.name,
+          arguments: call.rawArguments,
+        });
+      }
+      return;
+    }
   }
   if (message.role === "tool") {
     target.push({
@@ -168,7 +190,8 @@ class OpenAIResponsesTranslator implements SseTranslator {
   private stop: StopReason = "end_turn";
   private sawTool = false;
   private readonly seenReasoning = new Set<string>();
-  private readonly args = new Map<string, { name: string; raw: string }>();
+  private readonly seenToolCalls = new Set<string>();
+  private readonly args = new Map<string, { callId: string; name: string; raw: string }>();
 
   constructor(
     private readonly redactor: SecretRedactorPort | undefined,
@@ -197,14 +220,18 @@ class OpenAIResponsesTranslator implements SseTranslator {
     if (type === "response.function_call_arguments.delta") {
       const delta = asString(record.delta) ?? "";
       const itemId = asString(record.item_id) ?? "call";
-      const current = this.args.get(itemId) ?? { name: "", raw: "" };
+      const current = this.args.get(itemId) ?? { callId: itemId, name: "", raw: "" };
       current.raw += delta;
       this.args.set(itemId, current);
       return [
-        { type: "tool_call_delta", callId: itemId, name: current.name, argumentsDelta: delta },
+        { type: "tool_call_delta", callId: current.callId, name: current.name, argumentsDelta: delta },
       ];
     }
-    if (type === "response.output_item.added" || type === "response.output_item.done") {
+    if (type === "response.output_item.added") {
+      this.seedAddedItem(record.item);
+      return [];
+    }
+    if (type === "response.output_item.done") {
       return this.eventsFromItem(record.item);
     }
     if (type === "response.completed") {
@@ -236,6 +263,18 @@ class OpenAIResponsesTranslator implements SseTranslator {
     return this.stop;
   }
 
+  private seedAddedItem(value: unknown): void {
+    const item = asRecord(value);
+    if (!item || item.type !== "function_call") return;
+    const itemId = asString(item.id) ?? asString(item.call_id) ?? "call";
+    const callId = asString(item.call_id) ?? itemId;
+    const name = asString(item.name) ?? "";
+    const raw = asString(item.arguments) ?? "";
+    const entry = { callId, name, raw };
+    this.args.set(itemId, entry);
+    if (callId !== itemId) this.args.set(callId, entry);
+  }
+
   private eventsFromItem(value: unknown): StreamEvent[] {
     const item = asRecord(value);
     if (!item) return [];
@@ -246,10 +285,17 @@ class OpenAIResponsesTranslator implements SseTranslator {
       return [{ type: "reasoning_item", item: replay }];
     }
     if (item.type === "function_call") {
+      const itemId = asString(item.id) ?? asString(item.call_id) ?? "call";
+      const rawCallId = asString(item.call_id);
+      const tracked = this.args.get(itemId) ?? (rawCallId ? this.args.get(rawCallId) : undefined);
+      const callId = rawCallId ?? tracked?.callId ?? itemId;
+      if (this.seenToolCalls.has(callId)) return [];
+      this.seenToolCalls.add(callId);
       this.sawTool = true;
-      const callId = asString(item.call_id) ?? asString(item.id) ?? "call";
-      const name = asString(item.name) ?? this.args.get(callId)?.name ?? "";
-      const raw = asString(item.arguments) ?? this.args.get(callId)?.raw ?? "";
+      const name = asString(item.name) ?? tracked?.name ?? "";
+      const itemArgs = asString(item.arguments);
+      const raw =
+        itemArgs !== null && itemArgs.length > 0 ? itemArgs : (tracked?.raw ?? itemArgs ?? "");
       const parsed = parseToolArguments(raw);
       if (!parsed.ok) {
         return [
