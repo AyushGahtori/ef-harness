@@ -21,7 +21,7 @@
 | C12 | Wave 1 | done | b439532 | F-003, F-006, F-013, F-014 | build/typecheck/lint OK; ipc 14 files 63/63; db 67 files 374/374; schema 67/67 |
 | C13 | Wave 1 | done | e0ed3c6 | F-007, F-011, F-013, F-014, F-015, F-016 | build/typecheck/lint OK; ipc 15 files 66/66; sim 2 files 19/19; db 67 files 374/374; schema 67/67 |
 | C14 | Wave 2 | done | 7a50344 | F-017 | build/typecheck/lint OK; git-engine 17 files 121/121; schema 67/67 |
-| C15 | Wave 2 | pending | - | F-012, F-017 | - |
+| C15 | Wave 2 | done | 1a94f8c | F-012, F-017 | build/typecheck/lint OK; git-engine 17 files 121/121; schema 67/67 |
 | C16 | Wave 2 | pending | - | F-022, F-060, F-070 | - |
 | C17 | Wave 2 | pending | - | F-019, F-036, F-060 | - |
 | C18 | Wave 2 | pending | - | F-018, F-020, F-021, F-039, F-049 | - |

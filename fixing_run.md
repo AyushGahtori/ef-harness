@@ -494,3 +494,27 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
 - `pnpm --filter @ef-harness/git-engine test`: exit `0` — `Test Files 17 passed (17)`, `Tests 121 passed (121)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+## [C15] — Worktree slots and ref leases on GitRunner and ProjectStateDb
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-medium
+- **Commit on `harness/integration`:** `1a94f8cae069f799c6ef1e5bd3def1aee1e1ec70` (`integrate: C15 bind worktrees and ref leases to GitRunner`)
+- **Findings Fixed:** `F-012` (ref-lease writer only), `F-017` (worktree and ref runners; safety-scan and snapshots were already on `execGit` from C14)
+
+### What Changed
+- Re-verified on `7a5034448969a1a99851d7322e0e833641aa66b4`. Did not re-merge `origin/task/038-worktree-slot-manager` (`04aa2785`) or `origin/task/039-branch-ref-leases-cas` (`68c4d3fe`). `git merge-base --is-ancestor` exited `0` for both. No dirty patch for C15. Did not start C16. Did not merge `main`. Did not open a pull request. Did not edit `schema/**`, `packages/sandbox`, or harness-run. `path_leases.mode` stays `'intent' | 'granted'`. Live names stay `WorktreeSlotManager` (alias `WorktreeSlotPool`) and `RefLeaseManager.advanceRefCas`. Slot state stays `registry.json`. The plan directory `ref-leases/` is `refs/`.
+- `createProcessGitRunner` and `createDirectGitRunner` call `GitRunner.execGit` from `runner/exec-git.ts`, so worktree and ref commands use the C14 binary resolver (`settings` → bundled MinGit → unpackaged `PATH` git). They no longer spawn the string `git`. `execGit` accepts `stdin` so `commit-tree -F -` and `interpret-trailers` stay off the argument vector. Harness-managed worktrees and ref updates pass `developerCheckout: false`; direct `GitRunner.execGit` callers still get the developer-checkout guard.
+- Deleted `REF_LEASES_DDL` and the raw `DatabaseSync` opener in `refs/state-db.ts`. `bindRefLeaseStateDb` writes `ref_leases` through `ProjectStateDb.writer`. `schema/state.sql` already defines that table. `@ef-harness/db` is a `git-engine` dependency. `RefLeaseManager` awaits git inside the writer transaction. Tests still cover epoch fencing, concurrent `update-ref` `cas_mismatch`, and the canonical argv (`core.longpaths=true`, `core.quotepath=false`) with stdin kept out of the argument list.
+
+### What It Fixed
+- **F-017:** `worktrees/` and `refs/` pick up `resolveGitBinary`, `GIT_TERMINAL_PROMPT=0`, `core.longpaths=true`, `core.quotepath=false`, and `index.lock` backoff. Re-checked on this commit: `safety-scan/git-runner.ts` and `snapshots/git-runner.ts` already delegate to `execGit` and do not spawn `git`.
+- **F-012:** Ref leases no longer open a second `state.db` connection or create a private `ref_leases` table. Lease rows use the canonical columns `ref`, `holder`, `epoch`, `expected_sha`, `expires_at` on the shared writer.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `04aa2785` and `68c4d3fe`: exit `0` (both ancestors of `7a5034448969a1a99851d7322e0e833641aa66b4`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/git-engine test`: exit `0` — `Test Files 17 passed (17)`, `Tests 121 passed (121)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
