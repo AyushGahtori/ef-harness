@@ -825,3 +825,35 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/verifier test` (after that install): exit `0` — `Test Files 34 passed (34)`, `Tests 188 passed (188)` (`0` skipped)
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+---
+
+## [C26] — Daemon, desktop pipes, and the real M1 exit gate
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `40201d11ab38446c014f0065a3e4565f1a76e6cf` (`integrate: C26 wire daemon, desktop pipes, and the M1 exit gate`)
+- **Findings Fixed:** `F-026` (daemon opens `ProjectStateDb`, `GlobalBrokerDb`, and `TelemetryDb`, and pairs every `outbox` row with `outbox_deliveries` through `CoordinatorWriteQueue` + `OutboxRepo`), `F-027` (`PipeClientBridge` keeps one rolling `FrameCodec` and a `Map` of window ports), and `F-028` (the kitchen exit gate drives the real M1 packages and accepts into `ProjectStateDb`). Did not re-merge `task/067` or `task/068`. Did not apply `task-079.patch`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C27 or the Wave 2 proof gate.
+
+### What Changed
+- Re-verified on `d1af8055d3e3ff1a80d53235d6cd12f8b6524c19`. `task/067-m1-daemon-minimal-viewer` (`d1109c7`) and `task/068-m1-kitchen-exit-gate` (`76f8a9c`) are ancestors. C26 has no dirty patch of its own. `task-079.patch` was left for C31.
+- Landed names differ from the combination-task freeze: there is no `NamedPipeRpcServer`, `OutboxEventStreamer`, `BinaryArtifactStreamServer`, or `TransactionalOutboxRepo`. The daemon uses `OutboxRepo` and `CoordinatorWriteQueue` from `@ef-harness/db`. The M1 socket server stays `HarnessDaemon` because `NamedPipeServer` cannot emit `events.batch` notifications. The exit gate does listen with the landed `NamedPipeServer` and `SessionTokenStore`. `stream.credit` still accepts `streamId` / `chunks` and also `stream_id` / `credits`.
+- `daemon.lock` stores `{ pid, processStartTime }`. A live PID is not enough; a reused PID with a different start token is replaced. On Linux, a pipe left behind by `SIGKILL` is removed only when nothing is accepting connections. Windows named-pipe retry is unchanged.
+- `PipeClientBridge` forwards only complete frames after `session.hello`. A partial frame stays in the codec. Each `windowId` keeps its own `MessagePort`.
+- `tests/e2e/m1-exit-gate/real-stack.ts` opens the kitchen state and global databases through `@ef-harness/db`, appends `TaskAccepted` with a delivery row, and constructs `WorktreeSlotManager`, `CompletenessGateRunner`, `CandidateAcceptanceCoordinator`, `CleanVerifierRunner`, `HarnessRunEngine`, `NativeWorkerLoop`, `AttemptMcpServer`, `TestEnvOrchestrator`, `WindowsJobManager`, `HarnessDaemon`, and `NamedPipeServer`.
+
+### What It Fixed
+- **F-026:** `HarnessDaemon.insertEvent` calls `OutboxRepo.appendEvent` inside `CoordinatorWriteQueue`, which inserts `outbox_deliveries` in the same transaction. The kitchen gate hygiene query reports outbox without deliveries = 0. `user_version`, WAL, `journal_size_limit`, and `temp_store` come from `ProjectStateDb` / `GlobalBrokerDb` open. A lock whose PID is this process but whose start token is not refuses the next start.
+- **F-027:** One socket read that contains `session.hello`, one full event frame, and the first bytes of a second event delivers each event once to two windows and does not forward the hello frame or the partial bytes.
+- **F-028:** `pnpm --filter @ef-harness/e2e test -- m1` accepts K01–K20, rejects the adversarial set, records 0/7 red-team escapes, and writes the exit report from that run. Tier C remains not OS-enforced.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor d1109c7 HEAD`: exit `0`
+- `git merge-base --is-ancestor 76f8a9c HEAD`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/daemon test`: exit `0` — `Test Files 3 passed (3)`, `Tests 18 passed (18)` (`0` skipped)
+- `pnpm --filter @ef-harness/desktop test`: exit `0` — `Test Files 2 passed (2)`, `Tests 2 passed (2)` (`0` skipped)
+- `pnpm --filter @ef-harness/e2e exec vitest run --config vitest.config.ts tests/m1-exit-gate.test.ts`: exit `0` — `Test Files 1 passed (1)`, `Tests 2 passed (2)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
