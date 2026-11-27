@@ -171,3 +171,32 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node "C:/Users/Ayush/Desktop/ef-wt/integration/schema/schema-test.js"`: exit `0` — `67/67 passed · SQLite 3.53.0`
 - `node "C:/Users/Ayush/Desktop/ef-wt/integration/scripts/verify-diagrams.mjs"`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
 - `git -C "C:/Users/Ayush/Desktop/ef-wt/integration" status --short`: clean (empty output after restoring the 4 generated spike report files)
+
+
+---
+
+## [C05] — Unified SqliteConnection, DbHandle, and ef_search_text
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`)
+- **Findings Fixed:** `F-010`, `F-012`
+
+### What Changed
+- Cherry-picked `origin/harness/c05-wip` (`df255ed`) onto `harness/integration` (`c07aa07`) without committing, then closed the remaining gaps before the integration commit.
+- Exported one `DbHandle` (`writer: SqliteConnection`, `readers: ReaderPool`, `query(name)`) and implemented it on `ProjectStateDb`, `GlobalBrokerDb`, `TelemetryDb`, and `CodeIndexDb`.
+- Bound writer and reader connections to `@ef-harness/shared-contracts` `splitSearchText` through `registerEfSearchText`, including the `ReaderPool` worker. Deleted the divergent local splitters in `packages/db/src` (`driver`, `state-db`, `migrations`, `secret-purge`, `ledger`, `recovery`, `registry`, `grants`, `read-models`, `knowledge`, `search`) and re-exported the canonical function.
+- Added `loadNamedQueries` / `loadCanonicalSqlAsset` / `resolveCanonicalSqlAsset`. `packages/db` build copies `schema/{state,global,telemetry,code-index,queries}.sql` into `dist/schema`.
+- On this Node 22 runtime, `DatabaseSync.setAuthorizer` is absent (it exists from Node 24.10). The authorizer still installs when the method exists. Otherwise `ATTACH`/`DETACH` stay rejected by the SQL guard, and rollup writes stay rejected by the existing SQL check. Reader replacement failures no longer surface as unhandled rejections.
+- Linux verification adjustments that keep the Windows checks: read-only blob opens expect `EACCES` off Windows and `EPERM` on Windows; a live owner start time is read from `/proc` off Windows and from PowerShell on Windows; the private-layout fixture is created outside `/tmp` so the world-readable warning stays a real check.
+
+### What It Fixed
+- **F-010:** `ef_search_text` on `state.db` writers and `ReaderPool` readers now uses the same acronym-aware `splitSearchText` (`XMLHttpRequest` includes `XML Http Request`; `parseXMLHttpRequest_v2` includes `parse XML Http Request v2`). Contentless `kb_words` insert and query paths no longer tokenize acronyms differently inside `packages/db`.
+- **F-012:** The four databases share one `DbHandle` and one bundled SQL asset loader, so named queries resolve from the monorepo `schema/` tree and from `packages/db/dist/schema` after the package build.
+
+### Verification Run & Results
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 61 passed (61)`, `Tests 361 passed (361)`
+- `pnpm --filter @ef-harness/db build`: exit `0` — copied `state.sql`, `global.sql`, `telemetry.sql`, `code-index.sql`, and `queries.sql` into `packages/db/dist/schema`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
