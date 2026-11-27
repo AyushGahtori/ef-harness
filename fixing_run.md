@@ -1171,3 +1171,40 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C35.
 
+
+---
+
+## [C35] — sandboxed converters, semantic chunker, and exact schema importer
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `ccbcdea1fd6545780103552dbf3f802146fc119d` (`integrate: C35 wire intake converters, chunker, and schema importer`)
+- **Branches merged:** `origin/task/097-external-intake-converters` (`f41cfd0e9842c9fb927c6a4bf00ac3f9f73bbc64`) as `9f603bd`, then `origin/task/098-intake-chunker-openapi-importer` (`f266844790ec3e411d8b372b14fefb592d10fe00`) as `8415b9e`, both `git merge --no-ff`. No dirty-worktree patch was assigned. Did not reapply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C36.
+- **Findings Fixed:** `F-005` for evidence locators that validate against the landed `EvidenceLocatorSchema`, `F-011` for raw bytes stored through `@ef-harness/db` `CasBlobStore`, and `F-046` for one `NormalizedDocument` shared by the converter and the chunker. `099` and `100` stay for C36.
+
+### What Changed
+- Merged task 097 then task 098 onto `f97fbdf`. `SandboxedDocumentConverter` still emits its converter document and now also publishes `normalized`: `docId`, `sourcePath`, `mimeType`, `rawCasSha256`, `sections`, `strippedHiddenSpansCount`, and `warnings`. `IntakeSemanticChunker` chunks that document. `ExactSchemaImporter` is the deterministic OpenAPI, SQL, and Prisma importer.
+- Section and contract citations are `EvidenceLocator` values (`pdf`, `docx`, `text`, `image`, or `spec`). The landed schema from C03 has no `doc_span` arm, so citations use those kinds. OpenAPI `#/paths/...` refs are stored as RFC 6901 pointers.
+- `createHarnessDocumentConverter` writes raw bytes through `CasBlobStore` (prefixed digest at the intake boundary, bare hex in the store) and runs the converter worker with `HarnessRunEngine`. `ProjectKnowledgeGraph` binds `KnowledgeGraphRepo` on the open `ProjectStateDb`. Entity ids use `SRC-` and `C-`. On Linux the converter still keeps the Windows Job Object path and also applies `prlimit` so `jobAssigned` is a real limit.
+
+### What It Fixed
+- **F-005:** Intake evidence rows parse with `EvidenceLocatorSchema` instead of a private `{ label, charStart, charEnd }` object.
+- **F-011:** The production converter stores the original file bytes in the shared `CasBlobStore`, not only the in-memory stand-in.
+- **F-046:** A PDF or markdown file converted by task 097 can be chunked by task 098, and an OpenAPI import writes `contract` nodes into `ProjectStateDb`.
+
+### Verification Run & Results
+- No dirty-worktree patch was assigned to C35. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/intake exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 10 passed (10)`, `Tests 42 passed (42)` (`0` skipped)
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 30 passed (30)`, `Tests 151 passed (151)` (`0` skipped)
+- `pnpm --filter @ef-harness/mcp-server exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)` (`0` skipped)
+- `pnpm --filter @ef-harness/research-engine test`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion test`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped). The 5 ms catalog budget was not changed.
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C36.
+
