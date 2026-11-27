@@ -226,17 +226,16 @@ export {
   MissingGitIdentityError,
   NamespaceViolationError,
   ProtectedBranchError,
-  REF_LEASES_DDL,
   RefLeaseHeldError,
   RefLeaseManager,
   RefLeaseNotHeldError,
   StaleRefLeaseError,
   ZERO_OID as REFS_ZERO_OID,
+  bindRefLeaseStateDb,
   createDirectGitRunner,
   findAcceptedCommitsSince,
   isLandingAuthorization,
   issueLandingAuthorization,
-  openRefLeaseStateDb,
   parseHarnessTrailers,
 } from "./refs/index.js";
 export type {

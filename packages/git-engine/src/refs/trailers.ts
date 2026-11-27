@@ -1,4 +1,4 @@
-import type { GitExecRequest, GitRunner } from "./git-runner.js";
+import type { GitExecRequest, GitExecResult, GitRunner } from "./git-runner.js";
 import { stripTrailingNewline } from "./git-runner.js";
 import { GitCommandError, InvalidRefLeaseArgumentError } from "./errors.js";
 import { classifyAutomatedWrite, isSha } from "./namespace.js";
@@ -84,20 +84,20 @@ export function parseHarnessTrailers(message: string): ParsedHarnessTrailers {
   };
 }
 
-export function renderCommitMessage(
+export async function renderCommitMessage(
   git: GitRunner,
   repoPath: string,
   message: string,
   trailers: HarnessCommitTrailers,
   env?: NodeJS.ProcessEnv,
-): string {
+): Promise<string> {
   assertHarnessTrailers(trailers);
   if (message.length === 0 || message.includes("\0")) {
     throw new InvalidRefLeaseArgumentError("Commit message must be a non-empty string without NUL bytes.");
   }
   const body = message.replace(/\r\n/g, "\n");
   const stdin = body.endsWith("\n") ? body : `${body}\n`;
-  const result = execGit(git, repoPath, [
+  const result = await execGit(git, repoPath, [
     "interpret-trailers",
     "--if-exists",
     "add",
@@ -120,19 +120,19 @@ export function renderCommitMessage(
   return result.stdout.endsWith("\n") ? result.stdout : `${result.stdout}\n`;
 }
 
-export function findAcceptedCommitsSince(
+export async function findAcceptedCommitsSince(
   git: GitRunner,
   repoPath: string,
   input: FindAcceptedCommitsInput,
   env?: NodeJS.ProcessEnv,
-): readonly AcceptedHarnessCommit[] {
+): Promise<readonly AcceptedHarnessCommit[]> {
   const sinceSha = input.sinceSha.trim().toLowerCase();
   if (!isSha(sinceSha)) {
     throw new InvalidRefLeaseArgumentError("sinceSha must be a 40-character hexadecimal SHA.");
   }
   const untilRef = input.untilRef ?? "refs/heads/harness/integration";
   classifyAutomatedWrite(untilRef, "refs/heads/main", undefined, Date.now());
-  const listed = execGit(git, repoPath, ["rev-list", "--reverse", `${sinceSha}..${untilRef}`], undefined, env);
+  const listed = await execGit(git, repoPath, ["rev-list", "--reverse", `${sinceSha}..${untilRef}`], undefined, env);
   if (listed.exitCode !== 0) {
     throw new GitCommandError("rev-list", listed.exitCode, listed.stderr);
   }
@@ -142,7 +142,7 @@ export function findAcceptedCommitsSince(
     .filter((line) => line.length > 0);
   const accepted: AcceptedHarnessCommit[] = [];
   for (const sha of shas) {
-    const record = readCommitRecord(git, repoPath, sha, env);
+    const record = await readCommitRecord(git, repoPath, sha, env);
     const trailers = parseHarnessTrailers(record.body);
     if (!trailers.task || !trailers.checks) continue;
     accepted.push({
@@ -162,13 +162,13 @@ export function findAcceptedCommitsSince(
   return accepted;
 }
 
-export function readCommitParents(
+export async function readCommitParents(
   git: GitRunner,
   repoPath: string,
   sha: string,
   env?: NodeJS.ProcessEnv,
-): readonly string[] {
-  return readCommitRecord(git, repoPath, sha, env).parents;
+): Promise<readonly string[]> {
+  return (await readCommitRecord(git, repoPath, sha, env)).parents;
 }
 
 interface CommitRecord {
@@ -180,13 +180,13 @@ interface CommitRecord {
   readonly body: string;
 }
 
-function readCommitRecord(
+async function readCommitRecord(
   git: GitRunner,
   repoPath: string,
   sha: string,
   env?: NodeJS.ProcessEnv,
-): CommitRecord {
-  const meta = execGit(
+): Promise<CommitRecord> {
+  const meta = await execGit(
     git,
     repoPath,
     ["log", "-1", "--format=%P%x1f%an%x1f%ae%x1f%cn%x1f%ce", sha],
@@ -196,7 +196,7 @@ function readCommitRecord(
   if (meta.exitCode !== 0) {
     throw new GitCommandError("log", meta.exitCode, meta.stderr);
   }
-  const body = execGit(git, repoPath, ["log", "-1", "--format=%B", sha], undefined, env);
+  const body = await execGit(git, repoPath, ["log", "-1", "--format=%B", sha], undefined, env);
   if (body.exitCode !== 0) {
     throw new GitCommandError("log", body.exitCode, body.stderr);
   }
@@ -227,7 +227,7 @@ function execGit(
   args: readonly string[],
   stdin: string | undefined,
   env: NodeJS.ProcessEnv | undefined,
-) {
+): Promise<GitExecResult> {
   const request: GitExecRequest = {
     cwd: repoPath,
     args,

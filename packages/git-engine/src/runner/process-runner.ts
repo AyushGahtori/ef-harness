@@ -6,6 +6,7 @@ export interface RunProcessOptions {
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
   readonly timeoutMs: number;
+  readonly stdin?: string;
   readonly maxOutputBytes?: number;
 }
 
@@ -56,8 +57,12 @@ export function runProcess(options: RunProcessOptions): Promise<RunProcessResult
       env: options.env,
       shell: false,
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.stdin !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
     });
+    if (options.stdin !== undefined) {
+      child.stdin?.on("error", () => undefined);
+      child.stdin?.end(options.stdin);
+    }
 
     const finish = (exitCode: number | null) => {
       if (settled) return;

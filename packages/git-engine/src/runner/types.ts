@@ -39,6 +39,7 @@ export interface ExecGitOptions {
   readonly cwd: string;
   readonly timeoutMs?: number;
   readonly env?: NodeJS.ProcessEnv;
+  readonly stdin?: string;
   readonly gitBinary?: string;
   readonly developerCheckout?: boolean;
   readonly userExplicitConsentToken?: string;

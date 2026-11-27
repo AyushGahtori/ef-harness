@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -25,7 +26,7 @@ export async function createFixture(): Promise<Fixture> {
   await gitOk(git, main, ["init", "-b", "main"]);
   await gitOk(git, main, ["config", "user.name", "EF Harness Test"]);
   await gitOk(git, main, ["config", "user.email", "test@example.com"]);
-  await gitOk(git, main, ["config", "core.autocrlf", "false"]);
+  configureLineEndings(main);
   await gitOk(git, main, ["config", "commit.gpgsign", "false"]);
   return { root, main, wt, git };
 }
@@ -42,6 +43,18 @@ export function spyGit(inner: GitRunner, intercept?: (args: readonly string[], o
       return inner.execGit(args, options);
     },
   };
+}
+
+function configureLineEndings(repo: string): void {
+  const result = spawnSync("git", ["config", "core.autocrlf", "false"], {
+    cwd: repo,
+    encoding: "utf8",
+    shell: false,
+    windowsHide: true,
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || "git config core.autocrlf failed");
+  }
 }
 
 export async function gitOk(git: GitRunner, cwd: string, args: readonly string[]): Promise<string> {

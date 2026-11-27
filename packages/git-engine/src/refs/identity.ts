@@ -14,13 +14,13 @@ export type CommitAuthor =
 const ROLE_RE = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
 const AGENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-export function readCommitterIdentity(
+export async function readCommitterIdentity(
   git: GitRunner,
   repoPath: string,
   env?: NodeJS.ProcessEnv,
-): GitIdentity {
-  const name = readConfig(git, repoPath, "user.name", env);
-  const email = readConfig(git, repoPath, "user.email", env);
+): Promise<GitIdentity> {
+  const name = await readConfig(git, repoPath, "user.name", env);
+  const email = await readConfig(git, repoPath, "user.email", env);
   const missing: ("user.name" | "user.email")[] = [];
   if (!name) missing.push("user.name");
   if (!email) missing.push("user.email");
@@ -82,13 +82,13 @@ export function identityEnv(
   };
 }
 
-function readConfig(
+async function readConfig(
   git: GitRunner,
   repoPath: string,
   key: "user.name" | "user.email",
   env?: NodeJS.ProcessEnv,
-): string {
-  const result = git.execGit({
+): Promise<string> {
+  const result = await git.execGit({
     cwd: repoPath,
     args: ["config", "--get", key],
     ...(env !== undefined ? { env } : {}),

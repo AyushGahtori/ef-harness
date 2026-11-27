@@ -34,4 +34,4 @@ export {
   type RefLeaseManagerOptions,
   type RefReconciliation,
 } from "./ref-lease-manager.js";
-export { openRefLeaseStateDb, REF_LEASES_DDL, type RefLeaseStateDb } from "./state-db.js";
+export { bindRefLeaseStateDb, type RefLeaseStateDb } from "./state-db.js";

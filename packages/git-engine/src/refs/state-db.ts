@@ -1,80 +1,71 @@
-import { DatabaseSync } from "node:sqlite";
+import type { ProjectStateDb, SqliteConnection } from "@ef-harness/db";
 
 export type SqlValue = null | number | string | bigint | Uint8Array;
 
 /**
- * SQL port consumed from Task 013 `ProjectStateDb`.
- * `openRefLeaseStateDb` opens a state.db file and ensures `ref_leases` exists
- * so tests and standalone callers can run before the Task 013 barrel is wired.
+ * Ref leases use the open `ProjectStateDb` writer.
+ * `schema/state.sql` already defines `ref_leases`; this adapter does not create one.
  */
 export interface RefLeaseStateDb {
-  transaction<T>(fn: () => T): T;
+  transaction<T>(fn: () => T | Promise<T>): Promise<T>;
   get(sql: string, params: readonly SqlValue[]): Readonly<Record<string, SqlValue>> | undefined;
   all(sql: string, params: readonly SqlValue[]): readonly Readonly<Record<string, SqlValue>>[];
   run(sql: string, params: readonly SqlValue[]): number;
   close(): void;
 }
 
-export const REF_LEASES_DDL = `
-CREATE TABLE IF NOT EXISTS ref_leases (
-  ref          TEXT PRIMARY KEY,
-  holder       TEXT NOT NULL,
-  epoch        INTEGER NOT NULL,
-  expected_sha TEXT,
-  expires_at   INTEGER
-) STRICT, WITHOUT ROWID;
-`;
-
-export function openRefLeaseStateDb(filePath: string): RefLeaseStateDb {
-  const db = new DatabaseSync(filePath);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = FULL;
-    PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA secure_delete = ON;
-    PRAGMA journal_size_limit = 67108864;
-    PRAGMA temp_store = MEMORY;
-  `);
-  db.exec(REF_LEASES_DDL);
-  return new SqliteRefLeaseStateDb(db);
+export function bindRefLeaseStateDb(stateDb: ProjectStateDb): RefLeaseStateDb {
+  return new WriterRefLeaseStateDb(stateDb.writer, () => {
+    stateDb.close();
+  });
 }
 
-class SqliteRefLeaseStateDb implements RefLeaseStateDb {
-  constructor(private readonly db: DatabaseSync) {}
+class WriterRefLeaseStateDb implements RefLeaseStateDb {
+  constructor(
+    private readonly writer: SqliteConnection,
+    private readonly closeState: () => void,
+  ) {}
 
-  transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+  async transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+    this.writer.exec("BEGIN IMMEDIATE");
     try {
-      const value = fn();
-      this.db.exec("COMMIT");
+      const value = await fn();
+      this.writer.exec("COMMIT");
       return value;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      this.rollback();
       throw error;
     }
   }
 
   get(sql: string, params: readonly SqlValue[]): Readonly<Record<string, SqlValue>> | undefined {
-    const row = this.db.prepare(sql).get(...params);
-    return row ? normalizeRow(row) : undefined;
+    const row = this.writer.get(sql, params);
+    if (row === undefined || row === null) return undefined;
+    return normalizeRow(row);
   }
 
   all(sql: string, params: readonly SqlValue[]): readonly Readonly<Record<string, SqlValue>>[] {
-    return this.db.prepare(sql).all(...params).map((row) => normalizeRow(row));
+    return this.writer.all(sql, params).map((row) => normalizeRow(row));
   }
 
   run(sql: string, params: readonly SqlValue[]): number {
-    const result = this.db.prepare(sql).run(...params);
-    return typeof result.changes === "bigint" ? Number(result.changes) : result.changes;
+    return this.writer.run(sql, params).changes;
   }
 
   close(): void {
-    this.db.close();
+    this.closeState();
+  }
+
+  private rollback(): void {
+    if (!this.writer.inTransaction) return;
+    this.writer.exec("ROLLBACK");
   }
 }
 
-function normalizeRow(row: Record<string, unknown>): Readonly<Record<string, SqlValue>> {
+function normalizeRow(row: unknown): Readonly<Record<string, SqlValue>> {
+  if (row === null || typeof row !== "object") {
+    throw new Error("SQLite row was not a record.");
+  }
   const normalized: Record<string, SqlValue> = {};
   for (const [key, value] of Object.entries(row)) {
     if (
@@ -85,8 +76,6 @@ function normalizeRow(row: Record<string, unknown>): Readonly<Record<string, Sql
       value instanceof Uint8Array
     ) {
       normalized[key] = value;
-    } else if (value === undefined) {
-      normalized[key] = null;
     } else {
       throw new Error(`Unsupported SQLite value for column ${key}.`);
     }

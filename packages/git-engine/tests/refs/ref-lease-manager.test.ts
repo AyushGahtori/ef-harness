@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { openProjectStateDb } from "@ef-harness/db";
+import { execGit } from "../../src/runner/exec-git.js";
 import {
   LeaseExpiredError,
   MissingGitIdentityError,
@@ -12,9 +14,9 @@ import {
   RefLeaseHeldError,
   StaleRefLeaseError,
   ZERO_OID,
+  bindRefLeaseStateDb,
   createDirectGitRunner,
   issueLandingAuthorization,
-  openRefLeaseStateDb,
   RefLeaseManager,
   type GitExecRequest,
   type GitRunner,
@@ -36,15 +38,14 @@ afterEach(() => {
 });
 
 describe("ref leases", { timeout: 30_000 }, () => {
-  it("stores ref_leases with the state schema columns", () => {
+  it("stores ref_leases with the state schema columns", async () => {
     const repo = initRepo();
-    const database = openRefLeaseStateDb(path.join(repo, "state.db"));
-    cleaners.push(() => database.close());
+    const database = openLeaseDb(repo);
     const names = database.all("PRAGMA table_info(ref_leases)", []).map((row) => row.name);
     expect(names).toEqual(["ref", "holder", "epoch", "expected_sha", "expires_at"]);
   });
 
-  it("fences leases by epoch and rejects a stale holder before git", () => {
+  it("fences leases by epoch and rejects a stale holder before git", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, INTEGRATION, root);
@@ -53,15 +54,15 @@ describe("ref leases", { timeout: 30_000 }, () => {
     const runner = new RecordingGitRunner(createDirectGitRunner());
     const { manager } = openManager(repo, { clock: () => now, git: runner });
 
-    const first = manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-a", ttlMs: 5_000 });
+    const first = await manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-a", ttlMs: 5_000 });
     expect(first).toMatchObject({ epoch: 1, holder: "holder-a", expectedSha: root, expiresAt: 1_005_000 });
-    expect(() => manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-b", ttlMs: 5_000 })).toThrow(
+    await expect(manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-b", ttlMs: 5_000 })).rejects.toThrow(
       RefLeaseHeldError,
     );
     expect(manager.readRefLease(INTEGRATION)?.epoch).toBe(1);
 
     now = 1_004_000;
-    const renewed = manager.renewRefLease({
+    const renewed = await manager.renewRefLease({
       ref: INTEGRATION,
       holder: "holder-a",
       epoch: 1,
@@ -70,11 +71,11 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(renewed).toMatchObject({ epoch: 1, expiresAt: 1_009_000 });
 
     now = 1_009_000;
-    expect(() =>
+    await expect(
       manager.renewRefLease({ ref: INTEGRATION, holder: "holder-a", epoch: 1, ttlMs: 5_000 }),
-    ).toThrow(LeaseExpiredError);
+    ).rejects.toThrow(LeaseExpiredError);
     const beforeExpired = runner.calls.length;
-    expect(() =>
+    await expect(
       manager.advanceRefCas({
         ref: INTEGRATION,
         holder: "holder-a",
@@ -82,14 +83,14 @@ describe("ref leases", { timeout: 30_000 }, () => {
         newSha: next,
         expectedOldSha: root,
       }),
-    ).toThrow(LeaseExpiredError);
+    ).rejects.toThrow(LeaseExpiredError);
     expect(updateRefs(runner.calls.slice(beforeExpired))).toEqual([]);
     expect(rev(repo, INTEGRATION)).toBe(root);
 
-    const second = manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-b", ttlMs: 5_000 });
+    const second = await manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-b", ttlMs: 5_000 });
     expect(second.epoch).toBe(2);
     const beforeStale = runner.calls.length;
-    expect(() =>
+    await expect(
       manager.advanceRefCas({
         ref: INTEGRATION,
         holder: "holder-a",
@@ -97,11 +98,11 @@ describe("ref leases", { timeout: 30_000 }, () => {
         newSha: next,
         expectedOldSha: root,
       }),
-    ).toThrow(StaleRefLeaseError);
+    ).rejects.toThrow(StaleRefLeaseError);
     expect(updateRefs(runner.calls.slice(beforeStale))).toEqual([]);
     expect(rev(repo, INTEGRATION)).toBe(root);
 
-    const advanced = manager.advanceRefCas({
+    const advanced = await manager.advanceRefCas({
       ref: INTEGRATION,
       holder: "holder-b",
       epoch: 2,
@@ -113,16 +114,16 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(manager.readRefLease(INTEGRATION)?.expectedSha).toBe(next);
   });
 
-  it("increments the epoch when a released holder acquires again", () => {
+  it("increments the epoch when a released holder acquires again", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, INTEGRATION, root);
     const { manager } = openManager(repo);
-    const lease = manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-a", ttlMs: 5_000 });
-    manager.releaseRefLease({ ref: INTEGRATION, holder: "holder-a", epoch: lease.epoch });
-    const again = manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-a", ttlMs: 5_000 });
+    const lease = await manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-a", ttlMs: 5_000 });
+    await manager.releaseRefLease({ ref: INTEGRATION, holder: "holder-a", epoch: lease.epoch });
+    const again = await manager.acquireRefLease({ ref: INTEGRATION, holder: "holder-a", ttlMs: 5_000 });
     expect(again.epoch).toBe(lease.epoch + 1);
-    expect(() =>
+    await expect(
       manager.advanceRefCas({
         ref: INTEGRATION,
         holder: "holder-a",
@@ -130,11 +131,11 @@ describe("ref leases", { timeout: 30_000 }, () => {
         newSha: child(repo, root, "later"),
         expectedOldSha: root,
       }),
-    ).toThrow(StaleRefLeaseError);
+    ).rejects.toThrow(StaleRefLeaseError);
     expect(rev(repo, INTEGRATION)).toBe(root);
   });
 
-  it("returns cas_mismatch with the actual sha when the ref moves concurrently", () => {
+  it("returns cas_mismatch with the actual sha when the ref moves concurrently", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, INTEGRATION, root);
@@ -151,9 +152,9 @@ describe("ref leases", { timeout: 30_000 }, () => {
       return next();
     });
     const { manager } = openManager(repo, { git });
-    manager.acquireRefLease({ ref: INTEGRATION, holder: "integrator", ttlMs: 60_000 });
+    await manager.acquireRefLease({ ref: INTEGRATION, holder: "integrator", ttlMs: 60_000 });
 
-    const result = manager.advanceRefCas({
+    const result = await manager.advanceRefCas({
       ref: INTEGRATION,
       holder: "integrator",
       epoch: 1,
@@ -168,14 +169,14 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(racing.calls.some((call) => call.args[0] === "branch" || call.args[0] === "push")).toBe(false);
   });
 
-  it("creates a missing branch with the zero OID and refuses to clobber an existing one", () => {
+  it("creates a missing branch with the zero OID and refuses to clobber an existing one", async () => {
     const repo = initRepo();
     const root = rev(repo);
     const created = "refs/heads/harness/f/new";
     const { manager } = openManager(repo);
-    manager.acquireRefLease({ ref: created, holder: "integrator", ttlMs: 60_000 });
+    await manager.acquireRefLease({ ref: created, holder: "integrator", ttlMs: 60_000 });
 
-    const first = manager.advanceRefCas({
+    const first = await manager.advanceRefCas({
       ref: created,
       holder: "integrator",
       epoch: 1,
@@ -185,7 +186,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(first).toMatchObject({ ok: true, newSha: root, previousSha: ZERO_OID });
     expect(rev(repo, created)).toBe(root);
 
-    const second = manager.advanceRefCas({
+    const second = await manager.advanceRefCas({
       ref: created,
       holder: "integrator",
       epoch: 1,
@@ -197,7 +198,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(manager.readRefLease(created)?.expectedSha).toBe(root);
   });
 
-  it("blocks developer branches without landing authorization and allows a consented landing", () => {
+  it("blocks developer branches without landing authorization and allows a consented landing", async () => {
     const repo = initRepo();
     const root = rev(repo);
     const next = child(repo, root, "land");
@@ -209,18 +210,18 @@ describe("ref leases", { timeout: 30_000 }, () => {
     });
 
     const before = runner.calls.length;
-    expect(() =>
+    await expect(
       manager.advanceRefCas({ ref: "refs/heads/main", newSha: next, expectedOldSha: root }),
-    ).toThrow(NamespaceViolationError);
-    expect(() =>
+    ).rejects.toThrow(NamespaceViolationError);
+    await expect(
       manager.advanceRefCas({ ref: "refs/heads/MAIN", newSha: next, expectedOldSha: root }),
-    ).toThrow(NamespaceViolationError);
-    expect(() =>
+    ).rejects.toThrow(NamespaceViolationError);
+    await expect(
       manager.advanceRefCas({ ref: "refs/heads/develop", newSha: next, expectedOldSha: root }),
-    ).toThrow(NamespaceViolationError);
-    expect(() =>
+    ).rejects.toThrow(NamespaceViolationError);
+    await expect(
       manager.advanceRefCas({ ref: "refs/heads/topic", newSha: next, expectedOldSha: root }),
-    ).toThrow(NamespaceViolationError);
+    ).rejects.toThrow(NamespaceViolationError);
     expect(updateRefs(runner.calls.slice(before))).toEqual([]);
     expect(rev(repo, "refs/heads/main")).toBe(root);
     expect(rev(repo, "refs/heads/develop")).toBe(root);
@@ -241,14 +242,14 @@ describe("ref leases", { timeout: 30_000 }, () => {
       expiresAtMs: 1,
       userConsent: true,
     });
-    expect(() =>
+    await expect(
       manager.advanceRefCas({
         ref: "refs/heads/main",
         newSha: next,
         expectedOldSha: root,
         landingAuthorization: expired,
       }),
-    ).toThrow(NamespaceViolationError);
+    ).rejects.toThrow(NamespaceViolationError);
 
     const mainAuth = issueLandingAuthorization({
       ref: "refs/heads/main",
@@ -257,7 +258,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
       userConsent: true,
     });
     expect(
-      manager.advanceRefCas({
+      await manager.advanceRefCas({
         ref: "refs/heads/main",
         newSha: next,
         expectedOldSha: root,
@@ -274,7 +275,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
       developerBaseRef: "refs/heads/develop",
     });
     expect(
-      manager.advanceRefCas({
+      await manager.advanceRefCas({
         ref: "refs/heads/develop",
         newSha: next,
         expectedOldSha: root,
@@ -282,26 +283,26 @@ describe("ref leases", { timeout: 30_000 }, () => {
       }),
     ).toMatchObject({ ok: true, newSha: next });
 
-    const snapshot = manager.advanceRefCas({
+    const snapshot = await manager.advanceRefCas({
       ref: "refs/harness/snapshots/proj/1",
       newSha: root,
       expectedOldSha: ZERO_OID,
     });
     expect(snapshot).toMatchObject({ ok: true });
     expect(rev(repo, "refs/harness/snapshots/proj/1")).toBe(root);
-    const attempt = manager.advanceRefCas({
+    const attempt = await manager.advanceRefCas({
       ref: "refs/heads/harness/t/T03b/2",
       newSha: root,
       expectedOldSha: ZERO_OID,
     });
     expect(attempt).toMatchObject({ ok: true });
-    const checkpoint = manager.advanceRefCas({
+    const checkpoint = await manager.advanceRefCas({
       ref: "refs/harness/checkpoints/T03b/1",
       newSha: root,
       expectedOldSha: ZERO_OID,
     });
     expect(checkpoint).toMatchObject({ ok: true });
-    const state = manager.advanceRefCas({
+    const state = await manager.advanceRefCas({
       ref: "refs/heads/harness-state",
       newSha: root,
       expectedOldSha: ZERO_OID,
@@ -309,7 +310,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(state).toMatchObject({ ok: true });
   });
 
-  it("squashes a leaf into one commit and merges a feature with two parents", () => {
+  it("squashes a leaf into one commit and merges a feature with two parents", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, INTEGRATION, root);
@@ -319,7 +320,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     const tree = gitExec(repo, ["write-tree"]);
     const runner = new RecordingGitRunner(createDirectGitRunner());
     const { manager } = openManager(repo, { git: runner });
-    manager.acquireRefLease({ ref: FEATURE, holder: "integrator", ttlMs: 60_000 });
+    await manager.acquireRefLease({ ref: FEATURE, holder: "integrator", ttlMs: 60_000 });
 
     const message = [
       'Land the "widget" for $5 (100%)',
@@ -328,7 +329,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
       "Harness-Checks: decoy-receipt",
       "This remains body text.",
     ].join("\n");
-    const squash = manager.createSquashCommit({
+    const squash = await manager.createSquashCommit({
       featureRef: FEATURE,
       holder: "integrator",
       epoch: 1,
@@ -373,8 +374,8 @@ describe("ref leases", { timeout: 30_000 }, () => {
       false,
     );
 
-    manager.acquireRefLease({ ref: INTEGRATION, holder: "project-integrator", ttlMs: 60_000 });
-    const merge = manager.createMergeCommit({
+    await manager.acquireRefLease({ ref: INTEGRATION, holder: "project-integrator", ttlMs: 60_000 });
+    const merge = await manager.createMergeCommit({
       integrationRef: INTEGRATION,
       featureRef: FEATURE,
       holder: "project-integrator",
@@ -406,7 +407,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     });
   });
 
-  it("preserves the developer as author for a human fix and still appends trailers", () => {
+  it("preserves the developer as author for a human fix and still appends trailers", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, FEATURE, root);
@@ -417,8 +418,8 @@ describe("ref leases", { timeout: 30_000 }, () => {
         GIT_AUTHOR_EMAIL: "ada+box@example.com",
       },
     });
-    manager.acquireRefLease({ ref: FEATURE, holder: "human", ttlMs: 60_000 });
-    const published = manager.createSquashCommit({
+    await manager.acquireRefLease({ ref: FEATURE, holder: "human", ttlMs: 60_000 });
+    const published = await manager.createSquashCommit({
       featureRef: FEATURE,
       holder: "human",
       epoch: 1,
@@ -442,7 +443,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     });
   });
 
-  it("fails upfront with MissingGitIdentityError when committer identity is absent", () => {
+  it("fails upfront with MissingGitIdentityError when committer identity is absent", async () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ef-refs-"));
     cleaners.push(() => fs.rmSync(repo, { recursive: true, force: true }));
     gitExec(repo, ["init", "-b", "main"]);
@@ -460,7 +461,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
       },
     });
 
-    expect(() =>
+    await expect(
       manager.createSquashCommit({
         featureRef: FEATURE,
         holder: "integrator",
@@ -471,9 +472,9 @@ describe("ref leases", { timeout: 30_000 }, () => {
         trailers: { feature: "F12", task: "T01", attempt: "1", checks: "receipt" },
         author: { kind: "agent", role: "Worker", agentId: "A0014" },
       }),
-    ).toThrow(MissingGitIdentityError);
+    ).rejects.toThrow(MissingGitIdentityError);
     try {
-      manager.createMergeCommit({
+      await manager.createMergeCommit({
         integrationRef: INTEGRATION,
         featureRef: FEATURE,
         holder: "integrator",
@@ -496,7 +497,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     );
   });
 
-  it("reconstructs accepted task ids and check receipts after a backup sha", () => {
+  it("reconstructs accepted task ids and check receipts after a backup sha", async () => {
     const repo = initRepo();
     const root = rev(repo);
     const tree = gitExec(repo, ["rev-parse", `${root}^{tree}`]);
@@ -507,29 +508,29 @@ describe("ref leases", { timeout: 30_000 }, () => {
     point(repo, INTEGRATION, later);
     const { manager } = openManager(repo);
 
-    const found = manager.findAcceptedCommitsSince({ sinceSha: before });
+    const found = await manager.findAcceptedCommitsSince({ sinceSha: before });
     expect(found.map((commit) => [commit.taskId, commit.checkReceipt, commit.featureId, commit.attempt])).toEqual([
       ["T03b", "receipt-abc", "F12", "1"],
       ["T09", "receipt-xyz", "F12", "1"],
     ]);
     expect(found.map((commit) => commit.sha)).toEqual([accepted, later]);
-    expect(() => manager.findAcceptedCommitsSince({ sinceSha: before, untilRef: "refs/heads/main" })).toThrow(
+    await expect(manager.findAcceptedCommitsSince({ sinceSha: before, untilRef: "refs/heads/main" })).rejects.toThrow(
       NamespaceViolationError,
     );
   });
 
-  it("catches sqlite up after a crash without creating another commit", () => {
+  it("catches sqlite up after a crash without creating another commit", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, INTEGRATION, root);
     const { manager } = openManager(repo);
-    manager.acquireRefLease({ ref: INTEGRATION, holder: "integrator", ttlMs: 60_000 });
+    await manager.acquireRefLease({ ref: INTEGRATION, holder: "integrator", ttlMs: 60_000 });
     const tree = gitExec(repo, ["rev-parse", `${root}^{tree}`]);
     const landed = commitMessage(repo, tree, root, trailerBody("T03b", "receipt-abc"));
     gitExec(repo, ["update-ref", INTEGRATION, landed, root]);
     expect(manager.readRefLease(INTEGRATION)?.expectedSha).toBe(root);
 
-    const [caught] = manager.reconcileRefLeases();
+    const [caught] = await manager.reconcileRefLeases();
     expect(caught).toMatchObject({
       ref: INTEGRATION,
       previousExpectedSha: root,
@@ -542,22 +543,22 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(manager.readRefLease(INTEGRATION)?.expectedSha).toBe(landed);
     expect(rev(repo, INTEGRATION)).toBe(landed);
 
-    const [again] = manager.reconcileRefLeases();
+    const [again] = await manager.reconcileRefLeases();
     expect(again).toMatchObject({ status: "in_sync", alreadyApplied: false, actualSha: landed });
     expect(rev(repo, INTEGRATION)).toBe(landed);
     expect(gitExec(repo, ["rev-list", "--count", INTEGRATION])).toBe("2");
   });
 
-  it("records an external advance and lets the next compare-and-swap start from that sha", () => {
+  it("records an external advance and lets the next compare-and-swap start from that sha", async () => {
     const repo = initRepo();
     const root = rev(repo);
     point(repo, INTEGRATION, root);
     const { manager } = openManager(repo);
-    manager.acquireRefLease({ ref: INTEGRATION, holder: "integrator", ttlMs: 60_000 });
+    await manager.acquireRefLease({ ref: INTEGRATION, holder: "integrator", ttlMs: 60_000 });
     const external = child(repo, root, "developer commit from base sync");
     gitExec(repo, ["update-ref", INTEGRATION, external, root]);
 
-    const [report] = manager.reconcileRefLeases();
+    const [report] = await manager.reconcileRefLeases();
     expect(report).toMatchObject({
       status: "external_advance",
       alreadyApplied: false,
@@ -567,7 +568,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(manager.readRefLease(INTEGRATION)?.expectedSha).toBe(external);
 
     const retried = child(repo, external, "retry merge");
-    const advanced = manager.advanceRefCas({
+    const advanced = await manager.advanceRefCas({
       ref: INTEGRATION,
       holder: "integrator",
       epoch: 1,
@@ -578,7 +579,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(rev(repo, INTEGRATION)).toBe(retried);
   });
 
-  it("deletes merged attempt branches only after retention and never deletes wip branches", () => {
+  it("deletes merged attempt branches only after retention and never deletes wip branches", async () => {
     const repo = initRepo();
     const root = rev(repo);
     const tree = gitExec(repo, ["rev-parse", `${root}^{tree}`]);
@@ -589,9 +590,9 @@ describe("ref leases", { timeout: 30_000 }, () => {
     point(repo, "refs/heads/harness/t/T03b/3", unmerged);
     point(repo, "refs/heads/wip/human-export", root);
     const { manager } = openManager(repo);
-    manager.acquireRefLease({ ref: FEATURE, holder: "integrator", ttlMs: 60_000 });
+    await manager.acquireRefLease({ ref: FEATURE, holder: "integrator", ttlMs: 60_000 });
 
-    expect(() =>
+    await expect(
       manager.deleteMergedAttemptBranch({
         attemptRef: "refs/heads/wip/human-export",
         featureRef: FEATURE,
@@ -601,11 +602,11 @@ describe("ref leases", { timeout: 30_000 }, () => {
         mergedAtMs: 0,
         retentionMs: 0,
       }),
-    ).toThrow(ProtectedBranchError);
+    ).rejects.toThrow(ProtectedBranchError);
     expect(rev(repo, "refs/heads/wip/human-export")).toBe(root);
 
     expect(
-      manager.deleteMergedAttemptBranch({
+      await manager.deleteMergedAttemptBranch({
         attemptRef: "refs/heads/harness/t/T03b/2",
         featureRef: FEATURE,
         holder: "integrator",
@@ -619,7 +620,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(rev(repo, "refs/heads/harness/t/T03b/2")).toBe(merged);
 
     expect(
-      manager.deleteMergedAttemptBranch({
+      await manager.deleteMergedAttemptBranch({
         attemptRef: "refs/heads/harness/t/T03b/2",
         featureRef: FEATURE,
         holder: "integrator",
@@ -633,7 +634,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(rev(repo, "refs/heads/harness/t/T03b/2")).toBe(merged);
 
     expect(
-      manager.deleteMergedAttemptBranch({
+      await manager.deleteMergedAttemptBranch({
         attemptRef: "refs/heads/harness/t/T03b/3",
         featureRef: FEATURE,
         holder: "integrator",
@@ -647,7 +648,7 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(rev(repo, "refs/heads/harness/t/T03b/3")).toBe(unmerged);
 
     expect(
-      manager.deleteMergedAttemptBranch({
+      await manager.deleteMergedAttemptBranch({
         attemptRef: "refs/heads/harness/t/T03b/2",
         featureRef: FEATURE,
         holder: "integrator",
@@ -662,39 +663,49 @@ describe("ref leases", { timeout: 30_000 }, () => {
     expect(rev(repo, "refs/heads/wip/human-export")).toBe(root);
   });
 
-  it("spawns git with shell false, long paths, and no prompt", () => {
-    const calls: Array<{ args: readonly string[]; shell: false; windowsHide: true; input?: string; prompt: string | undefined }> = [];
-    const runner = createDirectGitRunner({
-      spawn(binary, args, options) {
-        calls.push({
-          args,
-          shell: options.shell,
-          windowsHide: options.windowsHide,
-          ...(options.input !== undefined ? { input: options.input } : {}),
-          prompt: options.env.GIT_TERMINAL_PROMPT,
-        });
-        expect(binary).toBe("git");
-        return { status: 0, stdout: `${"d".repeat(40)}\n`, stderr: "" };
-      },
-    });
-    const result = runner.execGit({
-      cwd: os.tmpdir(),
-      args: ["commit-tree", "e".repeat(40), "-F", "-"],
-      stdin: 'quote " $ %\n',
+  it("pipes commit-tree stdin through the canonical runner", async () => {
+    const repo = initRepo();
+    const root = rev(repo);
+    const tree = gitExec(repo, ["rev-parse", `${root}^{tree}`]);
+    const runner = createDirectGitRunner();
+    const stdin = 'quote " $ %\n';
+    const result = await runner.execGit({
+      cwd: repo,
+      args: ["commit-tree", tree, "-p", root, "-F", "-"],
+      stdin,
     });
     expect(result.exitCode).toBe(0);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
-    expect(calls[0]).toMatchObject({
-      shell: false,
-      windowsHide: true,
-      prompt: "0",
-      input: 'quote " $ %\n',
+    expect(gitExec(repo, ["log", "-1", "--format=%B", result.stdout.trim()])).toBe(stdin.trim());
+    const canonical = await execGit({
+      args: ["commit-tree", tree, "-p", root, "-F", "-"],
+      cwd: repo,
+      stdin,
+      developerCheckout: false,
     });
-    expect(calls[0]?.args.slice(0, 2)).toEqual(["-c", "core.longpaths=true"]);
-    expect(calls[0]?.args.join(" ")).not.toContain("quote");
-    expect(runner.resolveGitBinary()).toBe("git");
+    expect(canonical.exitCode).toBe(0);
+    expect(canonical.argv.slice(0, 4)).toEqual([
+      "-c",
+      "core.longpaths=true",
+      "-c",
+      "core.quotepath=false",
+    ]);
+    expect(canonical.argv.join(" ")).not.toContain(stdin.trim());
+    expect(canonical.argv.join(" ")).not.toContain("$ %");
+    const resolved = await runner.resolveGitBinary();
+    expect(resolved.length).toBeGreaterThan(0);
   });
 });
+
+function openLeaseDb(repo: string) {
+  const stateDb = openProjectStateDb({
+    projectId: "C15Refs",
+    rootDir: path.join(repo, "harness-home"),
+  });
+  const database = bindRefLeaseStateDb(stateDb);
+  cleaners.push(() => database.close());
+  return database;
+}
 
 function openManager(
   repo: string,
@@ -705,8 +716,7 @@ function openManager(
     readonly git?: GitRunner;
   },
 ): { manager: RefLeaseManager } {
-  const database = openRefLeaseStateDb(path.join(repo, "state.db"));
-  cleaners.push(() => database.close());
+  const database = openLeaseDb(repo);
   const manager = new RefLeaseManager({
     database,
     git: options?.git ?? createDirectGitRunner(),
@@ -806,11 +816,11 @@ class RecordingGitRunner implements GitRunner {
 
   constructor(private readonly inner: GitRunner) {}
 
-  resolveGitBinary(): string {
+  resolveGitBinary(): Promise<string> {
     return this.inner.resolveGitBinary();
   }
 
-  execGit(request: GitExecRequest) {
+  execGit(request: GitExecRequest): ReturnType<GitRunner["execGit"]> {
     this.calls.push(request);
     return this.inner.execGit(request);
   }

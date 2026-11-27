@@ -157,6 +157,7 @@ export async function execGit(options: ExecGitOptions): Promise<ExecGitResult> {
       cwd: cwdStatPath,
       env,
       timeoutMs,
+      ...(options.stdin !== undefined ? { stdin: options.stdin } : {}),
     });
     if (result.spawnError?.code === "ENOENT") {
       throw new GitBinaryNotFoundError(`Git binary was not found: ${gitPath}`);

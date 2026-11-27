@@ -198,12 +198,12 @@ export class RefLeaseManager {
     if (options.env !== undefined) this.env = options.env;
   }
 
-  acquireRefLease(input: AcquireRefLeaseInput): RefLease {
+  async acquireRefLease(input: AcquireRefLeaseInput): Promise<RefLease> {
     const ref = assertLeasableRef(input.ref).ref;
     const holder = requireHolder(input.holder);
     const ttlMs = requireTtl(input.ttlMs);
     const now = input.nowMs ?? this.now();
-    return this.database.transaction(() => {
+    return this.database.transaction(async () => {
       const current = this.readRow(ref);
       if (current && this.isActive(current, now) && current.holder === holder) {
         const expiresAt = now + ttlMs;
@@ -217,7 +217,7 @@ export class RefLeaseManager {
         throw new RefLeaseHeldError(ref, current.holder, current.epoch, current.expiresAt);
       }
       const epoch = current ? current.epoch + 1 : 1;
-      const expectedSha = this.readOptionalSha(ref) ?? current?.expectedSha ?? null;
+      const expectedSha = (await this.readOptionalSha(ref)) ?? current?.expectedSha ?? null;
       if (current) {
         this.database.run(
           "UPDATE ref_leases SET holder = ?, epoch = ?, expected_sha = ?, expires_at = ? WHERE ref = ?",
@@ -239,7 +239,7 @@ export class RefLeaseManager {
     });
   }
 
-  renewRefLease(input: RenewRefLeaseInput): RefLease {
+  async renewRefLease(input: RenewRefLeaseInput): Promise<RefLease> {
     const ref = assertLeasableRef(input.ref).ref;
     const holder = requireHolder(input.holder);
     const epoch = requireEpoch(input.epoch);
@@ -259,12 +259,12 @@ export class RefLeaseManager {
     });
   }
 
-  releaseRefLease(input: ReleaseRefLeaseInput): void {
+  async releaseRefLease(input: ReleaseRefLeaseInput): Promise<void> {
     const ref = assertLeasableRef(input.ref).ref;
     const holder = requireHolder(input.holder);
     const epoch = requireEpoch(input.epoch);
     const now = input.nowMs ?? this.now();
-    this.database.transaction(() => {
+    return this.database.transaction(() => {
       this.requireCurrent(ref, holder, epoch, now);
       const changes = this.database.run(
         "UPDATE ref_leases SET expires_at = 0 WHERE ref = ? AND holder = ? AND epoch = ?",
@@ -281,7 +281,7 @@ export class RefLeaseManager {
     return row ? toLease(row) : null;
   }
 
-  advanceRefCas(input: AdvanceRefCasInput): CasAdvanceResult {
+  async advanceRefCas(input: AdvanceRefCasInput): Promise<CasAdvanceResult> {
     const newSha = normalizeSha(input.newSha, "newSha");
     if (newSha === ZERO_OID) {
       throw new InvalidRefLeaseArgumentError("newSha cannot be the zero OID.");
@@ -297,7 +297,7 @@ export class RefLeaseManager {
     if (target.zone === "harness" && target.leasable) {
       const holder = requireHolder(input.holder ?? "");
       const epoch = requireEpoch(input.epoch ?? Number.NaN);
-      return this.database.transaction(() => {
+      return this.database.transaction(async () => {
         this.requireCurrent(target.ref, holder, epoch, now);
         return this.compareAndSwap(target.ref, newSha, expectedOldSha, holder, epoch, now);
       });
@@ -305,12 +305,12 @@ export class RefLeaseManager {
     return this.compareAndSwap(target.ref, newSha, expectedOldSha, null, null, now);
   }
 
-  createSquashCommit(input: CreateSquashCommitInput): CommitPublishResult {
+  async createSquashCommit(input: CreateSquashCommitInput): Promise<CommitPublishResult> {
     assertFeatureRef(input.featureRef);
     const treeSha = normalizeSha(input.treeSha, "treeSha");
     const parentSha = normalizeSha(input.parentSha, "parentSha");
     const now = input.nowMs ?? this.now();
-    const committer = readCommitterIdentity(this.git, this.repoPath, this.env);
+    const committer = await readCommitterIdentity(this.git, this.repoPath, this.env);
     this.requireCurrent(input.featureRef, requireHolder(input.holder), requireEpoch(input.epoch), now);
     return this.publishCommit({
       ref: input.featureRef,
@@ -328,7 +328,7 @@ export class RefLeaseManager {
     });
   }
 
-  createMergeCommit(input: CreateMergeCommitInput): CommitPublishResult {
+  async createMergeCommit(input: CreateMergeCommitInput): Promise<CommitPublishResult> {
     assertIntegrationRef(input.integrationRef);
     assertFeatureRef(input.featureRef);
     const treeSha = normalizeSha(input.treeSha, "treeSha");
@@ -340,7 +340,7 @@ export class RefLeaseManager {
       );
     }
     const now = input.nowMs ?? this.now();
-    const committer = readCommitterIdentity(this.git, this.repoPath, this.env);
+    const committer = await readCommitterIdentity(this.git, this.repoPath, this.env);
     this.requireCurrent(
       input.integrationRef,
       requireHolder(input.holder),
@@ -367,23 +367,25 @@ export class RefLeaseManager {
     return parseHarnessTrailers(message);
   }
 
-  findAcceptedCommitsSince(input: FindAcceptedCommitsInput): readonly AcceptedHarnessCommit[] {
+  async findAcceptedCommitsSince(input: FindAcceptedCommitsInput): Promise<readonly AcceptedHarnessCommit[]> {
     const untilRef = input.untilRef ?? "refs/heads/harness/integration";
     classifyAutomatedWrite(untilRef, this.developerBaseRef, undefined, this.now());
     return findAcceptedCommitsSince(this.git, this.repoPath, { ...input, untilRef }, this.env);
   }
 
-  reconcileRefLeases(): readonly RefReconciliation[] {
+  async reconcileRefLeases(): Promise<readonly RefReconciliation[]> {
     const rows = this.database
       .all(
         "SELECT ref, holder, epoch, expected_sha, expires_at FROM ref_leases ORDER BY ref",
         [],
       )
       .map((row) => parseRow(row));
-    return rows.map((row) => this.reconcileOne(row));
+    const reports: RefReconciliation[] = [];
+    for (const row of rows) reports.push(await this.reconcileOne(row));
+    return reports;
   }
 
-  deleteMergedAttemptBranch(input: DeleteMergedAttemptBranchInput): DeleteAttemptBranchResult {
+  async deleteMergedAttemptBranch(input: DeleteMergedAttemptBranchInput): Promise<DeleteAttemptBranchResult> {
     if (isProtectedWipRef(input.attemptRef) || isProtectedWipRef(input.featureRef)) {
       throw new ProtectedBranchError(input.attemptRef);
     }
@@ -401,9 +403,9 @@ export class RefLeaseManager {
     if (now < input.mergedAtMs + input.retentionMs) {
       return { ok: false, reason: "retention_active" };
     }
-    const attemptSha = this.readOptionalSha(input.attemptRef);
+    const attemptSha = await this.readOptionalSha(input.attemptRef);
     if (!attemptSha) return { ok: false, reason: "missing_ref" };
-    const ancestor = this.git.execGit({
+    const ancestor = await this.git.execGit({
       cwd: this.repoPath,
       args: ["merge-base", "--is-ancestor", attemptSha, input.featureRef],
       ...(this.env !== undefined ? { env: this.env } : {}),
@@ -412,20 +414,20 @@ export class RefLeaseManager {
     if (ancestor.exitCode !== 0) {
       throw new GitCommandError("merge-base --is-ancestor", ancestor.exitCode, ancestor.stderr);
     }
-    const deleted = this.git.execGit({
+    const deleted = await this.git.execGit({
       cwd: this.repoPath,
       args: ["update-ref", "-d", input.attemptRef, attemptSha],
       ...(this.env !== undefined ? { env: this.env } : {}),
     });
     if (deleted.exitCode === 0) return { ok: true, deletedSha: attemptSha };
-    const actualSha = this.readOptionalSha(input.attemptRef) ?? ZERO_OID;
+    const actualSha = (await this.readOptionalSha(input.attemptRef)) ?? ZERO_OID;
     if (actualSha !== attemptSha) {
       return { ok: false, reason: "cas_mismatch", actualSha };
     }
     throw new GitCommandError("update-ref -d", deleted.exitCode, deleted.stderr);
   }
 
-  private publishCommit(input: {
+  private async publishCommit(input: {
     readonly ref: string;
     readonly holder: string;
     readonly epoch: number;
@@ -438,9 +440,9 @@ export class RefLeaseManager {
     readonly author: CommitAuthor;
     readonly committer: { readonly name: string; readonly email: string };
     readonly now: number;
-  }): CommitPublishResult {
+  }): Promise<CommitPublishResult> {
     const identities = resolveCommitIdentities(input.author, input.committer, this.env);
-    const message = renderCommitMessage(
+    const message = await renderCommitMessage(
       this.git,
       this.repoPath,
       input.message,
@@ -451,7 +453,7 @@ export class RefLeaseManager {
     const args = ["commit-tree", input.treeSha];
     for (const parent of input.parents) args.push("-p", parent);
     args.push("-F", "-");
-    const created = this.git.execGit({
+    const created = await this.git.execGit({
       cwd: this.repoPath,
       args,
       stdin: message,
@@ -461,7 +463,7 @@ export class RefLeaseManager {
       throw new GitCommandError("commit-tree", created.exitCode, created.stderr);
     }
     const sha = normalizeSha(stripTrailingNewline(created.stdout).trim(), "commit-tree");
-    const parents = readCommitParents(this.git, this.repoPath, sha, commitEnv);
+    const parents = await readCommitParents(this.git, this.repoPath, sha, commitEnv);
     if (parents.length !== input.expectedParents || parents.some((parent, index) => parent !== input.parents[index])) {
       throw new InvalidRefLeaseArgumentError(
         input.expectedParents === 1
@@ -469,7 +471,7 @@ export class RefLeaseManager {
           : "Feature to integration commits must be two-parent merge commits, never a fast-forward.",
       );
     }
-    const advanced = this.advanceRefCas({
+    const advanced = await this.advanceRefCas({
       ref: input.ref,
       holder: input.holder,
       epoch: input.epoch,
@@ -483,15 +485,15 @@ export class RefLeaseManager {
     return { ok: true, sha, parents };
   }
 
-  private compareAndSwap(
+  private async compareAndSwap(
     ref: string,
     newSha: string,
     expectedOldSha: string,
     holder: string | null,
     epoch: number | null,
     now: number,
-  ): CasAdvanceResult {
-    const updated = this.git.execGit({
+  ): Promise<CasAdvanceResult> {
+    const updated = await this.git.execGit({
       cwd: this.repoPath,
       args: ["update-ref", ref, newSha, expectedOldSha],
       ...(this.env !== undefined ? { env: this.env } : {}),
@@ -514,15 +516,15 @@ export class RefLeaseManager {
       }
       return { ok: true, ref, newSha, previousSha: expectedOldSha };
     }
-    const actualSha = this.readOptionalSha(ref) ?? ZERO_OID;
+    const actualSha = (await this.readOptionalSha(ref)) ?? ZERO_OID;
     if (actualSha !== expectedOldSha) {
       return { ok: false, reason: "cas_mismatch", actualSha };
     }
     throw new GitCommandError("update-ref", updated.exitCode, updated.stderr);
   }
 
-  private reconcileOne(row: LeaseRow): RefReconciliation {
-    const actualSha = this.readOptionalSha(row.ref);
+  private async reconcileOne(row: LeaseRow): Promise<RefReconciliation> {
+    const actualSha = await this.readOptionalSha(row.ref);
     if (!actualSha) {
       return {
         ref: row.ref,
@@ -535,7 +537,7 @@ export class RefLeaseManager {
         checkReceipt: null,
       };
     }
-    const trailers = this.trailersOf(actualSha);
+    const trailers = await this.trailersOf(actualSha);
     const accepted = trailers.task !== null && trailers.checks !== null;
     if (actualSha === row.expectedSha) {
       return {
@@ -574,8 +576,8 @@ export class RefLeaseManager {
     };
   }
 
-  private trailersOf(sha: string): ParsedHarnessTrailers {
-    const body = this.git.execGit({
+  private async trailersOf(sha: string): Promise<ParsedHarnessTrailers> {
+    const body = await this.git.execGit({
       cwd: this.repoPath,
       args: ["log", "-1", "--format=%B", sha],
       ...(this.env !== undefined ? { env: this.env } : {}),
@@ -609,8 +611,8 @@ export class RefLeaseManager {
     return row ? parseRow(row) : null;
   }
 
-  private readOptionalSha(ref: string): string | null {
-    const result = this.git.execGit({
+  private async readOptionalSha(ref: string): Promise<string | null> {
+    const result = await this.git.execGit({
       cwd: this.repoPath,
       args: ["rev-parse", "--verify", "--end-of-options", ref],
       ...(this.env !== undefined ? { env: this.env } : {}),
