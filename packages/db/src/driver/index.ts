@@ -27,25 +27,40 @@ export type {
 
 export { openDatabase } from "./connection.js";
 export type {
+  CheckpointController,
   DatabaseAccess,
   DatabaseRole,
   OpenDatabaseOptions,
   SqliteConnection,
   SqliteStatement,
-} from "./connection.js";
+} from "./types.js";
+export type { DbHandle } from "./handle.js";
 
-export { loadQueryCatalog, QueryCatalog } from "./query-catalog.js";
-export type { ParsedQuery } from "./query-catalog.js";
+export {
+  loadCanonicalSqlAsset,
+  loadNamedQueries,
+  loadQueryCatalog,
+  lookupNamedQuery,
+  QueryCatalog,
+  resolveCanonicalSqlAsset,
+} from "./query-catalog.js";
+export type { ParsedQuery, SqlAssetKey } from "./query-catalog.js";
 export { parseQueryCatalog } from "./sql.js";
 
 export { runImmediateTx, runReadOnlyTx, runSavepoint } from "./transactions.js";
-export type { SavepointOptions, TransactionOptions } from "./transactions.js";
+export type { SavepointOptions, TransactionOptions } from "./types.js";
 
 export { WalCheckpointScheduler } from "./wal-checkpoint.js";
 export type { CheckpointMode, WalCheckpointSchedulerOptions } from "./wal-checkpoint.js";
 
-export { READER_TIMEOUT_LIMITS, WorkerReaderPool } from "./reader-pool.js";
-export type { ReaderQuery, ReaderQueryClass, WorkerReaderPoolOptions } from "./reader-pool.js";
+export { READER_TIMEOUT_LIMITS, ReaderPool, WorkerReaderPool } from "./reader-pool.js";
+export type {
+  ReaderPoolOptions,
+  ReaderQuery,
+  ReaderQueryClass,
+  WorkerReaderPoolOptions,
+} from "./reader-pool.js";
 
 export type { RunResult, SqlParams, SqlValue } from "./values.js";
-export { resolveSplitSearchText, splitSearchTextFallback } from "./search-text.js";
+export { registerEfSearchText, splitSearchText } from "./search-text.js";
+export type { SearchTextDriverConnection, SearchTextNativeDatabase, SearchTextTarget } from "./search-text.js";

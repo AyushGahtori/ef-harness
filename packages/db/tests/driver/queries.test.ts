@@ -4,10 +4,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ParameterMismatchError,
   UnknownQueryError,
+  loadCanonicalSqlAsset,
+  loadNamedQueries,
   loadQueryCatalog,
+  lookupNamedQuery,
   openDatabase,
+  resolveCanonicalSqlAsset,
   runImmediateTx,
-} from "../../src/driver/index.js";
+} from "../../src/index.js";
 
 const opened: Array<{ close: () => void }> = [];
 
@@ -91,6 +95,19 @@ describe("query catalog", () => {
     expect(cutoff).toContain("R17");
     const asOf = catalog.all("asof_nodes", { rev: 1 }) as Array<{ id: string }>;
     expect(asOf.map((row) => row.id)).toEqual(expect.arrayContaining(["T03", "R17"]));
+  });
+
+  it("exposes shared loadNamedQueries() and canonical SQL asset loader from @ef-harness/db", () => {
+    const queries = loadNamedQueries();
+    expect(queries.size).toBeGreaterThanOrEqual(30);
+    expect(queries.get("op_lookup")).toContain("operations");
+    expect(queries.get("global_cas_gc_candidates")).toContain("cas_blobs");
+    expect(lookupNamedQuery("allocate_id")).toContain("id_sequences");
+    expect(() => lookupNamedQuery("does_not_exist")).toThrow(UnknownQueryError);
+    for (const key of ["stateSql", "globalSql", "telemetrySql", "codeIndexSql", "queriesSql"] as const) {
+      expect(resolveCanonicalSqlAsset(key)).toContain("schema");
+      expect(loadCanonicalSqlAsset(key).length).toBeGreaterThan(100);
+    }
   });
 });
 

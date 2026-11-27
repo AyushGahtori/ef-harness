@@ -1,9 +1,9 @@
 import { Worker } from "node:worker_threads";
 import { AttachedDatabaseForbiddenError, ReaderBudgetError, ReaderTimeoutError } from "./errors.js";
-import { resolveSplitSearchText } from "./search-text.js";
+import { splitSearchText } from "./search-text.js";
 import { bindParameters, inspectSql, isMemoryLocation } from "./sql.js";
 import type { SqlParams } from "./values.js";
-import type { DatabaseRole } from "./connection.js";
+import type { DatabaseRole } from "./types.js";
 
 export type ReaderQueryClass = "ui" | "export";
 
@@ -23,7 +23,10 @@ export interface WorkerReaderPoolOptions {
   readonly location: string;
   readonly role: DatabaseRole;
   readonly size?: number;
+  readonly lazy?: boolean;
 }
+
+export type ReaderPoolOptions = WorkerReaderPoolOptions;
 
 interface WorkerSlot {
   worker: Worker;
@@ -46,9 +49,12 @@ const WORKER_SOURCE = [
   'const { DatabaseSync } = require("node:sqlite");',
   "function fallbackSplit(value) {",
   '  if (!value) return "";',
-  "  const text = String(value);",
-  '  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\\-./:]+/g, " ");',
-  '  return text + " " + extra;',
+  '  const original = typeof value === "string" ? value : String(value);',
+  "  const extra = original",
+  '    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")',
+  '    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")',
+  '    .replace(/[_\\-./:]+/g, " ");',
+  '  return original + " " + extra;',
   "}",
   "function resolveSplit() {",
   '  if (typeof workerData.searchSource !== "string") return fallbackSplit;',
@@ -102,14 +108,21 @@ const WORKER_SOURCE = [
   "  if (Array.isArray(params)) return statement.iterate(...params);",
   "  return statement.iterate(params);",
   "}",
-  "const db = openDatabase();",
-  'db.exec("PRAGMA query_only = ON");',
-  'db.exec("PRAGMA foreign_keys = ON");',
-  'if (workerData.role === "state") {',
-  "  const splitSearchText = resolveSplit();",
-  '  db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));',
+  "let db;",
+  "try {",
+  "  db = openDatabase();",
+  '  db.exec("PRAGMA query_only = ON");',
+  '  db.exec("PRAGMA foreign_keys = ON");',
+  '  if (workerData.role === "state") {',
+  "    const splitSearchText = resolveSplit();",
+  '    db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));',
+  "  }",
+  '  parentPort.postMessage({ type: "ready" });',
+  "} catch (initError) {",
+  "  try { if (db && db.isOpen) db.close(); } catch (closeError) { void closeError; }",
+  '  parentPort.postMessage({ type: "fatal", message: initError && initError.message ? String(initError.message) : String(initError) });',
+  "  process.exit(1);",
   "}",
-  'parentPort.postMessage({ type: "ready" });',
   'parentPort.on("message", (message) => {',
   '  if (!message || message.type === "close") {',
   "    try { db.close(); } catch (closeError) { void closeError; }",
@@ -164,12 +177,13 @@ const WORKER_SOURCE = [
 export class WorkerReaderPool {
   readonly #location: string;
   readonly #role: DatabaseRole;
+  readonly #size: number;
   readonly #searchSource: string;
   #slots: WorkerSlot[] = [];
   #waiters: Array<(slot: WorkerSlot) => void> = [];
   #nextId = 0;
   #closed = false;
-  readonly #opening: Promise<void>;
+  #opening: Promise<void> | undefined;
 
   constructor(options: WorkerReaderPoolOptions) {
     if (isMemoryLocation(options.location)) {
@@ -177,21 +191,47 @@ export class WorkerReaderPool {
     }
     this.#location = options.location;
     this.#role = options.role;
-    this.#searchSource = resolveSplitSearchText().toString();
+    this.#searchSource = splitSearchText.toString();
     const size = options.size ?? 2;
     if (!Number.isInteger(size) || size < 1) {
       throw new ReaderBudgetError("WorkerReaderPool size must be a positive integer.");
     }
-    this.#opening = Promise.all(Array.from({ length: size }, () => this.#spawn())).then((slots) => {
-      this.#slots = slots;
-    });
+    this.#size = size;
+    if (!options.lazy) {
+      this.warmup().catch(() => undefined);
+    }
+  }
+
+  get location(): string {
+    return this.#location;
+  }
+
+  get role(): DatabaseRole {
+    return this.#role;
+  }
+
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  warmup(): Promise<void> {
+    if (this.#closed) {
+      return Promise.reject(new ReaderBudgetError("WorkerReaderPool is closed."));
+    }
+    if (this.#opening === undefined) {
+      this.#opening = Promise.all(Array.from({ length: this.#size }, () => this.#spawn())).then((slots) => {
+        this.#slots = slots;
+      });
+    }
+    return this.#opening;
   }
 
   async query(input: ReaderQuery): Promise<unknown[]> {
     assertBudget(input);
     if (inspectSql(input.sql).attach) throw new AttachedDatabaseForbiddenError();
     const params = bindParameters(input.sql, input.params);
-    await this.#opening;
+    if (this.#closed) throw new ReaderBudgetError("WorkerReaderPool is closed.");
+    await this.warmup();
     if (this.#closed) throw new ReaderBudgetError("WorkerReaderPool is closed.");
     const slot = await this.#acquire();
     const id = this.#nextId + 1;
@@ -230,11 +270,13 @@ export class WorkerReaderPool {
   async close(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
-    try {
-      await this.#opening;
-    } catch (openError: unknown) {
-      const message = openError instanceof Error ? openError.message : "";
-      void message;
+    if (this.#opening !== undefined) {
+      try {
+        await this.#opening;
+      } catch (openError: unknown) {
+        const message = openError instanceof Error ? openError.message : "";
+        void message;
+      }
     }
     const workers = this.#slots.map((slot) => slot.worker);
     for (const slot of this.#slots) slot.dead = true;
@@ -253,6 +295,11 @@ export class WorkerReaderPool {
         await Promise.race([exited, timedOut]);
       }),
     );
+  }
+
+  drainAndClose(_timeoutMs?: number): Promise<void> {
+    void _timeoutMs;
+    return this.close();
   }
 
   #spawn(): Promise<WorkerSlot> {
@@ -335,6 +382,8 @@ export class WorkerReaderPool {
     });
   }
 }
+
+export { WorkerReaderPool as ReaderPool };
 
 function assertBudget(input: ReaderQuery): void {
   const limit = READER_TIMEOUT_LIMITS[input.class];

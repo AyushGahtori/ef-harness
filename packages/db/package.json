@@ -12,7 +12,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.json --pretty false && node -e \"const fs=require('node:fs');fs.mkdirSync('dist/schema',{recursive:true});for(const f of ['state.sql','global.sql','telemetry.sql','code-index.sql','queries.sql'])fs.copyFileSync('../../schema/'+f,'dist/schema/'+f);\"",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts"

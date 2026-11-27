@@ -1,5 +1,11 @@
 import fs from "node:fs";
 import {
+  lookupNamedQuery,
+  ReaderPool,
+  type DbHandle,
+  type SqliteConnection as DriverSqliteConnection,
+} from "../driver/index.js";
+import {
   APP_SUPPORTED_SCHEMA_VERSION,
   DEFAULT_APP_VERSION,
   INITIAL_STREAM_EPOCH,
@@ -66,7 +72,7 @@ export function openProjectStateDb(options: OpenProjectStateDbOptions): ProjectS
   }
 }
 
-export class ProjectStateDb {
+export class ProjectStateDb implements DbHandle {
   readonly projectId: string;
   private readonly paths: ProjectPaths;
   private readonly logger: StateDbLogger;
@@ -77,6 +83,7 @@ export class ProjectStateDb {
   private readonly safeMode: SafeModeController;
   private readonly resyncListeners = new Set<(payload: ResyncRequiredPayload) => void>();
   private session: StateConnection | undefined;
+  private readersPool: ReaderPool | undefined;
   private lock: ExclusiveWriterLock | undefined;
   private modeValue: DatabaseMode | undefined;
   private closed = false;
@@ -108,6 +115,28 @@ export class ProjectStateDb {
   get mode(): DatabaseMode {
     this.assertOpen();
     return this.modeValue ?? "readonly";
+  }
+
+  get writer(): DriverSqliteConnection {
+    return this.connection().driver;
+  }
+
+  get readers(): ReaderPool {
+    this.assertOpen();
+    if (this.readersPool === undefined) {
+      this.readersPool = new ReaderPool({
+        location: this.paths.databasePath,
+        role: "state",
+        size: 2,
+        lazy: true,
+      });
+    }
+    return this.readersPool;
+  }
+
+  query(name: string): string {
+    this.assertOpen();
+    return lookupNamedQuery(name);
   }
 
   isClosed(): boolean {
@@ -651,21 +680,16 @@ export class ProjectStateDb {
   private releaseResources(checkpoint: boolean): void {
     if (this.closed) return;
     this.closed = true;
+    const readers = this.readersPool;
+    this.readersPool = undefined;
+    if (readers) {
+      void readers.close();
+    }
     const session = this.session;
     this.session = undefined;
-    if (session && checkpoint && session.mode === "readwrite") {
-      try {
-        session.checkpointTruncate();
-      } catch (error) {
-        this.logger.warn("wal checkpoint on close failed", {
-          event: "state_db.checkpoint_failed",
-          message: errorMessage(error),
-        });
-      }
-    }
     if (session) {
       try {
-        session.close();
+        session.close(checkpoint && session.mode === "readwrite" ? undefined : { skipCheckpoint: true });
       } catch (error) {
         const message = errorMessage(error);
         if (!/not open|already closed/i.test(message)) {

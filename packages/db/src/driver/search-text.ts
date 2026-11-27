@@ -1,22 +1,38 @@
-import * as sharedContracts from "@ef-harness/shared-contracts";
+import { splitSearchText } from "@ef-harness/shared-contracts";
 
-/**
- * Exact `splitWords` from schema/schema-test.js.
- * Task 007's `splitSearchText` formalizes this and is preferred when the
- * shared-contracts barrel exports it.
- */
-export function splitSearchTextFallback(value: unknown): string {
-  if (!value) return "";
-  const text = String(value);
-  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${text} ${extra}`;
+export { splitSearchText };
+
+export interface SearchTextDriverConnection {
+  registerFunction(
+    name: string,
+    fn: (...args: readonly unknown[]) => unknown,
+    options?: { deterministic?: boolean },
+  ): void;
 }
 
-export function resolveSplitSearchText(): (value: unknown) => string {
-  const exported = Reflect.get(sharedContracts, "splitSearchText") as unknown;
-  if (typeof exported !== "function") return splitSearchTextFallback;
-  return (value: unknown) => {
-    const result = (exported as (input: unknown) => unknown)(value);
-    return typeof result === "string" ? result : splitSearchTextFallback(value);
-  };
+export interface SearchTextNativeDatabase {
+  function(
+    name: string,
+    options: { deterministic?: boolean },
+    fn: (...args: readonly unknown[]) => unknown,
+  ): void;
+}
+
+export type SearchTextTarget = SearchTextDriverConnection | SearchTextNativeDatabase;
+
+/**
+ * Registers the deterministic `ef_search_text` SQLite UDF backed directly by
+ * `@ef-harness/shared-contracts`'s canonical `splitSearchText`.
+ */
+export function registerEfSearchText(db: SearchTextTarget): void {
+  const udf = (value: unknown): string => splitSearchText(value);
+  if ("registerFunction" in db && typeof db.registerFunction === "function") {
+    db.registerFunction("ef_search_text", udf, { deterministic: true });
+    return;
+  }
+  if ("function" in db && typeof db.function === "function") {
+    db.function("ef_search_text", { deterministic: true }, udf);
+    return;
+  }
+  throw new TypeError("Target database does not expose registerFunction() or function().");
 }

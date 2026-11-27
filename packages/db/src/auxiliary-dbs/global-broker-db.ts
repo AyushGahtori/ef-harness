@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import {
+  lookupNamedQuery,
+  ReaderPool,
+  type DbHandle,
+  type SqliteConnection as DriverSqliteConnection,
+} from "../driver/index.js";
 import { acquireBrokerLock, type BrokerLock } from "./broker-lock.js";
 import { ensureHarnessDataLayout, type HarnessDataLayout } from "./data-layout.js";
 import {
@@ -99,8 +105,9 @@ export interface OpenGlobalBrokerDbOptions {
   readonly now?: () => number;
 }
 
-export class GlobalBrokerDb {
+export class GlobalBrokerDb implements DbHandle {
   private closed = false;
+  private readersPool: ReaderPool | undefined;
 
   private constructor(
     private readonly conn: SqliteConnection,
@@ -154,6 +161,29 @@ export class GlobalBrokerDb {
     return this.layout.globalDbPath;
   }
 
+  get writer(): DriverSqliteConnection {
+    this.assertOpen();
+    return this.conn.driver;
+  }
+
+  get readers(): ReaderPool {
+    this.assertOpen();
+    if (this.readersPool === undefined) {
+      this.readersPool = new ReaderPool({
+        location: this.layout.globalDbPath,
+        role: "global",
+        size: 2,
+        lazy: true,
+      });
+    }
+    return this.readersPool;
+  }
+
+  query(name: string): string {
+    this.assertOpen();
+    return lookupNamedQuery(name);
+  }
+
   get writerEpoch(): number {
     return this.ownerRow.epoch;
   }
@@ -166,14 +196,14 @@ export class GlobalBrokerDb {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    const readers = this.readersPool;
+    this.readersPool = undefined;
+    if (readers) void readers.close();
     try {
-      if (!this.conn.inTransaction()) {
-        this.conn.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-      }
+      this.conn.close({ skipCheckpoint: this.conn.inTransaction() });
     } catch (error) {
       if (!isSqliteCorruption(error)) throw error;
     }
-    this.conn.close();
     this.lock.release();
   }
 

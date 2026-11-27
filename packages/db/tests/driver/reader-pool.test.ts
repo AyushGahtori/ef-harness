@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { splitSearchText } from "@ef-harness/shared-contracts";
 import {
   AttachedDatabaseForbiddenError,
   ReaderBudgetError,
+  ReaderPool,
   ReaderTimeoutError,
   WorkerReaderPool,
   openDatabase,
@@ -21,11 +23,11 @@ describe("worker reader pool", () => {
     const temp = trackTemp();
     const location = temp.file("state.db");
     const writer = openDatabase({ location, role: "state" });
-    closers.push(() => writer.close());
+    closers.unshift(() => writer.close());
     writer.exec("CREATE TABLE docs(id INTEGER PRIMARY KEY, body TEXT)");
     writer.run("INSERT INTO docs(body) VALUES ('visible')");
     const pool = new WorkerReaderPool({ location, role: "state", size: 2 });
-    closers.push(() => pool.close());
+    closers.unshift(() => pool.close());
 
     const warmup = await pool.query({
       sql: "SELECT ef_search_text(?) AS text",
@@ -33,11 +35,24 @@ describe("worker reader pool", () => {
       class: "ui",
       timeoutMs: 200,
     });
-    expect(warmup).toEqual([
-      expect.objectContaining({
-        text: expect.stringMatching(/print/i),
-      }),
-    ]);
+    expect(warmup).toEqual([{ text: splitSearchText("toPrintRows") }]);
+
+    const acronym = await pool.query({
+      sql: "SELECT ef_search_text(?) AS text",
+      params: ["XMLHttpRequest"],
+      class: "ui",
+      timeoutMs: 200,
+    });
+    expect(acronym).toEqual([{ text: splitSearchText("XMLHttpRequest") }]);
+    expect((acronym[0] as { text: string }).text).toContain("XML Http Request");
+
+    const mixed = await pool.query({
+      sql: "SELECT ef_search_text(?) AS text",
+      params: ["parseXMLHttpRequest_v2"],
+      class: "ui",
+      timeoutMs: 200,
+    });
+    expect(mixed).toEqual([{ text: splitSearchText("parseXMLHttpRequest_v2") }]);
 
     const started = performance.now();
     await expect(
@@ -70,9 +85,9 @@ describe("worker reader pool", () => {
     const temp = trackTemp();
     const location = temp.file("state.db");
     const writer = openDatabase({ location, role: "telemetry" });
-    closers.push(() => writer.close());
-    const pool = new WorkerReaderPool({ location, role: "telemetry", size: 1 });
-    closers.push(() => pool.close());
+    closers.unshift(() => writer.close());
+    const pool = new ReaderPool({ location, role: "telemetry", size: 1 });
+    closers.unshift(() => pool.close());
     await expect(
       pool.query({ sql: "SELECT 1", class: "ui", timeoutMs: 0 }),
     ).rejects.toBeInstanceOf(ReaderBudgetError);

@@ -69,9 +69,14 @@ describe("connection pragmas", () => {
     );
     for (const db of [writer, reader]) {
       const row = db.get("SELECT ef_search_text(?) AS text", ["toPrintRows"]) as { text: string };
-      expect(row.text).toContain("toPrintRows");
-      expect(row.text.toLowerCase()).toContain("print");
-      expect(row.text.toLowerCase()).toContain("rows");
+      expect(row.text).toBe("toPrintRows to Print Rows");
+      const acronym = db.get("SELECT ef_search_text(?) AS text", ["XMLHttpRequest"]) as { text: string };
+      expect(acronym.text).toBe("XMLHttpRequest XML Http Request");
+      expect(acronym.text).toContain("XML Http Request");
+      const mixed = db.get("SELECT ef_search_text(?) AS text", ["parseXMLHttpRequest_v2"]) as {
+        text: string;
+      };
+      expect(mixed.text).toBe("parseXMLHttpRequest_v2 parse XML Http Request v2");
     }
   });
 

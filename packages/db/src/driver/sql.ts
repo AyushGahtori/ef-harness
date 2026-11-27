@@ -158,7 +158,7 @@ export function parseQueryCatalog(sql: string): readonly ParsedQuery[] {
     const name = (newline === -1 ? block : block.slice(0, newline)).trim();
     const body = newline === -1 ? "" : block.slice(newline + 1);
     const statement = body
-      .split("\n")
+      .split(/\r?\n/)
       .filter((line) => !line.trim().startsWith("--"))
       .join("\n")
       .trim()
