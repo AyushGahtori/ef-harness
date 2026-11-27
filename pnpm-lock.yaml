@@ -326,9 +326,15 @@ importers:
 
   packages/discovery:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/worker-loop':
+        specifier: workspace:*
+        version: link:../worker-loop
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

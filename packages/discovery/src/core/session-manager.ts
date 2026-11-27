@@ -1,3 +1,5 @@
+import { BatchResolveV1Schema, EntailmentCheckerV1Schema } from "@ef-harness/shared-contracts";
+
 import { chunkTurnWithOffsets } from "./chunk-turn.js";
 import type { DecisionFields, EvidenceSpan } from "./decision-fields.js";
 import { valueSatisfiesLimits } from "./decision-fields.js";
@@ -52,6 +54,8 @@ export interface DiscoveryModelRequest {
 
 export interface DiscoveryModelPort {
   onExplicitSend(request: DiscoveryModelRequest): void;
+  resolveBatch?(input: unknown): Promise<unknown>;
+  checkEntailment?(input: unknown): Promise<unknown>;
 }
 
 export interface SendResult {
@@ -432,6 +436,37 @@ export class DiscoverySessionManager {
       }
     }
     this.afterExplicitSend(input.workItemId, result);
+    return result;
+  }
+
+  async sendAsync(input: {
+    workItemId: string;
+    text: string;
+    target: string | null;
+    opId: string;
+  }): Promise<SendResult> {
+    const result = this.send(input);
+    if (this.model?.resolveBatch) {
+      const raw = await this.model.resolveBatch({
+        workItemId: input.workItemId,
+        text: input.text,
+        target: input.target,
+        opId: input.opId,
+      });
+      if (!BatchResolveV1Schema.safeParse(raw).success) {
+        throw new DiscoveryStateError("batch-resolve@1 rejected the model output");
+      }
+    }
+    if (this.model?.checkEntailment) {
+      const raw = await this.model.checkEntailment({
+        workItemId: input.workItemId,
+        text: input.text,
+        opId: input.opId,
+      });
+      if (!EntailmentCheckerV1Schema.safeParse(raw).success) {
+        throw new DiscoveryStateError("entailment-checker@1 rejected the model output");
+      }
+    }
     return result;
   }
 
@@ -1196,7 +1231,7 @@ export class DiscoverySessionManager {
     for (const criterion of snapshot.criteria) {
       const decision = this.repo.getDecision(criterion.decisionId);
       for (const span of decision?.fields.evidence ?? []) {
-        if (isOpeningRubricId(span.rubricId)) covered.add(span.rubricId);
+        if (span.rubricId !== undefined && isOpeningRubricId(span.rubricId)) covered.add(span.rubricId);
       }
     }
     return covered;

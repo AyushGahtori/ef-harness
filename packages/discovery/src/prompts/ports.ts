@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  BatchResolveV1Schema as SharedBatchResolveV1Schema,
+  ClarifyV1Schema as SharedClarifyV1Schema,
+  OpeningReviewV1Schema as SharedOpeningReviewV1Schema,
+  canonicalAssetAbsolute,
+} from "@ef-harness/shared-contracts";
+
 import type {
   BatchDocumentV1,
   BatchProposal,
@@ -23,14 +29,12 @@ import type {
   ProposedGap,
   SchemaIssue,
 } from "./types.js";
-import { OPENING_RUBRIC_IDS, PROMPT_IDS } from "./types.js";
+import { OPENING_RUBRIC_IDS } from "./types.js";
 
 /**
- * Local ports for unpublished siblings.
- * Task 009 owns the Zod schemas, envelope, and format-repair helper.
- * Task 053 owns ModelProtocolAdapter. Task 034 owns FakeModelAdapter.
- * Task 069 owns opening-rubric-map@1. Swap these from the handoff when those
- * packages are wired. Do not import those packages from this base.
+ * Prompt runners validate `batch-resolve@1`, `opening-review@1`, and `clarify@1`
+ * with `@ef-harness/shared-contracts`. The batch document parser below still
+ * accepts the multi-proposal payload the orchestrator sends to the model.
  */
 
 export interface ClosedSchema<T> {
@@ -353,14 +357,7 @@ export function parseBatchDocument(value: unknown): ParseHit<BatchDocumentV1> {
   };
 }
 
-export const BatchResolveV1Schema: ClosedSchema<BatchProposal> = {
-  id: PROMPT_IDS.batchResolve,
-  safeParse(input: unknown) {
-    const parsed = parseBatchProposal(input, "$");
-    if (!parsed.proposal) return { success: false, issues: parsed.issues };
-    return { success: true, data: parsed.proposal };
-  },
-};
+export const BatchResolveV1Schema = SharedBatchResolveV1Schema;
 
 const CLAIM_KINDS = ["value", "recommendation_request", "delegation"] as const;
 
@@ -470,17 +467,7 @@ function parseOpening(value: unknown): ParseHit<OpeningReviewV1> {
   return { kind: "value", value: { rubrics, follow_up: followUp, domains } };
 }
 
-export const OpeningReviewV1Schema: ClosedSchema<OpeningReviewV1> = {
-  id: PROMPT_IDS.openingReview,
-  safeParse(input: unknown) {
-    const parsed = parseOpening(input);
-    if (parsed.kind === "value") return { success: true, data: parsed.value };
-    if (parsed.kind === "blocked") {
-      return { success: false, issues: [{ path: "blocked", message: "use the blocked exit, not the review schema" }] };
-    }
-    return { success: false, issues: parsed.issues };
-  },
-};
+export const OpeningReviewV1Schema = SharedOpeningReviewV1Schema;
 
 function parseClarify(value: unknown): ParseHit<ClarifyV1> {
   const blocked = parseBlocked(value);
@@ -544,17 +531,7 @@ function parseClarify(value: unknown): ParseHit<ClarifyV1> {
   };
 }
 
-export const ClarifyV1Schema: ClosedSchema<ClarifyV1> = {
-  id: PROMPT_IDS.clarify,
-  safeParse(input: unknown) {
-    const parsed = parseClarify(input);
-    if (parsed.kind === "value") return { success: true, data: parsed.value };
-    if (parsed.kind === "blocked") {
-      return { success: false, issues: [{ path: "blocked", message: "use the blocked exit, not the clarify schema" }] };
-    }
-    return { success: false, issues: parsed.issues };
-  },
-};
+export const ClarifyV1Schema = SharedClarifyV1Schema;
 
 export function extractSingleJson(text: string): { ok: true; value: unknown } | { ok: false; issues: readonly SchemaIssue[] } {
   const trimmed = text.trim();
@@ -696,16 +673,15 @@ export function assertOpeningRubricMap(activeCatalogIds: readonly string[]): voi
 }
 
 export function repositoryRoot(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  for (let hop = 0; hop < 8; hop += 1) {
-    if (fs.existsSync(path.join(dir, "opening-prompts.md")) && fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-      return dir;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+  const fromEnv = process.env.EF_HARNESS_RESOURCES_DIR ?? process.env.EF_HARNESS_RESOURCES;
+  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
+    return path.resolve(fromEnv.trim());
   }
-  throw new Error("repository root not found from discovery prompts");
+  const resourcesPath = Reflect.get(process, "resourcesPath");
+  if (typeof resourcesPath === "string" && resourcesPath.length > 0) {
+    if (fs.existsSync(path.join(resourcesPath, "opening-prompts.md"))) return resourcesPath;
+  }
+  return path.resolve(canonicalAssetAbsolute("inferOrAskSkill"), "..", "..", "..");
 }
 
 export function readRepoFile(relativePath: string): string {

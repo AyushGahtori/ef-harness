@@ -1,11 +1,8 @@
-import { ENTAILMENT_VERDICTS, type EntailmentVerdict } from "./types.js";
+import { EntailmentCheckerV1Schema } from "@ef-harness/shared-contracts";
 
-/**
- * Local stand-in for Task 009 `EntailmentCheckerV1Schema`.
- * Zod is not on this foundation base. The accepted shapes match the sibling schema:
- * `{ verdict, reason }` or an honest `{ blocked: true, reason, missing_ids? }` exit.
- * Extra keys are rejected. Integration should swap this parser for the Zod schema.
- */
+import type { EntailmentVerdict } from "./types.js";
+
+/** `entailment-checker@1` parsed through `@ef-harness/shared-contracts`. */
 export type EntailmentCheckerSuccess = {
   readonly verdict: EntailmentVerdict;
   readonly reason: string;
@@ -23,33 +20,18 @@ export function isBlockedEntailment(value: EntailmentCheckerV1): value is Entail
   return "blocked" in value && value.blocked === true;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNonEmptyText(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
 export function parseEntailmentCheckerV1(value: unknown): EntailmentCheckerV1 | null {
-  if (!isRecord(value)) return null;
-  const keys = Object.keys(value);
-  if (value.blocked === true) {
-    const allowed = new Set(["blocked", "reason", "missing_ids"]);
-    if (keys.some((key) => !allowed.has(key))) return null;
-    if (!isNonEmptyText(value.reason)) return null;
-    if (value.missing_ids === undefined) {
-      return { blocked: true, reason: value.reason };
+  const parsed = EntailmentCheckerV1Schema.safeParse(value);
+  if (!parsed.success) return null;
+  const data = parsed.data;
+  if ("blocked" in data && data.blocked === true) {
+    if (data.missing_ids !== undefined && data.missing_ids.length > 0) {
+      return { blocked: true, reason: data.reason, missing_ids: data.missing_ids };
     }
-    if (!Array.isArray(value.missing_ids) || value.missing_ids.some((item) => typeof item !== "string" || item.trim().length === 0)) {
-      return null;
-    }
-    return { blocked: true, reason: value.reason, missing_ids: value.missing_ids };
+    return { blocked: true, reason: data.reason };
   }
-  if (keys.length !== 2 || !keys.includes("verdict") || !keys.includes("reason")) return null;
-  if (!isNonEmptyText(value.reason)) return null;
-  if (typeof value.verdict !== "string" || !(ENTAILMENT_VERDICTS as readonly string[]).includes(value.verdict)) {
-    return null;
+  if ("verdict" in data) {
+    return { verdict: data.verdict, reason: data.reason };
   }
-  return { verdict: value.verdict as EntailmentVerdict, reason: value.reason };
+  return null;
 }

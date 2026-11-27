@@ -1,16 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import { fileURLToPath } from "node:url";
+import { registerEfSearchText } from "@ef-harness/db";
+import { canonicalAssetAbsolute, splitSearchText as splitCanonicalSearchText } from "@ef-harness/shared-contracts";
 
-/**
- * Resolves `schema/state.sql`. This is the same asset as
- * `canonicalAssetAbsolute("stateSql")` from `@ef-harness/shared-contracts`.
- * The published barrel points at `dist`, which is not built on this base, so
- * the depth package reads the schema file directly until that barrel is wired.
- */
+/** Resolves `schema/state.sql` through the shared canonical asset map. */
 export function stateSchemaPath(): string {
-  return fileURLToPath(new URL("../../../../schema/state.sql", import.meta.url));
+  return canonicalAssetAbsolute("stateSql");
 }
 
 export function openStateDatabase(filename: string): DatabaseSync {
@@ -27,7 +23,7 @@ export function openStateDatabase(filename: string): DatabaseSync {
   if (filename !== ":memory:") {
     db.exec("PRAGMA journal_mode = WAL");
   }
-  db.function("ef_search_text", { deterministic: true }, (value: SQLOutputValue) => splitSearchText(value ?? null));
+  registerEfSearchText(db);
   const existing = db
     .prepare("SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'nodes'")
     .get() as { c: number } | undefined;
@@ -38,7 +34,5 @@ export function openStateDatabase(filename: string): DatabaseSync {
 }
 
 export function splitSearchText(value: SQLOutputValue): string {
-  if (typeof value !== "string" || value.length === 0) return "";
-  const extra = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${value} ${extra}`;
+  return splitCanonicalSearchText(value);
 }

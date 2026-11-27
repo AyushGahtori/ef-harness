@@ -27,7 +27,7 @@ function script(request: EntailmentModelRequest) {
 }
 
 describe("Review Area B phone-link entailment", () => {
-  it("accepts mobile web and leaves offline and native open for both phone quotes", () => {
+  it("accepts mobile web and leaves offline and native open for both phone quotes", async () => {
     for (const text of [PHONE_QUOTE, PHONE_QUOTE_THEIRS]) {
       const source = turn("T8", text);
       const { graph, adapter, metrics, gate } = gateFor(script, phoneRules, [source]);
@@ -43,7 +43,7 @@ describe("Review Area B phone-link entailment", () => {
         }),
       );
       const cite = excerpt(source, text);
-      const batch = gate.checkAll([
+      const batch = await gate.checkAll([
         claim({
           decisionId: "D-mobile",
           criterion: "menu.mobile_web",

@@ -13,26 +13,62 @@ export interface DelegationRecord {
 }
 
 export interface EvidenceSpan {
-  readonly rubricId: string;
+  readonly rubricId?: string;
   readonly turnId: string;
+  readonly turn?: string;
   readonly start: number;
   readonly end: number;
   readonly quote: string;
 }
 
+/**
+ * Canonical decision payload shared by opening, prompts, and entailment.
+ * `criterion` stays the stored id. `criterionId`, `groupId`, and
+ * `selectedOptionId` are the names later spec checks read.
+ */
 export interface DecisionFields {
   readonly criterion: string;
+  readonly criterionId?: string;
+  readonly groupId?: string;
+  readonly selectedOptionId?: string;
   readonly status: CriterionStatus;
   readonly value: unknown;
   readonly basis?: SettledBasis;
   readonly delegation?: DelegationRecord;
+  readonly limits?: DelegationRecord;
+  readonly derivedFromIds?: readonly string[];
   readonly question_id?: string;
   readonly options?: readonly string[];
   readonly options_version?: number;
   readonly acceptance_examples?: readonly string[];
   readonly evidence?: readonly EvidenceSpan[];
   readonly needs_confirmation?: boolean;
+  readonly must_ask?: boolean;
   readonly work_item?: string;
+  readonly scope_id?: string;
+  readonly deferred_reason?: string;
+  readonly revisit_wave?: string;
+  readonly delegated_at?: string;
+  readonly stage_at_delegation?: string;
+  readonly recommended_option_id?: string;
+  readonly rationale?: string;
+  readonly rule?: string;
+  readonly premises?: readonly string[];
+  readonly entailment_verdict?: string;
+}
+
+/** Frozen discovery node shape. `criterionId` mirrors `criterion` when omitted. */
+export interface DecisionNodeFields {
+  readonly criterionId: string;
+  readonly groupId?: string;
+  readonly value: unknown;
+  readonly selectedOptionId?: string;
+  readonly basis?: SettledBasis;
+  readonly evidence?: readonly EvidenceSpan[];
+  readonly limits?: DelegationRecord;
+  readonly derivedFromIds?: readonly string[];
+  readonly status: CriterionStatus;
+  readonly criterion: string;
 }
 
 export function decisionValueCredit(fields: DecisionFields): 0 | 1 {
@@ -68,7 +104,31 @@ export function assertDecisionFields(fields: DecisionFields): void {
 
 export function serializeDecisionFields(fields: DecisionFields): string {
   assertDecisionFields(fields);
-  return JSON.stringify(decisionToJson(fields));
+  return JSON.stringify(decisionFieldsJson(fields));
+}
+
+export function toDecisionNodeFields(fields: DecisionFields): DecisionNodeFields {
+  let node: DecisionNodeFields = {
+    criterionId: fields.criterionId ?? fields.criterion,
+    criterion: fields.criterion,
+    status: fields.status,
+    value: fields.value ?? null,
+  };
+  if (fields.groupId !== undefined) node = { ...node, groupId: fields.groupId };
+  if (fields.basis !== undefined) node = { ...node, basis: fields.basis };
+  const selected = fields.selectedOptionId ?? settledOptionId(fields);
+  if (selected !== undefined) node = { ...node, selectedOptionId: selected };
+  if (fields.limits !== undefined) node = { ...node, limits: fields.limits };
+  else if (fields.delegation !== undefined) node = { ...node, limits: fields.delegation };
+  if (fields.derivedFromIds !== undefined) node = { ...node, derivedFromIds: fields.derivedFromIds };
+  if (fields.evidence !== undefined) node = { ...node, evidence: fields.evidence };
+  return node;
+}
+
+function settledOptionId(fields: DecisionFields): string | undefined {
+  if (fields.status !== "settled") return undefined;
+  if (typeof fields.value !== "string" || fields.value.length === 0) return undefined;
+  return fields.value;
 }
 
 export function parseDecisionFields(raw: unknown): DecisionFields {
@@ -76,7 +136,7 @@ export function parseDecisionFields(raw: unknown): DecisionFields {
     throw new BasisStatusSeparationError("decision fields must be an object");
   }
   const record = raw as Record<string, unknown>;
-  const criterion = requiredString(record, "criterion");
+  const criterion = readCriterion(record);
   const status = record.status;
   if (!isCriterionStatus(status)) {
     throw new BasisStatusSeparationError(`unknown criterion status: ${String(status)}`);
@@ -120,20 +180,44 @@ function applyOptional(base: DecisionFields, record: Record<string, unknown>): D
   if (record.needs_confirmation === true) {
     next = { ...next, needs_confirmation: true };
   }
-  if (typeof record.work_item === "string") {
-    next = { ...next, work_item: record.work_item };
+  if (typeof record.must_ask === "boolean") {
+    next = { ...next, must_ask: record.must_ask };
+  }
+  next = copyString(next, record, "criterionId");
+  next = copyString(next, record, "groupId");
+  next = copyString(next, record, "selectedOptionId");
+  next = copyString(next, record, "work_item");
+  next = copyString(next, record, "scope_id");
+  next = copyString(next, record, "deferred_reason");
+  next = copyString(next, record, "revisit_wave");
+  next = copyString(next, record, "delegated_at");
+  next = copyString(next, record, "stage_at_delegation");
+  next = copyString(next, record, "recommended_option_id");
+  next = copyString(next, record, "rationale");
+  next = copyString(next, record, "rule");
+  next = copyString(next, record, "entailment_verdict");
+  if (isStringArray(record.derivedFromIds)) {
+    next = { ...next, derivedFromIds: record.derivedFromIds };
+  }
+  if (isStringArray(record.premises)) {
+    next = { ...next, premises: record.premises };
+  }
+  if (record.limits !== undefined && record.limits !== null && typeof record.limits === "object" && !Array.isArray(record.limits)) {
+    next = { ...next, limits: parseDelegation(record.limits) };
   }
   return next;
 }
 
-function decisionToJson(fields: DecisionFields): Record<string, unknown> {
+export function decisionFieldsJson(fields: DecisionFields): Record<string, unknown> {
   const json: Record<string, unknown> = {
     criterion: fields.criterion,
+    criterionId: fields.criterionId ?? fields.criterion,
     status: fields.status,
     value: fields.value ?? null,
   };
   if (fields.basis !== undefined) json.basis = fields.basis;
   if (fields.delegation !== undefined) json.delegation = fields.delegation;
+  if (fields.limits !== undefined) json.limits = fields.limits;
   if (fields.question_id !== undefined) json.question_id = fields.question_id;
   if (fields.options !== undefined) json.options = fields.options;
   if (fields.options_version !== undefined) json.options_version = fields.options_version;
@@ -142,8 +226,43 @@ function decisionToJson(fields: DecisionFields): Record<string, unknown> {
   }
   if (fields.evidence !== undefined) json.evidence = fields.evidence;
   if (fields.needs_confirmation === true) json.needs_confirmation = true;
+  if (fields.must_ask === true || fields.must_ask === false) json.must_ask = fields.must_ask;
+  if (fields.groupId !== undefined) json.groupId = fields.groupId;
+  const selected = fields.selectedOptionId ?? settledOptionId(fields);
+  if (selected !== undefined) json.selectedOptionId = selected;
+  if (fields.derivedFromIds !== undefined) json.derivedFromIds = fields.derivedFromIds;
   if (fields.work_item !== undefined) json.work_item = fields.work_item;
+  if (fields.scope_id !== undefined) json.scope_id = fields.scope_id;
+  if (fields.deferred_reason !== undefined) json.deferred_reason = fields.deferred_reason;
+  if (fields.revisit_wave !== undefined) json.revisit_wave = fields.revisit_wave;
+  if (fields.delegated_at !== undefined) json.delegated_at = fields.delegated_at;
+  if (fields.stage_at_delegation !== undefined) json.stage_at_delegation = fields.stage_at_delegation;
+  if (fields.recommended_option_id !== undefined) json.recommended_option_id = fields.recommended_option_id;
+  if (fields.rationale !== undefined) json.rationale = fields.rationale;
+  if (fields.rule !== undefined) json.rule = fields.rule;
+  if (fields.premises !== undefined) json.premises = fields.premises;
+  if (fields.entailment_verdict !== undefined) json.entailment_verdict = fields.entailment_verdict;
   return json;
+}
+
+function copyString<K extends "criterionId" | "groupId" | "selectedOptionId" | "work_item" | "scope_id" | "deferred_reason" | "revisit_wave" | "delegated_at" | "stage_at_delegation" | "recommended_option_id" | "rationale" | "rule" | "entailment_verdict">(
+  fields: DecisionFields,
+  record: Record<string, unknown>,
+  key: K,
+): DecisionFields {
+  const value = record[key];
+  if (typeof value !== "string" || value.length === 0) return fields;
+  return { ...fields, [key]: value };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function readCriterion(record: Record<string, unknown>): string {
+  if (typeof record.criterion === "string" && record.criterion.length > 0) return record.criterion;
+  if (typeof record.criterionId === "string" && record.criterionId.length > 0) return record.criterionId;
+  throw new BasisStatusSeparationError("decision fields.criterion must be a string");
 }
 
 function parseDelegation(raw: unknown): DelegationRecord {
@@ -169,39 +288,63 @@ function parseEvidence(raw: unknown): EvidenceSpan {
     throw new BasisStatusSeparationError("evidence span must be an object");
   }
   const record = raw as Record<string, unknown>;
+  const turnId =
+    typeof record.turnId === "string" && record.turnId.length > 0
+      ? record.turnId
+      : typeof record.turn === "string" && record.turn.length > 0
+        ? record.turn
+        : "";
   if (
-    typeof record.rubricId !== "string" ||
-    typeof record.turnId !== "string" ||
+    turnId.length === 0 ||
     typeof record.quote !== "string" ||
     typeof record.start !== "number" ||
     typeof record.end !== "number"
   ) {
     throw new BasisStatusSeparationError("evidence span is incomplete");
   }
-  return {
-    rubricId: record.rubricId,
-    turnId: record.turnId,
+  let span: EvidenceSpan = {
+    turnId,
     quote: record.quote,
     start: record.start,
     end: record.end,
   };
-}
-
-function requiredString(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new BasisStatusSeparationError(`decision fields.${key} must be a string`);
+  if (typeof record.rubricId === "string" && record.rubricId.length > 0) {
+    span = { ...span, rubricId: record.rubricId };
   }
-  return value;
+  if (typeof record.turn === "string" && record.turn.length > 0) {
+    span = { ...span, turn: record.turn };
+  }
+  return span;
 }
 
-/** Values known to satisfy a recorded limit token. Unknown values are outside the bounds. */
-const VALUE_LIMIT_TAGS: Readonly<Record<string, readonly string[]>> = {
-  sqlite: ["free", "local"],
+/**
+ * Option id or limit tag to the constraint tags that option satisfies.
+ * `sqlite` keeps `free` and `local`. Other catalog options are matched by tag,
+ * not rejected for being something other than sqlite.
+ */
+export const VALUE_LIMIT_TAGS: Readonly<Record<string, readonly string[]>> = {
+  sqlite: ["free", "local", "local_only", "relational_acid", "zero_paid_saas"],
+  sqlite_relational: ["free", "local", "local_only", "relational_acid", "zero_paid_saas"],
+  postgres: ["relational_acid"],
+  postgres_relational: ["relational_acid"],
+  local_only: ["local_only", "free", "local"],
+  zero_paid_saas: ["zero_paid_saas", "free"],
+  serverless_compatible: ["serverless_compatible"],
+  relational_acid: ["relational_acid"],
+  valkey: ["local_only"],
+  playwright: ["local_only", "zero_paid_saas"],
+  vitest: ["local_only", "zero_paid_saas"],
+  mailpit: ["local_only", "zero_paid_saas"],
+  sse: ["serverless_compatible"],
+  cookie_session: ["local_only", "zero_paid_saas"],
 };
 
-export function valueSatisfiesLimits(value: string, limits: readonly string[]): boolean {
-  const tags = VALUE_LIMIT_TAGS[value.trim().toLowerCase()];
+export function valueSatisfiesLimits(
+  value: string,
+  limits: readonly string[],
+  catalog: Readonly<Record<string, readonly string[]>> = VALUE_LIMIT_TAGS,
+): boolean {
+  const tags = catalog[value.trim().toLowerCase()];
   if (!tags) return false;
   return limits.every((limit) => tags.includes(limit.toLowerCase()));
 }

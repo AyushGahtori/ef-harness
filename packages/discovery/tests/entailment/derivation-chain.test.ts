@@ -41,7 +41,7 @@ function proposal(
 }
 
 describe("DerivationChainValidator", () => {
-  it("rejects self-cycles, mutual cycles, unknown rules, and unsettled premises before any model call", () => {
+  it("rejects self-cycles, mutual cycles, unknown rules, and unsettled premises before any model call", async () => {
     const graph = new InMemoryKnowledgeGraph();
     const validator = new DerivationChainValidator(graph, new MapInferenceCatalog(rules));
     const source = turn("T1", "Staff use a link on a phone");
@@ -92,7 +92,7 @@ describe("DerivationChainValidator", () => {
         evidence: [excerpt(source, source.text, { support: "explicit_value" })],
       }),
     );
-    const rejected = gate.check(
+    const rejected = await gate.check(
       claim({
         decisionId: "D-magic",
         criterion: "menu.mobile_web",
@@ -107,7 +107,7 @@ describe("DerivationChainValidator", () => {
     expect(gated.getNode("D-magic")).toBeNull();
   });
 
-  it("rejects assistant paraphrase, proposed roots, and unedged derived premises, and persists a grounded chain", () => {
+  it("rejects assistant paraphrase, proposed roots, and unedged derived premises, and persists a grounded chain", async () => {
     const source = turn("T2", "Email the totals.");
     const graph = new InMemoryKnowledgeGraph();
     const validator = new DerivationChainValidator(graph, new MapInferenceCatalog(rules));
@@ -184,7 +184,7 @@ describe("DerivationChainValidator", () => {
         evidence: [excerpt(phone, phone.text, { support: "explicit_value" })],
       }),
     );
-    const settled = gate.check(
+    const settled = await gate.check(
       claim({
         decisionId: "D-mobile",
         criterion: "menu.mobile_web",
@@ -203,7 +203,7 @@ describe("DerivationChainValidator", () => {
     });
   });
 
-  it("keeps a valid sibling when another claim is rejected, and fails closed on 503 and timeout", () => {
+  it("keeps a valid sibling when another claim is rejected, and fails closed on 503 and timeout", async () => {
     const source = turn("T8", "Staff use a link on a phone");
     let calls = 0;
     const { graph, adapter, gate, metrics } = gateFor(
@@ -238,7 +238,7 @@ describe("DerivationChainValidator", () => {
         evidence: [excerpt(source, source.text, { support: "explicit_value" })],
       }),
     );
-    const timeout = timed.gate.check(
+    const timeout = await timed.gate.check(
       claim({
         decisionId: "D-time",
         criterion: "menu.mobile_web",
@@ -252,7 +252,7 @@ describe("DerivationChainValidator", () => {
     expect(timeout.reason).toContain("timeout");
     expect(timed.graph.getEdgesAsOf(timed.graph.currentRevision()).edges.some((edge) => edge.src === "D-time")).toBe(false);
 
-    const mixed = gate.checkAll([
+    const mixed = await gate.checkAll([
       claim({
         decisionId: "D-magic",
         criterion: "menu.mobile_web",

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
+import { registerEfSearchText } from "@ef-harness/db";
+import { canonicalAssetAbsolute, splitSearchText as splitCanonicalSearchText } from "@ef-harness/shared-contracts";
 import {
   emptyForces,
   type ForceLists,
@@ -159,17 +160,14 @@ interface SqlRow {
 let queryCatalog: Map<string, string> | undefined;
 
 export function splitSearchText(value: unknown): string {
-  if (!value) return "";
-  const text = String(value);
-  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${text} ${extra}`;
+  return splitCanonicalSearchText(value);
 }
 
 export function ensureSearchText(db: DatabaseSync): void {
   try {
     db.prepare("SELECT ef_search_text('ok') AS t").get();
   } catch {
-    db.function("ef_search_text", { deterministic: true }, splitSearchText);
+    registerEfSearchText(db);
   }
 }
 

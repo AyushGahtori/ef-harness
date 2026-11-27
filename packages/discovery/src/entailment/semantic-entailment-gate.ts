@@ -53,14 +53,18 @@ export class SemanticEntailmentGate {
     this.validator = new DerivationChainValidator(deps.graph, deps.catalog);
   }
 
-  checkAll(claims: readonly EntailmentClaim[]): EntailmentBatchResult {
+  async checkAll(claims: readonly EntailmentClaim[]): Promise<EntailmentBatchResult> {
     const pending = claims.filter((claim) => claim.basis === "derived").map((claim) => toProposal(claim));
-    return { results: claims.map((claim) => this.check(claim, pending)) };
+    const results: EntailmentClaimResult[] = [];
+    for (const claim of claims) {
+      results.push(await this.check(claim, pending));
+    }
+    return { results };
   }
 
-  check(claim: EntailmentClaim, pending: readonly DerivationProposal[] = []): EntailmentClaimResult {
+  async check(claim: EntailmentClaim, pending: readonly DerivationProposal[] = []): Promise<EntailmentClaimResult> {
     try {
-      return this.evaluate(claim, pending);
+      return await this.evaluate(claim, pending);
     } catch (error) {
       const known =
         error instanceof RuleNotAllowlistedError ||
@@ -84,7 +88,7 @@ export class SemanticEntailmentGate {
     }
   }
 
-  private evaluate(claim: EntailmentClaim, pending: readonly DerivationProposal[]): EntailmentClaimResult {
+  private async evaluate(claim: EntailmentClaim, pending: readonly DerivationProposal[]): Promise<EntailmentClaimResult> {
     if (claim.basis === "derived") {
       const siblings = pending.filter((item) => item.decisionId !== claim.decisionId);
       this.validator.validate(toProposal(claim), siblings);
@@ -119,7 +123,7 @@ export class SemanticEntailmentGate {
         premises: [...claim.premises],
       },
     };
-    const response = this.complete(request);
+    const response = await this.complete(request);
     if (!response.ok) {
       const detail = response.statusCode === null ? response.failure : `${response.failure} ${response.statusCode}`;
       this.deps.metrics.record({
@@ -164,9 +168,9 @@ export class SemanticEntailmentGate {
     return result(claim, "pending_verification", null, "leaves_open", parsed.reason, true, null, null);
   }
 
-  private complete(request: EntailmentModelRequest): EntailmentModelResponse {
+  private async complete(request: EntailmentModelRequest): Promise<EntailmentModelResponse> {
     try {
-      return this.deps.adapter.complete(request);
+      return await this.deps.adapter.complete(request);
     } catch {
       return { ok: false, failure: "unavailable", statusCode: null };
     }
@@ -191,8 +195,9 @@ export class SemanticEntailmentGate {
     changeSummary: string | null,
     edges: readonly { type: string; dst: string }[],
   ): void {
-    const fields: DecisionFields = {
+    let fields: DecisionFields = {
       criterion: claim.criterion,
+      criterionId: claim.criterion,
       status,
       value: claim.proposedValue,
       basis,
@@ -204,12 +209,20 @@ export class SemanticEntailmentGate {
       costly: claim.costly,
       reversibility: claim.reversibility,
       mustAsk: claim.mustAsk,
+      must_ask: claim.mustAsk,
       criterionKind: claim.criterionKind,
       release: "current",
       changeSummary,
       entailmentVerdict: verdict,
       entailmentReason: reason,
     };
+    if (verdict !== null) fields = { ...fields, entailment_verdict: verdict };
+    if (typeof claim.proposedValue === "string" && claim.proposedValue.length > 0) {
+      fields = { ...fields, selectedOptionId: claim.proposedValue };
+    }
+    if (claim.feature !== null && claim.feature.length > 0) {
+      fields = { ...fields, groupId: claim.feature };
+    }
     const quote = claim.excerpts[0]?.quote ?? claim.criterion;
     writeDecision(this.deps.graph, {
       id: claim.decisionId,

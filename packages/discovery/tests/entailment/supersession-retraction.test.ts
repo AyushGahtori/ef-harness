@@ -255,7 +255,7 @@ describe("premise supersession and cross-chunk retraction", () => {
     expect(parseDecisionFields(graph.getNode("print-later")?.fields)?.release).toBe("later");
   });
 
-  it("stores a contradicting entailment as a conflict with no credit", () => {
+  it("stores a contradicting entailment as a conflict with no credit", async () => {
     const source = turn("T8", "Staff use a link on a phone");
     const { graph, gate } = gateFor(() => contradicts("The quote denies a native app."), phoneRules, [source]);
     seed(
@@ -269,7 +269,7 @@ describe("premise supersession and cross-chunk retraction", () => {
         evidence: [excerpt(source, source.text, { support: "explicit_value" })],
       }),
     );
-    const result = gate.check(
+    const result = await gate.check(
       claim({
         decisionId: "D-native",
         criterion: "app.native_mobile",

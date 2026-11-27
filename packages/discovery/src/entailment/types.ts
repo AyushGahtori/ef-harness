@@ -77,6 +77,9 @@ export interface CitedExcerpt {
 
 export interface DecisionFields {
   readonly criterion: string;
+  readonly criterionId?: string;
+  readonly groupId?: string;
+  readonly selectedOptionId?: string;
   readonly status: DecisionStatus;
   readonly value: JsonValue;
   readonly basis: SettledBasis | null;
@@ -88,10 +91,12 @@ export interface DecisionFields {
   readonly costly: boolean;
   readonly reversibility: Reversibility;
   readonly mustAsk: boolean;
+  readonly must_ask?: boolean;
   readonly criterionKind: string;
   readonly release: "current" | "later";
   readonly changeSummary: string | null;
   readonly entailmentVerdict: MetricVerdict | null;
+  readonly entailment_verdict?: MetricVerdict | null;
   readonly entailmentReason: string | null;
 }
 

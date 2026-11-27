@@ -63,7 +63,7 @@ describe("replacement, second events, low confidence, and quote guards", () => {
     expect(parseDecisionFields(graph.getNode("kitchen.final_counts")?.fields)?.value).toBe("10:45");
   });
 
-  it("holds a low-confidence dictated time open and bolds it in the change summary", () => {
+  it("holds a low-confidence dictated time open and bolds it in the change summary", async () => {
     const source = turn("T4", "The cutoff is 10:45");
     const hold = new LowConfidenceDictationHold().assess({
       proposedValue: "10:45",
@@ -77,7 +77,7 @@ describe("replacement, second events, low confidence, and quote guards", () => {
       phoneRules,
       [source],
     );
-    const result = gate.check(
+    const result = await gate.check(
       claim({
         decisionId: "D-time",
         criterion: "orders.cutoff",
@@ -98,7 +98,7 @@ describe("replacement, second events, low confidence, and quote guards", () => {
     expect(parseDecisionFields(graph.getNode("D-time")?.fields)?.status).toBe("open");
   });
 
-  it("rejects assistant quotes, edited digits, and dropped negations, and bans costly derivations", () => {
+  it("rejects assistant quotes, edited digits, and dropped negations, and bans costly derivations", async () => {
     const verifier = new LocalExactQuoteEvidenceVerifier();
     const source = turn("T5", "don't allow edits after 10:45");
     const assistant = turn("T6", "allow edits after 10:45", "harness");
@@ -126,7 +126,7 @@ describe("replacement, second events, low confidence, and quote guards", () => {
       phoneRules,
       [phone],
     );
-    const result = gate.check(
+    const result = await gate.check(
       claim({
         decisionId: "D-paid",
         criterion: "auth.provider",

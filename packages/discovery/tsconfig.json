@@ -10,7 +10,13 @@
   ],
   "references": [
     {
+      "path": "../db"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../worker-loop"
     }
   ]
 }

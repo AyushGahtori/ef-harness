@@ -9,9 +9,13 @@ export { canonicalJson, localContentHash, requestHash } from "./canonical-json.j
 export {
   assertDecisionFields,
   decisionValueCredit,
+  decisionFieldsJson,
   parseDecisionFields,
+  toDecisionNodeFields,
+  VALUE_LIMIT_TAGS,
   valueSatisfiesLimits,
   type DecisionFields,
+  type DecisionNodeFields,
   type DelegationRecord,
 } from "./decision-fields.js";
 export { DiscoveryDbRepo, type DecisionRecord, type ScopeSnapshot } from "./discovery-db-repo.js";
@@ -66,6 +70,7 @@ export {
   type SendResult,
 } from "./session-manager.js";
 export { openStateDatabase } from "./sqlite-state.js";
+export { validatedDiscoveryModel, type AsyncDiscoveryModelPort } from "./worker-model.js";
 export {
   CRITERION_STATUSES,
   SETTLED_BASES,

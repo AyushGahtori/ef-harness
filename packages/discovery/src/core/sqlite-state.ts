@@ -1,16 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import { fileURLToPath } from "node:url";
+import { registerEfSearchText } from "@ef-harness/db";
+import { canonicalAssetAbsolute, splitSearchText as splitCanonicalSearchText } from "@ef-harness/shared-contracts";
 
 export function stateSchemaPath(): string {
-  return fileURLToPath(new URL("../../../../schema/state.sql", import.meta.url));
+  return canonicalAssetAbsolute("stateSql");
 }
 
 export function splitSearchText(value: SQLOutputValue): string {
-  if (typeof value !== "string" || value.length === 0) return "";
-  const extra = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${value} ${extra}`;
+  return splitCanonicalSearchText(value);
 }
 
 /** Open state.db and apply schema/state.sql, including the search UDF the triggers call. */
@@ -28,9 +27,7 @@ export function openStateDatabase(filename: string): DatabaseSync {
   if (filename !== ":memory:") {
     db.exec("PRAGMA journal_mode = WAL");
   }
-  db.function("ef_search_text", { deterministic: true }, (value: SQLOutputValue) =>
-    splitSearchText(value ?? null),
-  );
+  registerEfSearchText(db);
   const existing = db
     .prepare("SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'nodes'")
     .get() as { c: number } | undefined;

@@ -1,23 +1,19 @@
 import { createHash } from "node:crypto";
+import { computeNodeContentHash } from "@ef-harness/shared-contracts";
 
-/**
- * Local stand-in for Task 007 `computeNodeContentHash`.
- * SHA-256 over a canonical encoding of `{ kind, title, text, fields }`.
- * Swap for the shared RFC 8785 helper when that package is wired.
- */
+/** `sha256:` content hash from `@ef-harness/shared-contracts` (`computeNodeContentHash`). */
 export function localContentHash(input: {
   kind: string;
   title: string;
   text: string;
   fields: unknown;
 }): string {
-  const payload = canonicalJson({
+  return computeNodeContentHash({
     kind: input.kind,
-    title: input.title.normalize("NFC"),
-    text: input.text.normalize("NFC"),
-    fields: input.fields,
+    title: input.title,
+    text: input.text,
+    fields: input.fields === undefined ? {} : input.fields,
   });
-  return createHash("sha256").update(payload).digest("hex");
 }
 
 export function requestHash(value: unknown): string {

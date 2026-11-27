@@ -26,7 +26,7 @@ export type EntailmentModelResponse =
   | { readonly ok: false; readonly failure: "timeout" | "unavailable"; readonly statusCode: number | null };
 
 export interface EntailmentModelPort {
-  complete(request: EntailmentModelRequest): EntailmentModelResponse;
+  complete(request: EntailmentModelRequest): EntailmentModelResponse | Promise<EntailmentModelResponse>;
 }
 
 export class FakeModelAdapter implements EntailmentModelPort {

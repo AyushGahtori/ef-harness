@@ -1,6 +1,14 @@
-import type { SQLOutputValue } from "node:sqlite";
+import type { SQLInputValue, SQLOutputValue } from "node:sqlite";
+import {
+  KnowledgeGraphRepo as DbKnowledgeGraphRepo,
+  knowledgeLoadQueryCatalog,
+  readQueriesSql,
+  type SqlConnection,
+  type SqlRow,
+  type SqlValue,
+} from "@ef-harness/db";
 import { localContentHash } from "./canonical-json.js";
-import { assertDecisionFields, type DecisionFields } from "./decision-fields.js";
+import { assertDecisionFields, decisionFieldsJson, type DecisionFields } from "./decision-fields.js";
 import type {
   BatchRow,
   BatchStatus,
@@ -33,11 +41,15 @@ const COUNTABLE = new Set([
 
 export class LocalSqliteKnowledgeGraph implements KnowledgeGraphRepo {
   private readonly db: DatabaseSync;
+  private readonly knowledge: DbKnowledgeGraphRepo;
   private depth = 0;
   private closed = false;
 
   constructor(filename: string) {
     this.db = openStateDatabase(filename);
+    this.db.exec("INSERT INTO meta(key, value) VALUES ('last_rev', '0') ON CONFLICT(key) DO NOTHING");
+    const connection = sqlConnectionFrom(this.db);
+    this.knowledge = new DbKnowledgeGraphRepo(connection, knowledgeLoadQueryCatalog(connection, readQueriesSql()));
   }
 
   transaction<T>(work: () => T): T {
@@ -91,6 +103,25 @@ export class LocalSqliteKnowledgeGraph implements KnowledgeGraphRepo {
 
   insertNode(input: NodeInsert): void {
     const fields = normalizeFields(input.kind, input.fields);
+    if (this.depth === 0) {
+      this.knowledge.commitChangeSet({
+        origin: "chat",
+        author: "discovery",
+        summary: input.title,
+        nodes: [
+          {
+            op: "create",
+            id: input.id,
+            kind: input.kind,
+            title: input.title,
+            text: input.text,
+            fields,
+            status: "active",
+          },
+        ],
+      });
+      return;
+    }
     const fieldsJson = JSON.stringify(fields);
     const title = input.title.normalize("NFC");
     const text = input.text.normalize("NFC");
@@ -110,6 +141,24 @@ export class LocalSqliteKnowledgeGraph implements KnowledgeGraphRepo {
       throw new Error(`node ${input.id} version is ${current.version}, expected ${input.expectedVersion}`);
     }
     const fields = normalizeFields(current.kind, input.fields);
+    if (this.depth === 0) {
+      this.knowledge.commitChangeSet({
+        origin: "chat",
+        author: "discovery",
+        summary: input.title,
+        nodes: [
+          {
+            op: "update",
+            id: input.id,
+            class: "clarifying",
+            title: input.title,
+            text: input.text,
+            fields,
+          },
+        ],
+      });
+      return;
+    }
     const fieldsJson = JSON.stringify(fields);
     const title = input.title.normalize("NFC");
     const text = input.text.normalize("NFC");
@@ -329,6 +378,13 @@ export class LocalSqliteKnowledgeGraph implements KnowledgeGraphRepo {
       .run(row.opId, row.kind, row.requestHash, row.resultJson, row.committedRev, row.createdAt);
   }
 
+  contentHash(id: string): string | null {
+    const row = this.db.prepare("SELECT content_hash AS hash FROM nodes WHERE id = ?").get(id);
+    if (!row || typeof row !== "object") return null;
+    const hash = Reflect.get(row, "hash");
+    return typeof hash === "string" ? hash : null;
+  }
+
   countRows(
     table:
       | "work_items"
@@ -352,29 +408,42 @@ function normalizeFields(
   if (kind === "decision") {
     const parsed = fields as DecisionFields;
     assertDecisionFields(parsed);
-    return decisionJson(parsed);
+    return decisionFieldsJson(parsed);
   }
   return fields as Record<string, unknown>;
 }
 
-function decisionJson(fields: DecisionFields): Record<string, unknown> {
-  const json: Record<string, unknown> = {
-    criterion: fields.criterion,
-    status: fields.status,
-    value: fields.value ?? null,
+function sqlConnectionFrom(db: DatabaseSync): SqlConnection {
+  return {
+    exec(sql: string): void {
+      db.exec(sql);
+    },
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      statement.setAllowBareNamedParameters(true);
+      return {
+        all(params: Record<string, SqlValue> = {}): SqlRow[] {
+          return statement.all(params as Record<string, SQLInputValue>) as SqlRow[];
+        },
+        get(params: Record<string, SqlValue> = {}): SqlRow | undefined {
+          const row = statement.get(params as Record<string, SQLInputValue>);
+          if (row === undefined) return undefined;
+          return row as SqlRow;
+        },
+        run(params: Record<string, SqlValue> = {}): { changes: number; lastInsertRowid: number } {
+          const result = statement.run(params as Record<string, SQLInputValue>);
+          return {
+            changes: typeof result.changes === "bigint" ? Number(result.changes) : result.changes,
+            lastInsertRowid:
+              typeof result.lastInsertRowid === "bigint" ? Number(result.lastInsertRowid) : result.lastInsertRowid,
+          };
+        },
+      };
+    },
+    close(): void {
+      db.close();
+    },
   };
-  if (fields.basis !== undefined) json.basis = fields.basis;
-  if (fields.delegation !== undefined) json.delegation = fields.delegation;
-  if (fields.question_id !== undefined) json.question_id = fields.question_id;
-  if (fields.options !== undefined) json.options = [...fields.options];
-  if (fields.options_version !== undefined) json.options_version = fields.options_version;
-  if (fields.acceptance_examples !== undefined) {
-    json.acceptance_examples = [...fields.acceptance_examples];
-  }
-  if (fields.evidence !== undefined) json.evidence = fields.evidence.map((span) => ({ ...span }));
-  if (fields.needs_confirmation === true) json.needs_confirmation = true;
-  if (fields.work_item !== undefined) json.work_item = fields.work_item;
-  return json;
 }
 
 function asRow(value: unknown): Row {
