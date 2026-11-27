@@ -1134,3 +1134,40 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C34.
 
+---
+
+## [C34] — kb pull tools, MUST bands, and worker tier caps
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `f97fbdfce1a17d69b990f49a7edca1dd2254066f` (`integrate: C34 wire kb pull tools and worker tier caps`)
+- **Findings Fixed:** `F-021` for sealed and `oracle_only` concealment on the kernel knowledge path, and `F-039` for one `kb.search` / `kb.get_node` / `kb.list_rules` / `kb.get_contract` surface, uppercase `MUST | SHOULD | COULD` bands, and `Junior | Mid | Senior | Principal` caps. `task/088-knowledge-packet-slicer` (`c8cf1f8`) and `task/089-rule-matching-pull-to-push` (`cde3a46`) were already ancestors. Did not re-merge those branches. Did not apply a dirty patch. Did not apply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C35.
+
+### What Changed
+- Re-verified on `c8547ac89c4d3623c4980c4e15763c22f1211267`. `git merge-base --is-ancestor` succeeded for `c8cf1f8` and `cde3a46`. No task branch was merged.
+- `KnowledgePacketSlicer.compileTaskBrief` returns `CompiledTaskBrief | MustBandOversizeRefusal`. Bands are `MUST | SHOULD | COULD`. Worker tiers are `Junior | Mid | Senior | Principal`, with Junior kept at 2–3k (refusal at 3,000) and Senior at 4–6k (refusal at 6,000). An oversized MUST band is returned as `MustBandOversizeRefusal` and is not truncated. Optional brownfield conventions are capped at 600 tokens and `[RECENT SWEEP SYMBOL MAP]` at 300 tokens. `upsertBand` applies a pull-to-push promotion on the next compile. Could pointers include `kb.search`, `kb.get_node`, `kb.list_rules`, and `kb.get_contract`.
+- `KbPullToolHandlers` registers `kb.list_rules` beside `kb.list_rules_for_tags` and accepts the MCP argument names (`id`, `idAtVersion`, `filters.kind`). `kb.search` and `kb.get_node` drop nodes marked sealed or `visibility = oracle_only` and return the same `NOT_FOUND` body as a missing id. `ProjectStateFtsSearchRepo` reads those tools from `ProjectStateDb`. `AttemptMcpServer` delegates the four tools to that port when `kbPull` is set, which `createKernelAttemptMcpDeps` forwards.
+
+### What It Fixed
+- **F-021:** Kernel knowledge binding treats `oracle_only`, `sealed`, and `sealed_oracle` the same way it treats held-back checks, so a pull cannot return the sealed body.
+- **F-039:** The slicer, `KbPullToolHandlers`, and `AttemptMcpServer` share `kb.search`, `kb.get_node`, `kb.list_rules`, and `kb.get_contract`. Brief bands are uppercase. Worker levels accept the four shared-contract tiers. Revision holds stay on `requirement_change` from C33.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor c8cf1f8 HEAD`: exit `0`
+- `git merge-base --is-ancestor cde3a46 HEAD`: exit `0`
+- No dirty-worktree patch was assigned to C34. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts slicer pull`: exit `0` — `Test Files 4 passed (4)`, `Tests 33 passed (33)` (`0` skipped)
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 30 passed (30)`, `Tests 151 passed (151)` (`0` skipped). The previous package total recorded at C33 was 29 files / 148 tests; this adds the C34 file and 3 C34 tests.
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts views-export views-import revision`: exit `0` — `Test Files 15 passed (15)`, `Tests 60 passed (60)` (`0` skipped)
+- `pnpm --filter @ef-harness/mcp-server exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)` (`0` skipped)
+- `pnpm --filter @ef-harness/research-engine test`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion test`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped). The 5 ms catalog budget was not changed.
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C35.
+
