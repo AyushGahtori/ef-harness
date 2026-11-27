@@ -299,8 +299,7 @@ export class TestEnvOrchestrator {
     for (const id of this.live.keys()) {
       if (!this.live.get(id)?.destroyed) live.add(id);
     }
-    const records = this.options.envProcesses.list();
-    const orphanReport = await this.options.jobs.reconcileOrphanedProcesses(records);
+    const orphanReport = await this.options.jobs.reconcileOrphanedProcesses();
     let removedProcessRows = 0;
     for (const record of orphanReport.terminated) {
       this.options.envProcesses.delete(record.pid, record.startTime);

@@ -116,7 +116,7 @@ export interface WindowsJobManager {
   assignProcess(job: JobHandle, pid: number): void;
   queryJobAccounting(job: JobHandle): JobAccounting;
   terminateJob(job: JobHandle): Promise<void>;
-  reconcileOrphanedProcesses(records: readonly EnvProcessRecord[]): Promise<OrphanReconcileReport>;
+  reconcileOrphanedProcesses(): Promise<OrphanReconcileReport>;
 }
 
 export interface PortLeaseRecord {

@@ -4,6 +4,13 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  GlobalBrokerDb,
+  openProjectStateDb,
+  type AuxiliaryLogger,
+  type ProjectStateDb,
+  type StateDbLogger,
+} from "@ef-harness/db";
 import { SERVICE_NAMES } from "../../src/orchestrator/index.js";
 import type {
   EnvProcessRecord,
@@ -19,8 +26,6 @@ import type {
 import {
   ensureBrokerProject,
   MapSecretVault,
-  openGlobalDatabase,
-  openStateDatabase,
   ServiceProviderRegistry,
   SqliteEnvProcessStore,
   SqlitePortLeaseStore,
@@ -95,6 +100,7 @@ interface TrackedJob {
 }
 
 export class TrackingJobManager implements WindowsJobManager {
+  constructor(private readonly registry: { list(): readonly EnvProcessRecord[] }) {}
   readonly created: TrackedJob[] = [];
   readonly warnings: string[] = [];
   readonly liveIdentities = new Map<number, number>();
@@ -146,9 +152,8 @@ export class TrackingJobManager implements WindowsJobManager {
     tracked.pids.clear();
   }
 
-  async reconcileOrphanedProcesses(
-    records: readonly EnvProcessRecord[],
-  ): Promise<OrphanReconcileReport> {
+  async reconcileOrphanedProcesses(): Promise<OrphanReconcileReport> {
+    const records = this.registry.list();
     const terminated: EnvProcessRecord[] = [];
     const skipped: OrphanReconcileReport["skipped"][number][] = [];
     for (const record of records) {
@@ -210,20 +215,40 @@ export async function createHarness(
   } = {},
 ): Promise<TestHarness> {
   const projectId = options.projectId ?? "project-1";
-  const globalDb = options.portLeases ? null : openGlobalDatabase();
-  if (globalDb) {
-    ensureBrokerProject(globalDb, {
-      id: projectId,
-      path: "C:/projects/demo",
-      displayName: "Demo",
-      now: 1,
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ef-env-data-"));
+  const broker = options.portLeases
+    ? null
+    : GlobalBrokerDb.open({
+        root,
+        logger: quietBrokerLogger,
+        now: () => 1,
+      });
+  let stateDb: ProjectStateDb | null = null;
+  try {
+    if (broker) {
+      ensureBrokerProject(broker, {
+        id: projectId,
+        path: projectPath(root),
+        displayName: "Demo",
+        schemaVersion: 1,
+        now: 1,
+      });
+    }
+    stateDb = openProjectStateDb({
+      projectId,
+      rootDir: root,
+      logger: quietStateLogger,
+      now: () => 1,
     });
+  } catch (error) {
+    stateDb?.close();
+    broker?.close();
+    await fs.rm(root, { recursive: true, force: true });
+    throw error;
   }
-  const stateDb = openStateDatabase();
-  const portLeases =
-    options.portLeases ?? new SqlitePortLeaseStore(globalDb as NonNullable<typeof globalDb>);
+  const portLeases = options.portLeases ?? new SqlitePortLeaseStore(broker as GlobalBrokerDb);
   const envProcesses = new SqliteEnvProcessStore(stateDb);
-  const jobs = new TrackingJobManager();
+  const jobs = new TrackingJobManager(envProcesses);
   const registry = new ServiceProviderRegistry();
   const providers = new Map<string, RecordingProvider>();
   for (const name of SERVICE_NAMES) {
@@ -257,12 +282,13 @@ export async function createHarness(
     jobs,
     providers,
     worktree,
-    globalText: options.globalText ?? (() => dump(globalDb)),
-    stateText: () => dump(stateDb),
+    globalText: options.globalText ?? (() => JSON.stringify(portLeases.list())),
+    stateText: () => JSON.stringify(envProcesses.list()),
     async cleanup() {
       await fs.rm(worktree, { recursive: true, force: true });
-      stateDb.close();
-      globalDb?.close();
+      stateDb?.close();
+      broker?.close();
+      await fs.rm(root, { recursive: true, force: true });
     },
   };
 }
@@ -315,18 +341,26 @@ export function spawnSleeper(): ChildProcess {
   });
 }
 
-function dump(database: { prepare(sql: string): { all(): unknown[] } } | null): string {
-  if (!database) return "";
-  const tables = ["port_leases", "env_processes", "projects"];
-  const chunks: string[] = [];
-  for (const table of tables) {
-    try {
-      chunks.push(JSON.stringify(database.prepare(`SELECT * FROM ${table}`).all()));
-    } catch (error) {
-      if (!(error instanceof Error)) throw error;
-    }
-  }
-  return chunks.join("\n");
+const quietBrokerLogger: AuxiliaryLogger = {
+  warn() {
+    return;
+  },
+};
+
+const quietStateLogger: StateDbLogger = {
+  info() {
+    return;
+  },
+  warn() {
+    return;
+  },
+  error() {
+    return;
+  },
+};
+
+function projectPath(root: string): string {
+  return process.platform === "win32" ? "C:\\projects\\demo" : path.join(root, "checkout");
 }
 
 function killTree(pid: number): void {

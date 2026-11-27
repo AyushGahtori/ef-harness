@@ -1,8 +1,10 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import {
+  WindowsJobObjectManager,
+  type JobHandle as SandboxJobHandle,
+  type OrphanSweepReport,
+  type ProjectStateDb as JobProcessRegistry,
+} from "@ef-harness/sandbox";
 
 /** Win32 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. */
 export const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
@@ -30,7 +32,7 @@ export interface JobAccounting {
 }
 
 /**
- * Consumer port for Task 040's `WindowsJobManager`.
+ * Consumer port for the sandbox `WindowsJobObjectManager`.
  * Every backing-service child is assigned only when the job carries
  * `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
  */
@@ -39,25 +41,35 @@ export interface WindowsJobManager {
   assignProcess(job: JobHandle, pid: number): Promise<void>;
   queryJobAccounting(job: JobHandle): Promise<JobAccounting>;
   terminateJob(job: JobHandle): Promise<void>;
+  reconcileOrphanedProcesses(): Promise<OrphanSweepReport>;
 }
 
 interface LiveJob {
   handle: JobHandle;
   pids: Set<number>;
   nativePids: Set<number>;
-  host: NativeJobHost | null;
-  nativeError: string | null;
+  sandbox: SandboxJobHandle | null;
+}
+
+export interface TrackingWindowsJobManagerOptions {
+  readonly registry?: JobProcessRegistry;
 }
 
 /**
- * On Windows this opens a real Job Object with kill-on-close and assigns
- * child PIDs into it. Closing the holder drops the last handle, so Windows
- * kills every assigned process even if this parent dies.
- * Other platforms track PIDs and terminate them explicitly.
+ * On Windows this opens a real Job Object through `WindowsJobObjectManager`
+ * and assigns child PIDs into it. The manager reads `env_processes` only from
+ * the injected writer-backed registry. Other platforms track PIDs and
+ * terminate them explicitly.
  */
 export class TrackingWindowsJobManager implements WindowsJobManager {
   readonly assignments: { jobId: string; pid: number }[] = [];
   private readonly jobs = new Map<string, LiveJob>();
+  private readonly registry: JobProcessRegistry | undefined;
+  private native: WindowsJobObjectManager | null = null;
+
+  constructor(options: TrackingWindowsJobManagerOptions = {}) {
+    this.registry = options.registry;
+  }
 
   async createJob(name: string, limits: JobLimits): Promise<JobHandle> {
     if (limits.killOnJobClose !== true) {
@@ -70,7 +82,8 @@ export class TrackingWindowsJobManager implements WindowsJobManager {
       killOnCloseFlag: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE_NAME,
       nativeLimit: JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
-    this.jobs.set(handle.id, { handle, pids: new Set(), nativePids: new Set(), host: null, nativeError: null });
+    const sandbox = process.platform === "win32" ? await this.openWindowsJob(name, limits) : null;
+    this.jobs.set(handle.id, { handle, pids: new Set(), nativePids: new Set(), sandbox });
     return handle;
   }
 
@@ -81,13 +94,9 @@ export class TrackingWindowsJobManager implements WindowsJobManager {
     }
     const live = this.lookup(job);
     if (process.platform === "win32") {
-      try {
-        if (!live.host) live.host = await NativeJobHost.start();
-        await live.host.assign(pid);
-        live.nativePids.add(pid);
-      } catch (error) {
-        live.nativeError = error instanceof Error ? error.message : String(error);
-      }
+      if (!live.sandbox) throw new Error(`job ${job.name} has no Windows job object`);
+      await this.requireNative().assignProcess(live.sandbox, pid);
+      live.nativePids.add(pid);
     }
     live.pids.add(pid);
     this.assignments.push({ jobId: job.id, pid });
@@ -95,11 +104,23 @@ export class TrackingWindowsJobManager implements WindowsJobManager {
 
   async queryJobAccounting(job: JobHandle): Promise<JobAccounting> {
     const live = this.lookup(job);
+    if (process.platform === "win32" && live.sandbox) {
+      const accounting = await this.requireNative().queryJobAccounting(live.sandbox);
+      return {
+        activeProcesses: accounting.activeProcesses,
+        pids: [...live.pids],
+        native: true,
+      };
+    }
     return {
       activeProcesses: live.pids.size,
       pids: [...live.pids],
       native: live.nativePids.size > 0,
     };
+  }
+
+  reconcileOrphanedProcesses(): Promise<OrphanSweepReport> {
+    return this.requireNative().reconcileOrphanedProcesses();
   }
 
   private lookup(job: JobHandle): LiveJob {
@@ -111,14 +132,36 @@ export class TrackingWindowsJobManager implements WindowsJobManager {
   async terminateJob(job: JobHandle): Promise<void> {
     const live = this.jobs.get(job.id);
     if (!live) return;
-    const host = live.host;
-    live.host = null;
-    if (host) await host.close();
+    if (live.sandbox) {
+      const native = this.requireNative();
+      await native.terminateJob(live.sandbox);
+      await native.closeJob(live.sandbox);
+    }
     for (const pid of live.pids) {
       if (!live.nativePids.has(pid)) signalPid(pid);
     }
     live.pids.clear();
     this.jobs.delete(job.id);
+  }
+
+  private async openWindowsJob(name: string, limits: JobLimits): Promise<SandboxJobHandle> {
+    const memoryBytes = limits.jobMemoryBytes ?? 512 * 1024 * 1024;
+    const activeProcessLimit = limits.activeProcessLimit ?? 64;
+    return this.requireNative().createJob({
+      name,
+      kind: "project",
+      limits: { memoryBytes, activeProcessLimit },
+    });
+  }
+
+  private requireNative(): WindowsJobObjectManager {
+    if (this.native) return this.native;
+    const registry = this.registry;
+    if (!registry) {
+      throw new Error("WindowsJobObjectManager requires a writer-backed env_processes registry");
+    }
+    this.native = new WindowsJobObjectManager({ registry });
+    return this.native;
   }
 }
 
@@ -154,223 +197,3 @@ export function pidIsAlive(pid: number): boolean {
     throw error;
   }
 }
-
-class NativeJobHost {
-  private buffered = "";
-  private readonly waiters: Array<(line: string) => void> = [];
-  private stderr = "";
-
-  private constructor(
-    private readonly child: ChildProcess,
-    private readonly scriptDir: string,
-  ) {
-    this.child.stdout?.setEncoding("utf8");
-    this.child.stderr?.setEncoding("utf8");
-    this.child.stdout?.on("data", (chunk: string | Buffer) => {
-      this.buffered += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      this.drain();
-    });
-    this.child.stderr?.on("data", (chunk: string | Buffer) => {
-      this.stderr += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    });
-    this.child.on("error", () => undefined);
-  }
-
-  static async start(): Promise<NativeJobHost> {
-    const scriptDir = await mkdtemp(path.join(os.tmpdir(), "ef-job-"));
-    const scriptPath = path.join(scriptDir, "job-host.ps1");
-    await writeFile(scriptPath, JOB_HOST_SCRIPT, "utf8");
-    const executable = path.join(
-      process.env.SystemRoot ?? "C:\\Windows",
-      "System32",
-      "WindowsPowerShell",
-      "v1.0",
-      "powershell.exe",
-    );
-    const child = spawn(
-      executable,
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
-      { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
-    );
-    const host = new NativeJobHost(child, scriptDir);
-    try {
-      const line = await host.readLine(20_000);
-      if (line !== "ready") {
-        throw new Error(`job host failed to open: ${line}\n${host.stderr}`);
-      }
-    } catch (error) {
-      host.child.kill();
-      await rm(scriptDir, { recursive: true, force: true });
-      throw error;
-    }
-    return host;
-  }
-
-  async assign(pid: number): Promise<void> {
-    this.child.stdin?.write(`assign ${pid}\n`);
-    const line = await this.readLine(10_000);
-    if (line !== `assigned ${pid}`) {
-      throw new Error(`Job Object assignment failed for pid ${pid}: ${line}\n${this.stderr}`);
-    }
-  }
-
-  async close(): Promise<void> {
-    if (this.child.stdin?.writable) {
-      this.child.stdin.write("close\n");
-      this.child.stdin.end();
-    }
-    await new Promise<void>((resolve) => {
-      if (this.child.exitCode !== null || this.child.signalCode !== null) {
-        resolve();
-        return;
-      }
-      this.child.once("exit", () => resolve());
-      setTimeout(() => {
-        this.child.kill();
-        resolve();
-      }, 3_000).unref();
-    });
-    await rm(this.scriptDir, { recursive: true, force: true });
-  }
-
-  private readLine(timeoutMs: number): Promise<string> {
-    const queued = this.takeLine();
-    if (queued !== null) return Promise.resolve(queued);
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const index = this.waiters.indexOf(deliver);
-        if (index >= 0) this.waiters.splice(index, 1);
-        reject(new Error(`timed out waiting for job host\n${this.stderr}`));
-      }, timeoutMs);
-      const deliver = (line: string): void => {
-        clearTimeout(timer);
-        resolve(line);
-      };
-      this.waiters.push(deliver);
-      this.drain();
-    });
-  }
-
-  private drain(): void {
-    while (this.waiters.length > 0) {
-      const line = this.takeLine();
-      if (line === null) return;
-      const waiter = this.waiters.shift();
-      waiter?.(line);
-    }
-  }
-
-  private takeLine(): string | null {
-    while (true) {
-      const newline = this.buffered.indexOf("\n");
-      if (newline < 0) return null;
-      const line = this.buffered.slice(0, newline).trim();
-      this.buffered = this.buffered.slice(newline + 1);
-      if (line.length > 0) return line;
-    }
-  }
-}
-
-const JOB_HOST_SCRIPT = `
-$ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
-$code = @"
-using System;
-using System.Runtime.InteropServices;
-public class EfHarnessJob {
-  [DllImport("kernel32.dll", SetLastError=true)]
-  public static extern IntPtr CreateJobObject(IntPtr attr, string name);
-  [DllImport("kernel32.dll", SetLastError=true)]
-  public static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
-  [DllImport("kernel32.dll", SetLastError=true)]
-  public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-  [DllImport("kernel32.dll", SetLastError=true)]
-  public static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
-  [DllImport("kernel32.dll", SetLastError=true)]
-  public static extern bool CloseHandle(IntPtr handle);
-  [StructLayout(LayoutKind.Sequential)]
-  public struct Basic {
-    public long PerProcessUserTimeLimit;
-    public long PerJobUserTimeLimit;
-    public uint LimitFlags;
-    public UIntPtr MinimumWorkingSetSize;
-    public UIntPtr MaximumWorkingSetSize;
-    public uint ActiveProcessLimit;
-    public UIntPtr Affinity;
-    public uint PriorityClass;
-    public uint SchedulingClass;
-  }
-  [StructLayout(LayoutKind.Sequential)]
-  public struct IoCounters {
-    public ulong ReadOperationCount;
-    public ulong WriteOperationCount;
-    public ulong OtherOperationCount;
-    public ulong ReadTransferCount;
-    public ulong WriteTransferCount;
-    public ulong OtherTransferCount;
-  }
-  [StructLayout(LayoutKind.Sequential)]
-  public struct Extended {
-    public Basic BasicLimitInformation;
-    public IoCounters IoInfo;
-    public UIntPtr ProcessMemoryLimit;
-    public UIntPtr JobMemoryLimit;
-    public UIntPtr PeakProcessMemoryUsed;
-    public UIntPtr PeakJobMemoryUsed;
-  }
-  public static IntPtr Handle;
-  public static bool Open() {
-    Handle = CreateJobObject(IntPtr.Zero, null);
-    Extended info = new Extended();
-    info.BasicLimitInformation.LimitFlags = 0x2000;
-    int size = Marshal.SizeOf(typeof(Extended));
-    IntPtr ptr = Marshal.AllocHGlobal(size);
-    Marshal.StructureToPtr(info, ptr, false);
-    bool ok = SetInformationJobObject(Handle, 9, ptr, (uint)size);
-    Marshal.FreeHGlobal(ptr);
-    return Handle != IntPtr.Zero && ok;
-  }
-  public static bool Assign(int procId) {
-    IntPtr proc = OpenProcess(0x1F0FFF, false, procId);
-    if (proc == IntPtr.Zero) return false;
-    bool ok = AssignProcessToJobObject(Handle, proc);
-    CloseHandle(proc);
-    return ok;
-  }
-  public static void Release() {
-    if (Handle != IntPtr.Zero) {
-      CloseHandle(Handle);
-      Handle = IntPtr.Zero;
-    }
-  }
-}
-"@
-Add-Type -TypeDefinition $code | Out-Null
-if (-not [EfHarnessJob]::Open()) {
-  [Console]::Error.WriteLine("job-open-failed")
-  exit 1
-}
-[Console]::Out.WriteLine("ready")
-[Console]::Out.Flush()
-while ($true) {
-  $line = [Console]::In.ReadLine()
-  if ($null -eq $line -or $line -eq "close") { break }
-  if ($line.StartsWith("assign ")) {
-    $procId = 0
-    if (-not [int]::TryParse($line.Substring(7).Trim(), [ref]$procId)) {
-      [Console]::Out.WriteLine("error parse")
-      [Console]::Out.Flush()
-      continue
-    }
-    if ([EfHarnessJob]::Assign($procId)) {
-      [Console]::Out.WriteLine("assigned $procId")
-    } else {
-      [Console]::Out.WriteLine("error $procId")
-    }
-    [Console]::Out.Flush()
-  }
-}
-[EfHarnessJob]::Release()
-exit 0
-`;

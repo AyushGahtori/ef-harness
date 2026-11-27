@@ -1,6 +1,11 @@
-import { readFileSync } from "node:fs";
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
+import {
+  GlobalBrokerDb,
+  PortLeaseConflictError,
+  PortLeaseNotFoundError,
+  PortPoolExhaustedError,
+  ProjectAlreadyExistsError,
+  type LeasePortInput as BrokerLeaseInput,
+} from "@ef-harness/db";
 import {
   PORT_RANGE_MAX,
   PORT_RANGE_MIN,
@@ -9,130 +14,117 @@ import {
   type PortLeaseStore,
 } from "./types.js";
 
-export function openGlobalDatabase(file = ":memory:"): DatabaseSync {
-  const database = new DatabaseSync(file);
-  database.exec("PRAGMA foreign_keys = ON");
-  database.exec("PRAGMA busy_timeout = 5000");
-  database.exec(readFileSync(canonicalAssetAbsolute("globalSql"), "utf8"));
-  return database;
-}
-
 export function ensureBrokerProject(
-  database: DatabaseSync,
+  broker: GlobalBrokerDb,
   project: {
     readonly id: string;
     readonly path: string;
     readonly displayName: string;
+    readonly schemaVersion: number;
     readonly now: number;
   },
 ): void {
-  database
-    .prepare(
-      `INSERT INTO projects (id, path, display_name, schema_version, status, last_opened_at, last_seen_at)
-       VALUES (?, ?, ?, 1, 'ok', ?, ?)
-       ON CONFLICT(id) DO NOTHING`,
-    )
-    .run(project.id, project.path, project.displayName, project.now, project.now);
-}
-
-export class SqlitePortLeaseStore implements PortLeaseStore {
-  constructor(private readonly database: DatabaseSync) {}
-
-  leaseNext(input: LeasePortInput): number | null {
-    return withImmediate(this.database, () => {
-      const used = new Set(
-        this.database
-          .prepare("SELECT port FROM port_leases")
-          .all()
-          .map((row) => readNumber(row.port)),
-      );
-      const insert = this.database.prepare(
-        `INSERT INTO port_leases (port, project, environment, leased_at, expires_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      );
-      for (let port = PORT_RANGE_MIN; port <= PORT_RANGE_MAX; port += 1) {
-        if (used.has(port) || input.skip.has(port)) continue;
-        insert.run(port, input.projectId, input.environmentId, input.leasedAt, input.expiresAt);
-        return port;
-      }
-      return null;
-    });
-  }
-
-  release(port: number, environmentId: string): boolean {
-    const result = this.database
-      .prepare("DELETE FROM port_leases WHERE port = ? AND environment = ?")
-      .run(port, environmentId);
-    return Number(result.changes) > 0;
-  }
-
-  releaseEnvironment(environmentId: string): number[] {
-    return withImmediate(this.database, () => {
-      const ports = this.list()
-        .filter((row) => row.environment === environmentId)
-        .map((row) => row.port);
-      this.database.prepare("DELETE FROM port_leases WHERE environment = ?").run(environmentId);
-      return ports;
-    });
-  }
-
-  list(): PortLeaseRecord[] {
-    return this.database
-      .prepare(
-        `SELECT port, project, environment, leased_at, expires_at
-         FROM port_leases
-         ORDER BY port`,
-      )
-      .all()
-      .map(readLease);
-  }
-
-  releaseLeasesForDeadEnvironments(liveEnvironmentIds: ReadonlySet<string>): number[] {
-    return withImmediate(this.database, () => {
-      const released: number[] = [];
-      for (const row of this.list()) {
-        if (liveEnvironmentIds.has(row.environment)) continue;
-        if (this.release(row.port, row.environment)) released.push(row.port);
-      }
-      return released;
-    });
-  }
-}
-
-function readLease(row: Record<string, SQLOutputValue>): PortLeaseRecord {
-  return {
-    port: readNumber(row.port),
-    project: readString(row.project),
-    environment: readString(row.environment),
-    leasedAt: readNumber(row.leased_at),
-    expiresAt: readNullableNumber(row.expires_at),
-  };
-}
-
-function withImmediate<T>(database: DatabaseSync, run: () => T): T {
-  database.exec("BEGIN IMMEDIATE");
+  if (broker.getProject(project.id) !== null) return;
   try {
-    const value = run();
-    database.exec("COMMIT");
-    return value;
+    broker.registerProject({
+      id: project.id,
+      path: project.path,
+      displayName: project.displayName,
+      schemaVersion: project.schemaVersion,
+      lastOpenedAt: project.now,
+      lastSeenAt: project.now,
+    });
   } catch (error) {
-    database.exec("ROLLBACK");
+    if (error instanceof ProjectAlreadyExistsError) return;
     throw error;
   }
 }
 
-function readNumber(value: SQLOutputValue | undefined): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "bigint") return Number(value);
-  throw new Error("expected an integer column");
+export class SqlitePortLeaseStore implements PortLeaseStore {
+  constructor(private readonly broker: GlobalBrokerDb) {}
+
+  leaseNext(input: LeasePortInput): number | null {
+    const occupied = new Set(
+      this.broker
+        .listPortLeases()
+        .filter((lease) => lease.expiresAt === null || lease.expiresAt > input.leasedAt)
+        .map((lease) => lease.port),
+    );
+    for (let port = PORT_RANGE_MIN; port <= PORT_RANGE_MAX; port += 1) {
+      if (occupied.has(port) || input.skip.has(port)) continue;
+      try {
+        const lease = this.broker.leasePort(brokerLease(input, port));
+        return lease.port;
+      } catch (error) {
+        if (error instanceof PortLeaseConflictError) {
+          occupied.add(port);
+          continue;
+        }
+        if (error instanceof PortPoolExhaustedError) return null;
+        throw error;
+      }
+    }
+    return null;
+  }
+
+  release(port: number, environmentId: string): boolean {
+    const owned = this.broker
+      .listPortLeases()
+      .some((lease) => lease.port === port && lease.environment === environmentId);
+    if (!owned) return false;
+    try {
+      this.broker.releasePort(port);
+      return true;
+    } catch (error) {
+      if (error instanceof PortLeaseNotFoundError) return false;
+      throw error;
+    }
+  }
+
+  releaseEnvironment(environmentId: string): number[] {
+    const ports = this.list()
+      .filter((row) => row.environment === environmentId)
+      .map((row) => row.port);
+    for (const port of ports) {
+      try {
+        this.broker.releasePort(port);
+      } catch (error) {
+        if (error instanceof PortLeaseNotFoundError) continue;
+        throw error;
+      }
+    }
+    return ports;
+  }
+
+  list(): PortLeaseRecord[] {
+    return this.broker.listPortLeases().map((lease) => ({
+      port: lease.port,
+      project: lease.projectId,
+      environment: lease.environment,
+      leasedAt: lease.leasedAt,
+      expiresAt: lease.expiresAt,
+    }));
+  }
+
+  releaseLeasesForDeadEnvironments(liveEnvironmentIds: ReadonlySet<string>): number[] {
+    const released: number[] = [];
+    for (const row of this.list()) {
+      if (liveEnvironmentIds.has(row.environment)) continue;
+      if (this.release(row.port, row.environment)) released.push(row.port);
+    }
+    return released;
+  }
 }
 
-function readNullableNumber(value: SQLOutputValue | undefined): number | null {
-  if (value === null || value === undefined) return null;
-  return readNumber(value);
-}
-
-function readString(value: SQLOutputValue | undefined): string {
-  if (typeof value === "string") return value;
-  throw new Error("expected a text column");
+function brokerLease(input: LeasePortInput, port: number): BrokerLeaseInput {
+  const lease: BrokerLeaseInput = {
+    projectId: input.projectId,
+    environment: input.environmentId,
+    leasedAt: input.leasedAt,
+    port,
+  };
+  if (input.expiresAt !== null) {
+    return { ...lease, expiresAt: input.expiresAt };
+  }
+  return lease;
 }
