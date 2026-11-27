@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import {
   BINARY_CHUNK_BYTES,
   CURRENT_PROTOCOL,
@@ -20,7 +19,14 @@ import {
   SNAPSHOT_SECTION_MAX_BYTES,
   SUPPORTED_PROTOCOLS,
 } from "./constants.js";
-import { checkpointTruncate, openHarnessDatabases, type ReaderPool, type WalCheckpoint } from "./databases.js";
+import {
+  checkpointTruncate,
+  openHarnessDatabases,
+  type OpenDatabases,
+  type SqlDb,
+  type WalCheckpoint,
+} from "./databases.js";
+import { daemonLockHeld, writeDaemonLock } from "./process-lock.js";
 import { FrameCodec } from "./frame-codec.js";
 import { PipeInUseError } from "./errors.js";
 import {
@@ -93,9 +99,7 @@ const DEFERRED = Symbol("deferred");
 export class HarnessDaemon {
   private readonly task: SimulatedTask;
   private server: net.Server | null = null;
-  private globalDb: DatabaseSync | null = null;
-  private stateDb: DatabaseSync | null = null;
-  private readers: ReaderPool | null = null;
+  private bundle: OpenDatabases | null = null;
   private token = "";
   private epoch = 1;
   private rev = 1;
@@ -117,10 +121,8 @@ export class HarnessDaemon {
       stateDatabasePath(this.opts.profileDir),
       this.opts.daemonVersion,
     );
-    this.globalDb = opened.globalDb;
-    this.stateDb = opened.stateDb;
-    this.readers = opened.readers;
-    this.globalDb
+    this.bundle = opened;
+    opened.globalDb
       .prepare(
         "INSERT INTO meta(key, value) VALUES ('owner_pid', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       )
@@ -156,24 +158,21 @@ export class HarnessDaemon {
       this.insertEvent("task.parked");
     }
     for (const conn of [...this.clients]) this.drop(conn);
-    const readersClosed = this.readers ? this.readers.closeAll() : 0;
-    this.readers = null;
-    const globalDb = this.globalDb;
-    const stateDb = this.stateDb;
+    const bundle = this.bundle;
+    if (bundle) await bundle.queue.drainAndClose();
+    const readersClosed = bundle ? bundle.readers.closeAll() : 0;
     const wal = {
-      global: globalDb ? checkpointTruncate(globalDb) : { busy: -1, log: -1, checkpointed: -1 },
-      state: stateDb ? checkpointTruncate(stateDb) : { busy: -1, log: -1, checkpointed: -1 },
+      global: bundle ? checkpointTruncate(bundle.globalWriter) : { busy: -1, log: -1, checkpointed: -1 },
+      state: bundle ? checkpointTruncate(bundle.stateWriter) : { busy: -1, log: -1, checkpointed: -1 },
     };
     const closed: string[] = [];
-    if (globalDb) {
-      globalDb.close();
-      this.globalDb = null;
+    if (bundle) {
+      bundle.broker.close();
       closed.push("global.db");
-    }
-    if (stateDb) {
-      stateDb.close();
-      this.stateDb = null;
+      bundle.project.close();
       closed.push("state.db");
+      bundle.telemetry.close();
+      this.bundle = null;
     }
     const receipt: ShutdownReceipt = { reason, wal, readersClosed, parked, closed };
     fs.mkdirSync(this.opts.profileDir, { recursive: true });
@@ -193,20 +192,24 @@ export class HarnessDaemon {
 
   private acquireLock(): void {
     const file = lockFilePath(this.opts.profileDir);
-    if (fs.existsSync(file)) {
-      const pid = Number(fs.readFileSync(file, "utf8").trim());
-      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid)) {
-        throw new PipeInUseError(this.opts.pipePath);
-      }
-      fs.rmSync(file, { force: true });
-    }
-    fs.writeFileSync(file, String(process.pid));
+    if (daemonLockHeld(file)) throw new PipeInUseError(this.opts.pipePath);
+    if (fs.existsSync(file)) fs.rmSync(file, { force: true });
+    writeDaemonLock(file);
   }
 
   private async listenWithRetry(): Promise<void> {
     const server = this.server;
     if (!server) throw new Error("server was not created");
     for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (process.platform !== "win32") {
+        try {
+          await clearStalePipe(this.opts.pipePath);
+        } catch (error) {
+          if (!(error instanceof PipeInUseError) || attempt === 59) throw error;
+          await delay(250);
+          continue;
+        }
+      }
       try {
         await new Promise<void>((resolve, reject) => {
           const onError = (error: Error) => {
@@ -488,8 +491,8 @@ export class HarnessDaemon {
   }
 
   private credit(conn: Conn, params: Record<string, unknown>): unknown {
-    const streamId = typeof params.streamId === "number" ? params.streamId : -1;
-    const chunks = typeof params.chunks === "number" ? params.chunks : 0;
+    const streamId = numericParam(params, "streamId", "stream_id");
+    const chunks = numericParam(params, "chunks", "credits");
     if (!Number.isInteger(chunks) || chunks < 1 || chunks > MAX_CREDIT_GRANT) {
       throw new RpcError(RPC_INVALID_REQUEST, "invalid credit grant");
     }
@@ -531,23 +534,30 @@ export class HarnessDaemon {
   }
 
   private insertEvent(type: string): StoredEvent {
-    const db = this.requireState();
+    const bundle = this.requireBundle();
     const view = this.task.view(this.windowCount());
-    db.prepare(
-      "INSERT INTO meta(key, value) VALUES ('m1_view', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    ).run(JSON.stringify(view));
     const id = crypto.randomUUID();
-    db.prepare("INSERT INTO outbox(id, type, subject, rev, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(
-      id,
-      type,
-      view.taskId,
-      this.rev,
-      JSON.stringify(view),
-      Date.now(),
-    );
+    const rev = this.rev;
+    const createdAt = Date.now();
+    const receipt = bundle.queue.submitOperationSync<{ seq: number; id: string; type: string }>({
+      opId: `outbox-${id}`,
+      kind: "append_outbox",
+      request: { id, type, rev },
+      execute: () => {
+        bundle.stateDb
+          .prepare(
+            "INSERT INTO meta(key, value) VALUES ('m1_view', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+          )
+          .run(JSON.stringify(view));
+        const appended = bundle.outbox.appendEvent(
+          { id, type, subject: view.taskId, rev, payload: view, createdAt },
+          ["ui_projection"],
+        );
+        return { seq: Number(appended.seq), id: appended.id, type: appended.type };
+      },
+    });
     this.rev += 1;
-    const row = db.prepare("SELECT seq FROM outbox WHERE id = ?").get(id) as { seq?: number } | undefined;
-    return { seq: Number(row?.seq ?? 0), id, type, payload: view };
+    return { seq: receipt.result.seq, id: receipt.result.id, type: receipt.result.type, payload: view };
   }
 
   private eventsAfter(since: number): StoredEvent[] {
@@ -686,14 +696,18 @@ export class HarnessDaemon {
       daemonVersion: this.opts.daemonVersion,
       profile: this.opts.profileDir,
       electronRunAsNode: process.env.ELECTRON_RUN_AS_NODE === "1",
-      readers: this.readers?.size ?? 0,
+      readers: this.bundle?.readers.size ?? 0,
     };
     fs.writeFileSync(readyFilePath(this.opts.profileDir), JSON.stringify(body));
   }
 
-  private requireState(): DatabaseSync {
-    if (!this.stateDb) throw new RpcError(RPC_INTERNAL_ERROR, "state database is closed");
-    return this.stateDb;
+  private requireState(): SqlDb {
+    return this.requireBundle().stateDb;
+  }
+
+  private requireBundle(): OpenDatabases {
+    if (!this.bundle) throw new RpcError(RPC_INTERNAL_ERROR, "state database is closed");
+    return this.bundle;
   }
 
   private drop(conn: Conn): void {
@@ -742,13 +756,38 @@ function errorCode(error: unknown): string {
   return "";
 }
 
-function alive(pid: number): boolean {
+async function clearStalePipe(pipePath: string): Promise<void> {
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return errorCode(error) === "EPERM";
+    await fs.promises.stat(pipePath);
+  } catch {
+    return;
   }
+  if (await pipeAcceptsConnections(pipePath)) throw new PipeInUseError(pipePath);
+  await fs.promises.unlink(pipePath);
+}
+
+function pipeAcceptsConnections(pipePath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect(pipePath);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 200);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
+}
+
+function numericParam(params: Record<string, unknown>, primary: string, alias: string): number {
+  const value = params[primary] ?? params[alias];
+  return typeof value === "number" ? value : -1;
 }
 
 function delay(ms: number): Promise<void> {

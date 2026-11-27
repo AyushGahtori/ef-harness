@@ -143,6 +143,12 @@ importers:
 
   apps/daemon:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@ef-harness/ipc':
+        specifier: workspace:*
+        version: link:../../packages/ipc
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
@@ -888,9 +894,39 @@ importers:
 
   tests/e2e:
     dependencies:
+      '@ef-harness/completeness-gate':
+        specifier: workspace:*
+        version: link:../../packages/completeness-gate
+      '@ef-harness/daemon':
+        specifier: workspace:*
+        version: link:../../apps/daemon
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../../packages/git-engine
+      '@ef-harness/ipc':
+        specifier: workspace:*
+        version: link:../../packages/ipc
+      '@ef-harness/mcp-server':
+        specifier: workspace:*
+        version: link:../../packages/mcp-server
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
+      '@ef-harness/test-env':
+        specifier: workspace:*
+        version: link:../../packages/test-env
+      '@ef-harness/verifier':
+        specifier: workspace:*
+        version: link:../../packages/verifier
+      '@ef-harness/worker-loop':
+        specifier: workspace:*
+        version: link:../../packages/worker-loop
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

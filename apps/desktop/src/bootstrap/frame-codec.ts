@@ -29,6 +29,19 @@ export class FrameCodec {
     return out;
   }
 
+  static encodeBinary(streamId: number, payload: Uint8Array): Buffer {
+    if (!Number.isInteger(streamId) || streamId < 0 || streamId > 0xffff_ffff) {
+      throw new RangeError("stream id must be a uint32");
+    }
+    if (payload.byteLength > BINARY_CHUNK_BYTES) throw new FrameTooLargeError(payload.byteLength, BINARY_CHUNK_BYTES);
+    const out = Buffer.allocUnsafe(9 + payload.byteLength);
+    out.writeUInt32BE(payload.byteLength, 0);
+    out.writeUInt8(BINARY_STREAM_CHANNEL, 4);
+    out.writeUInt32BE(streamId, 5);
+    out.set(payload, 9);
+    return out;
+  }
+
   push(chunk: Uint8Array): DecodedFrame[] {
     let incoming = Buffer.from(chunk);
     if (this.pending.length < 4) {

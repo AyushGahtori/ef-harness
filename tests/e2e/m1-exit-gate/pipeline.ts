@@ -5,8 +5,14 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import {
+  appendTaskAccepted,
+  exerciseRealM1,
+  openKitchenGlobal,
+  openKitchenState,
+  type KitchenSql,
+} from "./real-stack.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -83,7 +89,7 @@ export interface AuditResult {
   finding: string;
 }
 
-type Sql = DatabaseSync;
+type Sql = KitchenSql;
 
 const GIT_CONFIG = ["-c", "core.autocrlf=false", "-c", "core.safecrlf=false", "-c", "commit.gpgsign=false"];
 
@@ -175,25 +181,12 @@ function loadQueries(root: string): Record<string, string> {
   return queries;
 }
 
-function openState(root: string, file: string): Sql {
-  const db = new DatabaseSync(file);
-  db.exec("PRAGMA foreign_keys = ON");
-  db.function("ef_search_text", { deterministic: true }, (value: string | null) => {
-    if (!value) return "";
-    const extra = String(value).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-    return `${value} ${extra}`;
-  });
-  db.exec(fs.readFileSync(path.join(root, "schema", "state.sql"), "utf8"));
-  return db;
+function openState(_root: string, file: string): Sql {
+  return openKitchenState(file);
 }
 
-function openGlobal(root: string, file: string, projectPath: string): Sql {
-  const db = new DatabaseSync(file);
-  db.exec(fs.readFileSync(path.join(root, "schema", "global.sql"), "utf8"));
-  db.prepare(
-    "INSERT INTO projects (id, path, display_name, schema_version, status, last_opened_at) VALUES (?, ?, ?, 1, 'ok', ?)",
-  ).run("P-kitchen", projectPath, "Kitchen Lunch", 1_767_225_600_000);
-  return db;
+function openGlobal(_root: string, file: string, projectPath: string): Sql {
+  return openKitchenGlobal(file, projectPath);
 }
 
 function failureType(observation: Observation, expected: unknown): string {
@@ -670,6 +663,7 @@ export async function runAcceptedSuite(root: string, temp: string): Promise<Suit
   const global = openGlobal(root, path.join(temp, "global.db"), temp);
   const queries = loadQueries(root);
   const { repo } = createKitchen(root, temp);
+  await exerciseRealM1(temp, state);
   const slots = new WorktreeSlotManager(repo);
   const envs = new TestEnvOrchestrator(global, state);
   const adapter = new FakeModelAdapter(HERE);
@@ -783,11 +777,7 @@ export async function runAcceptedSuite(root: string, temp: string): Promise<Suit
           "INSERT INTO candidates (id, task, attempt, epoch, commit_sha, payload, received_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         ).run(`C-${task}`, task, lease.attempt, lease.epoch, sha, JSON.stringify({ schema: "candidate@1", task }), 1_767_225_700_000);
         state.prepare(queries.finish_submission ?? "").run({ task, epoch: lease.epoch, rev, next_state: "ACCEPTED" });
-        const eventId = `EV-${task}`;
-        state.prepare(
-          "INSERT INTO outbox (id, type, subject, rev, payload, created_at) VALUES (?, 'TaskAccepted', ?, ?, ?, ?)",
-        ).run(eventId, task, rev, JSON.stringify({ schema: "event@1", type: "TaskAccepted", subject: task }), 1_767_225_700_000);
-        state.prepare("INSERT INTO outbox_deliveries (event_id, consumer, delivered_at) VALUES (?, 'ui_projection', ?)").run(eventId, 1_767_225_700_000);
+        appendTaskAccepted(state, task, rev);
         slots.release(slotPath);
         commit = squash(repo, branch, message, when);
         accepted = true;
@@ -1050,7 +1040,7 @@ export function proveDeterministic(root: string, temp: string): { identical: boo
   return { identical: left === right, left, right };
 }
 
-export function proveTask19(root: string, temp: string): { ladderStep: number; attempts: number; escalated: boolean; hint: string } {
+export async function proveTask19(root: string, temp: string): Promise<{ ladderStep: number; attempts: number; escalated: boolean; hint: string }> {
   const db = openState(root, path.join(temp, "task19-state.db"));
   const queries = loadQueries(root);
   const brief = loadBrief(root, "K19");
@@ -1080,7 +1070,7 @@ export function proveTask19(root: string, temp: string): { ladderStep: number; a
   db.prepare(queries.accept_submission ?? "").run({ task: "K19", attempt: lease.attempt, epoch: lease.epoch, rev: 19 });
   db.prepare(queries.finish_submission ?? "").run({ task: "K19", epoch: lease.epoch, rev: 19, next_state: "ESCALATED" });
   const state = db.prepare("SELECT state FROM task_runtime WHERE task = 'K19'").get() as unknown as { state: string };
-  db.close();
+  await db.close();
   return { ladderStep, attempts: 2, escalated: state.state === "ESCALATED" && ladderStep === 3, hint };
 }
 
@@ -1181,7 +1171,7 @@ export async function runM1ExitGate(): Promise<ExitGateResult> {
     const tierC = runRedTeam(temp, "C");
     const alreadyGreen = proveAlreadyGreen(root, temp);
     const deterministic = proveDeterministic(root, temp);
-    const task19 = proveTask19(root, temp);
+    const task19 = await proveTask19(root, temp);
     const counts = hygiene(suite.state, suite.global);
     const secretLeaks = scanArtifacts(suite.repo, suite.casDir, JSON.stringify(suite.tasks.map((task) => ({
       prompt: task.prompt,
@@ -1192,8 +1182,8 @@ export async function runM1ExitGate(): Promise<ExitGateResult> {
     const first = suite.tasks.find((task) => task.task === "K01");
     if (!first) throw new Error("missing K01");
     const viewer = await openElectronViewer(renderViewerHtml(first.viewer), temp);
-    suite.state.close();
-    suite.global.close();
+    await suite.state.close();
+    await suite.global.close();
     const processes = suite.envs.pids.filter((pid) => alive(pid)).length;
     fs.rmSync(temp, { recursive: true, force: true });
     const tokensIn = suite.tasks.reduce((sum, task) => sum + task.tokensIn, 0);
@@ -1265,7 +1255,7 @@ This report keeps the deterministic CI run on \`FakeModelAdapter\` separate from
 ## OS sandbox
 
 - Kernel policy blocks: ${result.redTeam.blocked}/7
-- OS sign-off: withheld. The sandbox package is not on this base, so this run does not claim OS enforcement.
+- OS sign-off: withheld. Tier C stays advisory on this host, so this run does not claim OS enforcement.
 - Tier C: ${result.tierC.caveat || "not selected"}
 - Tier C reported as OS-enforced: ${result.tierC.osEnforced ? "yes" : "no"}
 `;

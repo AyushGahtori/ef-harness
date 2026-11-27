@@ -118,6 +118,7 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
   let crashes = 0;
   let recovering = false;
   let windowsReady = false;
+  let windowSeq = 0;
   let openWindow: () => Promise<BrowserWindowLike> = () => Promise.reject(new Error("window is not ready"));
   host.app.on("second-instance", () => {
     focusCount += 1;
@@ -190,7 +191,9 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
     });
     created.webContents.on("did-finish-load", () => {
       const channel = new host.MessageChannelMain();
-      utility?.postMessage({ type: "renderer-port" }, [channel.port1]);
+      windowSeq += 1;
+      const windowId = `window-${windowSeq}`;
+      utility?.postMessage({ type: "renderer-port", windowId }, [channel.port1]);
       created.webContents.postMessage(M1_PRELOAD_CONTRACT.channel, null, [channel.port2]);
     });
     await created.loadURL("ef-m1://viewer/index.html");

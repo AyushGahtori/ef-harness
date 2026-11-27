@@ -5,7 +5,8 @@ import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildDetachedHarnessdSpawn } from "../../src/bootstrap/spawn.js";
 import { FrameCodec } from "../../src/bootstrap/frame-codec.js";
-import { profileFromLocalAppData, userPipePath } from "../../src/bootstrap/paths.js";
+import { lockFilePath, profileFromLocalAppData, userPipePath } from "../../src/bootstrap/paths.js";
+import { readProcessStartTime } from "../../src/bootstrap/process-lock.js";
 import { PipeClient, repoRoot, startDaemon, tempProfile, uniquePipe, waitForExit } from "./support.js";
 
 describe("bootstrap harnessd", () => {
@@ -337,6 +338,29 @@ describe("bootstrap harnessd", () => {
       await daemon.stop();
     }
   }, 20_000);
+
+  it("replaces a reused pid lock and refuses a live process with the same start time", async () => {
+    const staleProfile = tempProfile("lock-stale");
+    fs.writeFileSync(
+      lockFilePath(staleProfile),
+      JSON.stringify({ pid: 2_147_483_647, processStartTime: "1" }),
+    );
+    const stale = await startDaemon({
+      profile: staleProfile,
+      pipe: uniquePipe("lock-stale"),
+      simTask: false,
+      idleMs: 30_000,
+    });
+    await stale.stop();
+
+    const heldProfile = tempProfile("lock-held");
+    const start = readProcessStartTime(process.pid);
+    expect(start).not.toBeNull();
+    fs.writeFileSync(lockFilePath(heldProfile), JSON.stringify({ pid: process.pid, processStartTime: start }));
+    await expect(
+      startDaemon({ profile: heldProfile, pipe: uniquePipe("lock-held"), simTask: false, idleMs: 30_000 }),
+    ).rejects.toThrow(/already in use/);
+  }, 30_000);
 
   it("keeps the M1 viewer on escaped text, strict CSP, and Electron isolation defaults", () => {
     const root = repoRoot();

@@ -32,6 +32,6 @@ This report keeps the deterministic CI run on `FakeModelAdapter` separate from l
 ## OS sandbox
 
 - Kernel policy blocks: 7/7
-- OS sign-off: withheld. The sandbox package is not on this base, so this run does not claim OS enforcement.
+- OS sign-off: withheld. Tier C stays advisory on this host, so this run does not claim OS enforcement.
 - Tier C: Tier C advisory: network and profile-read probes are not OS-enforced on this machine. Full red-team sign-off requires Tier A, B, or D.
 - Tier C reported as OS-enforced: no

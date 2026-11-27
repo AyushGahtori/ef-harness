@@ -1,50 +1,193 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { FrameCodec } from "./frame-codec.js";
+import { FrameCodec, type DecodedFrame } from "./frame-codec.js";
 
-interface PortLike {
+export interface PortLike {
   start(): void;
   postMessage(message: unknown, transfer?: readonly unknown[]): void;
   on(event: "message", listener: (event: { data?: unknown }) => void): void;
 }
 
-interface ParentLike {
+export interface ParentLike {
   on(event: "message", listener: (event: { data?: unknown; ports?: PortLike[] }) => void): void;
   postMessage(message: unknown): void;
 }
 
-let renderer: PortLike | null = null;
-let socket: net.Socket | null = null;
-let authed = false;
-let connecting = false;
-let stopped = false;
-const codec = new FrameCodec();
-
-function parentPort(): ParentLike {
-  const candidate = (process as unknown as { parentPort?: ParentLike }).parentPort;
-  if (!candidate) throw new Error("pipe client must run inside an Electron utility process");
-  return candidate;
+export interface PipeClientOptions {
+  readonly profileDir: string;
+  readonly pipePath: string;
+  readonly parent?: ParentLike;
 }
 
-function log(message: string): void {
-  const profile = process.env.EF_HARNESS_PROFILE;
-  if (!profile) return;
+/**
+ * One utility-process pipe session fans out to every attached window.
+ * Partial frames stay in the rolling codec; a coalesced `session.hello`
+ * does not drop or duplicate the frames that follow it.
+ */
+export class PipeClientBridge {
+  private readonly windows = new Map<string, PortLike>();
+  private socket: net.Socket | null = null;
+  private authed = false;
+  private connecting = false;
+  private stopped = false;
+  private readonly codec = new FrameCodec();
+
+  constructor(private readonly options: PipeClientOptions) {}
+
+  attachParent(parent: ParentLike = this.requireParent()): void {
+    parent.on("message", (event) => {
+      this.onParentMessage(event);
+    });
+  }
+
+  onParentMessage(event: { data?: unknown; ports?: PortLike[] }): void {
+    const data = event.data;
+    const port = event.ports?.[0];
+    if (isRecord(data) && data.type === "renderer-port" && port) {
+      const windowId = typeof data.windowId === "string" && data.windowId.length > 0 ? data.windowId : nextWindowId(this.windows.size);
+      this.bindWindow(windowId, port);
+    }
+    if (isRecord(data) && data.type === "stop") this.stop();
+  }
+
+  bindWindow(windowId: string, port: PortLike): void {
+    this.windows.set(windowId, port);
+    port.start();
+    port.on("message", (event) => {
+      const payload = extractBytes(event);
+      if (!payload) {
+        log(this.options.profileDir, `renderer message dropped ${peek(event.data)} / ${peek(event)}`);
+        return;
+      }
+      if (!this.socket) {
+        log(this.options.profileDir, "renderer message before the pipe socket was open");
+        return;
+      }
+      const bytes = Buffer.from(payload);
+      if (bytes.byteLength > 0) this.socket.write(bytes);
+    });
+    if (this.authed) {
+      port.postMessage({ type: "status", status: "connected" });
+      return;
+    }
+    this.connect();
+  }
+
+  connect(): void {
+    if (this.stopped || this.connecting) return;
+    this.connecting = true;
+    this.codec.takePending();
+    const current = this.socket;
+    this.socket = null;
+    if (current) current.destroy();
+    const file = path.join(this.options.profileDir, "session.token");
+    if (!fs.existsSync(file)) {
+      this.connecting = false;
+      this.retry();
+      return;
+    }
+    const token = fs.readFileSync(file, "utf8").trim();
+    const next = net.connect(this.options.pipePath);
+    this.socket = next;
+    next.on("error", () => {
+      log(this.options.profileDir, "pipe error");
+    });
+    next.on("connect", () => {
+      const hello = {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session.hello",
+        params: { token, protocol: "1.1", client: { name: "m1-utility", version: "0.0.0" } },
+      };
+      next.write(FrameCodec.encodeJson(Buffer.from(JSON.stringify(hello))));
+    });
+    next.on("data", (chunk: Buffer) => {
+      this.onData(next, chunk);
+    });
+    next.on("close", () => {
+      const wasAuthed = this.authed;
+      this.authed = false;
+      this.connecting = false;
+      if (this.socket === next) this.socket = null;
+      if (this.stopped) return;
+      this.postStatus("reconnecting");
+      if (wasAuthed) this.options.parent?.postMessage({ type: "daemon-down" });
+      this.retry();
+    });
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.socket?.destroy();
+  }
+
+  private onData(next: net.Socket, chunk: Buffer): void {
+    let frames: DecodedFrame[];
+    try {
+      frames = this.codec.push(chunk);
+    } catch (error) {
+      log(this.options.profileDir, error instanceof Error ? error.message : "frame error");
+      next.destroy();
+      return;
+    }
+    for (const frame of frames) {
+      if (!this.authed) {
+        if (frame.channel !== 0) continue;
+        const message = parseJson(frame.payload);
+        if (message?.id === 1 && message.result) {
+          this.authed = true;
+          this.connecting = false;
+          this.postStatus("connected");
+        }
+        continue;
+      }
+      const bytes =
+        frame.channel === 0
+          ? FrameCodec.encodeJson(frame.payload)
+          : FrameCodec.encodeBinary(frame.streamId ?? 0, frame.payload);
+      this.forward(bytes);
+    }
+  }
+
+  private postStatus(status: "connected" | "reconnecting"): void {
+    for (const port of this.windows.values()) {
+      port.postMessage({ type: "status", status });
+    }
+  }
+
+  private forward(bytes: Uint8Array): void {
+    const payload = Buffer.from(bytes).toString("base64");
+    for (const port of this.windows.values()) {
+      port.postMessage({ type: "bytes", encoding: "base64", payload });
+    }
+  }
+
+  private retry(): void {
+    if (this.stopped) return;
+    setTimeout(() => this.connect(), 200);
+  }
+
+  private requireParent(): ParentLike {
+    if (this.options.parent) return this.options.parent;
+    const candidate = (process as unknown as { parentPort?: ParentLike }).parentPort;
+    if (!candidate) throw new Error("pipe client must run inside an Electron utility process");
+    return candidate;
+  }
+}
+
+function nextWindowId(size: number): string {
+  return `window-${size + 1}`;
+}
+
+function isRecord(value: unknown): value is { type?: string; windowId?: unknown } {
+  return Boolean(value) && typeof value === "object";
+}
+
+function log(profile: string, message: string): void {
   const file = path.join(profile, "logs", "pipe-client.log");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, `${Date.now()} ${message}\n`);
-}
-
-function tokenFile(): string {
-  const profile = process.env.EF_HARNESS_PROFILE;
-  if (!profile) throw new Error("EF_HARNESS_PROFILE is required");
-  return path.join(profile, "session.token");
-}
-
-function pipePath(): string {
-  const pipe = process.env.EF_HARNESS_PIPE;
-  if (!pipe) throw new Error("EF_HARNESS_PIPE is required");
-  return pipe;
 }
 
 function messageBody(event: { data?: unknown }): { type: string; payload?: Uint8Array } | null {
@@ -70,108 +213,6 @@ function toBytes(value: unknown): Uint8Array | null {
   return null;
 }
 
-function bindRenderer(port: PortLike): void {
-  renderer = port;
-  port.start();
-  port.on("message", (event) => {
-    const payload = extractBytes(event);
-    if (!payload) {
-      log(`renderer message dropped ${peek(event.data)} / ${peek(event)}`);
-      return;
-    }
-    if (!socket) {
-      log("renderer message before the pipe socket was open");
-      return;
-    }
-    const bytes = Buffer.from(payload);
-    if (bytes.byteLength > 0) socket.write(bytes);
-  });
-  if (authed) {
-    port.postMessage({ type: "status", status: "connected" });
-    return;
-  }
-  connect();
-}
-
-function connect(): void {
-  if (stopped || connecting) return;
-  connecting = true;
-  codec.takePending();
-  const current = socket;
-  socket = null;
-  if (current) current.destroy();
-  let file = "";
-  try {
-    file = tokenFile();
-    if (!fs.existsSync(file)) {
-      connecting = false;
-      retry();
-      return;
-    }
-  } catch {
-    connecting = false;
-    retry();
-    return;
-  }
-  const token = fs.readFileSync(file, "utf8").trim();
-  const next = net.connect(pipePath());
-  socket = next;
-  const localCodec = codec;
-  next.on("error", () => {
-    log("pipe error");
-  });
-  next.on("connect", () => {
-    const hello = {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "session.hello",
-      params: { token, protocol: "1.1", client: { name: "m1-utility", version: "0.0.0" } },
-    };
-    next.write(FrameCodec.encodeJson(Buffer.from(JSON.stringify(hello))));
-  });
-  next.on("data", (chunk: Buffer) => {
-    if (!authed) {
-      let frames;
-      try {
-        frames = localCodec.push(chunk);
-      } catch (error) {
-        log(error instanceof Error ? error.message : "frame error");
-        next.destroy();
-        return;
-      }
-      for (const frame of frames) {
-        if (frame.channel !== 0) continue;
-        const message = parseJson(frame.payload);
-        if (message?.id === 1 && message.result) {
-          authed = true;
-          connecting = false;
-          renderer?.postMessage({ type: "status", status: "connected" });
-          const pending = localCodec.takePending();
-          if (pending.byteLength > 0) forward(pending);
-        }
-      }
-      if (authed) {
-        for (const frame of frames) {
-          if (frame.channel === 0 && parseJson(frame.payload)?.id === 1) continue;
-          forward(frame.channel === 0 ? FrameCodec.encodeJson(frame.payload) : chunk);
-        }
-      }
-      return;
-    }
-    forward(chunk);
-  });
-  next.on("close", () => {
-    const wasAuthed = authed;
-    authed = false;
-    connecting = false;
-    if (socket === next) socket = null;
-    if (stopped) return;
-    renderer?.postMessage({ type: "status", status: "reconnecting" });
-    if (wasAuthed) parentPort().postMessage({ type: "daemon-down" });
-    retry();
-  });
-}
-
 function extractBytes(event: { data?: unknown }): Uint8Array | null {
   const data = event.data;
   if (typeof data === "string" && data.startsWith("bytes:")) {
@@ -194,21 +235,14 @@ function peek(value: unknown): string {
   const named = value.constructor?.name ?? "object";
   let keys = "";
   try {
-    keys = Object.keys(value as object).slice(0, 8).join(",");
+    keys = Object.keys(value as object)
+      .slice(0, 8)
+      .join(",");
   } catch {
     keys = "unreadable";
   }
   const size = "byteLength" in value ? String((value as { byteLength?: number }).byteLength ?? "") : "";
   return size.length > 0 ? `${named}{${keys}}:${size}` : `${named}{${keys}}`;
-}
-
-function forward(bytes: Uint8Array): void {
-  renderer?.postMessage({ type: "bytes", encoding: "base64", payload: Buffer.from(bytes).toString("base64") });
-}
-
-function retry(): void {
-  if (stopped) return;
-  setTimeout(() => connect(), 200);
 }
 
 function parseJson(payload: Uint8Array): { id?: unknown; result?: unknown } | null {
@@ -221,16 +255,17 @@ function parseJson(payload: Uint8Array): { id?: unknown; result?: unknown } | nu
   }
 }
 
-const parent = parentPort();
-parent.on("message", (event) => {
-  const data = event.data;
-  const port = event.ports?.[0];
-  if (data && typeof data === "object" && (data as { type?: string }).type === "renderer-port" && port) {
-    bindRenderer(port);
-  }
-  if (data && typeof data === "object" && (data as { type?: string }).type === "stop") {
-    stopped = true;
-    socket?.destroy();
-  }
-});
-log("pipe client started");
+function utilityParent(): ParentLike | null {
+  return (process as unknown as { parentPort?: ParentLike }).parentPort ?? null;
+}
+
+const utility = utilityParent();
+if (utility) {
+  const profile = process.env.EF_HARNESS_PROFILE;
+  const pipe = process.env.EF_HARNESS_PIPE;
+  if (!profile) throw new Error("EF_HARNESS_PROFILE is required");
+  if (!pipe) throw new Error("EF_HARNESS_PIPE is required");
+  const bridge = new PipeClientBridge({ profileDir: profile, pipePath: pipe, parent: utility });
+  bridge.attachParent(utility);
+  log(profile, "pipe client started");
+}

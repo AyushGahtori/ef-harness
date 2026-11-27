@@ -1,7 +1,18 @@
-import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
+import {
+  bindCoordinatorWriteQueue,
+  bindOutbox,
+  ensureHarnessDataLayout,
+  GlobalBrokerDb,
+  openDatabase,
+  openProjectStateDb,
+  TelemetryDb,
+  type CoordinatorWriteQueue,
+  type OutboxRepo,
+  type ProjectStateDb,
+  type SqliteConnection,
+  type SqlValue,
+} from "@ef-harness/db";
 
 export interface WalCheckpoint {
   readonly busy: number;
@@ -9,75 +20,86 @@ export interface WalCheckpoint {
   readonly checkpointed: number;
 }
 
-export class ReaderPool {
-  private readonly readers: DatabaseSync[] = [];
+export interface SqlStatement {
+  run(...params: readonly unknown[]): void;
+  get(...params: readonly unknown[]): unknown;
+  all(...params: readonly unknown[]): unknown[];
+}
 
-  open(file: string): DatabaseSync {
-    const db = new DatabaseSync(file, { readOnly: true });
-    this.readers.push(db);
-    return db;
-  }
+export interface SqlDb {
+  prepare(sql: string): SqlStatement;
+  exec(sql: string): void;
+}
 
-  closeAll(): number {
-    const count = this.readers.length;
-    while (this.readers.length > 0) {
-      const db = this.readers.pop();
-      if (db) db.close();
-    }
-    return count;
-  }
-
-  get size(): number {
-    return this.readers.length;
-  }
+export interface ReaderSet {
+  closeAll(): number;
+  readonly size: number;
 }
 
 export interface OpenDatabases {
-  readonly globalDb: DatabaseSync;
-  readonly stateDb: DatabaseSync;
-  readonly readers: ReaderPool;
+  readonly globalDb: SqlDb;
+  readonly stateDb: SqlDb;
+  readonly readers: ReaderSet;
   readonly globalPath: string;
   readonly statePath: string;
+  readonly queue: CoordinatorWriteQueue;
+  readonly outbox: OutboxRepo;
+  readonly project: ProjectStateDb;
+  readonly broker: GlobalBrokerDb;
+  readonly telemetry: TelemetryDb;
+  readonly globalWriter: SqliteConnection;
+  readonly stateWriter: SqliteConnection;
 }
+
+const silentLogger = {
+  info(): void {},
+  warn(): void {},
+  error(): void {},
+};
 
 export function openHarnessDatabases(globalPath: string, statePath: string, appVersion: string): OpenDatabases {
-  fs.mkdirSync(path.dirname(globalPath), { recursive: true });
-  fs.mkdirSync(path.dirname(statePath), { recursive: true });
-  const globalDb = openWriter(globalPath, canonicalAssetAbsolute("globalSql"), appVersion);
-  const stateDb = openWriter(statePath, canonicalAssetAbsolute("stateSql"), appVersion, true);
-  const readers = new ReaderPool();
-  readers.open(globalPath);
-  readers.open(statePath);
-  return { globalDb, stateDb, readers, globalPath, statePath };
+  const profile = path.dirname(globalPath);
+  const layout = ensureHarnessDataLayout({ root: profile });
+  const broker = GlobalBrokerDb.open({ root: profile });
+  const project = openProjectStateDb({
+    projectId: "m1",
+    rootDir: profile,
+    appVersion,
+    logger: silentLogger,
+  });
+  const telemetry = TelemetryDb.open({ filePath: layout.projectTelemetryPath("m1") });
+  if (path.resolve(project.databasePath) !== path.resolve(statePath)) {
+    project.close();
+    broker.close();
+    telemetry.close();
+    throw new Error(`state.db opened at ${project.databasePath}`);
+  }
+  const readers = new AttachedReaders();
+  readers.open(broker.layout.globalDbPath, "global");
+  readers.open(project.databasePath, "state");
+  return {
+    globalDb: wrapConnection(broker.writer),
+    stateDb: wrapConnection(project.writer),
+    readers,
+    globalPath: broker.layout.globalDbPath,
+    statePath: project.databasePath,
+    queue: bindCoordinatorWriteQueue(project, { pruneIntervalMs: 86_400_000 }),
+    outbox: bindOutbox(project),
+    project,
+    broker,
+    telemetry,
+    globalWriter: broker.writer,
+    stateWriter: project.writer,
+  };
 }
 
-function openWriter(file: string, schemaFile: string, appVersion: string, withSearch: boolean = false): DatabaseSync {
-  const db = new DatabaseSync(file);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = FULL");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec("PRAGMA busy_timeout = 5000");
-  db.exec("PRAGMA secure_delete = ON");
-  if (withSearch) {
-    db.function("ef_search_text", { deterministic: true }, (value) => splitWords(value));
-  }
-  const existing = db.prepare("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'table' AND name = 'meta'").get() as
-    | { c?: number }
-    | undefined;
-  if (!existing || Number(existing.c ?? 0) === 0) {
-    db.exec(fs.readFileSync(schemaFile, "utf8"));
-    db.prepare(
-      "INSERT INTO schema_migrations(version, name, kind, app_version, applied_at) VALUES (1, 'foundation', 'additive', ?, ?)",
-    ).run(appVersion, Date.now());
-  }
-  return db;
+export function checkpointTruncate(db: SqliteConnection): WalCheckpoint {
+  const row: unknown = db.pragma("wal_checkpoint(TRUNCATE)");
+  return readCheckpoint(row);
 }
 
-export function checkpointTruncate(db: DatabaseSync): WalCheckpoint {
-  const row: unknown = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
-  if (!row || typeof row !== "object") {
-    return { busy: -1, log: -1, checkpointed: -1 };
-  }
+function readCheckpoint(row: unknown): WalCheckpoint {
+  if (!row || typeof row !== "object") return { busy: -1, log: -1, checkpointed: -1 };
   const record = row as Record<string, unknown>;
   return {
     busy: Number(record.busy ?? 0),
@@ -86,8 +108,76 @@ export function checkpointTruncate(db: DatabaseSync): WalCheckpoint {
   };
 }
 
-function splitWords(value: unknown): string {
-  const text = typeof value === "string" ? value : "";
-  const extra = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${text} ${extra}`;
+class AttachedReaders implements ReaderSet {
+  private readonly handles: SqliteConnection[] = [];
+
+  open(file: string, role: "global" | "state"): void {
+    this.handles.push(openDatabase({ location: file, role, access: "readonly" }));
+  }
+
+  closeAll(): number {
+    const count = this.handles.length;
+    while (this.handles.length > 0) {
+      const db = this.handles.pop();
+      if (db) db.close();
+    }
+    return count;
+  }
+
+  get size(): number {
+    return this.handles.length;
+  }
+}
+
+function wrapConnection(conn: SqliteConnection): SqlDb {
+  return {
+    exec(sql: string): void {
+      conn.exec(sql);
+    },
+    prepare(sql: string): SqlStatement {
+      const statement = conn.prepare(sql);
+      return {
+        run(...params: readonly unknown[]): void {
+          const bound = bindParams(params);
+          if (bound === undefined) statement.run();
+          else statement.run(bound);
+        },
+        get(...params: readonly unknown[]): unknown {
+          const bound = bindParams(params);
+          if (bound === undefined) return statement.get();
+          return statement.get(bound);
+        },
+        all(...params: readonly unknown[]): unknown[] {
+          const bound = bindParams(params);
+          if (bound === undefined) return statement.all();
+          return statement.all(bound);
+        },
+      };
+    },
+  };
+}
+
+function bindParams(params: readonly unknown[]): Record<string, SqlValue> | readonly SqlValue[] | undefined {
+  if (params.length === 0) return undefined;
+  const first = params[0];
+  if (
+    params.length === 1 &&
+    first !== null &&
+    typeof first === "object" &&
+    !Array.isArray(first) &&
+    !(first instanceof Uint8Array)
+  ) {
+    const named: Record<string, SqlValue> = {};
+    for (const key of Object.keys(first)) {
+      named[key] = asSqlValue(Reflect.get(first, key));
+    }
+    return named;
+  }
+  return params.map((item) => asSqlValue(item));
+}
+
+function asSqlValue(value: unknown): SqlValue {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") return value;
+  if (value instanceof Uint8Array) return value;
+  return null;
 }

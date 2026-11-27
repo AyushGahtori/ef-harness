@@ -42,7 +42,7 @@ export function shutdownReceiptPath(profileDir: string): string {
 }
 
 export function lockFilePath(profileDir: string): string {
-  return path.join(profileDir, "harnessd.lock");
+  return path.join(profileDir, "daemon.lock");
 }
 
 export function logFilePath(profileDir: string): string {
