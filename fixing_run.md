@@ -388,3 +388,32 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 
+## [C12] — IPC JSON-RPC bound to shared contracts and ProjectStateDb
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `b4395324530419cd30767dd662e0825c3d04f550` (`integrate: C12 bind ipc to db and contracts`)
+- **Findings Fixed:** `F-003`, `F-006`, `F-013`, `F-014` (this seam only)
+
+### What Changed
+- Re-verified on `3d26ce9ba360874c349e65aa4bd68b49c266bf90`. Did not re-merge `origin/task/031-named-pipe-ipc-transport` (`e23f4fe`) or `origin/task/032-ipc-event-stream-resync` (`2117d11`). `git merge-base --is-ancestor` exited `0` for both. No dirty patch for C12. Live tree stays `packages/ipc/src/protocol/`, not `resync/`.
+- `packages/ipc` now depends on `@ef-harness/db` and `@ef-harness/shared-observability`. `LocalSecretRedactor` is the canonical `SecretRedactor`. Transport logs still go through that redactor.
+- Channel 0 requests validate with `@ef-harness/shared-contracts` `JsonRpcRequestSchema`. `op_id` sits on the mutating envelope. `question_id`, `batch_id`, and `project_id` are the wire names. `artifact.open` is read-only. `diag.export` is mutating. `events.subscribe` accepts a numeric `stream_epoch` or the canonical integer string and compares it to `currentStreamEpoch()`. A mismatch returns `resync_required` with an empty replay. `session.hello` still accepts only protocol `1.0` and `1.1`.
+- `bindIpcProject` binds `bindCoordinatorWriteQueue`, `bindOutbox`, and `bindReadModels`. Mutating handlers run inside `execute(tx)`, which the write queue calls under `BEGIN IMMEDIATE`. `appendEvent` still throws outside that transaction. Replay uses `readSinceSeq`. `getLatestSeq` is not on the database; the port reads `highWaterSeq`. `getFeatureRollups()` is the zero-arg list. `ProjectStateDb.getStreamEpoch()` stays a number.
+- `FrameCodec` keeps static `encode` and adds instance `encode(frame)` that delegates to it. Channel 1 `StreamFrameCodec` / `adaptFrameCodec` stay for C13. Did not edit `packages/sim`, `schema/**`, Windows Job Object, DPAPI, named-pipe ACLs, or NSIS. `path_leases.mode` stays `'intent' | 'granted'`. C06–C11 binds stay in place.
+
+### What It Fixed
+- **F-003:** IPC transport redaction uses `@ef-harness/shared-observability` `SecretRedactor` instead of a third local splitter.
+- **F-006:** `@ef-harness/ipc` validates Channel 0 requests against `packets/rpc.ts`. CamelCase `questionId` / `batchId` and `op_id` inside read-only params are rejected.
+- **F-013:** `RpcRouter`, `EventSubscriptionServer`, and `SnapshotAssembler` can run on a real `ProjectStateDb` through `createDbWriteQueuePort`, `createDbOutboxPort`, and `createDbReadModelPort`. Stream artifact catalog binding stays in C13.
+- **F-014:** `new FrameCodec().encode(frame)` delegates to `FrameCodec.encode`. The static method remains. The streams half stays in C13.
+- **Epoch mismatch:** a client `stream_epoch` of `2` against `meta.stream_epoch` `"1"` returns `resync_required` and `readSinceSeq` returns `resyncRequired` with an empty event list. Named-pipe loopback also proved `session.hello` and `op_id` replay through `CoordinatorWriteQueue` (one outbox row on the replayed `op_id`).
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `e23f4fe` and `2117d11`: exit `0` (both ancestors of `3d26ce9ba360874c349e65aa4bd68b49c266bf90`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`
+- `pnpm --filter @ef-harness/ipc test`: exit `0` — `Test Files 14 passed (14)`, `Tests 63 passed (63)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
