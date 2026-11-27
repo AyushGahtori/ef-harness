@@ -4,6 +4,7 @@ import { quarantineWebDoc } from "./doc-quarantine.js";
 import { parseFeatureResearcherV1, type ResearchClaim } from "./feature-researcher-v1.js";
 import { InstalledTypeApiVerifier, type InstalledExport } from "./installed-type-api-verifier.js";
 import type {
+  DocFetchOutcome,
   DocFetchResult,
   FeatureResearcherModel,
   FeatureResearcherPrompt,
@@ -156,7 +157,7 @@ export class FeatureResearchOrchestrator {
     const diagnostics: ResearchDiagnostic[] = [];
     const libraryName = topic.libraryName ?? "stack";
     const version = topic.majorMinor ?? "0.0";
-    const cached = this.ports.cache.get({
+    const cached = await this.ports.cache.getDurable({
       topicHash: topic.topicHash,
       libraryName,
       version,
@@ -211,7 +212,7 @@ export class FeatureResearchOrchestrator {
 
     let fetched: DocFetchResult | null = null;
     try {
-      const outcome = await this.ports.fetcher.fetchDocs(topic.docUrl, { role: "researcher" });
+      const outcome = await readCleanDoc(this.ports.fetcher, topic.docUrl);
       if (!outcome.ok) {
         diagnostics.push({
           code: "fetch_failed",
@@ -266,7 +267,7 @@ export class FeatureResearchOrchestrator {
       });
       const grounded = this.installedFacts(request, topic, installedRef);
       if (grounded.length > 0) {
-        this.remember(request, topic, libraryName, installedVersion, grounded, page, fetched.fetchedAt);
+        await this.remember(request, topic, libraryName, installedVersion, grounded, page, fetched.fetchedAt);
         this.publish(request, topic, grounded, false, "observed", facts);
       }
       return { facts, unverified, diagnostics, tokens: 0, modelCalls: 0 };
@@ -309,7 +310,7 @@ export class FeatureResearchOrchestrator {
       if (decision.diagnostic) diagnostics.push(decision.diagnostic);
     }
     if (accepted.length > 0) {
-      this.remember(request, topic, libraryName, version, accepted, page, fetched.fetchedAt);
+      await this.remember(request, topic, libraryName, version, accepted, page, fetched.fetchedAt);
       this.publish(request, topic, accepted, false, "observed", facts);
     } else if (facts.length === 0 && !this.collectInstalled(request, topic, facts, diagnostics)) {
       diagnostics.push({
@@ -477,7 +478,7 @@ export class FeatureResearchOrchestrator {
     return surface.exports.map((item) => exportFact(surface.packageName, surface.installedVersion, item, fetchedAt));
   }
 
-  private remember(
+  private async remember(
     request: ResearchRunRequest,
     topic: GeneratedTopic,
     libraryName: string,
@@ -485,9 +486,9 @@ export class FeatureResearchOrchestrator {
     facts: readonly ResearchFact[],
     sourceHtml: string,
     fetchedAt: string,
-  ): void {
+  ): Promise<void> {
     const fetchedAtMs = Date.parse(fetchedAt);
-    this.ports.cache.put({
+    await this.ports.cache.putDurable({
       topicHash: topic.topicHash,
       libraryName,
       version,
@@ -619,6 +620,11 @@ function apiMentions(text: string): string[] {
     if (match[0]) found.add(match[0]);
   }
   return [...found];
+}
+
+async function readCleanDoc(fetcher: SecureDocFetcherPort, url: string): Promise<DocFetchOutcome> {
+  if (fetcher.fetchCleanDoc) return fetcher.fetchCleanDoc(url, { role: "researcher" });
+  return fetcher.fetchDocs(url, { role: "researcher" });
 }
 
 function unapprovedPackage(text: string, approved: readonly string[]): string | null {

@@ -13,6 +13,8 @@ export { SEAM_CATALOG_SOURCE, SEAM_TEMPLATES, seamById } from "./seams.js";
 export { ArchDocumentSharder } from "./sharder.js";
 export { ScreenSpecSignoff } from "./signoff.js";
 export { SkeletonLockEnforcer } from "./skeleton-lock.js";
+export { FeatureArchitectureSynthesizer } from "./project-state.js";
+export type { FeatureArchitecturePersistResult } from "./project-state.js";
 export { JitFeatureArchitectureSynthesizer } from "./synthesizer.js";
 export { LAYOUT_TEMPLATE_SOURCE, LAYOUT_TEMPLATES, SHARED_PRIMITIVES } from "./templates.js";
 export { countTokens } from "./tokens.js";

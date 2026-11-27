@@ -433,6 +433,9 @@ export class JitFeatureArchitectureSynthesizer {
             feature: feature.id,
             ownerId: feature.id,
             registeredNames: registered,
+            ...(registered.length > 0
+              ? { names: registered.map((item) => ({ kind: item.kind, value: item.name })) }
+              : {}),
             linkedNodeIds: linked,
           },
         }),

@@ -1,5 +1,12 @@
 import { readString, type ArchitectureStore, type GraphNode } from "./state-db.js";
 
+/** Read surface shared by system architecture and feature architecture. */
+export interface SkeletonLockReader {
+  getMeta(key: string): string | null;
+  listNodes(): readonly GraphNode[];
+  getNode(id: string): GraphNode | null | undefined;
+}
+
 export type SkeletonMutation =
   | {
       readonly kind: "add_table";
@@ -90,7 +97,7 @@ export class SkeletonLockEnforcer {
     store.setMeta("skeleton_locked", "true");
   }
 
-  evaluate(store: ArchitectureStore, mutation: SkeletonMutation): LockDecision {
+  evaluate(store: SkeletonLockReader, mutation: SkeletonMutation): LockDecision {
     if (store.getMeta("skeleton_locked") !== "true") {
       return decision(true, "unlocked", "none", `Wave ${mutation.wave} is before the skeleton lock.`);
     }
@@ -123,7 +130,7 @@ function isLockedElement(node: GraphNode): boolean {
   return false;
 }
 
-function isBreaking(store: ArchitectureStore, mutation: SkeletonMutation): boolean {
+function isBreaking(store: SkeletonLockReader, mutation: SkeletonMutation): boolean {
   if (mutation.kind === "add_table" || mutation.kind === "add_endpoint" || mutation.kind === "add_event") return false;
   if (mutation.kind === "add_column") {
     if (!tableIsLocked(store, mutation.table)) return false;
@@ -134,14 +141,14 @@ function isBreaking(store: ArchitectureStore, mutation: SkeletonMutation): boole
   return false;
 }
 
-function tableIsLocked(store: ArchitectureStore, table: string): boolean {
+function tableIsLocked(store: SkeletonLockReader, table: string): boolean {
   return store.listNodes().some((node) => {
     if (node.status !== "active" || node.fields.skeleton_locked !== true) return false;
     return readString(node.fields, "table") === table || readString(node.fields, "canonical_name") === table;
   });
 }
 
-function targetIsLocked(store: ArchitectureStore, target: string): boolean {
+function targetIsLocked(store: SkeletonLockReader, target: string): boolean {
   const node = store.getNode(target);
   if (node && node.status === "active" && node.fields.skeleton_locked === true) return true;
   return tableIsLocked(store, target);

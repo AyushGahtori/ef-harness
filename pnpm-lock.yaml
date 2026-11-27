@@ -539,6 +539,9 @@ importers:
 
   packages/planner:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
@@ -602,9 +605,18 @@ importers:
 
   packages/research-engine:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -612,9 +624,6 @@ importers:
       eslint:
         specifier: 'catalog:'
         version: 9.39.5(jiti@2.7.0)
-      typescript:
-        specifier: 'catalog:'
-        version: 5.9.3
       vitest:
         specifier: 'catalog:'
         version: 5.1.1(@types/node@24.19.2)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))

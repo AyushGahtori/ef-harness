@@ -18,6 +18,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ef-harness/db": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "yaml": "^2.8.0",
     "@parcel/watcher": "^2.5.1"

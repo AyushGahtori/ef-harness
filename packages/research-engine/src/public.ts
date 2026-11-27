@@ -71,7 +71,16 @@ export type {
   SecureDocFetcherPort,
 } from "./ports.js";
 export { MemoryGlobalResearchCache, ResearchFactCache } from "./research-fact-cache.js";
-export type { CacheLookup, CachePutInput, CacheStatus, CachedResearchRecord } from "./research-fact-cache.js";
+export type {
+  CacheLookup,
+  CachePutInput,
+  CacheStatus,
+  CachedResearchRecord,
+  FactBodyStore,
+  ResearchFactCacheOptions,
+} from "./research-fact-cache.js";
+export { adaptSecureDocFetcher, fetchCleanDoc } from "./clean-doc.js";
+export { BrokerResearchCache, ProjectStateKnowledgeGraph, casFactBodies } from "./project-state.js";
 export { RiskTriggeredTopicGenerator } from "./risk-triggered-topic-generator.js";
 export type { GeneratedTopic, TopicPlan } from "./risk-triggered-topic-generator.js";
 export { TokenBasedQuoteMatcher } from "./token-based-quote-matcher.js";

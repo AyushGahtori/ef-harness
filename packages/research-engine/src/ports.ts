@@ -39,6 +39,7 @@ export type DocFetchOutcome =
 
 export interface SecureDocFetcherPort {
   fetchDocs(urlOrPkg: string, options?: FetchDocsOptions): Promise<DocFetchOutcome>;
+  fetchCleanDoc?(urlOrPkg: string, options?: FetchDocsOptions): Promise<DocFetchOutcome>;
 }
 
 /** Local stand-in for Task 014 `GlobalBrokerDb` research_cache methods. */
