@@ -14,7 +14,7 @@
 | C05 | Wave 1 | done | 159657c | F-010, F-012 | build/typecheck/lint OK; db 61 files 361/361; schema 67/67 |
 | C06 | Wave 1 | done | 5103b12 | F-009, F-034, F-065, F-068, F-073, F-074, F-078, F-079 | build/typecheck/lint OK; db 61 files 362/362; schema 67/67 |
 | C07 | Wave 1 | done | 254f4db | F-007, F-010, F-012, F-038 | build/typecheck/lint OK; db 62 files 364/364; schema 67/67 |
-| C08 | Wave 1 | pending | - | F-008, F-012, F-039, F-079 | - |
+| C08 | Wave 1 | done | 168f474 | F-008, F-012, F-039, F-079 | build/typecheck/lint OK; db 63 files 369/369; schema 67/67 |
 | C09 | Wave 1 | pending | - | F-012, F-013, F-047, F-065, F-081 | - |
 | C10 | Wave 1 | pending | - | F-006, F-013, F-026, F-064 | - |
 | C11 | Wave 1 | pending | - | F-007, F-010, F-011, F-012 | - |

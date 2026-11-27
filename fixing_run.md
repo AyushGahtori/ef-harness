@@ -257,3 +257,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 62 passed (62)`, `Tests 364 passed (364)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+---
+
+## [C08] — Task claiming, path leases, holds, and DONE invariants
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `168f474549b6e273df8b7f07a0b035b276c868f6` (`integrate: C08 bind claiming holds and lifecycles`)
+- **Findings Fixed:** `F-008`, `F-012`, `F-039`, `F-079` (this seam only)
+
+### What Changed
+- Did not re-merge `origin/task/020-task-claiming-leases-sleep-guard` (`336e7e5`), `origin/task/021-holds-submissions-fencing` (`4f5c3f6`), or `origin/task/022-feature-project-lifecycles` (`a3c8977`). All three are ancestors of `254f4db`. The 020 and 021 tips are handoff-only and were not reapplied. `task-008.patch`, `task-009.patch`, and `task-011.patch` were not applied.
+- `git apply --stat` and `git apply --check` on `dirty_worktree_patches/task-022.patch` both exited `0` against `254f4db` (`packages/db/src/lifecycles/done.ts` 14 lines, `packages/db/src/lifecycles/repo.ts` 94 lines). `git apply` then exited `0`.
+- `coversScope` treats a scope as covered only when an audited path equals it or the scope starts with that path (`scopePrefix.startsWith(audited)`). A child file or a sibling string prefix no longer satisfies `DONE`.
+- `contractsCurrent` counts a `read_sets` row only from an `accepted` attempt at the task node's current `brief_version`.
+- Leaving `BLOCKED` resumes only to the pre-block state stored in `meta` (`feature_pre_block_state:<feature>`), except `DEFERRED` and `ABANDONED`. Approved exits are stored in `meta` (`feature_exit_approved:<feature>`) and still count after outbox rows are deleted.
+- Bound the live classes `TaskLeaseManager`, `TaskHoldAndSubmissionRepo`, and `LifecycleRepo` to the open `ProjectStateDb` writer (`bindTaskLeases`, `bindTaskHolds`, `bindLifecycles`). None of those classes opens a private `DatabaseSync`. Holds and lifecycles load `queries.sql` through `loadCanonicalSqlAsset` on that bind path.
+- `path_leases.mode` stays `'intent' | 'granted'` (`schema/state.sql` CHECK). `pathLeaseModeForDatabase` still maps a helper value `exclusive` to `granted` and does not write `exclusive`. Hold reasons stay the five schema values (`user_pause`, `requirement_change`, `budget`, `ccr`, `governor`).
+- Left `MigrationRunner` and the C07 knowledge, search, and name-registry binds alone. Did not edit `schema/**`, `packages/sim`, or Windows Job Object, DPAPI, named-pipe, or NSIS code. Dropped the unused `parseJsonObject` import in `repo.ts` after the outbox scan moved to `meta`.
+
+### What It Fixed
+- **F-008:** `DONE` no longer treats one child file as a full scope audit. A rejected attempt, or an accepted attempt on a different brief, no longer satisfies contract currency. A `BLOCKED` feature cannot skip to a later state, and an approved `DEFERRED` or `ABANDONED` exit remains after outbox pruning.
+- **F-012:** Claiming, holds, and lifecycles share one `ProjectStateDb` writer instead of a second connection.
+- **F-039:** This seam keeps `task_holds.reason` on the five schema values. `revision_in_flight`, `user_paused`, and `waiting_on_human_step` fail `isHoldReason`. Planner and MCP tool-name mismatches stay in later waves.
+- **F-079:** Sweep leases still move `'intent'` to `'granted'`. A caller that says `exclusive` is stored as `granted`. An open intent lease still blocks an overlapping claim. Investigations package wiring stays in later tasks.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `336e7e5`, `4f5c3f6`, and `a3c8977`: exit `0` (all ancestors). `git rev-parse` tips match those SHAs.
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-022.patch`: exit `0`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-022.patch`: exit `0`
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-022.patch`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 63 passed (63)`, `Tests 369 passed (369)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
