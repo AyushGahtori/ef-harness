@@ -67,6 +67,27 @@ describe("bundled corpus catalog", () => {
     }
   });
 
+  it("loads the 87 v1 questions from core, wave 1, and wave 2", () => {
+    const yamlQuestions = catalog.questions.filter((question) => question.sourceFile.endsWith(".yaml"));
+    const m2 = yamlQuestions.filter(
+      (question) =>
+        question.sourceFile.includes("core-data-auth/") || question.sourceFile.includes("web-api-cli/"),
+    );
+    const wave1 = yamlQuestions.filter((question) => question.sourceFile.includes("wave1-expanded/"));
+    const wave2 = yamlQuestions.filter((question) => question.sourceFile.includes("wave2-expanded/"));
+    expect(m2).toHaveLength(44);
+    expect(wave1).toHaveLength(28);
+    expect(wave2).toHaveLength(15);
+    expect(yamlQuestions).toHaveLength(87);
+    expect(new Set(yamlQuestions.map((question) => question.id)).size).toBe(87);
+    expect(catalog.danglingOptionIds).toEqual([]);
+    expect(catalog.files.some((file) => file.path === "packs/wave1-expanded/payments.yaml")).toBe(true);
+    expect(catalog.files.some((file) => file.path === "packs/wave2-expanded/manifest.yaml")).toBe(true);
+    expect(catalog.files.some((file) => file.path === "packs/wave2-expanded/activation-table.yaml")).toBe(true);
+    expect(yamlQuestions.every((question) => question.criteria.length > 0)).toBe(true);
+    expect(yamlQuestions.every((question) => question.touches.length > 0)).toBe(true);
+  });
+
   it("hashes the bundled files stably and includes the web-api-cli manifest", () => {
     expect(catalog.manifestSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(new CorpusPackLoader().loadAllBundledPacks().manifestSha256).toBe(catalog.manifestSha256);

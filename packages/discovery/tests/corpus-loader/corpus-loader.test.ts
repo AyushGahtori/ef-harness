@@ -20,7 +20,9 @@ describe("M2 core data auth corpus", () => {
     expect(counts.get("core.yaml")).toBe(18);
     expect(counts.get("data.yaml")).toBe(6);
     expect(counts.get("auth.yaml")).toBe(5);
-    expect(bundle.questions).toHaveLength(29);
+    const coreCount = (counts.get("core.yaml") ?? 0) + (counts.get("data.yaml") ?? 0) + (counts.get("auth.yaml") ?? 0);
+    expect(coreCount).toBe(29);
+    expect(bundle.questions.length).toBeGreaterThanOrEqual(29);
     expect(bundle.corpusBundleHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
@@ -28,14 +30,13 @@ describe("M2 core data auth corpus", () => {
     const again = loadCorpusPacks(repositoryCorpusRoot());
     expect(again.corpusBundleHash).toBe(bundle.corpusBundleHash);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-corpus-hash-"));
-    const source = path.join(repositoryCorpusRoot(), "packs", "core-data-auth");
-    const destination = path.join(root, "packs", "core-data-auth");
-    fs.mkdirSync(destination, { recursive: true });
-    for (const name of ["core.yaml", "data.yaml", "auth.yaml"]) {
-      fs.copyFileSync(path.join(source, name), path.join(destination, name));
+    for (const name of ["packs", "elaborations", "policies", "rules-seams", "seams"]) {
+      const source = path.join(repositoryCorpusRoot(), name);
+      if (!fs.existsSync(source)) continue;
+      fs.cpSync(source, path.join(root, name), { recursive: true });
     }
     expect(loadCorpusPacks(root).corpusBundleHash).toBe(bundle.corpusBundleHash);
-    const corePath = path.join(destination, "core.yaml");
+    const corePath = path.join(root, "packs", "core-data-auth", "core.yaml");
     const core = fs.readFileSync(corePath, "utf8").replace("Who is this for", "Who exactly is this for");
     fs.writeFileSync(corePath, core, "utf8");
     expect(loadCorpusPacks(root).corpusBundleHash).not.toBe(bundle.corpusBundleHash);
@@ -68,12 +69,18 @@ describe("M2 core data auth corpus", () => {
   });
 
   it("exports a deterministic positive and negative dataset for later evals", () => {
-    const first = exportCorpusEvalDataset(bundle);
-    const second = exportCorpusEvalDataset(bundle);
+    const coreQuestions = bundle.questions.filter((question) =>
+      ["core.yaml", "data.yaml", "auth.yaml"].includes(path.basename(question.source_file)),
+    );
+    const coreBundle = { ...bundle, questions: coreQuestions };
+    const first = exportCorpusEvalDataset(coreBundle);
+    const second = exportCorpusEvalDataset(coreBundle);
     expect(first.positiveCount).toBe(29 * 5);
     expect(first.negativeCount).toBe(29 * 2);
     expect(first.caseCount).toBe(203);
     expect(first.datasetHash).toBe(second.datasetHash);
+    const full = exportCorpusEvalDataset(bundle);
+    expect(exportCorpusEvalDataset(bundle).datasetHash).toBe(full.datasetHash);
     expect(first.cases[0]?.polarity).toBe("negative");
     expect(first.corpusBundleHash).toBe(bundle.corpusBundleHash);
     const phones = first.cases.find(

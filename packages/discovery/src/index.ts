@@ -520,7 +520,9 @@ export {
   AdaptiveBatchSelector,
   DiscoverySessionCoordinator,
   HonestReadinessCalculator,
+  selectLoadedCorpusBatch,
 } from "./session/index.js";
+export type { LoadedCorpusSelection } from "./session/index.js";
 export type {
   DiscoverySessionStart,
   HonestReadinessCounts,

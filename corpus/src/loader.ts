@@ -31,6 +31,10 @@ export interface CatalogOption {
 export interface CatalogQuestion {
   readonly id: string;
   readonly pack: string;
+  readonly title: string;
+  readonly mustAsk: boolean;
+  readonly criteria: readonly string[];
+  readonly touches: readonly string[];
   readonly sourceFile: string;
   readonly options: readonly CatalogOption[];
 }
@@ -190,7 +194,6 @@ function readQuestions(
     const id = readString(record.id, relative, "question id");
     const pack = typeof record.pack === "string" && record.pack.trim() !== "" ? record.pack : packFallback;
     if (pack.trim() === "") throw new CorpusLoadError(`${relative}: question ${id} is missing pack`, relative);
-    readTagList(record.touches, relative, `${id} touches`);
     const options = asArray(record.options, relative, `${id} options`).map((option) => {
       const optionRecord = asRecord(option, relative, `${id} option`);
       const optionId = readString(optionRecord.id, relative, `${id} option id`);
@@ -200,7 +203,16 @@ function readQuestions(
         stageSuitability: readStringList(optionRecord.stage_suitability, relative, `${optionId} stage_suitability`),
       };
     });
-    return { id, pack, sourceFile: relative, options };
+    return {
+      id,
+      pack,
+      title: readString(record.title, relative, `${id} title`),
+      mustAsk: readBoolean(record.must_ask, relative, `${id} must_ask`),
+      criteria: readStringList(record.criteria, relative, `${id} criteria`),
+      touches: readTagList(record.touches, relative, `${id} touches`),
+      sourceFile: relative,
+      options,
+    };
   });
 }
 
@@ -208,7 +220,7 @@ function readElaborations(value: unknown[], relative: string): CatalogElaboratio
   return value.map((item) => {
     const record = asRecord(item, relative, "elaboration");
     const id = readString(record.id, relative, "elaboration id");
-    readScopeTags(record.touches, relative, `${id} touches`);
+    readOptionalTouches(record.touches, relative, `${id} touches`);
     if (Array.isArray(record.clauses)) {
       for (const clause of record.clauses) {
         const clauseRecord = asRecord(clause, relative, `${id} clause`);
@@ -287,7 +299,6 @@ function readAuthoredCoreQuestions(repoRoot: string): CatalogQuestion[] {
   return parsed.questions.map((item) => {
     const record = asRecord(item, relative, "authored question");
     const id = readString(record.id, relative, "authored question id");
-    readTagList(record.touches, relative, `${id} touches`);
     const options = asArray(record.options, relative, `${id} options`).map((option) => {
       const optionRecord = asRecord(option, relative, `${id} option`);
       return {
@@ -298,6 +309,10 @@ function readAuthoredCoreQuestions(repoRoot: string): CatalogQuestion[] {
     return {
       id,
       pack: readString(record.pack, relative, `${id} pack`),
+      title: readString(record.title, relative, `${id} title`),
+      mustAsk: readBoolean(record.must_ask, relative, `${id} must_ask`),
+      criteria: readStringList(record.criteria, relative, `${id} criteria`),
+      touches: readTagList(record.touches, relative, `${id} touches`),
       sourceFile: relative,
       options,
     };
@@ -395,6 +410,15 @@ function collectCorpusFiles(root: string): string[] {
   return found;
 }
 
+function readOptionalTouches(value: unknown, filePath: string, label: string): void {
+  if (value === undefined) return;
+  if (Array.isArray(value)) {
+    readTagList(value, filePath, label);
+    return;
+  }
+  readScopeTags(value, filePath, label);
+}
+
 function readScopeTags(value: unknown, filePath: string, label: string): void {
   const record = asRecord(value, filePath, label);
   if (record.any !== undefined) readTagList(record.any, filePath, `${label} any`);
@@ -414,6 +438,13 @@ function readTagList(value: unknown, filePath: string, label: string): string[] 
 function readStringList(value: unknown, filePath: string, label: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new CorpusLoadError(`${filePath}: ${label} must be a list of strings`, filePath);
+  }
+  return value;
+}
+
+function readBoolean(value: unknown, filePath: string, label: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new CorpusLoadError(`${filePath}: ${label} must be a boolean`, filePath);
   }
   return value;
 }

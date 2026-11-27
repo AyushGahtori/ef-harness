@@ -49,6 +49,7 @@ export class CorpusPackLoader {
       const relative = path.relative(root, full).split(path.sep).join("/");
       if (isCorpusIndexFile(relative)) return [];
       const text = fs.readFileSync(full, "utf8");
+      if (!declaresCorpusKind(text)) return [];
       const document = relative.endsWith(".json")
         ? parseStrictJson(text, full)
         : parseStrictYaml(text, full, { uniqueKeys: this.uniqueKeys });
@@ -132,6 +133,10 @@ const CORPUS_INDEX_FILES = new Set(["manifest.yaml", "activation-table.yaml"]);
 function isCorpusIndexFile(relativePath: string): boolean {
   const name = relativePath.split("/").pop() ?? "";
   return CORPUS_INDEX_FILES.has(name);
+}
+
+function declaresCorpusKind(text: string): boolean {
+  return /(^|\n)\s*kind\s*:/.test(text) || /"kind"\s*:/.test(text);
 }
 
 function canonicalDocumentKind(document: unknown): CorpusDocumentKind | null {

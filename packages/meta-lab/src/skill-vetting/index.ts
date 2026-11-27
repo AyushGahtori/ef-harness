@@ -30,6 +30,8 @@ export type { RankedSkill, SkillSelection } from "./budget.js";
 
 export {
   M2_CATALOG_META,
+  SkillVettingCatalog,
+  V1_SKILL_COUNT,
   assertInferOrAskByteParity,
   buildM2Manifest,
   buildQuarantineReport,

@@ -329,6 +329,9 @@ importers:
 
   packages/discovery:
     dependencies:
+      '@ef-harness/corpus':
+        specifier: workspace:*
+        version: link:../../corpus
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../db

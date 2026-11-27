@@ -32,6 +32,10 @@ export class SkillManifestRegistry {
   }
 
   skillDirectory(skillId: string): string {
+    const entry = this.readDocument().skills.find((skill) => skill.skillId === skillId);
+    if (entry?.skillPath !== undefined) {
+      return path.resolve(this.repoRoot, entry.skillPath);
+    }
     return path.join(this.repoRoot, "corpus", "skills", "m2", skillId);
   }
 
@@ -82,7 +86,7 @@ export class SkillManifestRegistry {
     let updated: SkillManifestEntry | undefined;
     const skills = document.skills.map((entry) => {
       if (entry.skillId !== skillId) return entry;
-      updated = {
+      const next: SkillManifestEntry = {
         skillId: entry.skillId,
         version: entry.version,
         sourceType: entry.sourceType,
@@ -96,6 +100,7 @@ export class SkillManifestRegistry {
         vettingStatus: status,
         lastVettedAt: status === "vetted" ? at : entry.lastVettedAt,
       };
+      updated = entry.skillPath === undefined ? next : { ...next, skillPath: entry.skillPath };
       return updated;
     });
     if (updated === undefined) throw new SkillManifestError(`unknown skill ${skillId}`);
@@ -193,7 +198,7 @@ function parseEntry(value: unknown, seen: Set<string>): SkillManifestEntry {
   if (vettingStatus === "vetted" && lastVettedAt === null) {
     throw new SkillManifestError(`${skillId}.lastVettedAt is required when vetted`);
   }
-  return {
+  const entry: SkillManifestEntry = {
     skillId,
     version: requiredString(value, "version"),
     sourceType: sourceType as SkillSourceType,
@@ -207,6 +212,18 @@ function parseEntry(value: unknown, seen: Set<string>): SkillManifestEntry {
     vettingStatus: vettingStatus as VettingStatus,
     lastVettedAt,
   };
+  const skillPath = optionalSkillPath(value, skillId);
+  if (skillPath === undefined) return entry;
+  return { ...entry, skillPath };
+}
+
+function optionalSkillPath(record: Record<string, unknown>, skillId: string): string | undefined {
+  if (!("skillPath" in record)) return undefined;
+  const value = record.skillPath;
+  if (typeof value !== "string" || value.trim().length === 0 || value.includes("..")) {
+    throw new SkillManifestError(`${skillId}.skillPath must be a relative directory`);
+  }
+  return value;
 }
 
 function requiredString(record: Record<string, unknown>, key: string): string {

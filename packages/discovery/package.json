@@ -18,6 +18,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ef-harness/corpus": "workspace:*",
     "@ef-harness/db": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "@ef-harness/worker-loop": "workspace:*"

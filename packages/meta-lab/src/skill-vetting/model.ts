@@ -31,6 +31,7 @@ export interface SkillManifestEntry {
   readonly allowedTouches: readonly string[];
   readonly vettingStatus: VettingStatus;
   readonly lastVettedAt: string | null;
+  readonly skillPath?: string;
 }
 
 export interface SkillManifestDocument {

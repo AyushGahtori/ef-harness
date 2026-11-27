@@ -18,6 +18,8 @@ export {
   LocalSandboxPolicy,
   M2_CATALOG_META,
   M2_SKILL_IDS,
+  SkillVettingCatalog,
+  V1_SKILL_COUNT,
   M2_VETTED_AT,
   SKILL_TOKEN_CAP,
   SkillHashMismatchError,

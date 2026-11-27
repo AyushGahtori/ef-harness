@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TouchesTagSchema } from "@ef-harness/shared-contracts";
 import { SkillTokenBudgetEnforcer } from "./budget.js";
 import {
   gitBlobSha1,
@@ -46,7 +47,7 @@ export const M2_CATALOG_META: readonly CatalogSkillMeta[] = [
     upstreamRepo: null,
     license: "LicenseRef-EF-Harness",
     allowedRoles: ["discovery", "planner", "worker"],
-    allowedTouches: ["requirements", "decisions"],
+    allowedTouches: ["form_input"],
   },
   {
     skillId: "systematic-debugging",
@@ -55,7 +56,7 @@ export const M2_CATALOG_META: readonly CatalogSkillMeta[] = [
     upstreamRepo: "offline-vendor:systematic-debugging",
     license: "MIT",
     allowedRoles: ["worker", "verifier"],
-    allowedTouches: ["debugging", "regression"],
+    allowedTouches: ["logging"],
   },
   {
     skillId: "test-driven-verification",
@@ -64,7 +65,7 @@ export const M2_CATALOG_META: readonly CatalogSkillMeta[] = [
     upstreamRepo: "offline-vendor:test-driven-verification",
     license: "MIT",
     allowedRoles: ["worker", "verifier"],
-    allowedTouches: ["tests", "verification"],
+    allowedTouches: ["search"],
   },
   {
     skillId: "frontend-accessibility-ui",
@@ -73,7 +74,7 @@ export const M2_CATALOG_META: readonly CatalogSkillMeta[] = [
     upstreamRepo: "offline-vendor:frontend-accessibility-ui",
     license: "MIT",
     allowedRoles: ["worker", "frontend"],
-    allowedTouches: ["interactive_ui", "accessibility"],
+    allowedTouches: ["interactive_ui", "form_input"],
   },
   {
     skillId: "sql-migrations-safety",
@@ -82,7 +83,7 @@ export const M2_CATALOG_META: readonly CatalogSkillMeta[] = [
     upstreamRepo: "offline-vendor:sql-migrations-safety",
     license: "MIT",
     allowedRoles: ["worker", "backend"],
-    allowedTouches: ["schema", "migrations"],
+    allowedTouches: ["migration", "destructive_write"],
   },
   {
     skillId: "api-security-hardening",
@@ -91,7 +92,7 @@ export const M2_CATALOG_META: readonly CatalogSkillMeta[] = [
     upstreamRepo: "offline-vendor:api-security-hardening",
     license: "MIT",
     allowedRoles: ["worker", "backend"],
-    allowedTouches: ["authz", "route", "validation"],
+    allowedTouches: ["authz", "route"],
   },
 ];
 
@@ -155,10 +156,14 @@ export function verifyPinnedCatalog(
 ): CatalogVerification {
   const registry = new SkillManifestRegistry(repoRoot);
   const expected = buildM2Manifest(repoRoot);
-  const actual = registry.list();
-  if (actual.length !== M2_SKILL_IDS.length) {
-    throw new SkillManifestError(`M2 catalog must contain exactly ${M2_SKILL_IDS.length} skills`);
-  }
+  const byId = new Map(registry.list().map((entry) => [entry.skillId, entry]));
+  const actual = M2_SKILL_IDS.map((skillId) => {
+    const entry = byId.get(skillId);
+    if (entry === undefined) {
+      throw new SkillManifestError(`M2 catalog is missing ${skillId}`);
+    }
+    return entry;
+  });
   const vetter = new StaticSkillSecurityVetter();
   const budget = new SkillTokenBudgetEnforcer();
   const harness = new CanarySkillQuarantineHarness({
@@ -282,7 +287,13 @@ function assertEntryPin(actual: SkillManifestEntry, expected: SkillManifestEntry
 }
 
 function readStoredReport(repoRoot: string, skillId: string): StoredQuarantineReport {
-  const file = path.join(repoRoot, "corpus", "skills", "m2", skillId, "quarantine-report.json");
+  return readStoredReportFile(
+    path.join(repoRoot, "corpus", "skills", "m2", skillId, "quarantine-report.json"),
+    skillId,
+  );
+}
+
+function readStoredReportFile(file: string, skillId: string): StoredQuarantineReport {
   if (!fs.existsSync(file)) {
     throw new SkillManifestError(`missing quarantine report for ${skillId}`);
   }
@@ -291,4 +302,85 @@ function readStoredReport(repoRoot: string, skillId: string): StoredQuarantineRe
     throw new SkillManifestError(`quarantine report for ${skillId} is not an object`);
   }
   return parsed as StoredQuarantineReport;
+}
+
+export const V1_SKILL_COUNT = 20;
+
+/** One hash-pinned catalog: 6 M2 skills plus 14 Wave 2 skills. */
+export class SkillVettingCatalog {
+  constructor(private readonly repoRoot: string = defaultRepoRoot()) {}
+
+  validate(scratchParent: string): CatalogVerification {
+    const registry = new SkillManifestRegistry(this.repoRoot);
+    const entries = registry.list();
+    if (entries.length !== V1_SKILL_COUNT) {
+      throw new SkillManifestError(`v1 catalog must contain exactly ${V1_SKILL_COUNT} skills`);
+    }
+    const seen = new Set<string>();
+    const vetter = new StaticSkillSecurityVetter();
+    const budget = new SkillTokenBudgetEnforcer();
+    const harness = new CanarySkillQuarantineHarness({
+      vetter,
+      budget,
+      redactor: new LocalPacketSecurityRedactor(),
+      sandbox: new LocalSandboxPolicy(),
+      worker: new LocalNativeWorkerLoop(),
+      now: () => M2_VETTED_AT,
+    });
+    const tokenCounts: Record<string, number> = {};
+    const skills: string[] = [];
+    for (const entry of entries) {
+      if (seen.has(entry.skillId)) {
+        throw new SkillManifestError(`duplicate skill ${entry.skillId}`);
+      }
+      seen.add(entry.skillId);
+      for (const tag of entry.allowedTouches) {
+        if (!TouchesTagSchema.safeParse(tag).success) {
+          throw new SkillManifestError(`${entry.skillId} allowedTouches has unknown tag ${tag}`);
+        }
+      }
+      const loaded = registry.loadForMount(entry.skillId);
+      if (entry.skillId === "infer-or-ask") {
+        assertInferOrAskByteParity(skillMarkdownBytes(loaded.files));
+      }
+      vetter.assertClean({
+        sourceType: loaded.entry.sourceType,
+        license: loaded.entry.license,
+        upstreamRepo: loaded.entry.upstreamRepo,
+        files: loaded.files,
+      });
+      budget.assertWithinCap(loaded.injectedText, `${entry.skillId}@${loaded.entry.version}`);
+      const report = readStoredReportFile(
+        path.join(registry.skillDirectory(entry.skillId), "quarantine-report.json"),
+        entry.skillId,
+      );
+      if (
+        report.canaryAccesses !== 0 ||
+        report.unauthorizedNetworkCalls !== 0 ||
+        report.outOfScopeTestEdits !== 0 ||
+        report.smokePassed !== true ||
+        report.toStatus !== "vetted"
+      ) {
+        throw new SkillManifestError(`stored quarantine report for ${entry.skillId} is not a clean pass`);
+      }
+      const fresh = harness.evaluate({
+        skillId: entry.skillId,
+        version: loaded.entry.version,
+        sourceType: loaded.entry.sourceType,
+        license: loaded.entry.license,
+        upstreamRepo: loaded.entry.upstreamRepo,
+        files: loaded.files,
+        fromStatus: "quarantined",
+        scratchParent,
+      });
+      if (fresh.toStatus !== "vetted" || fresh.canaryAccesses !== 0 || fresh.reasons.length !== 0) {
+        throw new SkillManifestError(
+          `fresh quarantine failed for ${entry.skillId}: ${fresh.reasons.join(",") || fresh.smokeDetail}`,
+        );
+      }
+      tokenCounts[entry.skillId] = loaded.tokenCount;
+      skills.push(entry.skillId);
+    }
+    return { skills, tokenCounts };
+  }
 }
