@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 
-import { splitSearchText } from "./search-text.js";
+import { splitSearchText } from "@ef-harness/shared-contracts";
+import { registerEfSearchText } from "../driver/search-text.js";
 import { PurgeLockUnavailableError } from "./types.js";
 
 const queryCache = new Map<string, string>();
@@ -61,11 +62,18 @@ export function sqlNullableText(value: SQLOutputValue | undefined): string | nul
 
 export function ensureSearchTextFunction(db: DatabaseSync): void {
   try {
-    db.prepare("SELECT ef_search_text('') AS probe").get();
-  } catch {
-    db.function("ef_search_text", { deterministic: true }, (value: SQLOutputValue) => {
-      return splitSearchText(value == null ? "" : sqlText(value));
-    });
+    const row = db.prepare("SELECT ef_search_text('XMLHttpRequest') AS probe").get();
+    const installed = row ? sqlText(row["probe"]) : "";
+    if (installed !== splitSearchText("XMLHttpRequest")) {
+      throw new Error("ef_search_text does not match @ef-harness/shared-contracts splitSearchText");
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/no such function/i.test(message)) {
+      registerEfSearchText(db);
+      return;
+    }
+    throw error;
   }
 }
 

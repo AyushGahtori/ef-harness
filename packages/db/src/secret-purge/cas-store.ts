@@ -1,18 +1,19 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import type { DatabaseSync } from "node:sqlite";
 
+import { decodeBlob, hasSeekableFooter, sha256 } from "../cas/codec.js";
+import { blobFilePath, normalizeCasHash } from "../cas/layout.js";
 import { sqlText } from "./sqlite-util.js";
 import type { CasBlobStore, CasHolderKind, CasPutOptions, CasWriteResult } from "./types.js";
 
 export function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
+  return sha256(bytes);
 }
 
 export function casRawPath(root: string, hash: string): string {
-  return path.join(root, "sha256", hash.slice(0, 2), hash.slice(2, 4), `${hash}.raw`);
+  return blobFilePath(root, normalizeCasHash(hash), "raw");
 }
 
 function sleepSync(ms: number): void {
@@ -39,8 +40,9 @@ function unlinkRetry(filePath: string): void {
 }
 
 /**
- * Uncompressed CAS layout used when Task 028's store is not wired yet.
- * Hash is SHA-256 of the raw bytes. `forceDeletePurgedBlob` skips the grace window.
+ * File CAS used when the caller does not inject the canonical store.
+ * Reads and deletes both `.zst` and `.raw`. Hash is SHA-256 of the uncompressed bytes.
+ * `forceDeletePurgedBlob` skips the grace window.
  */
 export class RawFileCasBlobStore implements CasBlobStore {
   private readonly pins = new Set<string>();
@@ -56,35 +58,46 @@ export class RawFileCasBlobStore implements CasBlobStore {
   }
 
   putBlob(bytes: Uint8Array, putOptions: CasPutOptions): CasWriteResult {
-    const hash = sha256Hex(bytes);
-    const destination = casRawPath(this.options.root, hash);
+    const plain = Buffer.from(bytes);
+    const hash = sha256(plain);
+    const format = putOptions.format ?? "raw";
+    const payload = framedPayload(plain, format, putOptions.storedPayload);
+    const destination = blobFilePath(this.options.root, hash, format);
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     if (!fs.existsSync(destination)) {
       const temporary = path.join(this.options.root, "tmp", `${hash}.${process.pid}.tmp`);
       fs.mkdirSync(path.dirname(temporary), { recursive: true });
-      fs.writeFileSync(temporary, bytes);
+      fs.writeFileSync(temporary, payload);
       fs.renameSync(temporary, destination);
       fs.chmodSync(destination, 0o444);
     }
-    this.insertBlobRow(hash, bytes.byteLength);
+    this.insertBlobRow(hash, plain.byteLength, payload.byteLength, format);
     this.pinBlob(hash, putOptions.holderKind, putOptions.holderId);
-    return { hash, bytes: bytes.byteLength };
+    return { hash, bytes: plain.byteLength };
   }
 
   getBlob(hash: string): Uint8Array {
-    const destination = casRawPath(this.options.root, hash);
-    if (!fs.existsSync(destination)) {
-      throw new Error("CAS blob is missing");
+    const normalized = normalizeCasHash(hash);
+    const rawPath = blobFilePath(this.options.root, normalized, "raw");
+    const zstPath = blobFilePath(this.options.root, normalized, "zstd");
+    if (fs.existsSync(rawPath)) {
+      const bytes = fs.readFileSync(rawPath);
+      if (sha256(bytes) !== normalized) throw new Error("CAS blob integrity mismatch");
+      return bytes;
     }
-    const bytes = fs.readFileSync(destination);
-    if (sha256Hex(bytes) !== hash) {
-      throw new Error("CAS blob integrity mismatch");
+    if (fs.existsSync(zstPath)) {
+      const stored = fs.readFileSync(zstPath);
+      const format = hasSeekableFooter(stored) ? "zstd-seekable" : "zstd";
+      const plain = decodeBlob(stored, format);
+      if (sha256(plain) !== normalized) throw new Error("CAS blob integrity mismatch");
+      return plain;
     }
-    return bytes;
+    throw new Error("CAS blob is missing");
   }
 
   pinBlob(hash: string, holderKind: CasHolderKind, holderId: string): void {
-    this.pins.add(pinKey(hash, holderKind, holderId));
+    const normalized = normalizeCasHash(hash);
+    this.pins.add(pinKey(normalized, holderKind, holderId));
     const globalDb = this.options.globalDb;
     if (!globalDb) return;
     globalDb
@@ -92,14 +105,15 @@ export class RawFileCasBlobStore implements CasBlobStore {
         `INSERT OR IGNORE INTO cas_pins(hash, holder_kind, holder_id, pinned_at)
          VALUES (?, ?, ?, ?)`,
       )
-      .run(hash, holderKind, holderId, this.now());
+      .run(normalized, holderKind, holderId, this.now());
   }
 
   unpinHolder(hash: string, holderKind: CasHolderKind, holderId: string): void {
-    this.pins.delete(pinKey(hash, holderKind, holderId));
+    const normalized = normalizeCasHash(hash);
+    this.pins.delete(pinKey(normalized, holderKind, holderId));
     this.options.globalDb
       ?.prepare("DELETE FROM cas_pins WHERE hash = ? AND holder_kind = ? AND holder_id = ?")
-      .run(hash, holderKind, holderId);
+      .run(normalized, holderKind, holderId);
   }
 
   /**
@@ -107,41 +121,60 @@ export class RawFileCasBlobStore implements CasBlobStore {
    * including backup pins, so the secret bytes cannot wait out the 7-day grace window.
    */
   forceDeletePurgedBlob(hash: string): void {
-    const destination = casRawPath(this.options.root, hash);
-    if (fs.existsSync(destination)) unlinkRetry(destination);
+    const normalized = normalizeCasHash(hash);
+    for (const format of ["raw", "zstd"] as const) {
+      const destination = blobFilePath(this.options.root, normalized, format);
+      if (fs.existsSync(destination)) unlinkRetry(destination);
+    }
     for (const key of [...this.pins]) {
-      if (key.startsWith(`${hash}\0`)) this.pins.delete(key);
+      if (key.startsWith(`${normalized}\0`)) this.pins.delete(key);
     }
     const globalDb = this.options.globalDb;
     if (!globalDb) return;
-    globalDb.prepare("DELETE FROM cas_pins WHERE hash = ?").run(hash);
-    globalDb.prepare("DELETE FROM cas_blobs WHERE hash = ?").run(hash);
+    globalDb.prepare("DELETE FROM cas_pins WHERE hash = ?").run(normalized);
+    globalDb.prepare("DELETE FROM cas_blobs WHERE hash = ?").run(normalized);
   }
 
   listStoredHashes(): readonly string[] {
-    const hashes: string[] = [];
+    const hashes = new Set<string>();
     walkFiles(this.options.root, (filePath) => {
-      if (!filePath.endsWith(".raw")) return;
-      hashes.push(path.basename(filePath, ".raw"));
+      const match = /^([0-9a-f]{64})\.(?:zst|raw)$/.exec(path.basename(filePath));
+      const hash = match?.[1];
+      if (hash) hashes.add(hash);
     });
-    return hashes;
+    return [...hashes];
   }
 
-  private insertBlobRow(hash: string, bytes: number): void {
+  private insertBlobRow(hash: string, bytes: number, storedBytes: number, format: string): void {
     const globalDb = this.options.globalDb;
     if (!globalDb) return;
     globalDb
       .prepare(
         `INSERT INTO cas_blobs(hash, bytes, stored_bytes, format, state, created_at)
-         VALUES (?, ?, ?, 'raw', 'ok', ?)
+         VALUES (?, ?, ?, ?, 'ok', ?)
          ON CONFLICT(hash) DO NOTHING`,
       )
-      .run(hash, bytes, bytes, this.now());
+      .run(hash, bytes, storedBytes, format, this.now());
   }
 
   private now(): number {
     return this.options.now?.() ?? Date.now();
   }
+}
+
+function framedPayload(
+  plain: Buffer,
+  format: "zstd" | "zstd-seekable" | "raw",
+  storedPayload: Uint8Array | undefined,
+): Buffer {
+  if (format === "raw") return plain;
+  if (storedPayload === undefined) {
+    throw new TypeError(`${format} CAS writes require pre-framed storedPayload`);
+  }
+  const payload = Buffer.from(storedPayload);
+  const decoded = decodeBlob(payload, format);
+  if (sha256(decoded) !== sha256(plain)) throw new Error("CAS blob integrity mismatch");
+  return payload;
 }
 
 function pinKey(hash: string, holderKind: string, holderId: string): string {

@@ -66,6 +66,8 @@ export {
 } from "./retention-policy.js";
 export { compileSafeLogPattern, hasCatastrophicQuantifier } from "./safe-regex.js";
 export { SeekableLogReader, type LogLine, type LogRangeRead, type LogSearchRead } from "./seekable-log-reader.js";
+export { SeekableLogArchiver, type SeekableLogArchivePin } from "./seekable-log-archiver.js";
+export { bindArtifactManager } from "./project-bind.js";
 export {
   decodeSeekableFrames,
   encodeSeekableLog,

@@ -1,4 +1,14 @@
 import { randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { setImmediate as yieldToIo } from "node:timers/promises";
 import {
   mkdir,
@@ -12,7 +22,7 @@ import {
 } from "node:fs/promises";
 import type { DatabaseSync, SQLOutputValue } from "node:sqlite";
 import path from "node:path";
-import { decodeBlob, hashesEqual, sha256, spillBlob } from "./codec.js";
+import { decodeBlob, hashesEqual, hasSeekableFooter, sha256, slicePlainBytes, spillBlob, writeStoredFile } from "./codec.js";
 import { CasBlobMissingError, CasIntegrityMismatchError } from "./errors.js";
 import {
   CAS_RENAME_ATTEMPTS,
@@ -43,18 +53,22 @@ import type {
   CasHolderKind,
   CasIntegrityVerification,
   CasPinSyncResult,
+  CasByteRange,
+  CasPreframedPut,
   CasPutPin,
+  CasPutReceipt,
   CasRetention,
   CasScrubRecoveryAlert,
   CasStoredFormat,
   CasStoreEvent,
+  CasVerificationCandidate,
   CasWriteFormat,
   CasWriteResult,
 } from "./types.js";
 
 const HOLDER_KINDS = new Set<CasHolderKind>(["project", "backup", "research", "export", "pending"]);
 const RETENTIONS = new Set<CasRetention>(["evidence", "diagnostic", "ephemeral", "asset"]);
-const WRITE_FORMATS = new Set<CasWriteFormat>(["zstd", "raw"]);
+const WRITE_FORMATS = new Set<CasWriteFormat>(["zstd", "zstd-seekable", "raw"]);
 
 interface BlobRow {
   readonly bytes: number;
@@ -82,6 +96,12 @@ function assertRetention(retention: CasRetention): void {
   if (!RETENTIONS.has(retention)) {
     throw new TypeError(`unsupported CAS retention class: ${String(retention)}`);
   }
+}
+
+function resolvedFormat(format: CasStoredFormat, stored: Buffer): CasStoredFormat {
+  if (format === "raw") return "raw";
+  if (hasSeekableFooter(stored)) return "zstd-seekable";
+  return format === "zstd-seekable" ? "zstd" : format;
 }
 
 function parseFormat(value: string): CasStoredFormat {
@@ -205,6 +225,15 @@ export class CasBlobStore {
     return this.events;
   }
 
+  get rootDirectory(): string {
+    return this.rootDir;
+  }
+
+  put(bytes: Uint8Array, opts?: CasPutPin): Promise<CasPutReceipt> {
+    if (!opts) throw new TypeError("CAS put requires a holder pin");
+    return this.putBlob(bytes, opts);
+  }
+
   async putBlob(content: Uint8Array, pin: CasPutPin): Promise<CasWriteResult> {
     if (!(content instanceof Uint8Array)) {
       throw new TypeError("CAS content must be a Uint8Array");
@@ -219,7 +248,10 @@ export class CasBlobStore {
     const tempPath = path.join(casTempDir(this.rootDir), `${randomUUID()}.tmp`);
     let tempConsumed = false;
     try {
-      const spilled = await spillBlob(bytes, tempPath, format);
+      const spilled =
+        format === "zstd-seekable"
+          ? await this.spillPreframed(bytes, pin.storedPayload, tempPath)
+          : await spillBlob(bytes, tempPath, format);
       const placed = await this.placeSpilledBlob(spilled.hash, format, tempPath);
       tempConsumed = true;
       const storedBytes = placed.deduplicated
@@ -253,6 +285,83 @@ export class CasBlobStore {
     } finally {
       if (!tempConsumed) await removeFileIfPresent(tempPath);
     }
+  }
+
+  async getBytes(digest: string): Promise<Uint8Array | null> {
+    try {
+      return await this.getBlob(digest, "diagnostic");
+    } catch (error) {
+      if (error instanceof CasBlobMissingError) return null;
+      throw error;
+    }
+  }
+
+  async *openReadStream(digest: string, range?: CasByteRange): AsyncIterable<Uint8Array> {
+    const normalized = normalizeCasHash(digest);
+    const start = range?.start ?? 0;
+    if (!Number.isInteger(start) || start < 0) {
+      throw new TypeError("CAS read range start must be a non-negative integer");
+    }
+    const end = range?.end;
+    if (end !== undefined && (!Number.isInteger(end) || end < start)) {
+      throw new TypeError("CAS read range end must be an integer at or after start");
+    }
+    const located = await this.readStored(normalized);
+    if (start === 0 && end === undefined) {
+      let plain: Buffer;
+      try {
+        plain = decodeBlob(located.stored, located.format);
+      } catch (error) {
+        await this.failIntegrity({
+          hash: normalized,
+          actualHash: "unreadable",
+          retention: null,
+          reason: "stored bytes could not be decoded",
+          cause: error,
+        });
+        throw error;
+      }
+      const actual = sha256(plain);
+      if (!hashesEqual(actual, normalized)) {
+        await this.failIntegrity({
+          hash: normalized,
+          actualHash: actual,
+          retention: null,
+          reason: "uncompressed SHA-256 mismatch on read",
+        });
+      }
+      const chunkSize = 64 * 1024;
+      for (let offset = 0; offset < plain.byteLength; offset += chunkSize) {
+        yield plain.subarray(offset, Math.min(offset + chunkSize, plain.byteLength));
+      }
+      return;
+    }
+    let slice: Buffer;
+    try {
+      slice = slicePlainBytes(located.stored, located.format, start, end);
+    } catch (error) {
+      await this.failIntegrity({
+        hash: normalized,
+        actualHash: "unreadable",
+        retention: null,
+        reason: "stored bytes could not be decoded",
+        cause: error,
+      });
+      throw error;
+    }
+    if (slice.byteLength > 0) yield slice;
+  }
+
+  has(digest: string): boolean {
+    return this.readBlobRow(normalizeCasHash(digest)) !== undefined;
+  }
+
+  deleteUnreferencedGc(options?: { readonly now?: number }): Promise<CasGcResult> {
+    return this.runGarbageCollection(options);
+  }
+
+  purgeDigestBytes(digest: string): Promise<void> {
+    return this.forceDeletePurgedBlob(digest, { caller: "task-030-secret-purge" });
   }
 
   async getBlob(hash: string, retention: CasRetention): Promise<Buffer> {
@@ -457,13 +566,8 @@ export class CasBlobStore {
         `forceDeletePurgedBlob refused for ${normalized}: pins remain; replace references and pins first`,
       );
     }
-    const row = this.readBlobRow(normalized);
-    if (row) {
-      await this.removePromotedBlob(blobFilePath(this.rootDir, normalized, row.format));
-    } else {
-      await this.removePromotedBlob(blobFilePath(this.rootDir, normalized, "zstd"));
-      await this.removePromotedBlob(blobFilePath(this.rootDir, normalized, "raw"));
-    }
+    await this.removePromotedBlob(blobFilePath(this.rootDir, normalized, "zstd"));
+    await this.removePromotedBlob(blobFilePath(this.rootDir, normalized, "raw"));
     this.globalDb.prepare("DELETE FROM cas_blobs WHERE hash = :hash").run({ hash: normalized });
   }
 
@@ -499,6 +603,283 @@ export class CasBlobStore {
       }
     }
     return removed;
+  }
+
+  putPreframedSync(input: CasPreframedPut): CasWriteResult {
+    if (!(input.uncompressed instanceof Uint8Array) || !(input.storedPayload instanceof Uint8Array)) {
+      throw new TypeError("CAS content must be a Uint8Array");
+    }
+    assertHolder(input.holderKind, input.holderId);
+    const plain = Buffer.from(input.uncompressed);
+    const stored = Buffer.from(input.storedPayload);
+    const hash = sha256(plain);
+    let decoded: Buffer;
+    try {
+      decoded = decodeBlob(stored, input.format);
+    } catch (error) {
+      throw new TypeError("pre-framed CAS payload could not be decoded", { cause: error });
+    }
+    if (!hashesEqual(sha256(decoded), hash)) {
+      throw new TypeError("pre-framed CAS payload does not match the uncompressed SHA-256");
+    }
+    const finalPath = blobFilePath(this.rootDir, hash, input.format);
+    if (existsSync(finalPath)) {
+      const inspection = this.inspectFileSync(finalPath, input.format, hash);
+      if (inspection === "match") {
+        chmodSync(finalPath, 0o444);
+        const storedBytes = statSync(finalPath).size;
+        const recordedAt = this.now();
+        this.recordBlobAndPin({
+          hash,
+          bytes: plain.byteLength,
+          storedBytes,
+          format: input.format,
+          now: recordedAt,
+          holderKind: input.holderKind,
+          holderId: input.holderId,
+          replaceStored: false,
+        });
+        return {
+          hash,
+          bytes: plain.byteLength,
+          storedBytes,
+          format: input.format,
+          absolutePath: finalPath,
+          deduplicated: true,
+          replacedCorrupt: false,
+          holderKind: input.holderKind,
+          holderId: input.holderId,
+        };
+      }
+    }
+    mkdirSync(path.dirname(finalPath), { recursive: true });
+    mkdirSync(casTempDir(this.rootDir), { recursive: true });
+    const tempPath = path.join(casTempDir(this.rootDir), `${randomUUID()}.tmp`);
+    let consumed = false;
+    try {
+      writeFileSync(tempPath, stored);
+      if (existsSync(finalPath)) chmodSync(finalPath, 0o666);
+      renameSync(tempPath, finalPath);
+      consumed = true;
+      chmodSync(finalPath, 0o444);
+    } finally {
+      if (!consumed && existsSync(tempPath)) unlinkSync(tempPath);
+    }
+    const recordedAt = this.now();
+    this.recordBlobAndPin({
+      hash,
+      bytes: plain.byteLength,
+      storedBytes: stored.byteLength,
+      format: input.format,
+      now: recordedAt,
+      holderKind: input.holderKind,
+      holderId: input.holderId,
+      replaceStored: true,
+    });
+    return {
+      hash,
+      bytes: plain.byteLength,
+      storedBytes: stored.byteLength,
+      format: input.format,
+      absolutePath: finalPath,
+      deduplicated: false,
+      replacedCorrupt: false,
+      holderKind: input.holderKind,
+      holderId: input.holderId,
+    };
+  }
+
+  readCompressedSync(digest: string): {
+    readonly hash: string;
+    readonly format: CasStoredFormat;
+    readonly storedPayload: Buffer;
+    readonly bytes: number;
+    readonly storedBytes: number;
+    readonly state: "ok" | "quarantined";
+  } {
+    const normalized = normalizeCasHash(digest);
+    const located = this.readStoredSync(normalized);
+    const row = this.readBlobRow(normalized);
+    return {
+      hash: normalized,
+      format: located.format,
+      storedPayload: located.stored,
+      bytes: row?.bytes ?? located.stored.byteLength,
+      storedBytes: located.stored.byteLength,
+      state: row?.state ?? "ok",
+    };
+  }
+
+  readPlainSync(digest: string): Buffer {
+    const normalized = normalizeCasHash(digest);
+    const located = this.readStoredSync(normalized);
+    let plain: Buffer;
+    try {
+      plain = decodeBlob(located.stored, located.format);
+    } catch (error) {
+      throw new CasIntegrityMismatchError({
+        hash: normalized,
+        actualHash: "unreadable",
+        retention: null,
+        dependentReceipts: [],
+        reason: "stored bytes could not be decoded",
+        cause: error,
+      });
+    }
+    const actual = sha256(plain);
+    if (!hashesEqual(actual, normalized)) {
+      throw new CasIntegrityMismatchError({
+        hash: normalized,
+        actualHash: actual,
+        retention: null,
+        dependentReceipts: [],
+        reason: "uncompressed SHA-256 mismatch on read",
+      });
+    }
+    this.markVerified(normalized);
+    return plain;
+  }
+
+  dropAllPinsSync(digest: string): void {
+    const hash = normalizeCasHash(digest);
+    this.globalDb.prepare("DELETE FROM cas_pins WHERE hash = :hash").run({ hash });
+  }
+
+  unlinkBlobFilesSync(digest: string): void {
+    const hash = normalizeCasHash(digest);
+    for (const format of ["zstd", "raw"] as const) {
+      const filePath = blobFilePath(this.rootDir, hash, format);
+      if (!existsSync(filePath)) continue;
+      try {
+        chmodSync(filePath, 0o666);
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") continue;
+        throw error;
+      }
+      try {
+        unlinkSync(filePath);
+      } catch (error) {
+        if (errorCode(error) === "ENOENT") continue;
+        throw error;
+      }
+    }
+    this.globalDb.prepare("DELETE FROM cas_blobs WHERE hash = :hash").run({ hash });
+  }
+
+  totalPinnedStoredBytes(): number {
+    const row = this.globalDb
+      .prepare(
+        `SELECT COALESCE(SUM(stored_bytes), 0) AS n
+           FROM cas_blobs b
+          WHERE EXISTS (SELECT 1 FROM cas_pins p WHERE p.hash = b.hash)`,
+      )
+      .get();
+    return row ? integer(row.n, "pinned stored bytes") : 0;
+  }
+
+  listVerificationCandidates(): readonly CasVerificationCandidate[] {
+    return this.globalDb
+      .prepare(
+        `SELECT hash, last_verified_at, format
+           FROM cas_blobs
+          WHERE state = 'ok'
+          ORDER BY last_verified_at IS NULL DESC, last_verified_at ASC, hash ASC`,
+      )
+      .all()
+      .map((row) => ({
+        hash: text(row.hash, "hash"),
+        lastVerifiedAt: row.last_verified_at == null ? null : integer(row.last_verified_at, "last_verified_at"),
+        format: parseFormat(text(row.format, "format")),
+      }));
+  }
+
+  noteVerified(digest: string, verifiedAt: number): void {
+    const hash = normalizeCasHash(digest);
+    this.globalDb
+      .prepare(`UPDATE cas_blobs SET last_verified_at = :verified_at WHERE hash = :hash`)
+      .run({ hash, verified_at: verifiedAt });
+  }
+
+  private async spillPreframed(
+    plain: Buffer,
+    storedPayload: Uint8Array | undefined,
+    tempPath: string,
+  ): Promise<{ hash: string; storedBytes: number }> {
+    if (storedPayload === undefined) {
+      throw new TypeError("zstd-seekable CAS writes require pre-framed storedPayload");
+    }
+    const stored = Buffer.from(storedPayload);
+    const hash = sha256(plain);
+    let decoded: Buffer;
+    try {
+      decoded = decodeBlob(stored, "zstd-seekable");
+    } catch (error) {
+      throw new TypeError("zstd-seekable storedPayload could not be decoded", { cause: error });
+    }
+    if (!hashesEqual(sha256(decoded), hash)) {
+      throw new TypeError("zstd-seekable storedPayload does not match the uncompressed SHA-256");
+    }
+    const storedBytes = await writeStoredFile(tempPath, stored);
+    return { hash, storedBytes };
+  }
+
+  private async readStored(hash: string): Promise<{ stored: Buffer; format: CasStoredFormat }> {
+    const row = this.readBlobRow(hash);
+    if (!row) throw new CasBlobMissingError(hash);
+    const primary = blobFilePath(this.rootDir, hash, row.format);
+    try {
+      const stored = await readFile(primary);
+      return { stored, format: resolvedFormat(row.format, stored) };
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT" && errorCode(error) !== "ENOTDIR") throw error;
+    }
+    const alternate = blobFilePath(this.rootDir, hash, row.format === "raw" ? "zstd" : "raw");
+    try {
+      const stored = await readFile(alternate);
+      const format: CasStoredFormat =
+        row.format === "raw" ? (hasSeekableFooter(stored) ? "zstd-seekable" : "zstd") : "raw";
+      return { stored, format };
+    } catch (error) {
+      if (errorCode(error) === "ENOENT" || errorCode(error) === "ENOTDIR") {
+        throw new CasBlobMissingError(hash);
+      }
+      throw error;
+    }
+  }
+
+  private readStoredSync(hash: string): { stored: Buffer; format: CasStoredFormat } {
+    const normalized = normalizeCasHash(hash);
+    const row = this.readBlobRow(normalized);
+    const formats: readonly CasStoredFormat[] = row
+      ? [row.format, row.format === "raw" ? "zstd" : "raw"]
+      : ["zstd", "raw"];
+    const seen = new Set<string>();
+    for (const format of formats) {
+      const filePath = blobFilePath(this.rootDir, normalized, format);
+      if (seen.has(filePath) || !existsSync(filePath)) {
+        seen.add(filePath);
+        continue;
+      }
+      seen.add(filePath);
+      const stored = readFileSync(filePath);
+      return { stored, format: resolvedFormat(format === "raw" ? "raw" : format, stored) };
+    }
+    throw new CasBlobMissingError(normalized);
+  }
+
+  private inspectFileSync(
+    filePath: string,
+    format: CasStoredFormat,
+    expectedHash: string,
+  ): "match" | "mismatch" | "absent" {
+    try {
+      const stored = readFileSync(filePath);
+      const plain = decodeBlob(stored, format);
+      return hashesEqual(sha256(plain), expectedHash) ? "match" : "mismatch";
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") return "absent";
+      return "mismatch";
+    }
   }
 
   private async placeSpilledBlob(
@@ -751,20 +1132,9 @@ export class CasBlobStore {
   }
 
   private async loadPlain(hash: string, retention: CasRetention | null): Promise<Buffer> {
-    const row = this.readBlobRow(hash);
-    if (!row) throw new CasBlobMissingError(hash);
-    const filePath = blobFilePath(this.rootDir, hash, row.format);
-    let stored: Buffer;
+    const located = await this.readStored(hash);
     try {
-      stored = await readFile(filePath);
-    } catch (error) {
-      if (errorCode(error) === "ENOENT" || errorCode(error) === "ENOTDIR") {
-        throw new CasBlobMissingError(hash);
-      }
-      throw error;
-    }
-    try {
-      return decodeBlob(stored, row.format);
+      return decodeBlob(located.stored, located.format);
     } catch (error) {
       await this.failIntegrity({
         hash,

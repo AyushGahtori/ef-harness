@@ -83,6 +83,9 @@ export interface CasPutOptions {
   readonly holderKind: CasHolderKind;
   readonly holderId: string;
   readonly mime?: string;
+  /** `raw` stores the bytes unchanged. `zstd` and `zstd-seekable` require pre-framed `storedPayload`. */
+  readonly format?: "zstd" | "zstd-seekable" | "raw";
+  readonly storedPayload?: Uint8Array;
 }
 
 export interface CasWriteResult {

@@ -7,13 +7,35 @@ export type CasRetention = "evidence" | "diagnostic" | "ephemeral" | "asset";
 /** On-disk codec. The hash is always SHA-256 of the uncompressed bytes. */
 export type CasStoredFormat = "zstd" | "zstd-seekable" | "raw";
 
-/** Codecs this store will write. Seekable frames belong to the artifact manager. */
-export type CasWriteFormat = "zstd" | "raw";
+/**
+ * Codecs this store will write. `zstd-seekable` is stored pre-framed:
+ * the caller supplies the seekable bytes and this store does not wrap them again.
+ */
+export type CasWriteFormat = "zstd" | "zstd-seekable" | "raw";
 
 export interface CasPutPin {
   readonly holderKind: CasHolderKind;
   readonly holderId: string;
   readonly format?: CasWriteFormat;
+  /**
+   * Pre-framed bytes. Required when `format` is `zstd-seekable`.
+   * The CAS key stays the SHA-256 of the uncompressed content.
+   */
+  readonly storedPayload?: Uint8Array;
+}
+
+/** Inclusive `start` and exclusive `end`, in uncompressed bytes. */
+export interface CasByteRange {
+  readonly start?: number;
+  readonly end?: number;
+}
+
+export interface CasPreframedPut {
+  readonly uncompressed: Uint8Array;
+  readonly storedPayload: Uint8Array;
+  readonly format: CasStoredFormat;
+  readonly holderKind: CasHolderKind;
+  readonly holderId: string;
 }
 
 /** Returned only after cas_blobs and cas_pins have been committed. */
@@ -28,6 +50,9 @@ export interface CasWriteResult {
   readonly holderKind: CasHolderKind;
   readonly holderId: string;
 }
+
+/** Alias for {@link CasWriteResult}. */
+export type CasPutReceipt = CasWriteResult;
 
 export interface CasIntegrityVerification {
   readonly hash: string;
@@ -75,6 +100,12 @@ export interface CasPinSyncResult {
   readonly projectPinsAdded: number;
   readonly projectPinsRemoved: number;
   readonly pendingPinsCleared: number;
+}
+
+export interface CasVerificationCandidate {
+  readonly hash: string;
+  readonly lastVerifiedAt: number | null;
+  readonly format: CasStoredFormat;
 }
 
 export interface CasBlobStoreOptions {

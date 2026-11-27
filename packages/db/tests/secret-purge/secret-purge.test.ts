@@ -5,9 +5,13 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { splitSearchText } from "@ef-harness/shared-contracts";
+import { encodeSeekableLog } from "../../src/artifacts/seekable-zstd.js";
+import { blobFilePath } from "../../src/cas/layout.js";
 import { computeNodeContentHash, computeSecretHmac } from "../../src/secret-purge/canonical.js";
 import { RawFileCasBlobStore } from "../../src/secret-purge/cas-store.js";
 import { SecretPurgeEngine } from "../../src/secret-purge/engine.js";
+import { ensureSearchTextFunction } from "../../src/secret-purge/sqlite-util.js";
 import {
   PurgeLockUnavailableError,
   SecretTooShortError,
@@ -31,20 +35,12 @@ function readAsset(name: "state.sql" | "global.sql" | "telemetry.sql"): string {
   return fs.readFileSync(path.join(root, "schema", name), "utf8");
 }
 
-function splitWords(value: string): string {
-  if (!value) return "";
-  const extra = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${value} ${extra}`;
-}
-
 function openState(filePath: string): DatabaseSync {
   const db = new DatabaseSync(filePath);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA secure_delete = ON");
-  db.function("ef_search_text", { deterministic: true }, (value) =>
-    splitWords(value == null ? "" : String(value)),
-  );
+  db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));
   db.exec(readAsset("state.sql"));
   return db;
 }
@@ -69,6 +65,7 @@ function plantProject(root: string, secret: string): {
   global: DatabaseSync;
   cas: RawFileCasBlobStore;
   casRoot: string;
+  seekablePath: string;
   backupsDir: string;
   telemetryPath: string;
   logsDir: string;
@@ -156,6 +153,20 @@ function plantProject(root: string, secret: string): {
       "INSERT INTO artifacts(id, hash, kind, bytes, mime, retention, created_at) VALUES ('ART-1', ?, 'log', ?, 'text/plain', 'diagnostic', 1)",
     )
     .run(blob.hash, blob.bytes);
+  const leaked = `seekable ${secret}\n`;
+  const framed = encodeSeekableLog(leaked, 4096);
+  const seekable = cas.putBlob(Buffer.from(leaked, "utf8"), {
+    holderKind: "project",
+    holderId: "P1",
+    format: "zstd-seekable",
+    storedPayload: framed.stored,
+  });
+  state
+    .prepare(
+      "INSERT INTO artifacts(id, hash, kind, bytes, mime, retention, created_at) VALUES ('ART-SEEK', ?, 'log', ?, 'text/plain', 'diagnostic', 1)",
+    )
+    .run(seekable.hash, seekable.bytes);
+  const seekablePath = blobFilePath(casRoot, seekable.hash, "zstd");
 
   const backupsDir = path.join(root, "backups");
   fs.mkdirSync(backupsDir, { recursive: true });
@@ -172,7 +183,7 @@ function plantProject(root: string, secret: string): {
   fs.mkdirSync(logsDir, { recursive: true });
   fs.writeFileSync(path.join(logsDir, "efharness-test.jsonl"), `${JSON.stringify({ msg: secret })}\n`);
 
-  return { state, statePath, global, cas, casRoot, backupsDir, telemetryPath, logsDir };
+  return { state, statePath, global, cas, casRoot, seekablePath, backupsDir, telemetryPath, logsDir };
 }
 
 function assertFileMisses(filePath: string, secret: string): void {
@@ -190,6 +201,15 @@ function walk(directory: string, found: string[]): void {
 }
 
 describe("secret purge engine", { timeout: 20_000 }, () => {
+  it("registers the canonical ef_search_text acronym split", () => {
+    const db = new DatabaseSync(":memory:");
+    ensureSearchTextFunction(db);
+    const row = db.prepare("SELECT ef_search_text('XMLHttpRequest') AS probe").get();
+    expect(row?.["probe"]).toBe("XMLHttpRequest XML Http Request");
+    expect(row?.["probe"]).toBe(splitSearchText("XMLHttpRequest"));
+    db.close();
+  });
+
   it("erases the canary from state, wal, backups, CAS, telemetry, and logs", () => {
     const root = tempRoot();
     const project = plantProject(root, CANARY);
@@ -265,6 +285,7 @@ describe("secret purge engine", { timeout: 20_000 }, () => {
     const casFiles: string[] = [];
     walk(project.casRoot, casFiles);
     for (const filePath of casFiles) assertFileMisses(filePath, CANARY);
+    expect(fs.existsSync(project.seekablePath)).toBe(false);
     assertFileMisses(project.telemetryPath, CANARY);
     assertFileMisses(`${project.telemetryPath}-wal`, CANARY);
     for (const name of fs.readdirSync(project.logsDir)) {

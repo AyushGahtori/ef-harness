@@ -1024,6 +1024,8 @@ export {
   CasBlobStore,
   CasIntegrityMismatchError,
   blobFilePath,
+  toArtifactCasPort,
+  toSecretPurgeCasPort,
   casRenameBackoffMs,
   defaultCasRoot,
   globalCasGcCandidatesSql,
@@ -1037,7 +1039,10 @@ export type {
   CasHolderKind,
   CasIntegrityVerification,
   CasPinSyncResult,
+  CasByteRange,
+  CasPreframedPut,
   CasPutPin,
+  CasPutReceipt,
   CasRetention,
   CasScrubRecoveryAlert,
   CasStoreEvent,
@@ -1068,8 +1073,10 @@ export {
   PROTECTED_ATTEMPT_STATES,
   SEEKABLE_FRAME_BYTES,
   SEEKABLE_TEXT_THRESHOLD_BYTES,
+  SeekableLogArchiver,
   SeekableLogReader,
   TurnLogArchiver,
+  bindArtifactManager,
   UnsafeLogPatternError,
   assertLineRange,
   compileSafeLogPattern,
@@ -1122,6 +1129,7 @@ export type {
   StorageCapWarning,
   StoreArtifactInput,
   StoredArtifact,
+  SeekableLogArchivePin,
   TurnLogArchiveResult,
   TurnLogArchiverOptions,
 } from "./artifacts/index.js";
@@ -1131,6 +1139,7 @@ export {
   ROTATION_GUIDANCE,
   RawFileCasBlobStore,
   SecretPurgeEngine,
+  bindSecretPurgeEngine,
   SecretTooShortError,
   canonicalizeJson as secretPurgeCanonicalizeJson,
   computeNodeContentHash as secretPurgeComputeNodeContentHash,
@@ -1159,3 +1168,10 @@ export type {
   StructuredLogEvent,
   StructuredLogSink,
 } from "./secret-purge/index.js";
+export {
+  EFFECT_STATES,
+  EffectsRepo,
+  PayloadHashMismatchError,
+  bindEffects,
+} from "./effects/index.js";
+export type { EffectDraft, EffectPatch, EffectRecord, EffectState } from "./effects/index.js";

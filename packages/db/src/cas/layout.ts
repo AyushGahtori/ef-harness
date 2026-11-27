@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import path from "node:path";
+import { CanonicalizationError, toBareSha256Hex } from "@ef-harness/shared-contracts";
 import type { CasStoredFormat } from "./types.js";
 
 /** Ordinary GC never deletes a blob younger than this, even when it has no pin. */
@@ -11,10 +12,14 @@ export const CAS_TMP_MAX_AGE_MS = 60 * 60 * 1000;
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 export function normalizeCasHash(hash: string): string {
-  if (!HASH_PATTERN.test(hash)) {
-    throw new TypeError("CAS hash must be a lowercase SHA-256 hex digest");
+  try {
+    return toBareSha256Hex(hash);
+  } catch (error) {
+    if (error instanceof CanonicalizationError || !HASH_PATTERN.test(hash)) {
+      throw new TypeError("CAS hash must be a lowercase SHA-256 hex digest");
+    }
+    throw error;
   }
-  return hash;
 }
 
 /**
