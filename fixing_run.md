@@ -646,3 +646,27 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/test-env test`: exit `0` — `Test Files 18 passed (18)`, `Tests 87 passed | 3 skipped (90)`. The 3 skips are the pre-existing missing-binary cases (`postgres`, `mailpit`, `redis`). `accounting.native` is still asserted on win32 and was not skipped; Linux does not require `native === true`.
 - `pnpm --filter @ef-harness/sandbox test`: exit `0` — `Test Files 30 passed | 2 skipped (32)`, `Tests 169 passed | 14 skipped (183)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+## [C21] — Provider protocol fixes and CAS-backed tool shrinker
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `81031712977f47bf3c63bd40b7258ffa658e7ab1` (`integrate: C21 wire protocol fixes and CAS shrinker`)
+- **Findings Fixed:** `F-023` task-053 portion (HTTP 429 `insufficient_quota` is billing, assistant-text `cost` is not parsed, Responses reasoning stays before `function_call`, duplicate `tool_call` events are dropped, and `canAssignCodingTask` accepts a 32k tool-calling profile). `F-011` was not reopened in `packages/db`; the C11 `CasBlobStore` is what `ToolOutputShrinker` writes. Task-056 and task-057 stay for C22. Did not apply `task-056.patch` or `task-057.patch`. Did not edit `packages/db`. Did not re-merge `task/053`, `task/054`, or `task/055`. Did not revert the C19 port-lease binds or the C20 port 3000 fix. Did not merge `main`. Did not open a pull request. Did not start C22.
+
+### What Changed
+- Re-verified on `a12f6fabf5dd9c806cb839580763bc57590087b7`. `task/053-worker-loop-provider-protocols` (`445b340`), `task/054-worker-loop-context-compaction` (`f62475b`), and `task/055-worker-loop-tool-shrinker` (`460527d`) are ancestors. `git apply --stat` and `git apply --check` on `task-053.patch` were clean (`+284/−35`, 8 protocol files), then `git apply` landed that delta. Live names stay `ModelProtocolAdapter.stream`, `CompactionPipeline`, and `ToolOutputShrinker.shrinkForHistory`. Trees stay `context/` and `read-tools/`. The `./edits` export stays. `path_leases.mode` stays `'intent' | 'granted'`. Port `3000` is not inserted into `port_leases`.
+- `@ef-harness/db` and `@ef-harness/shared-observability` are dependencies of `@ef-harness/worker-loop` only. `ToolOutputShrinker` defaults to `StreamingRedactor` over `SecretRedactor` from `@ef-harness/shared-observability`. `shrinkForHistory` is async. When a `CasBlobStore` is supplied, omitted or at least 256 KiB test and build stdout/stderr are redacted and `putBlob`'d. The history result keeps the head/tail excerpt and adds a `sha256:` digest.
+
+### What It Fixed
+- **F-023 (task-053):** A 429 body with `insufficient_quota` is `billing` and is not a scheduling retry. Assistant text that contains a `cost` field does not change ledger micro-USD; only structured `usage.cost` does. Replayed reasoning items precede the assistant `function_call`, and `done` plus `completed` emit one `tool_call`. A 32,768-token tool-calling profile can take a coding task; an 8,192-token profile cannot.
+- **F-011 (consumer only):** A 500 KB tool log shrinks to a head/tail excerpt, the full redacted bytes round-trip through `CasBlobStore.getBlob`, and a provider key in the middle of that log is stored as `[REDACTED:ANTHROPIC_KEY]`.
+
+### Verification Run & Results
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-053.patch`: exit `0` — `8 files changed, 284 insertions(+), 35 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-053.patch`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/worker-loop test`: exit `0` — `Test Files 25 passed (25)`, `Tests 137 passed (137)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
