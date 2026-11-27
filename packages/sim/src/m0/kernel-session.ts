@@ -1,31 +1,45 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import {
+  CasBlobStore,
+  GlobalBrokerDb,
+  bindCoordinatorWriteQueue,
+  bindOutbox,
+  createNodeSqliteBackend,
+  openDatabase,
+  openProjectStateDb,
+} from "@ef-harness/db";
+import type {
+  CoordinatorWriteQueue,
+  OutboxRepo,
+  ProjectStateDb,
+  SqliteConnection,
+  StateDbLogger,
+} from "@ef-harness/db";
 import { CrashSignal, type CrashFaultInjector } from "./faults.js";
 import {
   allNamed,
-  applyMemoryPragmas,
   asNumber,
   asString,
-  emptyGlobalTemplate,
-  emptyStateTemplate,
-  globalSchemaSql,
-  openDisk,
-  openMemory,
   querySql,
-  registerSearch,
-  reopenDisk,
   runNamed,
-  stateSchemaSql,
+  type SqlCell,
+  type SqlParam,
   type SqlRow,
 } from "./schema-cache.js";
 
 export interface DbHandle {
   id: string;
   role: "state" | "global";
-  db: DatabaseSync;
-  snap: Uint8Array | null;
-  file: string | null;
+  db: SimDatabase;
+  file: string;
+  state: ProjectStateDb | null;
+  broker: GlobalBrokerDb | null;
+  queue: CoordinatorWriteQueue | null;
+  outbox: OutboxRepo | null;
+  cas: CasBlobStore | null;
 }
 
 export class ReserveRefused extends Error {
@@ -35,9 +49,20 @@ export class ReserveRefused extends Error {
   }
 }
 
+const quietState: StateDbLogger = {
+  info() {
+    return undefined;
+  },
+  warn() {
+    return undefined;
+  },
+  error() {
+    return undefined;
+  },
+};
+
 /**
- * Owns the state.db and global.db connections for one simulated run.
- * Memory runs clone a schema image. Disk runs use WAL files.
+ * state.db and global.db for one simulated run, opened through ProjectStateDb and GlobalBrokerDb.
  */
 export class KernelSession {
   readonly projects: DbHandle[] = [];
@@ -45,43 +70,107 @@ export class KernelSession {
   readonly latenciesMs: number[] = [];
   readonly mode: "memory" | "disk";
   private readonly injector: CrashFaultInjector;
-  private readonly statements = new Map<string, StatementSync>();
+  private readonly root: string;
+  private readonly now: () => number;
+  private readonly statements = new Map<string, SimStatement>();
 
   constructor(options: {
     mode: "memory" | "disk";
     projectIds: readonly string[];
-    diskRoot: string | null;
+    diskRoot: string;
     injector: CrashFaultInjector;
+    now: () => number;
   }) {
     this.mode = options.mode;
     this.injector = options.injector;
-    if (options.mode === "disk" && options.diskRoot) {
-      fs.mkdirSync(options.diskRoot, { recursive: true });
-    }
+    this.root = options.diskRoot;
+    this.now = options.now;
     for (const id of options.projectIds) {
-      this.projects.push(this.openState(id, options.diskRoot));
+      this.projects.push(this.openState(id));
     }
-    this.global = this.openGlobal(options.diskRoot);
+    this.global = this.openGlobal();
   }
 
-  private openState(id: string, diskRoot: string | null): DbHandle {
-    if (this.mode === "memory") {
-      const db = openMemory(emptyStateTemplate(), true);
-      return { id, role: "state", db, snap: emptyStateTemplate(), file: null };
-    }
-    const file = path.join(diskRoot ?? "", `${id}-state.db`);
-    const db = openDisk(file, true, stateSchemaSql());
-    return { id, role: "state", db, snap: null, file };
+  get casStore(): CasBlobStore {
+    const store = this.global.cas;
+    if (!store) throw new Error("global CAS is not open");
+    return store;
   }
 
-  private openGlobal(diskRoot: string | null): DbHandle {
-    if (this.mode === "memory") {
-      const db = openMemory(emptyGlobalTemplate(), false);
-      return { id: "global", role: "global", db, snap: emptyGlobalTemplate(), file: null };
+  queue(handle: DbHandle): CoordinatorWriteQueue {
+    if (!handle.queue) throw new Error(`project ${handle.id} has no write queue`);
+    return handle.queue;
+  }
+
+  outbox(handle: DbHandle): OutboxRepo {
+    if (!handle.outbox) throw new Error(`project ${handle.id} has no outbox`);
+    return handle.outbox;
+  }
+
+  private openState(id: string): DbHandle {
+    const handle = emptyHandle(id, "state");
+    this.attachState(handle, id);
+    return handle;
+  }
+
+  private openGlobal(): DbHandle {
+    const handle = emptyHandle("global", "global");
+    this.attachGlobal(handle);
+    return handle;
+  }
+
+  private attachState(handle: DbHandle, id: string): void {
+    const databasePath = path.join(this.root, "projects", id, "state.db");
+    if (!fs.existsSync(databasePath)) {
+      fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+      fs.copyFileSync(templateFiles(this.now).stateFile, databasePath);
     }
-    const file = path.join(diskRoot ?? "", "global.db");
-    const db = openDisk(file, false, globalSchemaSql());
-    return { id: "global", role: "global", db, snap: null, file };
+    const state = openProjectStateDb({
+      projectId: id,
+      rootDir: this.root,
+      now: this.now,
+      logger: quietState,
+    });
+    handle.state = state;
+    handle.broker = null;
+    handle.file = state.databasePath;
+    handle.queue = bindCoordinatorWriteQueue(state, { now: this.now });
+    handle.outbox = bindOutbox(state, { now: this.now });
+    handle.cas = null;
+    handle.db = new SimConnection(state.writer, () => {
+      state.close();
+    });
+  }
+
+  private attachGlobal(handle: DbHandle): void {
+    const databasePath = path.join(this.root, "global.db");
+    if (!fs.existsSync(databasePath)) {
+      fs.mkdirSync(this.root, { recursive: true });
+      fs.copyFileSync(templateFiles(this.now).globalFile, databasePath);
+    }
+    const broker = GlobalBrokerDb.open({
+      root: this.root,
+      now: this.now,
+      logger: {
+        warn() {
+          return undefined;
+        },
+      },
+    });
+    handle.broker = broker;
+    handle.state = null;
+    handle.file = broker.filePath;
+    handle.queue = null;
+    handle.outbox = null;
+    handle.cas = new CasBlobStore({
+      globalDb: broker.writer as unknown as DatabaseSync,
+      rootDir: path.join(this.root, "cas"),
+      now: this.now,
+      sleep: waitTurn,
+    });
+    handle.db = new SimConnection(broker.writer, () => {
+      broker.close();
+    });
   }
 
   handles(): DbHandle[] {
@@ -120,7 +209,6 @@ export class KernelSession {
       }
       throw error;
     }
-    if (this.mode === "memory") handle.snap = handle.db.serialize();
   }
 
   reopenAll(): void {
@@ -132,49 +220,38 @@ export class KernelSession {
       if (handle.db.isTransaction) {
         try {
           handle.db.exec("ROLLBACK");
-        } catch {
-          // The connection was closed underneath the transaction.
+        } catch (error) {
+          if (!(error instanceof Error)) throw error;
         }
       }
       if (handle.db.isOpen) handle.db.close();
     }
     this.statements.clear();
-    if (this.mode === "memory") {
-      if (!handle.snap) throw new Error(`missing memory snapshot for ${handle.id}`);
-      const db = new DatabaseSync(":memory:");
-      applyMemoryPragmas(db);
-      if (handle.role === "state") registerSearch(db);
-      db.deserialize(handle.snap);
-      applyMemoryPragmas(db);
-      if (handle.role === "state") registerSearch(db);
-      handle.db = db;
-      return;
-    }
-    if (!handle.file) throw new Error(`missing disk file for ${handle.id}`);
-    handle.db = reopenDisk(handle.file, handle.role === "state");
+    if (handle.role === "state") this.attachState(handle, handle.id);
+    else this.attachGlobal(handle);
   }
 
-  all(handle: DbHandle, name: string, params: Record<string, SQLInputValue> = {}): SqlRow[] {
+  all(handle: DbHandle, name: string, params: Record<string, SqlParam> = {}): SqlRow[] {
     return allNamed(this.statement(handle, querySql(name)), params);
   }
 
-  run(handle: DbHandle, name: string, params: Record<string, SQLInputValue> = {}): number {
+  run(handle: DbHandle, name: string, params: Record<string, SqlParam> = {}): number {
     return runNamed(this.statement(handle, querySql(name)), params);
   }
 
-  rows(handle: DbHandle, sql: string, ...params: SQLInputValue[]): SqlRow[] {
-    return this.statement(handle, sql).all(...params) as SqlRow[];
+  rows(handle: DbHandle, sql: string, ...params: SqlParam[]): SqlRow[] {
+    return this.statement(handle, sql).all(...params);
   }
 
-  row(handle: DbHandle, sql: string, ...params: SQLInputValue[]): SqlRow | undefined {
-    return this.statement(handle, sql).get(...params) as SqlRow | undefined;
+  row(handle: DbHandle, sql: string, ...params: SqlParam[]): SqlRow | undefined {
+    return this.statement(handle, sql).get(...params);
   }
 
-  exec(handle: DbHandle, sql: string, ...params: SQLInputValue[]): number {
-    return Number(this.statement(handle, sql).run(...params).changes);
+  exec(handle: DbHandle, sql: string, ...params: SqlParam[]): number {
+    return this.statement(handle, sql).run(...params).changes;
   }
 
-  private statement(handle: DbHandle, sql: string): StatementSync {
+  private statement(handle: DbHandle, sql: string): SimStatement {
     const key = `${handle.id}\u0000${sql}`;
     const cached = this.statements.get(key);
     if (cached) return cached;
@@ -184,36 +261,42 @@ export class KernelSession {
   }
 
   /**
-   * Disk runs prove WAL readers cannot see an uncommitted write and a second
-   * writer cannot take the immediate lock. The probe is rolled back.
+   * A second connection from the db driver must not see the uncommitted write,
+   * and must not take the immediate lock while this writer holds it.
    */
   proveDiskIsolation(handle: DbHandle): { walIsolated: boolean; fileLocked: boolean } {
-    if (this.mode !== "disk" || !handle.file) return { walIsolated: true, fileLocked: true };
-    const reader = new DatabaseSync(handle.file, { readOnly: true, timeout: 1000 });
-    const other = new DatabaseSync(handle.file, { timeout: 0 });
+    if (this.mode !== "disk") return { walIsolated: true, fileLocked: true };
+    const reader = openDatabase({ location: handle.file, role: "state", access: "readonly" });
+    const other = openDatabase({
+      location: handle.file,
+      role: "state",
+      access: "writer",
+      backend: (options) => createNodeSqliteBackend({ ...options, timeoutMs: 0 }),
+    });
+    other.exec("PRAGMA busy_timeout = 0");
     try {
-      reader.exec("PRAGMA foreign_keys = ON");
-      const beforeRow = reader.prepare("SELECT value FROM meta WHERE key = 'stream_epoch'").get() as SqlRow | undefined;
-      const before = asString(beforeRow?.value, "stream_epoch");
+      const before = readEpoch(reader);
       handle.db.exec("BEGIN IMMEDIATE");
       handle.db.prepare("UPDATE meta SET value = 'wal-probe' WHERE key = 'stream_epoch'").run();
-      const duringRow = reader.prepare("SELECT value FROM meta WHERE key = 'stream_epoch'").get() as SqlRow | undefined;
-      const during = asString(duringRow?.value, "stream_epoch");
+      const during = readEpoch(reader);
       let fileLocked = false;
       try {
         other.exec("BEGIN IMMEDIATE");
-        if (other.isTransaction) other.exec("ROLLBACK");
-      } catch {
+        if (other.inTransaction) other.exec("ROLLBACK");
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
         fileLocked = true;
       }
       handle.db.exec("ROLLBACK");
-      const afterRow = reader.prepare("SELECT value FROM meta WHERE key = 'stream_epoch'").get() as SqlRow | undefined;
-      const after = asString(afterRow?.value, "stream_epoch");
-      return { walIsolated: during === before && after === before && before !== "wal-probe", fileLocked };
+      const after = readEpoch(reader);
+      return {
+        walIsolated: during === before && after === before && before !== "wal-probe",
+        fileLocked,
+      };
     } finally {
       if (handle.db.isOpen && handle.db.isTransaction) handle.db.exec("ROLLBACK");
       reader.close();
-      if (other.isOpen) other.close();
+      other.close();
     }
   }
 
@@ -222,6 +305,207 @@ export class KernelSession {
       if (handle.db.isOpen) handle.db.close();
     }
   }
+}
+
+export interface SimDatabase {
+  readonly isOpen: boolean;
+  readonly isTransaction: boolean;
+  exec(sql: string): void;
+  prepare(sql: string): SimStatement;
+  close(): void;
+}
+
+export interface SimStatement {
+  run(...params: readonly unknown[]): { changes: number };
+  get(...params: readonly unknown[]): SqlRow | undefined;
+  all(...params: readonly unknown[]): SqlRow[];
+}
+
+class SimConnection implements SimDatabase {
+  private openFlag = true;
+
+  constructor(
+    private readonly writer: SqliteConnection,
+    private readonly release: () => void,
+  ) {}
+
+  get isOpen(): boolean {
+    return this.openFlag && this.writer.open;
+  }
+
+  get isTransaction(): boolean {
+    return this.isOpen && this.writer.inTransaction;
+  }
+
+  exec(sql: string): void {
+    this.writer.exec(sql);
+  }
+
+  prepare(sql: string): SimStatement {
+    const statement = this.writer.prepare(sql);
+    return {
+      run: (...params: readonly unknown[]) => {
+        const result = statement.run(bindArgs(params));
+        return { changes: result.changes };
+      },
+      get: (...params: readonly unknown[]) => asRow(statement.get(params.map((value) => asParam(value)))),
+      all: (...params: readonly unknown[]) => {
+        const rows = statement.all(bindArgs(params));
+        return rows.map((row) => {
+          const parsed = asRow(row);
+          if (!parsed) throw new Error("SQLite row was not an object");
+          return parsed;
+        });
+      },
+    };
+  }
+
+  close(): void {
+    if (!this.openFlag) return;
+    this.openFlag = false;
+    this.release();
+  }
+}
+
+function emptyHandle(id: string, role: "state" | "global"): DbHandle {
+  const placeholder = new SimConnection(closedWriter(), () => undefined);
+  placeholder.close();
+  return {
+    id,
+    role,
+    db: placeholder,
+    file: "",
+    state: null,
+    broker: null,
+    queue: null,
+    outbox: null,
+    cas: null,
+  };
+}
+
+function closedWriter(): SqliteConnection {
+  return {
+    location: "",
+    role: "state",
+    access: "writer",
+    open: false,
+    inTransaction: false,
+    inImmediateTransaction: false,
+    exec() {
+      throw new Error("connection is closed");
+    },
+    prepare() {
+      throw new Error("connection is closed");
+    },
+    get() {
+      throw new Error("connection is closed");
+    },
+    all() {
+      throw new Error("connection is closed");
+    },
+    run() {
+      throw new Error("connection is closed");
+    },
+    pragma() {
+      throw new Error("connection is closed");
+    },
+    registerFunction() {
+      throw new Error("connection is closed");
+    },
+    transaction() {
+      throw new Error("connection is closed");
+    },
+    savepoint() {
+      throw new Error("connection is closed");
+    },
+    addWriteListener() {
+      return () => undefined;
+    },
+    attachCheckpointScheduler() {
+      return undefined;
+    },
+    close() {
+      return undefined;
+    },
+  };
+}
+
+function bindArgs(params: readonly unknown[]): Record<string, SqlParam> | readonly SqlParam[] | undefined {
+  if (params.length === 0) return undefined;
+  const first = params[0];
+  if (params.length === 1 && isParamRecord(first)) return first;
+  return params.map((value) => asParam(value));
+}
+
+function isParamRecord(value: unknown): value is Record<string, SqlParam> {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Uint8Array) {
+    return false;
+  }
+  return true;
+}
+
+function asParam(value: unknown): SqlParam {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return value;
+  }
+  if (value instanceof Uint8Array) return value;
+  throw new Error("SQLite parameter is not a supported value");
+}
+
+function asRow(value: unknown): SqlRow | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("SQLite row was not an object");
+  }
+  const row: SqlRow = {};
+  for (const key of Object.keys(value)) {
+    row[key] = asCell(Reflect.get(value, key), key);
+  }
+  return row;
+}
+
+function asCell(value: unknown, key: string): SqlCell {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") return value;
+  if (value instanceof Uint8Array) return value;
+  throw new Error(`SQLite cell ${key} is not a supported value`);
+}
+
+function readEpoch(connection: SqliteConnection): string {
+  const row = asRow(connection.get("SELECT value FROM meta WHERE key = 'stream_epoch'"));
+  return asString(row?.value, "stream_epoch");
+}
+
+let cachedTemplates: { stateFile: string; globalFile: string } | undefined;
+
+function templateFiles(now: () => number): { stateFile: string; globalFile: string } {
+  if (cachedTemplates) return cachedTemplates;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-m0-template-"));
+  const state = openProjectStateDb({
+    projectId: "m0template",
+    rootDir: root,
+    now,
+    logger: quietState,
+  });
+  const stateFile = state.databasePath;
+  state.close();
+  const broker = GlobalBrokerDb.open({
+    root,
+    now,
+    logger: {
+      warn() {
+        return undefined;
+      },
+    },
+  });
+  const globalFile = broker.filePath;
+  broker.close();
+  cachedTemplates = { stateFile, globalFile };
+  return cachedTemplates;
+}
+
+function waitTurn(): Promise<void> {
+  return Promise.resolve();
 }
 
 export function numberCell(row: SqlRow | undefined, key: string): number {

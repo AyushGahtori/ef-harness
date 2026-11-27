@@ -1,71 +1,87 @@
-import net from "node:net";
+import path from "node:path";
+import { SecretRedactor } from "@ef-harness/shared-observability";
+import { NamedPipeClient, NamedPipeServer, SessionTokenStore } from "@ef-harness/ipc";
+import type { StructuredLogger } from "@ef-harness/ipc";
 
-function settleOnce(action: () => void): () => void {
-  let done = false;
-  return () => {
-    if (done) return;
-    done = true;
-    action();
-  };
-}
+const quiet: StructuredLogger = {
+  debug() {
+    return undefined;
+  },
+  info() {
+    return undefined;
+  },
+  warn() {
+    return undefined;
+  },
+  error() {
+    return undefined;
+  },
+};
 
 /**
- * Real Windows named-pipe crash/restart. The first server dies before the receipt.
- * The restarted server delivers the snapshot, which must match byte for byte.
+ * Crash the first named-pipe session before the snapshot is delivered, then
+ * restart `NamedPipeServer` and require the framed client to read the same payload.
  */
-export function exerciseNamedPipe(pipePath: string, payload: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const fail = (error: unknown): void => {
-      if (settled) return;
-      settled = true;
-      reject(error instanceof Error ? error : new Error(String(error)));
-    };
-    const succeed = (): void => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-
-    const server = net.createServer((socket) => {
-      socket.destroy();
-    });
-    server.once("error", fail);
-    server.listen(pipePath, () => {
-      const client = net.connect(pipePath);
-      const crashed = settleOnce(() => {
-        server.close((closeError) => {
-          if (closeError) {
-            fail(closeError);
-            return;
-          }
-          restart(succeed, fail);
-        });
-      });
-      client.once("error", crashed);
-      client.once("close", crashed);
-    });
-
-    function restart(ok: () => void, bad: (error: unknown) => void): void {
-      let data = "";
-      const server2 = net.createServer((socket) => {
-        socket.end(payload);
-      });
-      server2.once("error", bad);
-      server2.listen(pipePath, () => {
-        const client2 = net.connect(pipePath);
-        client2.setEncoding("utf8");
-        client2.on("data", (chunk: string) => {
-          data += chunk;
-        });
-        client2.once("error", bad);
-        client2.once("end", () => {
-          server2.close(() => {
-            if (data !== payload) bad(new Error("named pipe snapshot mismatch"));
-            else ok();
-          });
-        });
-      });
-    }
+export async function exerciseNamedPipe(pipePath: string, payload: string): Promise<void> {
+  const redactor = new SecretRedactor();
+  const tokens = new SessionTokenStore({
+    directory: path.join(path.dirname(pipePath), `ef-m0-token-${path.basename(pipePath)}`),
+    redactor,
   });
+  await tokens.start();
+  const crashed = new NamedPipeServer({
+    pipePath,
+    tokenStore: tokens,
+    logger: quiet,
+    onRequest: () => {
+      throw new Error("daemon crashed before the receipt");
+    },
+  });
+  await crashed.listen();
+  const first = new NamedPipeClient({
+    pipePath,
+    token: tokens.token,
+    logger: quiet,
+    clientName: "m0-sim",
+    clientVersion: "0.0.0",
+    maxRetries: 0,
+    requestTimeoutMs: 2_000,
+  });
+  let dropped = false;
+  try {
+    await first.start();
+    await first.request("snapshot.get", {});
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    dropped = true;
+  } finally {
+    await first.close();
+    await crashed.close();
+  }
+  if (!dropped) throw new Error("named pipe delivered the receipt before the crash");
+
+  const restarted = new NamedPipeServer({
+    pipePath,
+    tokenStore: tokens,
+    logger: quiet,
+    onRequest: () => payload,
+  });
+  await restarted.listen();
+  const second = new NamedPipeClient({
+    pipePath,
+    token: tokens.token,
+    logger: quiet,
+    clientName: "m0-sim",
+    clientVersion: "0.0.0",
+    maxRetries: 0,
+    requestTimeoutMs: 2_000,
+  });
+  try {
+    await second.start();
+    const result = await second.request("snapshot.get", {});
+    if (result !== payload) throw new Error("named pipe snapshot mismatch");
+  } finally {
+    await second.close();
+    await restarted.close();
+  }
 }

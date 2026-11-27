@@ -127,10 +127,15 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
   const projectIds = plan.projects === 2 ? ["P1", "P2"] : ["P1"];
   const taskCounts = new Map<string, number>(projectIds.map((id) => [id, id === "P1" ? plan.tasks : 1]));
   const diskRoot =
-    mode === "disk"
-      ? (options.diskRoot ?? path.join(os.tmpdir(), `ef-m0-${process.pid}-${options.seed}`))
-      : null;
-  const session = new KernelSession({ mode, projectIds, diskRoot, injector });
+    options.diskRoot ?? path.join(os.tmpdir(), `ef-m0-${process.pid}-${options.seed}-${nextSimulationRoot()}`);
+  fs.mkdirSync(diskRoot, { recursive: true });
+  const session = new KernelSession({
+    mode,
+    projectIds,
+    diskRoot,
+    injector,
+    now: () => clock.wallMs(),
+  });
   const clients = new Map<string, ClientStateSyncer>(projectIds.map((id) => [id, new ClientStateSyncer()]));
   const leases: LeaseInterval[] = [];
   const committedCandidates: string[] = [];
@@ -138,7 +143,9 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
   const reconcile = new Set<string>();
   const winners = new Map<string, Winner>();
   const pruned: PruneRecord[] = [];
-  const cas: CasStore = mode === "disk" && diskRoot ? new DiskCasStore(diskRoot) : new MemoryCasStore();
+  const cas: CasStore =
+    mode === "disk" ? new DiskCasStore(() => session.casStore) : new MemoryCasStore(() => session.casStore);
+  const tracedCas = new Set<string>();
   const casHashes: string[] = [];
   const pendingReceipts: string[] = [];
   const flags = {
@@ -182,14 +189,20 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
   };
 
   const bumpEpoch = (handle: DbHandle): void => {
-    const current = snapshotOf(handle).epoch;
-    session.txRaw(handle, () => {
-      session.exec(handle, "UPDATE meta SET value = ? WHERE key = 'stream_epoch'", String(current + 1));
+    const next = snapshotOf(handle).epoch + 1;
+    session.queue(handle).submitOperationSync({
+      opId: `epoch-${handle.id}-${String(next)}`,
+      kind: "stream.epoch",
+      request: { epoch: next },
+      execute(tx) {
+        tx.exec(`UPDATE meta SET value = '${String(next)}' WHERE key = 'stream_epoch'`);
+        return next;
+      },
     });
     resync(handle);
   };
 
-  const onCrash = (signal: CrashSignal): void => {
+  const onCrash = async (signal: CrashSignal): Promise<void> => {
     session.reopenAll();
     const setup = session.row(session.project("P1"), "SELECT value FROM meta WHERE key = 'project_id'");
     flags.postCommitDurable = setup !== undefined;
@@ -211,7 +224,7 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
       bumpEpoch(handle);
     }
     if (snapshotOf(session.project("P1")).epoch > flags.startingEpoch) flags.clientEpochBumped = true;
-    cas.recover();
+    await cas.recover();
   };
 
   try {
@@ -258,8 +271,8 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
     loop.schedule(3000, "sleep_jump", () => sleepJump());
     loop.schedule(3500, "grant_expiry", () => expireLateGrants());
     loop.schedule(4000, "ipc_disconnect", () => disconnectClients());
-    loop.run(onCrash);
-    finalize();
+    await loop.run(onCrash);
+    await finalize();
 
     const snapshots = new Map<string, ClientSnapshot>();
     for (const handle of session.projects) snapshots.set(handle.id, snapshotOf(handle));
@@ -293,7 +306,7 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
     return result([message], trace.hash(), 0);
   } finally {
     session.close();
-    if (diskRoot && !options.keepDisk) fs.rmSync(diskRoot, { recursive: true, force: true });
+    if (!(mode === "disk" && options.keepDisk)) fs.rmSync(diskRoot, { recursive: true, force: true });
   }
 
   function result(violations: string[], traceHash: string, eventsRun: number): SimRunResult {
@@ -368,11 +381,9 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
     const id = handle.id;
     const fields = JSON.stringify({ feature: `${id}-F1` });
     session.txRaw(handle, () => {
-      session.exec(
-        handle,
-        "INSERT INTO meta(key, value) VALUES ('project_id', ?), ('stream_epoch', '1'), ('last_rev', '1')",
-        id,
-      );
+      session.exec(handle, "UPDATE meta SET value = ? WHERE key = 'project_id'", id);
+      session.exec(handle, "UPDATE meta SET value = '1' WHERE key = 'stream_epoch'");
+      session.exec(handle, "UPDATE meta SET value = '1' WHERE key = 'last_rev'");
       session.exec(
         handle,
         "INSERT INTO change_sets(id, rev, origin, author, created_at) VALUES (?, 1, 'kernel', 'sim', ?)",
@@ -386,7 +397,7 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
       node.run(`${id}-F1`, "feature", `${id}-F1-h`, "Feature", "", fields, `${id}-CS-1`);
       node.run(ruleId(id), "rule", `${id}-R17-v1`, "Cutoff rule", "Orders close at 10:45", fields, `${id}-CS-1`);
       session.exec(handle, "INSERT INTO feature_runtime(feature, state, updated_rev) VALUES (?, 'IN_WAVE', 1)", `${id}-F1`);
-      session.exec(handle, "INSERT INTO project_runtime(id, state, updated_rev) VALUES (1, 'WAVES', 1)");
+      session.exec(handle, "UPDATE project_runtime SET state = 'WAVES', updated_rev = 1 WHERE id = 1");
       const task = handle.db.prepare(
         "INSERT INTO task_runtime(task, feature, state, level, updated_rev) VALUES (?, ?, 'READY', 'Mid', 1)",
       );
@@ -855,19 +866,17 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
   }
 
   function insertOutbox(handle: DbHandle, id: string, type: string, subject: string): void {
-    session.exec(
-      handle,
-      "INSERT INTO outbox(id, type, subject, rev, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      id,
-      type,
-      subject,
-      maxRev(handle),
-      "{}",
-      clock.wallMs(),
+    session.outbox(handle).appendEvent(
+      {
+        id,
+        type,
+        subject,
+        rev: maxRev(handle),
+        payload: {},
+        createdAt: clock.wallMs(),
+      },
+      CONSUMERS,
     );
-    for (const consumer of CONSUMERS) {
-      session.run(handle, "register_delivery", { event_id: id, consumer });
-    }
   }
 
   function acknowledgeOutbox(recordPrune: boolean): void {
@@ -959,34 +968,18 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
     trace.add(clock, "broker_ack", grantId(project.id));
   }
 
-  function writeCas(): void {
+  async function writeCas(): Promise<void> {
     for (const id of projectIds) casHashes.push(cas.stage(`cas:${options.seed}:${id}`));
     injector.hit("during_cas_temp_rename");
     for (const hash of casHashes) {
-      cas.promote(hash);
+      await cas.promote(hash);
       recordBlob(hash);
     }
   }
 
   function recordBlob(hash: string): void {
-    if (session.row(session.global, "SELECT hash FROM cas_blobs WHERE hash = ?", hash)) return;
-    session.txRaw(session.global, () => {
-      session.exec(
-        session.global,
-        `INSERT INTO cas_blobs(hash, bytes, stored_bytes, format, created_at)
-         VALUES (?, ?, ?, 'raw', ?)`,
-        hash,
-        16,
-        16,
-        clock.wallMs(),
-      );
-      session.exec(
-        session.global,
-        "INSERT OR IGNORE INTO cas_pins(hash, holder_kind, holder_id, pinned_at) VALUES (?, 'project', 'P1', ?)",
-        hash,
-        clock.wallMs(),
-      );
-    });
+    if (tracedCas.has(hash)) return;
+    tracedCas.add(hash);
     trace.add(clock, "cas", hash);
   }
 
@@ -1045,7 +1038,7 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
     trace.add(clock, "ipc_disconnect", String(snapshotOf(session.project("P1")).epoch));
   }
 
-  function finalize(): void {
+  async function finalize(): Promise<void> {
     if (session.handles().some((handle) => !handle.db.isOpen)) session.reopenAll();
     for (const id of projectIds) {
       if (attempted.has(`issue:${id}`)) issueGrant(id);
@@ -1072,7 +1065,7 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
       sweep(handle);
     }
     acknowledgeOutbox(true);
-    cas.recover();
+    await cas.recover();
     for (const hash of casHashes) {
       if (cas.hasBlob(hash)) recordBlob(hash);
     }
@@ -1104,6 +1097,13 @@ export async function runSimulation(options: SimRunOptions): Promise<SimRunResul
     const match = /-W(\d+)$/.exec(attempt);
     return match?.[1] ? Number(match[1]) : 0;
   }
+}
+
+let simulationRoots = 0;
+
+function nextSimulationRoot(): number {
+  simulationRoots += 1;
+  return simulationRoots;
 }
 
 function pipeName(seed: number): string {

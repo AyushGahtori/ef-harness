@@ -1,10 +1,8 @@
-import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { openProjectStateDb, type SqliteConnection } from "@ef-harness/db";
 import { percentile } from "./stats.js";
-import {
-  applyMemoryPragmas,
-  emptyStateTemplate,
-  registerSearch,
-} from "./schema-cache.js";
 
 export interface PerfResult {
   writeP99Ms: number;
@@ -14,33 +12,53 @@ export interface PerfResult {
   requirements: number;
 }
 
-function openState(): DatabaseSync {
-  const db = new DatabaseSync(":memory:");
-  applyMemoryPragmas(db);
-  registerSearch(db);
-  db.deserialize(emptyStateTemplate());
-  applyMemoryPragmas(db);
-  registerSearch(db);
-  return db;
+const quiet = {
+  info() {
+    return undefined;
+  },
+  warn() {
+    return undefined;
+  },
+  error() {
+    return undefined;
+  },
+};
+
+function openState(name: string): { close: () => void; writer: SqliteConnection } {
+  const root = mkdtempSync(path.join(tmpdir(), `ef-m0-${name}-`));
+  const db = openProjectStateDb({
+    projectId: name,
+    rootDir: root,
+    now: () => 0,
+    logger: quiet,
+  });
+  return {
+    writer: db.writer,
+    close() {
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    },
+  };
 }
 
-/** Fifty simulated single-writer transactions. p99 must stay under 50 ms. */
+/** Fifty single-writer transactions on ProjectStateDb. p99 must stay under 50 ms. */
 export function measureWriteLatency(): { p99Ms: number; samples: number[] } {
-  const db = openState();
+  const state = openState("perf-write");
   try {
+    const db = state.writer;
     db.exec("INSERT INTO meta(key, value) VALUES ('write_probe', '0')");
     const update = db.prepare("UPDATE meta SET value = ? WHERE key = 'write_probe'");
     const samples: number[] = [];
     for (let worker = 0; worker < 50; worker += 1) {
       const started = globalThis.performance.now();
       db.exec("BEGIN IMMEDIATE");
-      update.run(String(worker));
+      update.run([String(worker)]);
       db.exec("COMMIT");
       samples.push(globalThis.performance.now() - started);
     }
     return { p99Ms: percentile(samples, 99), samples };
   } finally {
-    db.close();
+    state.close();
   }
 }
 
@@ -49,10 +67,13 @@ export function measureWriteLatency(): { p99Ms: number; samples: number[] } {
  * which must return in under 10 ms.
  */
 export function measureBoardQuery(): { queryMs: number; tasks: number; requirements: number } {
-  const db = openState();
+  const state = openState("perf-board");
   try {
+    const db = state.writer;
     db.exec("BEGIN IMMEDIATE");
-    db.prepare("INSERT INTO change_sets(id, rev, origin, author, created_at) VALUES ('CS-BOARD', 1, 'kernel', 'sim', 0)").run();
+    db.prepare(
+      "INSERT INTO change_sets(id, rev, origin, author, created_at) VALUES ('CS-BOARD', 1, 'kernel', 'sim', 0)",
+    ).run();
     const node = db.prepare(
       `INSERT INTO nodes(id, kind, version, content_hash, title, text, fields, change_set, created_rev, updated_rev)
        VALUES (?, ?, 1, ?, ?, '', ?, 'CS-BOARD', 1, 1)`,
@@ -65,19 +86,19 @@ export function measureBoardQuery(): { queryMs: number; tasks: number; requireme
     );
     for (let feature = 0; feature < 25; feature += 1) {
       const featureId = `F${feature}`;
-      node.run(featureId, "feature", `${featureId}-h`, `Feature ${feature}`, JSON.stringify({ feature: featureId }));
+      node.run([featureId, "feature", `${featureId}-h`, `Feature ${feature}`, JSON.stringify({ feature: featureId })]);
     }
     for (let index = 0; index < 500; index += 1) {
       const featureId = `F${index % 25}`;
       const id = `T${index}`;
-      node.run(id, "task", `${id}-h`, `Task ${index}`, JSON.stringify({ feature: featureId }));
-      task.run(id, featureId);
+      node.run([id, "task", `${id}-h`, `Task ${index}`, JSON.stringify({ feature: featureId })]);
+      task.run([id, featureId]);
     }
     for (let index = 0; index < 5_000; index += 1) {
       const featureId = `F${index % 25}`;
       const id = `R${index}`;
-      node.run(id, "spec_item", `${id}-h`, `Requirement ${index}`, JSON.stringify({ feature: featureId }));
-      requirement.run(id, featureId);
+      node.run([id, "spec_item", `${id}-h`, `Requirement ${index}`, JSON.stringify({ feature: featureId })]);
+      requirement.run([id, featureId]);
     }
     db.exec("COMMIT");
     const taskRollup = db.prepare("SELECT feature, state, n FROM rollup_feature_tasks ORDER BY feature, state");
@@ -95,7 +116,7 @@ export function measureBoardQuery(): { queryMs: number; tasks: number; requireme
     }
     return { queryMs, tasks: 500, requirements: 5_000 };
   } finally {
-    db.close();
+    state.close();
   }
 }
 

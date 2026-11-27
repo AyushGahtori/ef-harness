@@ -1,3 +1,5 @@
+import { FrameTooLargeError } from "../transport/errors.js";
+import { FrameCodec } from "../transport/frame-codec.js";
 import { BINARY_STREAM_CHANNEL, CHUNK_BYTES, JSON_RPC_CHANNEL, JSON_RPC_MAX_BYTES } from "./constants.js";
 import { StreamFrameTooLargeError } from "./errors.js";
 
@@ -28,27 +30,27 @@ function assertStreamId(streamId: number): void {
 }
 
 export function encodeJsonFrame(payload: Uint8Array): Buffer {
-  if (payload.byteLength > JSON_RPC_MAX_BYTES) {
-    throw new StreamFrameTooLargeError(payload.byteLength, JSON_RPC_MAX_BYTES);
-  }
-  const out = Buffer.allocUnsafe(5 + payload.byteLength);
-  out.writeUInt32BE(payload.byteLength, 0);
-  out.writeUInt8(JSON_RPC_CHANNEL, 4);
-  out.set(payload, 5);
-  return out;
+  return encodeCanonical({ channel: JSON_RPC_CHANNEL, payload });
 }
 
 export function encodeBinaryFrame(streamId: number, payload: Uint8Array): Buffer {
   assertStreamId(streamId);
-  if (payload.byteLength > CHUNK_BYTES) {
-    throw new StreamFrameTooLargeError(payload.byteLength, CHUNK_BYTES);
+  return encodeCanonical({ channel: BINARY_STREAM_CHANNEL, streamId, payload });
+}
+
+function encodeCanonical(
+  frame:
+    | { readonly channel: typeof JSON_RPC_CHANNEL; readonly payload: Uint8Array }
+    | { readonly channel: typeof BINARY_STREAM_CHANNEL; readonly streamId: number; readonly payload: Uint8Array },
+): Buffer {
+  try {
+    return FrameCodec.encode(frame);
+  } catch (error) {
+    if (error instanceof FrameTooLargeError) {
+      throw new StreamFrameTooLargeError(error.declaredLength, error.limit);
+    }
+    throw error;
   }
-  const out = Buffer.allocUnsafe(9 + payload.byteLength);
-  out.writeUInt32BE(payload.byteLength, 0);
-  out.writeUInt8(BINARY_STREAM_CHANNEL, 4);
-  out.writeUInt32BE(streamId, 5);
-  if (payload.byteLength > 0) out.set(payload, 9);
-  return out;
 }
 
 export function binaryStreamId(frame: Uint8Array): number | null {

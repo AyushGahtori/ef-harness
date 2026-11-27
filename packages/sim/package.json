@@ -19,7 +19,10 @@
     "certify:m0": "node --import tsx src/m0/certify-cli.ts"
   },
   "dependencies": {
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/db": "workspace:*",
+    "@ef-harness/ipc": "workspace:*",
+    "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/shared-observability": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

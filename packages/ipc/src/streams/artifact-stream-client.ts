@@ -129,7 +129,7 @@ export class ArtifactStreamClient {
       receiver.settled = true;
       receiver.resolve?.(this.toDownload(receiver, false));
     }
-    await this.rpc("stream.close", { streamId });
+    await this.rpc("stream.cancel", { stream_id: streamId });
   }
 
   async ping(): Promise<number> {
@@ -205,20 +205,22 @@ export class ArtifactStreamClient {
   }
 
   private onNotification(method: string, params: unknown): void {
-    if (!isRecord(params) || typeof params.streamId !== "number") return;
-    const receiver = this.receivers.get(params.streamId);
-    if (!receiver || this.ignored.has(params.streamId)) return;
+    if (!isRecord(params)) return;
+    const streamId = streamIdOf(params);
+    if (streamId === null) return;
+    const receiver = this.receivers.get(streamId);
+    if (!receiver || this.ignored.has(streamId)) return;
     if (method === "stream.end") {
       receiver.ended = true;
       receiver.remoteSha = typeof params.sha256 === "string" ? params.sha256 : null;
-      receiver.remoteBytes = typeof params.bytesSent === "number" ? params.bytesSent : null;
+      receiver.remoteBytes = byteCountOf(params);
       this.maybeFinish(receiver);
       return;
     }
     if (method === "stream.error") {
       const code = typeof params.code === "string" ? params.code : "STREAM_FAILED";
       const message = typeof params.message === "string" ? params.message : "stream failed";
-      this.settleError(receiver, new StreamRemoteError(params.streamId, code, message));
+      this.settleError(receiver, new StreamRemoteError(streamId, code, message));
     }
   }
 
@@ -243,7 +245,7 @@ export class ArtifactStreamClient {
     if (this.autoCredit && receiver.localBudget <= 0 && !receiver.ended) {
       const grant = grantSize(receiver.window);
       receiver.localBudget += grant;
-      void this.rpc("stream.credit", { streamId, chunks: grant }).catch((error: unknown) => {
+      void this.rpc("stream.credit", { stream_id: streamId, credits: grant }).catch((error: unknown) => {
         if (!receiver.settled) {
           this.settleError(receiver, error instanceof Error ? error : new Error("credit grant failed"));
         }
@@ -278,7 +280,7 @@ export class ArtifactStreamClient {
     if (this.autoCredit && receiver.localBudget === 0 && receiver.totalBytes > 0) {
       const grant = grantSize(window);
       receiver.localBudget = grant;
-      void this.rpc("stream.credit", { streamId: opened.streamId, chunks: grant }).catch((error: unknown) => {
+      void this.rpc("stream.credit", { stream_id: opened.streamId, credits: grant }).catch((error: unknown) => {
         if (!receiver.settled) this.settleError(receiver, error instanceof Error ? error : new Error("credit grant failed"));
       });
     }
@@ -338,6 +340,19 @@ export class ArtifactStreamClient {
 function grantSize(window: number): number {
   const size = window > 0 ? window : 1;
   return Math.min(MAX_CREDIT_GRANT, size);
+}
+
+function streamIdOf(params: unknown): number | null {
+  if (!isRecord(params)) return null;
+  if (typeof params.stream_id === "number") return params.stream_id;
+  if (typeof params.streamId === "number") return params.streamId;
+  return null;
+}
+
+function byteCountOf(params: Record<string, unknown>): number | null {
+  if (typeof params.bytes_sent === "number") return params.bytes_sent;
+  if (typeof params.bytesSent === "number") return params.bytesSent;
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

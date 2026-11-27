@@ -2,7 +2,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import type { CasBlobStore } from "@ef-harness/db";
 import { CHUNK_BYTES, JSON_RPC_CHANNEL } from "./constants.js";
+import { parseStreamCancel, parseStreamCredit } from "./control.js";
 import {
   ArtifactNotFoundError,
   CasBlobMissingError,
@@ -36,6 +38,8 @@ export interface ArtifactPipeServerOptions {
   readonly idleTimeoutMs?: number;
   readonly onBuildStop?: (params: unknown) => void;
   readonly recordWrites?: boolean;
+  /** Unified blob store. Chunk reads go through `openReadStream`. */
+  readonly blobs?: CasBlobStore;
 }
 
 export interface WriteRecord {
@@ -216,6 +220,7 @@ class PipeSession {
       ...(options.initialCredits !== undefined ? { initialCredits: options.initialCredits } : {}),
       ...(options.idleTimeoutMs !== undefined ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
       ...(options.cas !== undefined ? { cas: options.cas } : {}),
+      ...(options.blobs !== undefined ? { blobs: options.blobs } : {}),
     });
     this.writer.observer.onBinarySent = (frame) => {
       this.host.noteWrite({ lane: "binary", channel: frame[4] ?? 0 });
@@ -378,6 +383,7 @@ class PipeSession {
         return this.openArtifact(request.params);
       case "stream.credit":
         return this.credit(request.params);
+      case "stream.cancel":
       case "stream.close":
         return this.closeStream(request.params);
       case "log.range":
@@ -441,17 +447,27 @@ class PipeSession {
   }
 
   private credit(params: unknown): { applied: boolean; outstanding: number } {
-    if (!isRecord(params) || typeof params.streamId !== "number") {
-      throw new InvalidStreamRequestError("stream.credit requires streamId");
+    const grant = parseStreamCredit(params);
+    if (grant.ok) return this.manager.grantCredit(grant.streamId, grant.credits);
+    if (grant.streamId === null) {
+      throw new InvalidCreditError(
+        grant.credits,
+        0,
+        "stream.credit params must be { stream_id, credits } with credits from 1 to 1024",
+      );
     }
-    return this.manager.grantCredit(params.streamId, params.chunks);
+    const dropped = this.manager.grantCredit(grant.streamId, grant.credits);
+    if (!dropped.applied) return dropped;
+    throw new InvalidCreditError(
+      grant.credits,
+      dropped.outstanding,
+      "stream.credit params must be { stream_id, credits } with credits from 1 to 1024",
+    );
   }
 
   private closeStream(params: unknown): { applied: boolean } {
-    if (!isRecord(params) || typeof params.streamId !== "number") {
-      throw new InvalidStreamRequestError("stream.close requires streamId");
-    }
-    return this.manager.closeStream(params.streamId);
+    const cancel = parseStreamCancel(params);
+    return this.manager.closeStream(cancel.streamId);
   }
 
   private reply(id: string | number | null, result: unknown, error: unknown): void {

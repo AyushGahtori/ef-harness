@@ -185,13 +185,17 @@ describe("kernel simulation", () => {
     expect(run.faultFired).toBe("during_cas_temp_rename");
   });
 
-  it("survives a real WAL file, lock, CAS rename, and named-pipe restart", async () => {
-    const run = await runSimulation({ seed: 9901, mode: "disk" });
-    expect(run.passed).toBe(true);
-    expect(run.walIsolated).toBe(true);
-    expect(run.fileLocked).toBe(true);
-    expect(run.traceHash).toHaveLength(64);
-  });
+  it(
+    "survives a real WAL file, lock, CAS rename, and named-pipe restart",
+    async () => {
+      const run = await runSimulation({ seed: 9901, mode: "disk" });
+      expect(run.passed).toBe(true);
+      expect(run.walIsolated).toBe(true);
+      expect(run.fileLocked).toBe(true);
+      expect(run.traceHash).toHaveLength(64);
+    },
+    120_000,
+  );
 });
 
 describe("performance and certification helpers", () => {

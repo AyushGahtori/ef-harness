@@ -349,14 +349,14 @@ describe("named-pipe artifact streaming", () => {
     try {
       const opened = await running.client.openArtifact("held");
       expect(running.server.openHandleCount).toBe(1);
-      await expect(running.client.call("stream.credit", { streamId: opened.streamId, chunks: -1 })).rejects.toBeInstanceOf(
+      await expect(running.client.call("stream.credit", { stream_id: opened.streamId, credits: -1 })).rejects.toBeInstanceOf(
         InvalidCreditError,
       );
       await expect(
-        running.client.call("stream.credit", { streamId: opened.streamId, chunks: 999999 }),
+        running.client.call("stream.credit", { stream_id: opened.streamId, credits: 999999 }),
       ).rejects.toBeInstanceOf(InvalidCreditError);
       await expect(
-        running.client.call("stream.credit", { streamId: opened.streamId, chunks: 2 ** 31 }),
+        running.client.call("stream.credit", { stream_id: opened.streamId, credits: 2 ** 31 }),
       ).rejects.toBeInstanceOf(InvalidCreditError);
       expect(running.server.openHandleCount).toBe(1);
       expect(running.server.openStreamCount).toBe(1);
@@ -365,7 +365,7 @@ describe("named-pipe artifact streaming", () => {
       expect(running.server.openStreamCount).toBe(0);
       running.server.emitLateBinary(opened.streamId, Buffer.from("late"));
       await expect(
-        running.client.call("stream.credit", { streamId: opened.streamId, chunks: -1 }),
+        running.client.call("stream.credit", { stream_id: opened.streamId, credits: -1 }),
       ).resolves.toEqual({ applied: false, outstanding: 0 });
       expect(await running.client.ping()).toBeLessThan(100);
     } finally {

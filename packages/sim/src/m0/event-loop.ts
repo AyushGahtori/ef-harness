@@ -6,7 +6,7 @@ interface Scheduled {
   mono: number;
   seq: number;
   kind: string;
-  run: () => void;
+  run: () => void | Promise<void>;
 }
 
 /**
@@ -28,7 +28,7 @@ export class SimEventLoop {
     return this.ran;
   }
 
-  schedule(delayMs: number, kind: string, run: () => void): void {
+  schedule(delayMs: number, kind: string, run: () => void | Promise<void>): void {
     if (!Number.isFinite(delayMs) || delayMs < 0) {
       throw new Error("schedule delay must be a non-negative finite number");
     }
@@ -41,7 +41,7 @@ export class SimEventLoop {
     this.seq += 1;
   }
 
-  run(onCrash: (signal: CrashSignal) => void): void {
+  async run(onCrash: (signal: CrashSignal) => void | Promise<void>): Promise<void> {
     while (this.queue.length > 0) {
       if (this.maxEvents !== undefined && this.ran >= this.maxEvents) return;
       this.queue.sort((left, right) => left.mono - right.mono || left.seq - right.seq);
@@ -52,12 +52,14 @@ export class SimEventLoop {
       this.ran += 1;
       this.trace.add(this.clock, next.kind, "start");
       try {
-        next.run();
+        const outcome = next.run();
+        if (outcome instanceof Promise) await outcome;
         this.trace.add(this.clock, next.kind, "ok");
       } catch (error) {
         if (error instanceof CrashSignal) {
           this.trace.add(this.clock, "crash", error.point);
-          onCrash(error);
+          const recovered = onCrash(error);
+          if (recovered instanceof Promise) await recovered;
           this.trace.add(this.clock, next.kind, "recovered");
           continue;
         }

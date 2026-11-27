@@ -1,3 +1,5 @@
+export { CasBlobByteSource, byteRangeToCasRange, createCasArtifactCatalog } from "./cas-bind.js";
+export { parseStreamCancel, parseStreamCredit } from "./control.js";
 export { ArtifactStreamClient } from "./artifact-stream-client.js";
 export type { ArtifactStreamClientOptions, OpenedArtifact, StreamDownload } from "./artifact-stream-client.js";
 export { BinaryStreamManager } from "./binary-stream-manager.js";

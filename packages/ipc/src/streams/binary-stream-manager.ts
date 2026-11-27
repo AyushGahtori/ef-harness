@@ -1,4 +1,6 @@
 import { createHash, type Hash } from "node:crypto";
+import type { CasBlobStore } from "@ef-harness/db";
+import { createCasArtifactCatalog } from "./cas-bind.js";
 import {
   CHUNK_BYTES,
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -48,6 +50,8 @@ export interface BinaryStreamManagerOptions {
   readonly initialCredits?: number;
   readonly idleTimeoutMs?: number;
   readonly cas?: CasIntegrityPort;
+  /** When set, chunk bytes come from `CasBlobStore.openReadStream`. */
+  readonly blobs?: CasBlobStore;
 }
 
 interface LiveStream {
@@ -103,7 +107,12 @@ export class BinaryStreamManager {
       throw new InvalidStreamRequestError("initialCredits must be an integer from 0 to 512");
     }
     this.projectId = options.projectId;
-    this.catalog = options.catalog;
+    this.catalog = options.blobs
+      ? createCasArtifactCatalog({
+          store: options.blobs,
+          lookup: (projectId, artifactId) => options.catalog.lookup(projectId, artifactId),
+        })
+      : options.catalog;
     this.output = options.output;
     this.initialCredits = initial;
     this.prefetchWindow = Math.min(initial > 0 ? initial : DEFAULT_INITIAL_CREDITS, MAX_PREFETCH_CHUNKS);
