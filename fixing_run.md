@@ -1208,3 +1208,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C36.
 
+
+## [C36] — brand sanitizer and bug scrubber on ProjectStateDb
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `b94ed452703c0f3d48b8e18c0a99d9975e91e9a7` (`integrate: C36 wire brand sanitizer and bug scrubber`)
+- **Branches merged:** `origin/task/099-brand-asset-sanitizer-registry` (`8c8e2f76ba71728a5d48b87c010438c878d518f2`) as `6f70e7efa1152d59a50c18b28e3e3dfd40d566db`, then `origin/task/100-bug-har-scrubber-triage` (`74e4e4a18f540ab5ccf7c295640953fe3ee291d1`) as `5923aceaa9712cb97402244030631da1e4152c6f`, both `git merge --no-ff`. No dirty-worktree patch was assigned. Did not reapply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**`. `path_leases.mode` stays `intent|granted`. Did not merge `main`. Did not open a pull request. Did not start C37.
+- **Findings Fixed:** `F-011` for sanitized brand bytes and scrubbed symptom payloads in `@ef-harness/db` `CasBlobStore`, `F-012` for asset and symptom rows on the open `ProjectStateDb` writer, `F-046` for deleting `SqliteBrandAssetState` and delegating residual secret scans to `SecretRedactor`, and `F-079` for `getSymptomCard(id)` on the persisted symptom card. Citations stay on the landed `EvidenceLocatorSchema` (`pdf`, `docx`, `text`, `image`, `spec`). No `doc_span` arm was added.
+
+### What Changed
+- Merged task 099 then task 100 onto `ccbcdea`. `BrandAssetSanitizer.sanitizeAndRegisterAsset` strips SVG script, event handlers, and external hrefs, strips raster EXIF, and stores the bytes in `CasBlobStore` (raw, bare hex) with an `asset` node and an `artifacts` row on `ProjectStateDb`. `SqliteBrandAssetState` is gone.
+- `BugIntakePipeline.ingestBugReport` scrubs `Authorization`, `Cookie`, `Set-Cookie`, and OAuth query keys, runs `@ef-harness/shared-observability` `SecretRedactor`, and stores the scrubbed `SymptomCard` as a `source` node. `getSymptomCard(id)` reads that node. `packages/intake/src/index.ts` exports converters, extraction, brand assets, and the bug scrubber.
+- A caller holder kind of `symptom-card` is pinned as `project` at the CAS boundary. No intake code writes `path_leases.mode = 'exclusive'`.
+
+### What It Fixed
+- **F-011:** Brand files and scrubbed symptom payloads go through the shared `CasBlobStore`, not an in-memory stand-in on the production path.
+- **F-012:** Brand metadata and symptom cards share the open `ProjectStateDb` writer. Intake no longer opens a second `DatabaseSync` on `state.db`.
+- **F-046:** `NormalizedDocument` from C35 stays in place. The rogue brand SQLite file is deleted, and secret scanning delegates to `SecretRedactor` plus the existing header, cookie, and OAuth rules.
+- **F-079:** `getSymptomCard(id)` returns the persisted card for the mystery-bug pipeline. Lease mode was not widened.
+
+### Verification Run & Results
+- No dirty-worktree patch was assigned to C36. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/intake exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 18 passed (18)`, `Tests 73 passed (73)` (`0` skipped). The previous 10 files / 42 tests still pass inside this run.
+- `pnpm --filter @ef-harness/planner exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 30 passed (30)`, `Tests 151 passed (151)` (`0` skipped)
+- `pnpm --filter @ef-harness/mcp-server exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)` (`0` skipped)
+- `pnpm --filter @ef-harness/research-engine test`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion test`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped). The 5 ms catalog budget was not changed.
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1` pre-commit `verify-harmony.mjs`: exit `0` — `harmony ok`
+- Stopped before C37.

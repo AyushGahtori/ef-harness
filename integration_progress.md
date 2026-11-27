@@ -2,7 +2,7 @@
 
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
-- **Current Verified `harness/integration` `HEAD`:** `ccbcdea1fd6545780103552dbf3f802146fc119d` (`integrate: C35 wire intake converters, chunker, and schema importer`)
+- **Current Verified `harness/integration` `HEAD`:** `b94ed452703c0f3d48b8e18c0a99d9975e91e9a7` (`integrate: C36 wire brand sanitizer and bug scrubber`)
 - **Wave 2 proof gate:** pass at `40201d11ab38446c014f0065a3e4565f1a76e6cf`. No product commit. Workspace build/typecheck/lint OK (lint needed `NODE_OPTIONS=--max-old-space-size=4096` after a default-heap OOM). git-engine 17 files 121/121; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17/17; test-env 87 passed, 3 skipped; worker-loop 25 files 146/146; completeness-gate 7 files 50/50; verifier 34 files 188/188 after `pnpm exec playwright install chromium` (first run exit 1, missing Chromium); daemon 3 files 18/18; desktop 2 files 2/2; e2e `-- m1` 2 files 3/3; schema 67/67; diagrams 31 merged, 1219 lines. `git status --short` clean.
 - **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
 
@@ -43,7 +43,7 @@
 | C33 | Wave 3 | done | c8547ac | F-037, F-039 | build/typecheck/lint OK (lint heap 4096 after exit 134); planner views-export views-import revision 15 files 60/60; full planner package 29 files 148/148; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
 | C34 | Wave 3 | done | f97fbdf | F-021, F-039 | build/typecheck/lint OK (lint heap 4096 after exit 134); planner vitest slicer pull 4 files 33/33; full planner package 30 files 151/151; views-export views-import revision 15 files 60/60; mcp-server 2 files 17/17; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
 | C35 | Wave 3 | done | ccbcdea | F-005, F-011, F-046 | build/typecheck/lint OK (lint heap 4096 after exit 134); intake 10 files 42/42; planner 30 files 151/151; mcp-server 2 files 17/17; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
-| C36 | Wave 3 | pending | - | F-011, F-012, F-046, F-079 | - |
+| C36 | Wave 3 | done | b94ed45 | F-011, F-012, F-046, F-079 | build/typecheck/lint OK (lint heap 4096 after exit 134); intake 18 files 73/73 (prior 42 still pass); planner 30 files 151/151; mcp-server 2 files 17/17; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
 | C37 | Wave 3 | pending | - | F-040, F-041, F-080 | - |
 | C38 | Wave 3 | pending | - | F-040, F-041, F-042, F-043 | - |
 | C39 | Wave 3 | pending | - | F-044, F-047, F-054 | - |
