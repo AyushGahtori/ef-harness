@@ -113,16 +113,29 @@ function inspectOpening(
       ),
     );
   }
-  if (name === "button" && insideForm(element) && !hasSpreadAttribute(element) && !buttonIsLive(element)) {
-    findings.push(
-      jsxFinding(
-        file,
-        sourceFile,
-        element,
-        'Button inside a form has neither onClick nor type="submit".',
-        'Set type="submit" or a real onClick handler.',
-      ),
-    );
+  if (name === "button" && !hasSpreadAttribute(element)) {
+    const inForm = insideForm(element);
+    if (inForm && !buttonIsLive(element)) {
+      findings.push(
+        jsxFinding(
+          file,
+          sourceFile,
+          element,
+          'Button inside a form has neither onClick nor type="submit".',
+          'Set type="submit" or a real onClick handler.',
+        ),
+      );
+    } else if (!inForm && !attributeByName(element, "onClick") && !standaloneButtonIsLive(element)) {
+      findings.push(
+        jsxFinding(
+          file,
+          sourceFile,
+          element,
+          "Button outside a form has no onClick handler.",
+          "Add an onClick handler or associate it with a form.",
+        ),
+      );
+    }
   }
   return findings;
 }
@@ -144,6 +157,15 @@ function buttonIsLive(element: ts.JsxOpeningLikeElement): boolean {
   const type = attributeByName(element, "type");
   const typeValue = type ? jsxAttributeString(type)?.toLowerCase() : undefined;
   return typeValue === "submit";
+}
+
+function standaloneButtonIsLive(element: ts.JsxOpeningLikeElement): boolean {
+  const onClick = attributeByName(element, "onClick");
+  if (onClick && !isEmptyHandlerAttribute(onClick)) return true;
+  const type = attributeByName(element, "type");
+  const typeValue = type ? jsxAttributeString(type)?.toLowerCase() : undefined;
+  const formAttr = attributeByName(element, "form");
+  return typeValue === "submit" && formAttr !== undefined;
 }
 
 function insideForm(node: ts.Node): boolean {

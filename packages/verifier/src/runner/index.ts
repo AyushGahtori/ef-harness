@@ -1,6 +1,8 @@
 export { attributeVerificationFailure } from "./attribution.js";
 export { CROSS_CUTTING_RULE_IDS, isCrossCuttingRuleId, missingInScopeRules } from "./cross-cutting.js";
 export { CleanVerifierRunner } from "./clean-verifier-runner.js";
+export { bindCompletenessGate, verifierLeafAudit } from "./completeness-gate-bind.js";
+export { bindWorktreeSlotPool } from "./slot-pool-bind.js";
 export { CleanCheckoutSeparationError, MissingRequiredChecksError, VerifierIntegrityError } from "./errors.js";
 export { canonicalJson, sha256Hex } from "./hash.js";
 export {

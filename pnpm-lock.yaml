@@ -257,6 +257,12 @@ importers:
 
   packages/completeness-gate:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
@@ -789,6 +795,12 @@ importers:
 
   packages/verifier:
     dependencies:
+      '@ef-harness/completeness-gate':
+        specifier: workspace:*
+        version: link:../completeness-gate
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts

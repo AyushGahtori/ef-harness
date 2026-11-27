@@ -31,7 +31,6 @@ export function scanStubBodies(
     if ((kind === "constant" && symbol.allowsConstantReturn) || (kind === "empty" && symbol.allowsEmptyReturn)) {
       continue;
     }
-    if (kind === "constant" && symbol.allowsEmptyReturn && symbol.allowsConstantReturn) continue;
     const position = sourceFile.getLineAndCharacterOfPosition(candidate.node.getStart(sourceFile));
     const line = position.line + 1;
     const snippet = sourceFile.getFullText().split(/\r?\n/)[position.line] ?? candidate.name;
@@ -60,7 +59,7 @@ function classifyBody(body: ts.ConciseBody): "empty" | "constant" | "throw" | "r
     const only = statements[0];
     if (!only) return "empty";
     if (ts.isReturnStatement(only)) {
-      if (!only.expression) return "real";
+      if (!only.expression) return "empty";
       return isTrivialConstant(only.expression) ? "constant" : "real";
     }
     if (ts.isThrowStatement(only) && only.expression && isUnimplementedThrow(only.expression)) return "throw";
@@ -73,7 +72,8 @@ function classifyBody(body: ts.ConciseBody): "empty" | "constant" | "throw" | "r
 function isTrivialConstant(expression: ts.Expression): boolean {
   const node = unwrapExpression(expression);
   if (node.kind === ts.SyntaxKind.NullKeyword) return true;
-  if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return true;
+  if (ts.isIdentifier(node) && node.text === "undefined") return true;
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text === "";
   if (ts.isNumericLiteral(node)) return Number(node.text) === 0;
   if (

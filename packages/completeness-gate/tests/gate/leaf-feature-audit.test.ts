@@ -86,6 +86,25 @@ describe("leaf and feature static audit", () => {
     );
     expect(consumed.passed).toBe(true);
     expect(consumed.findings).toEqual([]);
+
+    const esmPrint = printSource.replace(`"./group"`, `"./group.js"`);
+    const esmConsumed = runner.runFeatureStaticAudit(
+      makeFeature({
+        taskId: "F12",
+        files: [added("src/kitchen/print.ts", esmPrint)],
+        produces,
+        featureFiles: [
+          { path: "src/kitchen/group.ts", content: group },
+          { path: "src/kitchen/print.ts", content: esmPrint },
+        ],
+        entryPoints: ["src/kitchen/print.ts"],
+        allFeatureTaskIds: ["T02", "T03"],
+        mergedTaskIds: ["T02", "T03"],
+        registry: { names: [] },
+      }),
+    );
+    expect(esmConsumed.passed).toBe(true);
+    expect(esmConsumed.findings).toEqual([]);
   });
 
   it("defers a schema field to a later task at leaf level and blocks it if the finished feature never reads it", () => {

@@ -10,6 +10,12 @@
   ],
   "references": [
     {
+      "path": "../db"
+    },
+    {
+      "path": "../git-engine"
+    },
+    {
       "path": "../shared-contracts"
     }
   ]

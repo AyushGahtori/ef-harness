@@ -59,6 +59,36 @@ describe("human override, integrator scope, and marker false positives", () => {
     });
     expect(inside.passed).toBe(false);
     expect(ruleIds(inside)).toContain("ast.marker");
+
+    const inHunk = auditLeaf({
+      actor: "integrator",
+      files: [
+        {
+          path: "src/kitchen/group.ts",
+          status: "modified",
+          beforeText: "export const a = 1;\nexport const b = 2;\n",
+          afterText: "export const a = 1;\nexport const b = 3;\n",
+        },
+      ],
+      entryPoints: ["src/kitchen/group.ts"],
+      integratorConflictHunks: [{ file: "src/kitchen/group.ts", startLine: 2, endLine: 2 }],
+    });
+    expect(ruleIds(inHunk)).not.toContain("check11.out-of-scope");
+
+    const outOfHunk = auditLeaf({
+      actor: "integrator",
+      files: [
+        {
+          path: "src/kitchen/group.ts",
+          status: "modified",
+          beforeText: "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
+          afterText: "export const a = 1;\nexport const b = 2;\nexport const c = 4;\n",
+        },
+      ],
+      entryPoints: ["src/kitchen/group.ts"],
+      integratorConflictHunks: [{ file: "src/kitchen/group.ts", startLine: 1, endLine: 2 }],
+    });
+    expect(ruleIds(outOfHunk)).toContain("check11.out-of-scope");
   });
 
   it("does not flag a placeholder attribute and still flags placeholder copy", () => {

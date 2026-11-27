@@ -18,6 +18,8 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ef-harness/db": "workspace:*",
+    "@ef-harness/git-engine": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "typescript": "catalog:"
   },

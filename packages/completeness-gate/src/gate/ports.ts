@@ -1,7 +1,7 @@
 /**
- * Local ports for sibling packages that are not on this branch.
- * Task 058 StaticAuditAstEngine, Task 019 NameRegistryService,
- * and Task 036 GitSafetyScanner are injected here at integration.
+ * Gate ports. Task 058 scanners are the default engine.
+ * `bindNameRegistryService` and `bindGitSafetyScanner` call the live
+ * `NameRegistryService` and `GitSafetyScanner` methods and adapt their results.
  */
 import type { CoverageMode, NameKind, StaticAuditFinding } from "./types.js";
 

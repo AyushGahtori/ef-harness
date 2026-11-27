@@ -334,16 +334,19 @@ function resolveSpecifier(fromFile: string, specifier: string, known: Set<string
   if (!specifier.startsWith(".")) return null;
   const dir = fromFile.includes("/") ? fromFile.slice(0, fromFile.lastIndexOf("/")) : "";
   const raw = posixJoin(dir, specifier);
+  const stem = raw.replace(/\.(?:[cm]?js|jsx)$/i, "");
   const candidates = [
     raw,
-    `${raw}.ts`,
-    `${raw}.tsx`,
-    `${raw}.js`,
-    `${raw}.jsx`,
-    `${raw}.mjs`,
-    `${raw}/index.ts`,
-    `${raw}/index.tsx`,
-    `${raw}/index.js`,
+    `${stem}.ts`,
+    `${stem}.tsx`,
+    `${stem}.mts`,
+    `${stem}.cts`,
+    `${stem}.js`,
+    `${stem}.jsx`,
+    `${stem}.mjs`,
+    `${stem}/index.ts`,
+    `${stem}/index.tsx`,
+    `${stem}/index.js`,
   ];
   for (const candidate of candidates) {
     if (known.has(candidate)) return candidate;

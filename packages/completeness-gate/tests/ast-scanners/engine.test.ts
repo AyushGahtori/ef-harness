@@ -170,6 +170,34 @@ describe("ast-scanners", () => {
     expect(stubbed.some((message) => message.includes("emptyBody"))).toBe(true);
     expect(stubbed.some((message) => message.includes("nullBody"))).toBe(true);
     expect(stubbed.some((message) => message.includes("thrown"))).toBe(true);
+
+    const extraStubs = await audit(
+      [
+        {
+          path: "src/extra-stubs.ts",
+          status: "A",
+          content: [
+            "export function bareReturn(): void { return; }",
+            "export function falseBody(): boolean { return false; }",
+            "export const undefBody = () => undefined;",
+            "",
+          ].join("\n"),
+        },
+      ],
+      {
+        produces: [
+          { name: "bareReturn", kind: "function" },
+          { name: "falseBody", kind: "function" },
+          { name: "undefBody", kind: "function" },
+        ],
+      },
+    );
+    const extraMessages = extraStubs.hardFindings
+      .filter((finding) => finding.ruleId === "stub-body")
+      .map((finding) => finding.message);
+    expect(extraMessages.some((message) => message.includes("bareReturn"))).toBe(true);
+    expect(extraMessages.some((message) => message.includes("falseBody"))).toBe(true);
+    expect(extraMessages.some((message) => message.includes("undefBody"))).toBe(true);
   });
 
   it("allows a contract that declares a constant or empty return", async () => {
@@ -320,6 +348,35 @@ describe("ast-scanners", () => {
     ]);
     expect(button.hardFindings.some((finding) => finding.message.includes("neither onClick"))).toBe(true);
     expect(button.hardFindings.some((finding) => finding.message.includes("no onSubmit"))).toBe(false);
+
+    const standaloneDead = await audit([
+      {
+        path: "src/Toolbar.tsx",
+        status: "A",
+        content: "export function Toolbar() {\n  return <button type=\"button\">Save</button>;\n}\n",
+      },
+    ]);
+    expect(standaloneDead.hardFindings.some((finding) => finding.message.includes("outside a form"))).toBe(true);
+
+    const standaloneLive = await audit([
+      {
+        path: "src/Toolbar.tsx",
+        status: "A",
+        content: [
+          "export function Toolbar(props: { onSave: () => void; extra?: Record<string, unknown> }) {",
+          "  return (",
+          "    <div>",
+          "      <button type=\"button\" onClick={props.onSave}>Save</button>",
+          "      <button type=\"submit\" form=\"dish-form\">Submit</button>",
+          "      <button {...props.extra}>Spread</button>",
+          "    </div>",
+          "  );",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    ]);
+    expect(standaloneLive.hardFindings).toEqual([]);
 
     const clean = await audit([{ path: "src/DishForm.tsx", status: "A", content: cleanForm }]);
     expect(clean.hardFindings).toEqual([]);

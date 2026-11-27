@@ -45,10 +45,13 @@ export type {
 export {
   CompletenessGateRunner,
   computeStaticAuditFingerprint as gateComputeStaticAuditFingerprint,
+  bindGitSafetyScanner,
+  bindNameRegistryService,
   createCompletenessGateRunner,
   createLocalGitSafetyScanner,
   createLocalNameRegistry,
   createLocalStaticAuditAstEngine,
+  createTask058AstEngine,
   maskSecretValue,
 } from "./gate/index.js";
 export type {

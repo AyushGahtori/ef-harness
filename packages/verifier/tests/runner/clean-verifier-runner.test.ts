@@ -2,7 +2,9 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { createCompletenessGateRunner } from "@ef-harness/completeness-gate";
 import { CleanVerifierRunner } from "../../src/runner/clean-verifier-runner.js";
+import { bindCompletenessGate, verifierLeafAudit } from "../../src/runner/completeness-gate-bind.js";
 import { CleanCheckoutSeparationError, MissingRequiredChecksError, VerifierIntegrityError } from "../../src/runner/errors.js";
 import { canonicalJson, sha256Hex } from "../../src/runner/hash.js";
 import { sealExpectationDocument, secretLeaves } from "../../src/runner/materialize.js";
@@ -52,6 +54,7 @@ interface FixtureOptions {
   readonly elapsedMs?: number;
   readonly lease?: Partial<AttemptLeaseView>;
   readonly auditPassed?: boolean;
+  readonly gatePort?: CompletenessGateRunnerPort;
   readonly slotMode?: "clean" | "worker-path" | "wrong-commit";
   readonly tamper?: "runner-fingerprint" | null;
   readonly binders?: readonly { readonly path: string; readonly bytes: Uint8Array }[];
@@ -171,7 +174,7 @@ function createFixture(options: FixtureOptions = {}): Fixture {
     slots,
     environments: envs,
     engine,
-    gate,
+    gate: options.gatePort ?? gate,
     cas,
     state,
     hostTempRoot: hostRoot,
@@ -726,6 +729,38 @@ describe("CleanVerifierRunner", () => {
     expect(outcome.workerFacing.messages).toContain("hard-coded list");
     expect(fx.engine.calls).toHaveLength(0);
     expect(fx.envs.provisioned).toHaveLength(0);
+  });
+
+  it("runs CompletenessGateRunner on the clean checkout and ignores the worker slot", async () => {
+    const seen: string[] = [];
+    const gate = bindCompletenessGate(createCompletenessGateRunner(), (input) => {
+      seen.push(input.checkoutPath);
+      return verifierLeafAudit({
+        taskId: input.taskId,
+        candidateRef: input.commitSha,
+        files: [
+          {
+            path: "src/kitchen/undef.ts",
+            status: "added",
+            beforeText: "",
+            afterText: "export const undefBody = () => undefined;\n",
+          },
+        ],
+        produces: [{ kind: "function", name: "undefBody" }],
+        entryPoints: ["src/kitchen/undef.ts"],
+      });
+    });
+    const fx = createFixture({ gatePort: gate });
+    const outcome = await fx.runner.verifyCandidate(fx.request);
+    expect(seen).toEqual([outcome.cleanCheckoutPath]);
+    expect(outcome.cleanCheckoutPath).not.toBe(fx.workerPath);
+    expect(readFileSync(join(fx.workerPath, "DIRTY.txt"), "utf8")).toBe("worker-dirty");
+    expect(existsSync(join(outcome.cleanCheckoutPath ?? "", "DIRTY.txt"))).toBe(false);
+    expect(outcome.staticAuditPassed).toBe(false);
+    expect(outcome.ranCandidate).toBe(false);
+    expect(outcome.accepted).toBe(false);
+    expect(fx.engine.calls).toHaveLength(0);
+    expect(outcome.workerFacing.messages.some((message) => message.includes("ast.stub"))).toBe(true);
   });
 
   it("lets a surface adapter collect observations without editing the runner", async () => {

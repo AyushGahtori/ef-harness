@@ -415,4 +415,34 @@ describe("static audit checks 6-11", () => {
     expect(report.passed).toBe(true);
     expect(report.coverageMode).toBe("reduced_text_only");
   });
+
+  it("flags bare returns, false, undefined arrows, and standalone buttons", () => {
+    const bare = auditLeaf({
+      files: [added("src/kitchen/bare.ts", "export function bareReturn(): void { return; }\n")],
+      produces: [{ kind: "function", name: "bareReturn" }],
+    });
+    expect(ruleIds(bare)).toContain("ast.stub");
+
+    const falseBody = auditLeaf({
+      files: [added("src/kitchen/false.ts", "export function falseBody(): boolean { return false; }\n")],
+      produces: [{ kind: "function", name: "falseBody" }],
+    });
+    expect(ruleIds(falseBody)).toContain("ast.stub");
+
+    const undef = auditLeaf({
+      files: [added("src/kitchen/undef.ts", "export const undefBody = () => undefined;\n")],
+      produces: [{ kind: "function", name: "undefBody" }],
+    });
+    expect(ruleIds(undef)).toContain("ast.stub");
+
+    const button = auditLeaf({
+      files: [
+        added(
+          "src/kitchen/Toolbar.tsx",
+          "export function Toolbar() {\n  return <button type=\"button\">Save</button>;\n}\n",
+        ),
+      ],
+    });
+    expect(ruleIds(button)).toContain("ast.dead-control");
+  });
 });
