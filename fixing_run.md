@@ -997,3 +997,32 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Stopped before C30.
 
+## [C30] — 87-question corpus and 20-skill vetting catalog
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `ae6e426367673956b4ac948a932ef23c91922db8` (`integrate: C30 wire 87-question corpus and 20-skill vetting catalog`)
+- **Findings Fixed:** `F-032` for `Task 103` and `Task 104` on top of the C29 loader, and `F-033` for one 20-skill catalog. Merged `task/103-corpus-wave1-expanded-packs` (`1637274`) and `task/104-corpus-wave2-packs-14-skills` (`c02800d`). `task/078-skill-vetting-quarantine-catalog` (`404d945`) was already an ancestor. Did not apply a dirty patch. Did not apply `task-079.patch`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C31.
+
+### What Changed
+- `CorpusPackLoader.loadAllBundledPacks()` in `@ef-harness/corpus` loads 44 M2 questions, 28 Wave 1 questions, and 15 Wave 2 questions (87 unique YAML ids) with empty `danglingOptionIds`. Sidecar `manifest.yaml` and `activation-table.yaml` stay in the file digest and are not read as packs. Wave 1 elaborations may omit `touches`.
+- `selectLoadedCorpusBatch()` feeds those 87 questions to `AdaptiveQuestionSelector`. Discovery's strict loader still accepts only documents that declare `kind`, so Wave 2's non-075 YAML does not enter the 075 validator.
+- `corpus/skills/manifest.json` now lists the 6 M2 skills and the 14 Wave 2 skills. Each entry has `skillPath`. M2 `allowedTouches` use closed `TOUCHES_TAGS` (`form_input`, `logging`, `search`, `interactive_ui`, `migration`, `destructive_write`, `authz`, `route`). `SkillVettingCatalog` checks hashes, the 2,000-token cap, quarantine receipts, and byte parity of `corpus/skills/m2/infer-or-ask/SKILL.md` with `skills/infer-or-ask/SKILL.md`. `verifyPinnedCatalog` still checks the original 6 M2 skills.
+
+### What It Fixed
+- **F-032:** Wave 1 and Wave 2 packs load through the C29 corpus loader with zero schema or dangling-option errors. The strict discovery loader no longer throws on Wave 2 indentation.
+- **F-033:** `SkillManifestRegistry.loadForMount` resolves all 20 skills, and every `allowedTouches` tag is in the 28-tag vocabulary.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor 404d945 HEAD`: exit `0`
+- `git merge --no-ff origin/task/103-corpus-wave1-expanded-packs`: exit `0` (`81d776e`)
+- `git merge --no-ff origin/task/104-corpus-wave2-packs-14-skills`: exit `0` (`8a0ffd6`)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped; prior 6 plus the 87-question case)
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped; includes the prior 27 files / 171 tests plus wave1, wave2, and the adaptive batch test)
+- `pnpm --filter @ef-harness/meta-lab test -- skill-vetting`: exit `0` — `Test Files 6 passed (6)`, `Tests 18 passed (18)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- Stopped before C31.
+
