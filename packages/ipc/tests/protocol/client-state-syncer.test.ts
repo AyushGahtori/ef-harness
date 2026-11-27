@@ -101,9 +101,10 @@ function syncerFor(
 describe("ClientStateSyncer", () => {
   it("applies the replay-to-live seam once, suppresses duplicates, and resubscribes across a gap", async () => {
     const outbox = new MemoryOutbox();
+    outbox.epoch = "1";
     const protocol = session(outbox, emptySnapshots("p"));
     const transport = new WindowTransport(protocol, "main");
-    const syncer = syncerFor(transport, [], ["board"]);
+    const syncer = syncerFor(transport, ["board"], ["board"]);
     outbox.add({ id: "e1", type: "TaskAccepted", topic: "board" });
     const second = outbox.add({ id: "e2", type: "TaskAccepted", topic: "board" });
     let raced = false;
@@ -166,17 +167,18 @@ describe("ClientStateSyncer", () => {
 
   it("replays missed domain events after the pipe drops without a snapshot replace", async () => {
     const outbox = new MemoryOutbox();
+    outbox.epoch = "1";
     outbox.add({ id: "e1", type: "TaskAccepted", topic: "board" });
     const protocol = session(outbox, emptySnapshots("p"));
     const transport = new WindowTransport(protocol, "main");
-    const syncer = syncerFor(transport, [], ["board"]);
+    const syncer = syncerFor(transport, ["board"], ["board"]);
     await syncer.start(0);
-    expect(syncer.streamEpoch).toBe("epoch-1");
+    expect(syncer.streamEpoch).toBe("1");
     transport.dropSocket();
     outbox.add({ id: "e2", type: "TaskAccepted", topic: "board" });
     outbox.add({ id: "e3", type: "TaskAccepted", topic: "board" });
     await syncer.reconnect();
-    expect(syncer.streamEpoch).toBe("epoch-1");
+    expect(syncer.streamEpoch).toBe("1");
     expect(ids(syncer)).toEqual(["e1", "e2", "e3"]);
     expect(syncer.lastApplied).toBe(3);
     expect(transport.snapshotFrames).toHaveLength(0);
@@ -188,23 +190,24 @@ describe("ClientStateSyncer", () => {
     };
     const outbox = new MemoryOutbox();
     outbox.add({ id: "old-event", type: "TaskAccepted", topic: "board" });
-    const snapshots = new FrozenSnapshots("p", { epoch: "epoch-1", latest: 1, rows: tables });
+    const snapshots = new FrozenSnapshots("p", { epoch: "1", latest: 1, rows: tables });
+    outbox.epoch = "1";
     const protocol = session(outbox, snapshots);
     const transport = new WindowTransport(protocol, "main");
-    const syncer = syncerFor(transport, [], ["board", "inbox"]);
+    const syncer = syncerFor(transport, ["board"], ["board", "inbox"]);
     await syncer.start(0);
-    expect(syncer.streamEpoch).toBe("epoch-1");
+    expect(syncer.streamEpoch).toBe("1");
     expect(ids(syncer)).toEqual(["old-event"]);
 
-    outbox.epoch = "epoch-2";
+    outbox.epoch = "2";
     outbox.events.splice(0, outbox.events.length);
     outbox.highWater = 4;
-    snapshots.epoch = "epoch-2";
+    snapshots.epoch = "2";
     snapshots.latest = 4;
     tables.board = [{ id: "board", lanes: [{ feature: "F1", state: "READY", n: 2 }] }];
     tables.inbox = [{ id: "in-1", kind: "question" }];
     await syncer.reconnect();
-    expect(syncer.streamEpoch).toBe("epoch-2");
+    expect(syncer.streamEpoch).toBe("2");
     expect(syncer.lastApplied).toBe(4);
     expect(syncer.appliedEvents).toEqual([]);
     expect(syncer.sections.board).toEqual([{ id: "board", lanes: [{ feature: "F1", state: "READY", n: 2 }] }]);
@@ -226,9 +229,10 @@ describe("ClientStateSyncer", () => {
     const outbox = new MemoryOutbox();
     outbox.add({ id: "e1", type: "TaskAccepted", topic: "board" });
     outbox.add({ id: "e2", type: "TaskAccepted", topic: "board" });
-    const snapshots = new FrozenSnapshots("p", { epoch: "epoch-1", latest: 2, rows: tables });
+    const snapshots = new FrozenSnapshots("p", { epoch: "1", latest: 2, rows: tables });
+    outbox.epoch = "1";
     const protocol = session(outbox, snapshots);
-    const syncer = syncerFor(new WindowTransport(protocol, "main"), [], ["inbox"]);
+    const syncer = syncerFor(new WindowTransport(protocol, "main"), ["board"], ["inbox"]);
     await syncer.start(0);
     expect(syncer.lastApplied).toBe(2);
 
@@ -242,7 +246,7 @@ describe("ClientStateSyncer", () => {
     outbox.highWater = 20;
     snapshots.latest = 20;
     await syncer.reconnect();
-    expect(syncer.streamEpoch).toBe("epoch-1");
+    expect(syncer.streamEpoch).toBe("1");
     expect(syncer.lastApplied).toBe(20);
     expect(syncer.appliedEvents).toEqual([]);
     expect(syncer.sections.inbox).toEqual([{ id: "kept", kind: "fyi" }]);
@@ -258,15 +262,16 @@ describe("ClientStateSyncer", () => {
     }));
     const outbox = new MemoryOutbox();
     outbox.highWater = 40;
-    const snapshots = new FrozenSnapshots("p", { epoch: "epoch-1", latest: 40, rows: { inbox: rows } });
+    const snapshots = new FrozenSnapshots("p", { epoch: "1", latest: 40, rows: { inbox: rows } });
+    outbox.epoch = "1";
     const protocol = session(outbox, snapshots);
     const transport = new WindowTransport(protocol, "main");
-    const syncer = syncerFor(transport, [], ["inbox"]);
+    const syncer = syncerFor(transport, ["inbox"], ["inbox"]);
     await syncer.start(0);
     expect(transport.snapshotFrames.length).toBeGreaterThan(1);
     expect(transport.snapshotSeqs.every((seq) => seq === 40)).toBe(true);
     expect(syncer.lastApplied).toBe(40);
-    expect(syncer.streamEpoch).toBe("epoch-1");
+    expect(syncer.streamEpoch).toBe("1");
     const inbox = syncer.sections.inbox;
     expect(Array.isArray(inbox) ? inbox.map((item) => (item as { id: string }).id) : []).toEqual([
       "inbox-1",
@@ -280,8 +285,8 @@ describe("ClientStateSyncer", () => {
     outbox.add({ id: "e1", type: "BoardUpdated", topic: "board" });
     outbox.add({ id: "e2", type: "OfficeUpdated", topic: "office" });
     const protocol = session(outbox, emptySnapshots("p"));
-    const main = syncerFor(new WindowTransport(protocol, "main"), [], ["board"]);
-    const popped = syncerFor(new WindowTransport(protocol, "office"), [], ["board"]);
+    const main = syncerFor(new WindowTransport(protocol, "main"), ["board", "office"], ["board"]);
+    const popped = syncerFor(new WindowTransport(protocol, "office"), ["board", "office"], ["board"]);
     await main.start(0);
     await popped.start(0);
     const live = outbox.add({ id: "e3", type: "BoardUpdated", topic: "board" });

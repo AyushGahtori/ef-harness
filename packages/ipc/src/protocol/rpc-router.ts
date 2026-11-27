@@ -1,11 +1,16 @@
+import { JsonRpcRequestSchema, type JsonRpcRequest } from "@ef-harness/shared-contracts";
 import { ZodError } from "zod";
 import {
   JSON_RPC_INTERNAL_ERROR,
+  JSON_RPC_INVALID_PARAMS,
   JSON_RPC_METHOD_NOT_FOUND,
   JSON_RPC_OP_ID_REUSED,
   JSON_RPC_PROJECT_NOT_FOUND,
   JSON_RPC_SNAPSHOT_ITEM_TOO_LARGE,
   PROTOCOL_VERSION,
+  SNAPSHOT_VIEWS,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  type SnapshotViewName,
 } from "./constants.js";
 import { EventSubscriptionServer, type SubscribeParams } from "./event-subscription-server.js";
 import {
@@ -24,7 +29,7 @@ import type {
   CoordinatorWriteQueue,
 } from "./ports.js";
 import { SnapshotAssembler, type SnapshotGetParams } from "./snapshot-assembler.js";
-import { snapshotParamsSchema, subscribeParamsSchema } from "./schemas.js";
+import { canonicalEpochString, prepareRpcRequest } from "./wire.js";
 
 export interface RpcContext {
   readonly connectionId: string;
@@ -67,43 +72,50 @@ export class RpcRouter {
     if (!spec) {
       return failure(incoming.id, JSON_RPC_METHOD_NOT_FOUND, `Method not found: ${incoming.method}`);
     }
-    let params: Record<string, unknown>;
+    let parsed: JsonRpcRequest;
     try {
-      params = asRecord(spec.schema.parse(incoming.params));
+      parsed = JsonRpcRequestSchema.parse(prepareRpcRequest(incoming.body));
     } catch (error) {
       if (error instanceof ZodError) return zodFailure(incoming.id, error);
       return failure(incoming.id, JSON_RPC_INTERNAL_ERROR, "Invalid params");
     }
+    if (parsed.method !== incoming.method) {
+      return failure(incoming.id, JSON_RPC_INVALID_PARAMS, "Invalid params");
+    }
     try {
-      if (incoming.method === "events.subscribe") {
-        const parsed = subscribeParamsSchema.parse(params);
+      if (parsed.method === "session.hello" && !isSupportedProtocol(parsed.params.protocol)) {
+        return failure(incoming.id, JSON_RPC_INVALID_PARAMS, "unsupported protocol");
+      }
+      if (parsed.method === "events.subscribe") {
         const subscribeParams: SubscribeParams =
-          parsed.stream_epoch === undefined
+          parsed.params.stream_epoch === undefined
             ? {
-                project: parsed.project,
-                topics: parsed.topics,
-                since_seq: parsed.since_seq,
+                project: parsed.params.project,
+                topics: parsed.params.topics,
+                since_seq: parsed.params.since_seq,
               }
             : {
-                project: parsed.project,
-                topics: parsed.topics,
-                since_seq: parsed.since_seq,
-                stream_epoch: parsed.stream_epoch,
+                project: parsed.params.project,
+                topics: parsed.params.topics,
+                since_seq: parsed.params.since_seq,
+                stream_epoch: canonicalEpochString(parsed.params.stream_epoch),
               };
         const result = await this.subscriptions.subscribe(connection, subscribeParams);
         return success(incoming.id, result);
       }
-      if (incoming.method === "snapshot.get") {
-        const parsed = snapshotParamsSchema.parse(params);
+      if (parsed.method === "snapshot.get") {
+        const views = snapshotViews(parsed.params.views);
+        if (!views) return failure(incoming.id, JSON_RPC_INVALID_PARAMS, "Invalid params");
         const snapshotParams: SnapshotGetParams =
-          parsed.cursor === undefined
-            ? { project: parsed.project, views: parsed.views }
-            : { project: parsed.project, views: parsed.views, cursor: parsed.cursor };
+          parsed.params.cursor === undefined
+            ? { project: parsed.params.project, views }
+            : { project: parsed.params.project, views, cursor: parsed.params.cursor };
         const result = await this.snapshots.get(snapshotParams);
         return success(incoming.id, result);
       }
+      const params = asRecord(parsed.params);
       if (spec.mutating) {
-        const opId = readOpId(params);
+        const opId = readEnvelopeOpId(parsed);
         if (opId === null || spec.priority === null) {
           return failure(incoming.id, JSON_RPC_INTERNAL_ERROR, "op_id is required");
         }
@@ -129,12 +141,12 @@ export class RpcRouter {
     return this.writeQueue.submitOperation(operation);
   }
 
-  private async invoke(
+  private invoke(
     connection: ProtocolConnection,
     method: string,
     params: Record<string, unknown>,
     opId: string | null,
-  ): Promise<unknown> {
+  ): unknown {
     const handler = this.handlers[method];
     if (handler) {
       return handler({ connectionId: connection.connectionId, method, opId }, params);
@@ -170,9 +182,28 @@ function asRecord(value: unknown): Record<string, unknown> {
   return { ...(value as Record<string, unknown>) };
 }
 
-function readOpId(params: Record<string, unknown>): string | null {
-  const opId = params.op_id;
-  if (typeof opId !== "string") return null;
-  const trimmed = opId.trim();
+function readEnvelopeOpId(parsed: JsonRpcRequest): string | null {
+  if (!("op_id" in parsed) || typeof parsed.op_id !== "string") return null;
+  const trimmed = parsed.op_id.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function isSupportedProtocol(protocol: string): boolean {
+  for (const version of SUPPORTED_PROTOCOL_VERSIONS) {
+    if (version === protocol) return true;
+  }
+  return false;
+}
+
+function snapshotViews(views: readonly string[]): readonly SnapshotViewName[] | null {
+  const accepted: SnapshotViewName[] = [];
+  for (const view of views) {
+    if (!isSnapshotView(view)) return null;
+    accepted.push(view);
+  }
+  return accepted;
+}
+
+function isSnapshotView(view: string): view is SnapshotViewName {
+  return (SNAPSHOT_VIEWS as readonly string[]).includes(view);
 }

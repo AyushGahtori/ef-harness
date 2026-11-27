@@ -45,6 +45,10 @@ function assertStreamId(streamId: number): void {
 export class FrameCodec {
   private pending: Uint8Array = new Uint8Array(0);
 
+  encode(frame: EncodedFrame): Buffer {
+    return FrameCodec.encode(frame);
+  }
+
   static encode(frame: EncodedFrame): Buffer {
     if (frame.channel === JSON_RPC_CHANNEL) {
       if (frame.payload.byteLength > JSON_IPC_MAX_BYTES) {

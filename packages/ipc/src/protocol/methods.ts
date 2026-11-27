@@ -1,6 +1,40 @@
+import { JsonRpcRequestSchema, MUTATING_RPC_METHODS } from "@ef-harness/shared-contracts";
 import type { ZodTypeAny } from "zod";
 import type { WritePriority } from "./ports.js";
-import { rpcParamSchemas, type RpcMethodName } from "./schemas.js";
+
+export const RPC_METHOD_NAMES = [
+  "session.hello",
+  "session.ping",
+  "project.list",
+  "project.open",
+  "project.close",
+  "chat.send",
+  "question.answer",
+  "batch.accept",
+  "node.get",
+  "node.search",
+  "graph.view",
+  "impact.preview",
+  "plan.preview",
+  "build.start",
+  "build.pauseAll",
+  "build.stop",
+  "task.retry",
+  "task.takeOver",
+  "inbox.list",
+  "inbox.resolve",
+  "artifact.open",
+  "diff.get",
+  "preview.start",
+  "preview.url",
+  "settings.get",
+  "settings.set",
+  "diag.export",
+  "events.subscribe",
+  "snapshot.get",
+] as const;
+
+export type RpcMethodName = (typeof RPC_METHOD_NAMES)[number];
 
 export interface RpcMethodSpec {
   readonly name: RpcMethodName;
@@ -10,53 +44,50 @@ export interface RpcMethodSpec {
   readonly schema: ZodTypeAny;
 }
 
-const READ = { mutating: false, priority: null } as const;
+const MUTATING = new Set<string>(MUTATING_RPC_METHODS);
 
-function method(
-  name: RpcMethodName,
-  mutating: boolean,
-  priority: WritePriority | null,
-): RpcMethodSpec {
+function method(name: RpcMethodName, priority: WritePriority | null): RpcMethodSpec {
   const namespace = name.slice(0, name.indexOf("."));
+  const mutating = MUTATING.has(name);
   return {
     name,
     namespace,
     mutating,
-    priority,
-    schema: rpcParamSchemas[name],
+    priority: mutating ? priority : null,
+    schema: JsonRpcRequestSchema,
   };
 }
 
 export const RPC_METHODS: readonly RpcMethodSpec[] = [
-  method("session.hello", false, null),
-  method("session.ping", false, null),
-  method("project.list", READ.mutating, READ.priority),
-  method("project.open", true, "interactive"),
-  method("project.close", true, "interactive"),
-  method("chat.send", true, "interactive"),
-  method("question.answer", true, "interactive"),
-  method("batch.accept", true, "knowledge_barrier"),
-  method("node.get", false, null),
-  method("node.search", false, null),
-  method("graph.view", false, null),
-  method("impact.preview", false, null),
-  method("plan.preview", false, null),
-  method("build.start", true, "runtime"),
-  method("build.pauseAll", true, "interactive"),
-  method("build.stop", true, "interactive"),
-  method("task.retry", true, "runtime"),
-  method("task.takeOver", true, "runtime"),
-  method("inbox.list", false, null),
-  method("inbox.resolve", true, "interactive"),
-  method("artifact.open", true, "runtime"),
-  method("diff.get", false, null),
-  method("preview.start", true, "runtime"),
-  method("preview.url", false, null),
-  method("settings.get", false, null),
-  method("settings.set", true, "interactive"),
-  method("diag.export", false, null),
-  method("events.subscribe", false, null),
-  method("snapshot.get", false, null),
+  method("session.hello", null),
+  method("session.ping", null),
+  method("project.list", null),
+  method("project.open", "interactive"),
+  method("project.close", "interactive"),
+  method("chat.send", "interactive"),
+  method("question.answer", "interactive"),
+  method("batch.accept", "knowledge_barrier"),
+  method("node.get", null),
+  method("node.search", null),
+  method("graph.view", null),
+  method("impact.preview", null),
+  method("plan.preview", null),
+  method("build.start", "runtime"),
+  method("build.pauseAll", "interactive"),
+  method("build.stop", "interactive"),
+  method("task.retry", "runtime"),
+  method("task.takeOver", "runtime"),
+  method("inbox.list", null),
+  method("inbox.resolve", "interactive"),
+  method("artifact.open", null),
+  method("diff.get", null),
+  method("preview.start", "runtime"),
+  method("preview.url", null),
+  method("settings.get", null),
+  method("settings.set", "interactive"),
+  method("diag.export", "runtime"),
+  method("events.subscribe", null),
+  method("snapshot.get", null),
 ];
 
 const BY_NAME = new Map<string, RpcMethodSpec>(RPC_METHODS.map((spec) => [spec.name, spec]));

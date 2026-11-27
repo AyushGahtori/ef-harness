@@ -13,6 +13,7 @@ export interface JsonRpcRequest {
   readonly id: string | number;
   readonly method: string;
   readonly params: unknown;
+  readonly op_id?: string;
 }
 
 export interface JsonRpcSuccess {
@@ -87,11 +88,13 @@ export function readRequest(value: unknown): JsonRpcRequest | undefined {
   }
   const id = jsonRpcId(value.id);
   if (id === null) return undefined;
+  const opId = typeof value.op_id === "string" && value.op_id.trim().length > 0 ? value.op_id : undefined;
   return {
     jsonrpc: "2.0",
     id,
     method: value.method,
     params: "params" in value ? value.params : {},
+    ...(opId !== undefined ? { op_id: opId } : {}),
   };
 }
 

@@ -128,12 +128,20 @@ export class NamedPipeClient extends EventEmitter {
     return this.firstConnected;
   }
 
-  async request(method: string, params: unknown = {}): Promise<unknown> {
+  async request(method: string, params: unknown = {}, opId?: string): Promise<unknown> {
     const writer = this.writer;
     if (!this.authed || !writer) throw new ConnectionClosedError("not connected");
     const id = this.nextId;
     this.nextId += 1;
-    const frame = encodeJsonRpc({ jsonrpc: "2.0", id, method, params });
+    const message: {
+      jsonrpc: "2.0";
+      id: number;
+      method: string;
+      params: unknown;
+      op_id?: string;
+    } = { jsonrpc: "2.0", id, method, params };
+    if (opId !== undefined) message.op_id = opId;
+    const frame = encodeJsonRpc(message);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);

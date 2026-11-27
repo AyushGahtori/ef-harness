@@ -1,3 +1,7 @@
+import {
+  SecretRedactor as ObservabilitySecretRedactor,
+  getSharedSecretRedactor,
+} from "@ef-harness/shared-observability";
 import { SESSION_TOKEN_LABEL } from "./constants.js";
 
 /** Structural subset of Task 011 `SecretRedactor`. */
@@ -16,59 +20,11 @@ export interface StructuredLogger {
   fatal?(message: string, fields?: unknown): void;
 }
 
-export function normalizeRedactionLabel(label: string): string {
-  const cleaned = label
-    .trim()
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return cleaned.length > 0 ? cleaned : "SECRET";
-}
+/** Canonical redactor. The historical name remains so callers keep one constructor. */
+export class LocalSecretRedactor extends ObservabilitySecretRedactor {}
 
-export class LocalSecretRedactor implements SecretRedactor {
-  private readonly values = new Map<string, string>();
-
-  register(label: string, value: string): void {
-    if (value.length === 0) return;
-    this.values.set(normalizeRedactionLabel(label), value);
-  }
-
-  forget(label: string): boolean {
-    return this.values.delete(normalizeRedactionLabel(label));
-  }
-
-  redact(text: string): string {
-    let output = text;
-    for (const [label, value] of this.values) {
-      if (value.length === 0 || !output.includes(value)) continue;
-      output = output.split(value).join(`[REDACTED:${label}]`);
-    }
-    return output;
-  }
-}
-
-export function isSecretRedactor(value: unknown): value is SecretRedactor {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as { register?: unknown; forget?: unknown; redact?: unknown };
-  return (
-    typeof candidate.register === "function" &&
-    typeof candidate.forget === "function" &&
-    typeof candidate.redact === "function"
-  );
-}
-
-export async function loadSharedSecretRedactor(): Promise<SecretRedactor | undefined> {
-  const specifier = "@ef-harness/shared-contracts/telemetry";
-  try {
-    const loaded: unknown = await import(specifier);
-    if (!loaded || typeof loaded !== "object" || !("getSharedSecretRedactor" in loaded)) return undefined;
-    const getShared = loaded.getSharedSecretRedactor;
-    if (typeof getShared !== "function") return undefined;
-    const redactor: unknown = getShared();
-    return isSecretRedactor(redactor) ? redactor : undefined;
-  } catch {
-    return undefined;
-  }
+export async function loadSharedSecretRedactor(): Promise<SecretRedactor> {
+  return getSharedSecretRedactor();
 }
 
 function redactUnknown(value: unknown, redactor: SecretRedactor): unknown {

@@ -59,6 +59,13 @@ export interface NamedPipeServerOptions {
   readonly onRequest?: RequestHandler;
 }
 
+function isDelegatedRpcError(value: unknown): value is { readonly error: JsonRpcErrorBody } {
+  if (!isRecord(value) || !isRecord(value.error)) return false;
+  const keys = Object.keys(value);
+  if (keys.length !== 1 || keys[0] !== "error") return false;
+  return typeof value.error.code === "number" && typeof value.error.message === "string";
+}
+
 function authError(id: string | number | null): unknown {
   return {
     jsonrpc: "2.0",
@@ -222,6 +229,10 @@ class ServerSession implements PipeSession {
     }
     try {
       const result = await handler(request, this);
+      if (isDelegatedRpcError(result)) {
+        await this.sendError(request.id, result.error);
+        return;
+      }
       await this.sendResult(request.id, result === undefined ? {} : result);
     } catch {
       await this.sendError(request.id, { code: RPC_INTERNAL_ERROR, message: "internal error" });

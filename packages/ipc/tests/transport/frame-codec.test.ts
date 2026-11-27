@@ -19,6 +19,7 @@ describe("transport FrameCodec", () => {
     const json = FrameCodec.encode({ channel: JSON_RPC_CHANNEL, payload: Buffer.from("{}") });
     expect([...json.subarray(0, 5)]).toEqual([0, 0, 0, 2, 0]);
     expect(json.subarray(5).toString("utf8")).toBe("{}");
+    expect(Buffer.compare(new FrameCodec().encode({ channel: JSON_RPC_CHANNEL, payload: Buffer.from("{}") }), json)).toBe(0);
 
     const binary = FrameCodec.encode({
       channel: BINARY_STREAM_CHANNEL,

@@ -57,11 +57,19 @@ export class MemoryConnection implements ProtocolConnection {
   }
 }
 
-export function rpc(method: string, params: Record<string, unknown>, id: number): {
+export function rpc(
+  method: string,
+  params: Record<string, unknown>,
+  id: number,
+  opId?: string,
+): {
   jsonrpc: "2.0";
   id: number;
   method: string;
   params: Record<string, unknown>;
+  op_id?: string;
 } {
-  return { jsonrpc: "2.0", id, method, params };
+  const message = { jsonrpc: "2.0" as const, id, method, params };
+  if (opId === undefined) return message;
+  return { ...message, op_id: opId };
 }

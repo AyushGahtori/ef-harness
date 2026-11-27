@@ -7,7 +7,7 @@ export interface WriteOperation {
   readonly kind: string;
   readonly priority: WritePriority;
   readonly request: unknown;
-  readonly execute: () => Promise<unknown>;
+  readonly execute: () => unknown;
 }
 
 export interface QueueLatencyMetrics {

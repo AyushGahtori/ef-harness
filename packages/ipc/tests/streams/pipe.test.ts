@@ -114,7 +114,11 @@ describe("named-pipe artifact streaming", () => {
     );
     const running = await start(catalog, { initialCredits: 4, creditWindow: 4 });
     try {
-      expect(running.server.pipePath.startsWith("\\\\.\\pipe\\")).toBe(true);
+      if (process.platform === "win32") {
+        expect(running.server.pipePath.startsWith("\\\\.\\pipe\\")).toBe(true);
+      } else {
+        expect(running.server.pipePath.endsWith(".sock")).toBe(true);
+      }
       const opened = await running.client.openArtifact("trace");
       expect(opened).toMatchObject({
         totalBytes: TWENTY_FIVE_MB,

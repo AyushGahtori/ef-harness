@@ -428,9 +428,15 @@ importers:
 
   packages/ipc:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../shared-observability
       zod:
         specifier: ^3.25.0
         version: 3.25.76

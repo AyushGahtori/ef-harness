@@ -95,56 +95,57 @@ function stack(handlers?: Record<string, (params: Record<string, unknown>) => Pr
   return { queue, outbox, protocol, conn: new MemoryConnection("window-a") };
 }
 
-function sample(method: string): Record<string, unknown> {
-  const op = { op_id: `op-${method}` };
+function sample(method: string): { params: Record<string, unknown>; opId?: string } {
+  const opId = `op-${method}`;
   switch (method) {
     case "session.hello":
-      return { token: "token", protocol: "1.1", client: "test" };
+      return { params: { token: "token", protocol: "1.1", client: { name: "test", version: "1" } } };
     case "session.ping":
     case "project.list":
     case "plan.preview":
     case "inbox.list":
-    case "preview.url":
     case "settings.get":
-    case "diag.export":
-      return {};
+      return { params: {} };
     case "project.open":
     case "project.close":
-      return { ...op, project: "p" };
-    case "chat.send":
-      return { ...op, target: "discovery", text: "hi", clauses: [] };
-    case "question.answer":
-      return { ...op, questionId: "q1", answer: "yes" };
-    case "batch.accept":
-      return { ...op, batchId: "b1" };
-    case "node.get":
-      return { id: "R1" };
-    case "node.search":
-      return { query: "login" };
-    case "graph.view":
-      return { view: "board" };
-    case "impact.preview":
-      return { change: { id: "R1" } };
     case "build.start":
     case "build.pauseAll":
     case "build.stop":
     case "preview.start":
-      return { ...op };
+      return { params: { project_id: "p" }, opId };
+    case "chat.send":
+      return { params: { target: "discovery", text: "hi", clauses: [] }, opId };
+    case "question.answer":
+      return { params: { question_id: "q1", answer: "yes" }, opId };
+    case "batch.accept":
+      return { params: { batch_id: "b1" }, opId };
+    case "node.get":
+      return { params: { id: "R1" } };
+    case "node.search":
+      return { params: { query: "login" } };
+    case "graph.view":
+      return { params: { view: "board" } };
+    case "impact.preview":
+      return { params: { change: { id: "R1" } } };
     case "task.retry":
     case "task.takeOver":
-      return { ...op, task: "T1" };
+      return { params: { task: "T1" }, opId };
     case "inbox.resolve":
-      return { ...op, id: "i1", resolution: "done" };
+      return { params: { id: "i1", resolution: "answered" }, opId };
     case "artifact.open":
-      return { ...op, id: "a1" };
+      return { params: { id: "a1" } };
     case "diff.get":
-      return { task: "T1", file: "src/app.ts" };
+      return { params: { task: "T1", file: "src/app.ts" } };
+    case "preview.url":
+      return { params: { project_id: "p" } };
     case "settings.set":
-      return { ...op, key: "theme", value: "dark" };
+      return { params: { key: "theme", value: "dark" }, opId };
+    case "diag.export":
+      return { params: {}, opId };
     case "events.subscribe":
-      return { project: "p", topics: [], since_seq: 0 };
+      return { params: { project: "p", topics: ["board"], since_seq: 0 } };
     case "snapshot.get":
-      return { project: "p", views: ["board"] };
+      return { params: { project: "p", views: ["board"] } };
     default:
       throw new Error(`no sample for ${method}`);
   }
@@ -190,7 +191,8 @@ describe("RpcRouter", () => {
     ];
     let id = 1;
     for (const method of methods) {
-      const response = await protocol.router.handle(conn, rpc(method, sample(method), id));
+      const spec = sample(method);
+      const response = await protocol.router.handle(conn, rpc(method, spec.params, id, spec.opId));
       id += 1;
       expect(response && "error" in response ? response.error.code : 0).not.toBe(JSON_RPC_METHOD_NOT_FOUND);
       expect(response && "result" in response).toBe(true);
@@ -200,6 +202,8 @@ describe("RpcRouter", () => {
     expect(mutating).toContain("build.stop");
     expect(mutating).not.toContain("project.list");
     expect(mutating).not.toContain("node.get");
+    expect(mutating).not.toContain("artifact.open");
+    expect(mutating).toContain("diag.export");
     expect(queue.log.find((entry) => entry.operation.kind === "batch.accept")?.via).toBe("barrier");
     expect(queue.log.find((entry) => entry.operation.kind === "build.stop")?.via).toBe("operation");
     expect(queue.log.find((entry) => entry.operation.kind === "chat.send")?.via).toBe("operation");
@@ -215,18 +219,18 @@ describe("RpcRouter", () => {
     });
     const missing = await protocol.router.handle(
       conn,
-      rpc("build.stop", {}, 1),
+      rpc("build.stop", { project_id: "p" }, 1),
     );
     expect(missing && "error" in missing && missing.error.code).toBe(JSON_RPC_INVALID_PARAMS);
     expect(queue.log).toHaveLength(0);
 
     const first = await protocol.router.handle(
       conn,
-      rpc("chat.send", { op_id: "same", target: "discovery", text: "hi", clauses: [] }, 2),
+      rpc("chat.send", { target: "discovery", text: "hi", clauses: [] }, 2, "same"),
     );
     const second = await protocol.router.handle(
       conn,
-      rpc("chat.send", { op_id: "same", target: "discovery", text: "hi", clauses: [] }, 3),
+      rpc("chat.send", { target: "discovery", text: "hi", clauses: [] }, 3, "same"),
     );
     expect(first && "result" in first && first.result).toEqual({ turn: "t1" });
     expect(second && "result" in second && second.result).toEqual({ turn: "t1" });
@@ -235,7 +239,7 @@ describe("RpcRouter", () => {
 
     const reused = await protocol.router.handle(
       conn,
-      rpc("chat.send", { op_id: "same", target: "discovery", text: "changed", clauses: [] }, 4),
+      rpc("chat.send", { target: "discovery", text: "changed", clauses: [] }, 4, "same"),
     );
     expect(reused && "error" in reused && reused.error.code).toBe(JSON_RPC_OP_ID_REUSED);
     expect(runs).toBe(1);
@@ -268,10 +272,10 @@ describe("RpcRouter", () => {
     });
     const first = new MemoryConnection("main");
     const second = new MemoryConnection("office");
-    const a = protocol.router.handle(first, rpc("build.start", { op_id: "a" }, 1));
+    const a = protocol.router.handle(first, rpc("build.start", { project_id: "p" }, 1, "a"));
     await enteredGate;
     expect(entered).toBe(true);
-    const b = protocol.router.handle(second, rpc("task.retry", { op_id: "b", task: "T1" }, 2));
+    const b = protocol.router.handle(second, rpc("task.retry", { task: "T1" }, 2, "b"));
     expect(startedSecond).toBe(false);
     release();
     const [aResult, bResult] = await Promise.all([a, b]);
@@ -281,16 +285,31 @@ describe("RpcRouter", () => {
     expect(startedSecond).toBe(true);
   });
 
-  it("accepts additive request fields and rejects a different protocol major", async () => {
+  it("rejects unknown request fields, camelCase aliases, and a different protocol major", async () => {
     const { protocol, conn } = stack();
-    const accepted = await protocol.router.handle(
+    const additive = await protocol.router.handle(
       conn,
       rpc("events.subscribe", { project: "p", topics: ["board"], since_seq: 0, futureField: { n: 1 } }, 1),
     );
-    expect(accepted && "result" in accepted && (accepted.result as { status: string }).status).toBe("live");
+    expect(additive && "error" in additive && additive.error.code).toBe(JSON_RPC_INVALID_PARAMS);
+    const camel = await protocol.router.handle(
+      conn,
+      rpc("question.answer", { questionId: "q1", answer: "yes" }, 7, "op-camel"),
+    );
+    expect(camel && "error" in camel && camel.error.code).toBe(JSON_RPC_INVALID_PARAMS);
+    const readOnlyOp = await protocol.router.handle(
+      conn,
+      rpc("artifact.open", { id: "a1" }, 8, "op-open"),
+    );
+    expect(readOnlyOp && "error" in readOnlyOp && readOnlyOp.error.code).toBe(JSON_RPC_INVALID_PARAMS);
+    const emptyTopics = await protocol.router.handle(
+      conn,
+      rpc("events.subscribe", { project: "p", topics: [], since_seq: 0 }, 9),
+    );
+    expect(emptyTopics && "error" in emptyTopics && emptyTopics.error.code).toBe(JSON_RPC_INVALID_PARAMS);
     const rejected = await protocol.router.handle(
       conn,
-      rpc("session.hello", { token: "t", protocol: "2.0", client: "test" }, 2),
+      rpc("session.hello", { token: "t", protocol: "2.0", client: { name: "test", version: "1" } }, 2),
     );
     expect(rejected && "error" in rejected && rejected.error.code).toBe(JSON_RPC_INVALID_PARAMS);
     const parsed = await protocol.router.handle(conn, "{");
@@ -301,12 +320,12 @@ describe("RpcRouter", () => {
     expect(missing && "error" in missing && missing.error.code).toBe(JSON_RPC_METHOD_NOT_FOUND);
     const previousMinor = await protocol.router.handle(
       conn,
-      rpc("session.hello", { token: "t", protocol: "1.0", client: { name: "window", build: 2 } }, 5),
+      rpc("session.hello", { token: "t", protocol: "1.0", client: { name: "window", version: "1" } }, 5),
     );
     expect(previousMinor && "result" in previousMinor).toBe(true);
     const newerMinor = await protocol.router.handle(
       conn,
-      rpc("session.hello", { token: "t", protocol: "1.2", client: "test" }, 6),
+      rpc("session.hello", { token: "t", protocol: "1.2", client: { name: "window", version: "1" } }, 6),
     );
     expect(newerMinor && "error" in newerMinor && newerMinor.error.code).toBe(JSON_RPC_INVALID_PARAMS);
   });

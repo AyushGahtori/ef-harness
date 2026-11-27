@@ -11,6 +11,12 @@
   "references": [
     {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../shared-observability"
+    },
+    {
+      "path": "../db"
     }
   ]
 }

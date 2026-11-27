@@ -54,8 +54,8 @@ export type {
   WritePriority,
 } from "./ports.js";
 
-export { RPC_METHODS, RPC_NAMESPACES, getRpcMethod, listRpcMethodNames } from "./methods.js";
-export type { RpcMethodSpec } from "./methods.js";
+export { RPC_METHOD_NAMES, RPC_METHODS, RPC_NAMESPACES, getRpcMethod, listRpcMethodNames } from "./methods.js";
+export type { RpcMethodName, RpcMethodSpec } from "./methods.js";
 
 export { decodeDaemonMessage, failure, notify, parseIncoming, success } from "./jsonrpc.js";
 export type { DecodedDaemonMessage } from "./jsonrpc.js";
@@ -90,3 +90,13 @@ export type { RpcContext, RpcHandler, RpcHandlerMap, RpcRouterOptions } from "./
 
 export { createSessionProtocol } from "./session-protocol.js";
 export type { SessionProtocol, SessionProtocolOptions } from "./session-protocol.js";
+
+export {
+  bindIpcProject,
+  createDbOutboxDirectory,
+  createDbOutboxPort,
+  createDbReadModelPort,
+  createDbSnapshotSource,
+  createDbWriteQueuePort,
+} from "./db-bind.js";
+export type { BindIpcProjectOptions, DbWriteQueuePortOptions, IpcProjectBinding } from "./db-bind.js";

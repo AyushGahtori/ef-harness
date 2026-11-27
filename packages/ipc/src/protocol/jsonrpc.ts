@@ -32,7 +32,14 @@ export function zodFailure(id: string | number | null, error: ZodError): JsonRpc
 }
 
 export type IncomingMessage =
-  | { readonly ok: true; readonly kind: "request"; readonly id: string | number; readonly method: string; readonly params: unknown }
+  | {
+      readonly ok: true;
+      readonly kind: "request";
+      readonly id: string | number;
+      readonly method: string;
+      readonly params: unknown;
+      readonly body: unknown;
+    }
   | { readonly ok: true; readonly kind: "notification"; readonly method: string; readonly params: unknown }
   | { readonly ok: false; readonly response: JsonRpcFailure };
 
@@ -63,7 +70,7 @@ export function parseIncoming(payload: unknown): IncomingMessage {
   if (typeof id !== "string" && (typeof id !== "number" || !Number.isInteger(id))) {
     return { ok: false, response: failure(null, JSON_RPC_INVALID_REQUEST, "Invalid request") };
   }
-  return { ok: true, kind: "request", id, method: record.method, params };
+  return { ok: true, kind: "request", id, method: record.method, params, body: record };
 }
 
 function requestId(record: Record<string, unknown>): string | number | null {
