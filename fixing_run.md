@@ -705,3 +705,42 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/worker-loop test` (after that expectation fix): exit `0` — `Test Files 25 passed (25)`, `Tests 146 passed (146)` (C21 was `137`; `9` new tests, `0` skipped)
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+## [C23] — Static audit fixes and clean verifier wiring
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `717ff83b422b0a8c2e57afe99b684518d2d8e68f` (`integrate: C23 static audit fixes and clean verifier`)
+- **Findings Fixed:** `F-024` (task-058 stub and standalone-button scanners, task-059 `.js` to `.ts` reachability and integrator hunk line bounds, default gate engine swapped to the Task 058 scanners, live `NameRegistryService` and `GitSafetyScanner` methods bound onto the gate ports, `CompletenessGateRunner` wired into `CleanVerifierRunner.verifyCandidate`). Did not apply `task-061.patch`, `task-062.patch`, `task-063.patch`, `task-064.patch`, `task-066.patch`, or `task-079.patch`. Did not collapse the four `SurfaceVerifierAdapter` aliases. Did not re-merge `task/058`, `task/059`, or `task/060`. Did not edit `schema/**`, `path_leases.mode`, or `CheckOutcomeSchema`. Did not stub Windows code. Did not revert the C21 shrinker or the C22 `.harness` denial. Did not merge `main`. Did not open a pull request. Did not start C24.
+
+### What Changed
+- Re-verified on `9aedea0848c027fe65cbf318248ca54ccb3c9f91`. `task/058-static-audit-scanners-p1` (`71ea882`), `task/059-static-audit-scanners-p2` (`b6e79b2`), and `task/060-clean-verifier-harness` (`a06d371`) are ancestors. `git apply --stat` and `git apply --check` were clean for both patches, then `git apply` landed both deltas. `task-058.patch` is 3 scanner files (`+92/−13`). `task-059.patch` is 4 gate files (`+113/−25`). There is no `task-060.patch`. They do not overlap.
+- Live class stays `CleanVerifierRunner.verifyCandidate` in `packages/verifier/src/runner/`. There is no `clean-harness/` directory. `CompletenessGateRunner.runLeafStaticAudit` / `runFeatureStaticAudit` stay synchronous.
+- The gate default was `createLocalStaticAuditAstEngine` (regex). That regex already flagged a standalone `<button>`. Task 058's AST scanner did not, until the patch. The patch was applied first, then the default was swapped to the Task 058 scanners (`scanStubBodies`, `scanJsxDeadControls`, markers, swallowed errors, elision). Gate rule ids stay `ast.stub`, `ast.marker`, `ast.dead-control`, and `ast.special-case`. `audit()` stays async for git diffs; the in-memory `scan()` path is the same scanner pipeline.
+- `bindNameRegistryService` calls `NameRegistryService.auditCodeNamesAgainstRegistry({ feature, names })` and maps a thrown `CodeNameAuditError` onto the gate's `NameAuditFailure[]`. `bindGitSafetyScanner` calls `GitSafetyScanner.scanCommitDiffForSecrets(base, candidate)` and maps `DiffSecretScanResult` onto the existing `SafetyScanReport`. No third interface was added. The in-memory secret scanner remains the default for diffs that have no revisions.
+- `@ef-harness/db` and `@ef-harness/git-engine` are dependencies of `@ef-harness/completeness-gate`. `@ef-harness/completeness-gate` and `@ef-harness/git-engine` are dependencies of `@ef-harness/verifier`, with matching `tsconfig.json` project references. Verifier keeps `typescript` on the catalog and keeps `fast-check`, `playwright`, `yaml`, and `zod`. `pnpm-lock.yaml` adds those `link:` entries only.
+- `bindCompletenessGate` is what `verifyCandidate` runs when the gate port is the real runner. The callback receives the clean checkout path. `bindWorktreeSlotPool` calls `WorktreeSlotPool.acquireSlot` (`WorktreeSlotManager.acquireSlot`) and `releaseSlot`. The verifier slot `kind` stays `"verifier"`; the pool slot stays an attempt slot. `path_leases.mode` stays `'intent' | 'granted'`. `CheckOutcomeSchema.collected_count` stays in `@ef-harness/shared-contracts`.
+
+### What It Fixed
+- **F-024 (task-058):** `return;`, `return false;`, and `() => undefined` are stub bodies. A standalone `<button type="button">Save</button>` is a dead control. A button with `onClick`, `type="submit"` plus `form`, or a spread attribute is not.
+- **F-024 (task-059):** `import { x } from "./group.js"` resolves to `group.ts` and the feature audit passes. An integrator edit inside the declared hunk lines is in scope. An edit on a line outside `[hunk.startLine, hunk.endLine]` is `check11.out-of-scope`.
+- **F-024 (wiring):** The gate default uses the patched AST scanners. A live name registry reports `unregistered` and `foreign_owned` through the gate port. A live safety scanner reports a vault hit between two commits without copying the raw value. `verifyCandidate` fails that undefined-arrow stub, does not run the candidate, and does not read `DIRTY.txt` from the worker slot.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor 71ea882 HEAD`: exit `0`
+- `git merge-base --is-ancestor b6e79b2 HEAD`: exit `0`
+- `git merge-base --is-ancestor a06d371 HEAD`: exit `0`
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-058.patch`: exit `0` — `3 files changed, 92 insertions(+), 13 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-058.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-058.patch`: exit `0` (clean)
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-059.patch`: exit `0` — `4 files changed, 113 insertions(+), 25 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-059.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-059.patch`: exit `0` (clean)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/completeness-gate test`: exit `0` — `Test Files 7 passed (7)`, `Tests 50 passed (50)` (`0` skipped)
+- `pnpm --filter @ef-harness/verifier test` (before Playwright Chromium was installed): exit `1` — `Test Files 1 failed | 30 passed (31)`, `Tests 167 passed | 11 skipped (178)` (`HumanStepRequired('install_playwright_chromium')` in `tests/ui-contract/verifier.test.ts` beforeAll)
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm --filter @ef-harness/verifier test` (after that install): exit `0` — `Test Files 31 passed (31)`, `Tests 178 passed (178)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`

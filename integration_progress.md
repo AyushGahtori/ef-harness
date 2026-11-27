@@ -29,7 +29,7 @@
 | C20 | Wave 2 | done | a12f6fa | F-021, F-022 | build/typecheck/lint OK; test-env 87 passed, 3 skipped (Windows native assertion kept, not skipped); sandbox 169 passed, 14 skipped; schema 67/67 |
 | C21 | Wave 2 | done | 8103171 | F-011, F-023 | build/typecheck/lint OK; worker-loop 25 files 137 passed; schema 67/67 |
 | C22 | Wave 2 | done | 9aedea0 | F-021, F-023 | build/typecheck/lint OK; worker-loop 25 files 146 passed; schema 67/67 |
-| C23 | Wave 2 | pending | - | F-024 | - |
+| C23 | Wave 2 | done | 717ff83 | F-024 | build/typecheck/lint OK; completeness-gate 7 files 50 passed; verifier 31 files 178 passed; schema 67/67 |
 | C24 | Wave 2 | pending | - | F-025 | - |
 | C25 | Wave 2 | pending | - | F-012, F-017, F-025 | - |
 | C26 | Wave 2 | pending | - | F-026, F-027, F-028 | - |
