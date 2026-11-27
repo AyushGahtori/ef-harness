@@ -469,3 +469,28 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/sim test`: exit `0` — `Test Files 2 passed (2)`, `Tests 19 passed (19)`
 - `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
 - `git status --short`: exit `0` — clean (empty output)
+
+## [C14] — Hermetic GitRunner with unpackaged PATH fallback
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-medium
+- **Commit on `harness/integration`:** `7a5034448969a1a99851d7322e0e833641aa66b4` (`integrate: C14 fall back to PATH git when unpackaged`)
+- **Findings Fixed:** `F-017` (this seam only; `worktrees/`, `refs/`, and `@ef-harness/db` stay for C15)
+
+### What Changed
+- Re-verified on `e0ed3c6891ce80527515ed3a21fc72cfe0cbb901`. Did not re-merge `origin/task/035-mingit-wrapper-folder-states` (`33895fd`), `origin/task/036-git-safety-scanner` (`5872b0a`), or `origin/task/037-temp-index-snapshots` (`fe092d2`). `git merge-base --is-ancestor` exited `0` for all three. No dirty patch for C14. Did not start C15. Did not merge `main`. Did not open a pull request. Did not edit `schema/**`, `packages/sandbox`, `packages/git-engine/src/worktrees`, or `packages/git-engine/src/refs`. `path_leases.mode` stays `'intent' | 'granted'`. C05–C13 binds stay in place. Live names stay `GitRunner`, `GitSafetyScanner`, and `SnapshotManager` under `runner/` and `safety-scan/`.
+- `resolveGitBinary` still prefers a Settings Git at `>= 2.38`, then bundled `<resources>/mingit/cmd/git.exe`. When neither is usable and `EF_HARNESS_PACKAGED !== "1"`, it resolves `git` on `PATH` with `source: "path"` after the same `>= 2.38` check. When `EF_HARNESS_PACKAGED === "1"`, the missing-bundled path still throws `GitBinaryNotFoundError`.
+- `packages/git-engine/tests/runner/resolve-binary.test.ts` keeps the throw test and sets `EF_HARNESS_PACKAGED=1` so a `PATH` git (the stub reports `2.45.0`) cannot turn that test green. New cases cover a `2.45.0` `PATH` hit and a `2.30.2` `PATH` rejection.
+- `createDefaultGitRunner` and `createProcessSnapshotGitRunner` delegate to `GitRunner.execGit`. Snapshot consent and line-ending errors stay in the snapshot adapter. `cat-file`, `for-each-ref`, `show-ref`, and `rev-list` are read-only so those calls are not treated as developer-checkout mutations.
+- `pathIsInside` uses the Windows containment check for drive-letter and UNC inputs on every host, so the existing Windows assertion holds on Linux. The runner test helper still uses `where.exe` on Windows and uses `which git` otherwise. Did not add `@ef-harness/db`.
+
+### What It Fixed
+- **F-017:** Unpackaged developer and CI checkouts without bundled MinGit resolve `git` `>= 2.38` on `PATH` instead of throwing `GitBinaryNotFoundError`. A packaged process (`EF_HARNESS_PACKAGED=1`) still requires bundled MinGit.
+- **F-017:** `GitSafetyScanner`'s default runner and `SnapshotManager`'s process runner go through canonical `execGit` (version check, `GIT_TERMINAL_PROMPT=0`, `core.longpaths=true`, `core.quotepath=false`, developer-checkout guard, and `index.lock` backoff). `worktrees/` and `refs/` runners, and the rogue `ref_leases` writer, are unchanged for C15.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `33895fd`, `5872b0a`, and `fe092d2`: exit `0` (all ancestors of `e0ed3c6891ce80527515ed3a21fc72cfe0cbb901`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/git-engine test`: exit `0` — `Test Files 17 passed (17)`, `Tests 121 passed (121)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
