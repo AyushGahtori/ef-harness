@@ -798,6 +798,9 @@ importers:
       '@ef-harness/completeness-gate':
         specifier: workspace:*
         version: link:../completeness-gate
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
       '@ef-harness/git-engine':
         specifier: workspace:*
         version: link:../git-engine

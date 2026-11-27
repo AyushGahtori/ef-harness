@@ -31,7 +31,7 @@ export interface RuleScope {
  * A rule node's `fields.scope` overrides this table.
  */
 export const BUILTIN_CROSS_CUTTING_SCOPES: Readonly<Record<CrossCuttingRuleId, RuleScope>> = {
-  "X-01": { any: [], all: ["authz", "route"] },
+  "X-01": { any: ["authz"], all: [] },
   "X-02": { any: ["form_input", "inbound_webhook", "external_api"], all: [] },
   "X-03": { any: ["scheduling", "time_display"], all: [] },
   "X-04": { any: ["money"], all: [] },

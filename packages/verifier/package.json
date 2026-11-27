@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@ef-harness/completeness-gate": "workspace:*",
+    "@ef-harness/db": "workspace:*",
     "@ef-harness/git-engine": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "fast-check": "^4.1.0",

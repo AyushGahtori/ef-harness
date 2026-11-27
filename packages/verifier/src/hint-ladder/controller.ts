@@ -7,6 +7,7 @@ import { detectCrossWorkerPattern } from "./pattern.js";
 import { drawFreshExample } from "./pool.js";
 import { localPropertyExample } from "./property-example.js";
 import { loadCanonicalQueries, type NamedQueries } from "./queries.js";
+import { redactText, redactUnknown } from "./redact.js";
 import { immediateTransaction, type StateDbPort } from "./sql.js";
 import { HintLadderStore, type TaskTransition } from "./store.js";
 import {
@@ -40,6 +41,7 @@ export interface HintLadderControllerOptions {
   readonly fingerprint?: FailureFingerprintPort;
   readonly generator?: PropertyExampleGenerator;
   readonly consumers?: readonly string[];
+  readonly redactor?: { redact(text: string): string };
 }
 
 export class HintLadderController {
@@ -51,6 +53,7 @@ export class HintLadderController {
   private readonly generator: PropertyExampleGenerator;
   private readonly runner: CandidateExampleRunner;
   private readonly consumers: readonly string[];
+  private readonly redactor: { redact(text: string): string } | null;
   private eventCount = 0;
 
   constructor(options: HintLadderControllerOptions) {
@@ -62,6 +65,7 @@ export class HintLadderController {
     this.generator = options.generator ?? { synthesize: localPropertyExample };
     this.runner = options.runner;
     this.consumers = options.consumers ?? HINT_LADDER_EVENT_CONSUMERS;
+    this.redactor = options.redactor ?? null;
     if (this.consumers.length === 0) {
       throw new HintLadderError("hint ladder events require at least one outbox consumer");
     }
@@ -70,7 +74,7 @@ export class HintLadderController {
   processHiddenFailure(input: HiddenCheckFailure): HintFeedbackPayload {
     const attribution = input.attribution ?? "implementation";
     if (attribution === "contract_mismatch") {
-      const message = input.visibleMessage?.trim() ?? "";
+      const message = this.redact(input.visibleMessage?.trim() ?? "");
       if (message.length === 0) {
         throw new HintLadderError("contract mismatch requires visible contract feedback");
       }
@@ -84,9 +88,10 @@ export class HintLadderController {
     }
     if (attribution !== "implementation") {
       const task = this.store.requireTask(input.taskId);
-      const message =
-        input.visibleMessage?.trim() ||
-        `${attribution} failure does not advance the hidden-check ladder`;
+      const visible = input.visibleMessage?.trim() ?? "";
+      const message = this.redact(
+        visible.length > 0 ? visible : `${attribution} failure does not advance the hidden-check ladder`,
+      );
       return {
         kind: "non_ladder",
         attribution,
@@ -152,7 +157,7 @@ export class HintLadderController {
       const step: 1 | 2 | 3 = cross && recorded !== 3 ? 3 : recorded;
       if (step !== recorded) this.store.setLadderStep(input.taskId, step, at);
       const current = historyEntry({ ...partial, ladderStep: step });
-      const hint = ruleHint(input.ruleId, input.ruleText, failureType);
+      const hint = ruleHint(input.ruleId, this.redact(input.ruleText), failureType);
       if (step === 3 || cross) {
         return this.finishStepThree({
           task,
@@ -287,8 +292,8 @@ export class HintLadderController {
         attemptId: input.attemptId,
         citedRuleId: cited.ruleId,
         citedCheckId: cited.checkId,
-        counterexample: input.counterexample,
-        ruleText: cited.ruleText,
+        counterexample: this.redactValue(input.counterexample),
+        ruleText: this.redact(cited.ruleText),
         status: "open",
         authorQuote: null,
         pausedAttemptState: attempt.state,
@@ -316,10 +321,11 @@ export class HintLadderController {
       const open = this.store.readDispute(input.disputeId);
       const task = this.store.requireTask(open.taskId);
       if (input.verdict === "dispute_rejected") {
-        const authorQuote = input.authorQuote.trim();
-        if (authorQuote.length === 0) {
+        const rawQuote = input.authorQuote.trim();
+        if (rawQuote.length === 0) {
           throw new HintLadderError("dispute rejection requires the author's decision quote");
         }
+        const authorQuote = this.redact(rawQuote);
         const record = closeDispute(open, "rejected", authorQuote, at);
         this.store.writeDispute(record);
         const taskState = this.resumeCoding(task);
@@ -340,7 +346,7 @@ export class HintLadderController {
       const bumped = this.store.bumpCheckVersion({
         checkId,
         disputeId: open.disputeId,
-        correctedExpectation: input.correctedExpectation,
+        correctedExpectation: this.redactValue(input.correctedExpectation),
         now: at,
       });
       this.store.resetAfterUpheldDispute(open.taskId, at);
@@ -352,7 +358,8 @@ export class HintLadderController {
         updatedRev: bumped.rev,
         mode: "direct",
       });
-      const authorQuote = input.authorQuote?.trim() ?? "";
+      const rawQuote = input.authorQuote?.trim() ?? "";
+      const authorQuote = rawQuote.length > 0 ? this.redact(rawQuote) : "";
       const record = closeDispute(open, "upheld", authorQuote.length > 0 ? authorQuote : null, at);
       this.store.writeDispute(record);
       return {
@@ -392,6 +399,14 @@ export class HintLadderController {
     });
   }
 
+  private redact(value: string): string {
+    return redactText(this.redactor, value);
+  }
+
+  private redactValue(value: unknown): unknown {
+    return redactUnknown(this.redactor, value);
+  }
+
   private finishStepTwo(input: {
     readonly task: TaskRuntimeRow;
     readonly hint: StepOneHint;
@@ -426,6 +441,9 @@ export class HintLadderController {
       freshInput: draw.example.input,
       expectedOutput: draw.example.expectedOutput,
     });
+    const freshInput = this.redactValue(draw.example.input);
+    const expectedOutput = this.redactValue(draw.example.expectedOutput);
+    const actualOutput = this.redactValue(candidateActualOutput);
     this.store.setDisclosed(input.task.taskId, [...disclosed, draw.example.checkId], input.at);
     const taskState = this.resumeCoding(input.task);
     this.emitAdvanced(input.current);
@@ -433,9 +451,9 @@ export class HintLadderController {
       taskId: input.task.taskId,
       ruleId: input.hint.ruleId,
       checkId: draw.example.checkId,
-      freshInput: draw.example.input,
-      expectedOutput: draw.example.expectedOutput,
-      candidateActualOutput,
+      freshInput,
+      expectedOutput,
+      candidateActualOutput: actualOutput,
       synthesized: draw.synthesized,
       remainingSealedCount: draw.sealedCheckIds.length,
     });
@@ -450,9 +468,9 @@ export class HintLadderController {
         ruleId: input.hint.ruleId,
         ruleText: input.hint.ruleText,
         failureType: input.hint.failureType,
-        freshInput: draw.example.input,
-        expectedOutput: draw.example.expectedOutput,
-        candidateActualOutput,
+        freshInput,
+        expectedOutput,
+        candidateActualOutput: actualOutput,
       },
     };
   }

@@ -17,6 +17,7 @@ import { syncRequirementStatusInTx } from "./requirement-status.js";
 import { currentRevision, readRevisionToken } from "./revision.js";
 import { LocalRecordedSearchVerifier } from "./search-verifier.js";
 import {
+  asRecord,
   changesOf,
   parseJsonOrNull,
   readRowNumber,
@@ -39,6 +40,15 @@ import {
   type StampedCheckReceipt,
 } from "./types.js";
 
+export interface AcceptGateInput {
+  readonly task: string;
+  readonly attempt: string;
+  readonly epoch: number;
+  readonly commitSha: string;
+}
+
+export type AcceptGate = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+
 export interface AcceptanceCoordinatorOptions {
   readonly db: SqlDatabase;
   readonly queriesSql?: string;
@@ -49,6 +59,13 @@ export interface AcceptanceCoordinatorOptions {
   readonly turnLogArchive?: TurnLogArchivePort;
   readonly now?: () => number;
   readonly maxRevisionRetries?: number;
+  /** Read the decision and roll the transaction back. No task row changes. */
+  readonly preview?: boolean;
+  /**
+   * Called inside the open transaction before `ACCEPTED` is written.
+   * A refusal rolls the transaction back. Schema task `done` stays on `ACCEPTED`.
+   */
+  readonly beforeAccept?: (input: AcceptGateInput) => AcceptGate;
 }
 
 interface Timings {
@@ -66,6 +83,8 @@ export class CandidateAcceptanceCoordinator {
   private readonly turnLogArchive: TurnLogArchivePort;
   private readonly now: () => number;
   private readonly maxRevisionRetries: number;
+  private readonly preview: boolean;
+  private readonly beforeAccept: ((input: AcceptGateInput) => AcceptGate) | null;
   private readonly mergeInstructions = new MergeInstructionsBuilder();
   private readonly staleReads: SqlStatement;
   private readonly staleEdges: SqlStatement;
@@ -79,6 +98,8 @@ export class CandidateAcceptanceCoordinator {
     this.db = options.db;
     this.now = options.now ?? Date.now;
     this.maxRevisionRetries = options.maxRevisionRetries ?? MAX_REVISION_RETRIES;
+    this.preview = options.preview ?? false;
+    this.beforeAccept = options.beforeAccept ?? null;
     this.knowledgeSearch = options.knowledgeSearch ?? new LocalRecordedSearchVerifier(options.db);
     this.diffTouches = options.diffTouches ?? new LocalDiffTouchReader();
     this.ruleCheckQueue = options.ruleCheckQueue ?? new MemoryRuleCheckQueue();
@@ -307,6 +328,16 @@ export class CandidateAcceptanceCoordinator {
   ): AcceptanceDecision {
     const now = input.now ?? this.now();
     const rev = input.rev ?? currentRevision(this.db);
+    if (this.preview) {
+      this.rollback();
+      timings.writeLockMs += Date.now() - lockStarted;
+      return this.decision(input, evaluation, {
+        accepted: evaluation.primary === "accepted",
+        mergeInstructions: null,
+        evidencePromoted: [],
+        timings,
+      });
+    }
     if (evaluation.alreadyAccepted) {
       const mergeInstructions = this.mergeFor(input, evaluation);
       this.rollback();
@@ -319,6 +350,23 @@ export class CandidateAcceptanceCoordinator {
       });
     }
     if (evaluation.primary === "accepted") {
+      if (this.beforeAccept) {
+        const gate = this.beforeAccept({
+          task: input.task,
+          attempt: input.attempt,
+          epoch: input.epoch,
+          commitSha: evaluation.commitSha ?? "",
+        });
+        if (!gate.ok) {
+          this.rollback();
+          timings.writeLockMs += Date.now() - lockStarted;
+          return this.decision(
+            input,
+            withPrimary(evaluation, "ref_cas_failed", gate.reason),
+            { accepted: false, mergeInstructions: null, evidencePromoted: [], timings },
+          );
+        }
+      }
       const finished = this.finishSubmission.run({
         task: input.task,
         epoch: input.epoch,
@@ -663,27 +711,77 @@ function repositoryRoot(): string {
   throw new Error("schema/queries.sql was not found from the acceptance module");
 }
 
+function collectReceiptRefs(db: SqlDatabase, attempt: string): {
+  readonly receiptIds: ReadonlySet<string>;
+  readonly artifactRefs: ReadonlySet<string>;
+} {
+  const receiptIds = new Set<string>();
+  const artifactRefs = new Set<string>();
+  const receiptRows = db
+    .prepare(
+      `SELECT receipt FROM check_results
+        WHERE attempt = :attempt AND receipt IS NOT NULL`,
+    )
+    .all({ attempt });
+  for (const row of receiptRows) {
+    const raw = readRowString(row, "receipt");
+    receiptIds.add(raw);
+    const parsed = asRecord(parseJsonOrNull(raw));
+    if (!parsed) continue;
+    const runs = Array.isArray(parsed.runs) ? parsed.runs : [];
+    for (const item of runs) {
+      const run = asRecord(item);
+      if (!run) continue;
+      for (const key of [
+        "traceDigest",
+        "logDigest",
+        "observationsDigest",
+        "traceId",
+        "logId",
+        "observationsId",
+        "artifactId",
+      ]) {
+        const value = run[key];
+        if (typeof value === "string" && value.length > 0) artifactRefs.add(value);
+      }
+    }
+    if (Array.isArray(parsed.artifacts)) {
+      for (const value of parsed.artifacts) {
+        if (typeof value === "string" && value.length > 0) artifactRefs.add(value);
+      }
+    }
+  }
+  const linkedRows = db
+    .prepare(`SELECT artifact FROM artifact_refs WHERE owner_id = :attempt`)
+    .all({ attempt });
+  for (const row of linkedRows) {
+    artifactRefs.add(readRowString(row, "artifact"));
+  }
+  return { receiptIds, artifactRefs };
+}
+
 function promoteReceiptArtifacts(db: SqlDatabase, attempt: string, digest: string): string[] {
+  const { receiptIds, artifactRefs } = collectReceiptRefs(db, attempt);
   const rows = db
     .prepare(
-      `SELECT id FROM artifacts
+      `SELECT id, hash FROM artifacts
         WHERE retention = 'diagnostic'
-          AND (
-            hash = :digest
-            OR id IN (
-              SELECT receipt FROM check_results
-               WHERE attempt = :attempt AND receipt IS NOT NULL
-            )
-          )
         ORDER BY id`,
     )
-    .all({ digest, attempt });
+    .all();
   const update = db.prepare(
     `UPDATE artifacts SET retention = 'evidence' WHERE id = :id AND retention = 'diagnostic'`,
   );
   const ids: string[] = [];
   for (const row of rows) {
     const id = readRowString(row, "id");
+    const hash = readRowString(row, "hash");
+    const matches =
+      hash === digest ||
+      receiptIds.has(id) ||
+      artifactRefs.has(id) ||
+      artifactRefs.has(hash);
+    if (!matches) continue;
     update.run({ id });
     ids.push(id);
   }

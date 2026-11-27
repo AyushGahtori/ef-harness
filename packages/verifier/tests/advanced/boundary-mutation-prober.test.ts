@@ -151,6 +151,31 @@ describe("TargetedBoundaryMutationProber", () => {
     expect(inverted?.killed).toBe(true);
     expect(dropped?.killed).toBe(true);
     expect(report.checkoutUntouched).toBe(true);
+
+    const guardSource = `export function readSecretsGuarded(user: { role: string }): string[] {
+  if (user.role !== "admin") {
+    return [];
+  }
+  return ["secret"];
+}
+`;
+    const guardCheck = `import { readSecretsGuarded } from "./guard.mjs";
+const guest = readSecretsGuarded({ role: "guest" });
+const admin = readSecretsGuarded({ role: "admin" });
+if (guest.length !== 0) process.exit(1);
+if (admin.length !== 1) process.exit(1);
+process.exit(0);
+`;
+    const guardReport = await probeCheckout(
+      { "guard.ts": guardSource, "check.mjs": guardCheck },
+      "guard.ts",
+      "check.mjs",
+    );
+    const guardDropped = guardReport.mutants.find((mutant) => mutant.operator === "drop_role_guard");
+    expect(guardDropped?.mutatedSource).toContain("{}");
+    expect(guardDropped?.mutatedSource).toContain('return ["secret"]');
+    expect(guardDropped?.mutatedSource).not.toContain("return []");
+    expect(guardDropped?.killed).toBe(true);
   }, 20_000);
 
   it("returns empty on a boundary branch and still flips the cutoff comparison", async () => {

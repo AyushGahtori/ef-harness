@@ -8,7 +8,9 @@ export {
   canonicalQueriesPath,
   canonicalStatePath,
 } from "./coordinator.js";
-export type { AcceptanceCoordinatorOptions } from "./coordinator.js";
+export type { AcceptGate, AcceptGateInput, AcceptanceCoordinatorOptions } from "./coordinator.js";
+export { acceptVerifiedCandidate } from "./live-bind.js";
+export type { VerifiedCandidateDeps, VerifiedCandidateRequest } from "./live-bind.js";
 export { currentCheckIds, loadCoveragePlan } from "./coverage.js";
 export type { CoverageCheck, CoveragePlan, InScopeRule } from "./coverage.js";
 export { evaluateAcceptance } from "./evaluate-acceptance.js";

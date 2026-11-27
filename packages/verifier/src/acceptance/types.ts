@@ -44,7 +44,8 @@ export type AcceptanceReasonCode =
   | "diff_detected_rule"
   | "revision_advancing"
   | "finish_submission_lost"
-  | "attempt_not_open";
+  | "attempt_not_open"
+  | "ref_cas_failed";
 
 export type AcceptanceRoute =
   | "accepted"
@@ -226,6 +227,7 @@ export function routeFor(code: AcceptanceReasonCode): AcceptanceRoute {
     case "blocking_hold":
     case "search_reads_over_limit":
     case "revision_advancing":
+    case "ref_cas_failed":
       return "blocked";
     default:
       return "rejected";
@@ -253,6 +255,7 @@ const PRIMARY_ORDER: readonly AcceptanceReasonCode[] = [
   "user_pause",
   "finish_submission_lost",
   "attempt_not_open",
+  "ref_cas_failed",
   "already_accepted",
   "accepted",
 ];

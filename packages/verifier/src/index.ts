@@ -355,8 +355,10 @@ export {
   HINT_LADDER_EVENTS,
   HINT_LADDER_EVENT_CONSUMERS,
   HiddenPoolInvariantError,
+  DisputeTestRouter,
   HintLadderController,
   HintLadderError,
+  PersistentHintLadder,
   bindDatabaseSync,
   detectCrossWorkerPattern,
   drawFreshExample,
@@ -405,6 +407,7 @@ export {
   CROSS_CUTTING_RULE_IDS as ACCEPTANCE_CROSS_CUTTING_RULE_IDS,
   CandidateAcceptanceCoordinator,
   EMPTY_SEARCH_RESULT_HASH,
+  acceptVerifiedCandidate,
   LocalDiffTouchReader,
   LocalRecordedSearchVerifier,
   LocalTurnLogArchiver,
@@ -436,6 +439,8 @@ export {
 } from "./acceptance/index.js";
 export type {
   AcceptanceCoordinatorOptions,
+  AcceptGate,
+  AcceptGateInput,
   AcceptanceDecision,
   AcceptanceReasonCode,
   AcceptanceReasonDetail,
@@ -471,4 +476,6 @@ export type {
   TaskAcceptedConsumer,
   TurnLogArchivePort,
   UnmetCheck,
+  VerifiedCandidateDeps,
+  VerifiedCandidateRequest,
 } from "./acceptance/index.js";

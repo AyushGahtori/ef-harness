@@ -254,11 +254,14 @@ function collectSites(source: string, fileName: string, operators: ReadonlySet<M
         });
       }
       if (operators.has("drop_role_guard")) {
+        const replacement = isEarlyExitRoleGuard(node)
+          ? "{}"
+          : node.thenStatement.getText(sourceFile);
         sites.push({
           operator: "drop_role_guard",
           start: node.getStart(sourceFile),
           end: node.getEnd(),
-          replacement: node.thenStatement.getText(sourceFile),
+          replacement,
           description: `drop role guard in ${fileName}`,
         });
       }
@@ -320,6 +323,37 @@ function hasBoundaryName(node: ts.Node): boolean {
 
 function isRoleCheck(expression: ts.Expression, sourceFile: ts.SourceFile): boolean {
   return /\b(role|hasRole|requireRole|checkRole)\b/.test(expression.getText(sourceFile));
+}
+
+function isEarlyExitRoleGuard(node: ts.IfStatement): boolean {
+  if (node.elseStatement) return false;
+  const statements = ts.isBlock(node.thenStatement) ? node.thenStatement.statements : [node.thenStatement];
+  if (statements.length === 0) return false;
+  const last = statements[statements.length - 1];
+  if (!last) return false;
+  if (ts.isThrowStatement(last)) return true;
+  if (!ts.isReturnStatement(last)) return false;
+  return hasNegatedCondition(node.expression);
+}
+
+function hasNegatedCondition(expression: ts.Expression): boolean {
+  if (ts.isParenthesizedExpression(expression)) return hasNegatedCondition(expression.expression);
+  if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
+    return true;
+  }
+  if (ts.isBinaryExpression(expression)) {
+    const op = expression.operatorToken.kind;
+    if (
+      op === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+      op === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return true;
+    }
+    if (op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken) {
+      return hasNegatedCondition(expression.left) || hasNegatedCondition(expression.right);
+    }
+  }
+  return false;
 }
 
 function isAlreadyEmpty(expression: ts.Expression): boolean {

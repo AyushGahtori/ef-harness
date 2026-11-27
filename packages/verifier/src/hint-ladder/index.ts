@@ -6,6 +6,8 @@ export {
   HintLadderError,
 } from "./errors.js";
 export { HintLadderController, type HintLadderControllerOptions } from "./controller.js";
+export { DisputeTestRouter, PersistentHintLadder } from "./live-bind.js";
+export type { PersistentHintLadderOptions } from "./live-bind.js";
 export { HINT_LADDER_EVENT_CONSUMERS, HINT_LADDER_EVENTS } from "./events.js";
 export { localComputeFailureFingerprint, staticFingerprintMetaKey } from "./fingerprint.js";
 export { localNodeContentHash } from "./canonical-json.js";

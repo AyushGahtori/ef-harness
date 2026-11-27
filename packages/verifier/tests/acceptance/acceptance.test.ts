@@ -532,6 +532,57 @@ describe("candidate acceptance transaction", () => {
     expect(calls).toBe(2);
     expect(raced.searchRevalidations).toBe(2);
   });
+
+  it("triggers X-01 on authz-only touches and promotes JSON-referenced and artifact_refs blobs", () => {
+    fx = seedReadyCandidate();
+    addNode(fx, "X-01", "rule", "Caller role check");
+    addNode(fx, "AC-X01", "check", "Negative role check");
+    addEdge(fx, "AC-X01", "verifies", "X-01");
+    replacePayload(fx.db, candidatePayload({ detected_touches: ["authz"] }));
+    const blocked = new CandidateAcceptanceCoordinator({ db: fx.db }).finalizeCandidateAcceptance({
+      task: TASK,
+      attempt: ATTEMPT,
+      epoch: EPOCH,
+      artifactDigest: DIGEST,
+    });
+    expectRefused(blocked, "diff_detected_rule", "repair_checks");
+    expect(blocked.queuedRules).toEqual([
+      expect.objectContaining({ ruleId: "X-01", checkIds: ["AC-X01"] }),
+    ]);
+
+    fx.db
+      .prepare(
+        `INSERT INTO artifacts(id, hash, kind, bytes, retention, created_at) VALUES
+          ('ART-TRACE-JSON', 'trace-digest-060', 'trace', 10, 'diagnostic', 1),
+          ('ART-REF-LINKED', 'ref-hash-060', 'log', 12, 'diagnostic', 1)`,
+      )
+      .run();
+    fx.db
+      .prepare(`INSERT INTO artifact_refs(artifact, owner_kind, owner_id) VALUES ('ART-REF-LINKED', 'attempt', ?)`)
+      .run(ATTEMPT);
+    fx.db
+      .prepare(
+        `INSERT INTO check_results(check_id, attempt, check_version, artifact_digest, status, receipt, recorded_at)
+         VALUES ('AC-X01', ?, 1, ?, 'pass', ?, 12)`,
+      )
+      .run(
+        ATTEMPT,
+        DIGEST,
+        JSON.stringify({
+          checkId: "AC-X01",
+          runs: [{ traceDigest: "trace-digest-060", logDigest: "other", observationsDigest: "other" }],
+        }),
+      );
+    const accepted = new CandidateAcceptanceCoordinator({ db: fx.db }).finalizeCandidateAcceptance({
+      task: TASK,
+      attempt: ATTEMPT,
+      epoch: EPOCH,
+      artifactDigest: DIGEST,
+    });
+    expect(accepted.accepted).toBe(true);
+    expect(accepted.evidencePromoted).toContain("ART-TRACE-JSON");
+    expect(accepted.evidencePromoted).toContain("ART-REF-LINKED");
+  });
 });
 
 function expectRefused(decision: AcceptanceDecision, reason: string, route: string): void {
