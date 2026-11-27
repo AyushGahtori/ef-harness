@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execGit as runCanonicalGit } from "../runner/exec-git.js";
 import { LineEndingOverrideError, SnapshotConsentRequiredError } from "./errors.js";
 import type { SnapshotGitRequest, SnapshotGitResult, SnapshotGitRunner } from "./types.js";
 
@@ -82,13 +82,13 @@ function assertConsent(request: SnapshotGitRequest): void {
 }
 
 /**
- * In-scope adapter for Task 035 `GitRunner` until that module is wired into this branch.
- * Spawns Git directly (`shell: false`, `windowsHide: true`) and never removes a lock file.
+ * Adapter onto the canonical `GitRunner.execGit`.
+ * Keeps snapshot consent and line-ending errors, then runs through the shared runner.
  */
 export function createProcessSnapshotGitRunner(
   options: ProcessSnapshotGitRunnerOptions = {},
 ): SnapshotGitRunner {
-  const gitBinary = options.gitBinary ?? "git";
+  const gitBinary = options.gitBinary;
   const defaultTimeoutMs = options.timeoutMs ?? 60_000;
   return {
     async execGit(request: SnapshotGitRequest): Promise<SnapshotGitResult> {
@@ -98,64 +98,23 @@ export function createProcessSnapshotGitRunner(
       if (command !== null && command.toLowerCase() === "stash") {
         throw new SnapshotConsentRequiredError("stash");
       }
-      const timeoutMs = request.timeoutMs ?? defaultTimeoutMs;
-      const args = ["-c", "core.longpaths=true", "-c", "core.quotepath=false", ...request.args];
-      const env: NodeJS.ProcessEnv = {
-        ...(request.env ?? process.env),
-        GIT_TERMINAL_PROMPT: "0",
-        GCM_INTERACTIVE: "Never",
-      };
-      const started = performance.now();
-      return await new Promise((resolve, reject) => {
-        let settled = false;
-        let stdout = "";
-        let stderr = "";
-        let timedOut = false;
-        const child = spawn(request.gitBinary ?? gitBinary, args, {
-          cwd: request.cwd,
-          env,
-          shell: false,
-          windowsHide: true,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        const timer = setTimeout(() => {
-          timedOut = true;
-          child.kill();
-        }, timeoutMs);
-        child.stdout.setEncoding("utf8");
-        child.stderr.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
-          stdout += chunk;
-        });
-        child.stderr.on("data", (chunk: string) => {
-          stderr += chunk;
-        });
-        const finish = (exitCode: number | null) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          const timeoutNote = timedOut ? `Git command timed out after ${timeoutMs} ms.` : "";
-          resolve({
-            exitCode,
-            stdout,
-            stderr: timeoutNote ? `${stderr}${stderr ? "\n" : ""}${timeoutNote}` : stderr,
-            durationMs: Math.max(0, Math.round(performance.now() - started)),
-          });
-        };
-        child.on("error", (error: NodeJS.ErrnoException) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          if (error.code === "ENOENT") {
-            reject(new Error(`git binary not found: ${request.gitBinary ?? gitBinary}`));
-            return;
-          }
-          reject(error);
-        });
-        child.on("close", (code) => {
-          finish(code);
-        });
+      const binary = request.gitBinary ?? gitBinary;
+      const consent = request.userExplicitConsentToken;
+      const result = await runCanonicalGit({
+        args: request.args,
+        cwd: request.cwd,
+        timeoutMs: request.timeoutMs ?? defaultTimeoutMs,
+        ...(request.env !== undefined ? { env: request.env } : {}),
+        ...(binary !== undefined ? { gitBinary: binary } : {}),
+        ...(request.developerCheckout !== undefined ? { developerCheckout: request.developerCheckout } : {}),
+        ...(consent !== undefined ? { userExplicitConsentToken: consent } : {}),
       });
+      return {
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        durationMs: result.durationMs,
+      };
     },
   };
 }

@@ -130,6 +130,8 @@ describe("resolveGitBinary", () => {
 
   it("reports a missing binary when neither Settings nor bundled MinGit exists", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-task-035-git-"));
+    const previous = process.env.EF_HARNESS_PACKAGED;
+    process.env.EF_HARNESS_PACKAGED = "1";
     try {
       await expect(
         resolveGitBinary({
@@ -137,7 +139,59 @@ describe("resolveGitBinary", () => {
           runVersion: () => Promise.resolve(probe("git version 2.45.0")),
         }),
       ).rejects.toThrow(GitBinaryNotFoundError);
+      try {
+        await resolveGitBinary({
+          resourcesRoot: path.join(root, "resources"),
+          runVersion: () => Promise.resolve(probe("git version 2.45.0")),
+        });
+      } catch (error) {
+        expect(error).toBeInstanceOf(GitBinaryNotFoundError);
+        expect((error as Error).message).toContain("Bundled MinGit was not found");
+      }
     } finally {
+      if (previous === undefined) delete process.env.EF_HARNESS_PACKAGED;
+      else process.env.EF_HARNESS_PACKAGED = previous;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to git on PATH when unpackaged and bundled MinGit is absent", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-task-035-git-"));
+    const previous = process.env.EF_HARNESS_PACKAGED;
+    delete process.env.EF_HARNESS_PACKAGED;
+    try {
+      const resolved = await resolveGitBinary({
+        resourcesRoot: path.join(root, "resources"),
+        runVersion: (binary) => {
+          expect(binary).toBe("git");
+          return Promise.resolve(probe("git version 2.45.0"));
+        },
+      });
+      expect(resolved.source).toBe("path");
+      expect(resolved.gitPath).toBe("git");
+      expect(resolved.version).toBe("2.45.0");
+      expect(resolved.settingsRejection).toBeNull();
+    } finally {
+      if (previous === undefined) delete process.env.EF_HARNESS_PACKAGED;
+      else process.env.EF_HARNESS_PACKAGED = previous;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects git on PATH when it is older than 2.38", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-task-035-git-"));
+    const previous = process.env.EF_HARNESS_PACKAGED;
+    delete process.env.EF_HARNESS_PACKAGED;
+    try {
+      await expect(
+        resolveGitBinary({
+          resourcesRoot: path.join(root, "resources"),
+          runVersion: () => Promise.resolve(probe("git version 2.30.2")),
+        }),
+      ).rejects.toThrow(GitVersionRejectedError);
+    } finally {
+      if (previous === undefined) delete process.env.EF_HARNESS_PACKAGED;
+      else process.env.EF_HARNESS_PACKAGED = previous;
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

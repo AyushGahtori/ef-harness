@@ -9,6 +9,10 @@ const READ_ONLY_COMMANDS = new Set([
   "log",
   "ls-files",
   "ls-tree",
+  "cat-file",
+  "for-each-ref",
+  "show-ref",
+  "rev-list",
   "version",
   "help",
 ]);

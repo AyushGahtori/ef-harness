@@ -88,9 +88,17 @@ export function directoryExists(folder: string): boolean {
   }
 }
 
+function usesWindowsContainment(child: string, parent: string): boolean {
+  if (process.platform === "win32") return true;
+  return [child, parent].some((input) => {
+    const value = input.trim();
+    return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\") || value.startsWith("//");
+  });
+}
+
 export function pathIsInside(child: string, parent: string): boolean {
   if (!parent.trim()) return false;
-  if (process.platform === "win32") {
+  if (usesWindowsContainment(child, parent)) {
     const left = normalizeWindowsPath(child).toLowerCase();
     const right = normalizeWindowsPath(parent).toLowerCase();
     return left === right || left.startsWith(`${right}\\`);

@@ -40,11 +40,16 @@ export function clearGitVersionCache(): void {
   versionCache.clear();
 }
 
+function harnessIsPackaged(): boolean {
+  return process.env.EF_HARNESS_PACKAGED === "1";
+}
+
 async function probeBinary(
   binary: string,
   options: ResolveGitBinaryOptions,
+  existsCheck: "file" | "command" = "file",
 ): Promise<{ ok: true; version: GitVersion } | { ok: false; version: string | null; reason: "missing" | "unreadable" }> {
-  if (!fs.existsSync(binary)) return { ok: false, version: null, reason: "missing" };
+  if (existsCheck === "file" && !fs.existsSync(binary)) return { ok: false, version: null, reason: "missing" };
   const cached = versionCache.get(binary);
   if (cached && !options.runVersion) return { ok: true, version: cached };
   const probed: VersionProbeResult = options.runVersion
@@ -77,7 +82,12 @@ export async function resolveGitBinary(options: ResolveGitBinaryOptions = {}): P
   const bundled = resourcesRoot ? bundledMinGitPath(resourcesRoot) : null;
   const settings = options.settingsGitPath?.trim() ? options.settingsGitPath.trim() : null;
 
-  const accept = (gitPath: string, source: "bundled" | "settings", version: GitVersion, settingsRejection: SettingsGitRejection | null): ResolvedGitBinary => {
+  const accept = (
+    gitPath: string,
+    source: "bundled" | "settings" | "path",
+    version: GitVersion,
+    settingsRejection: SettingsGitRejection | null,
+  ): ResolvedGitBinary => {
     if (!gitVersionAtLeast(version)) {
       throw new GitVersionRejectedError(gitPath, formatGitVersion(version));
     }
@@ -133,6 +143,17 @@ export async function resolveGitBinary(options: ResolveGitBinaryOptions = {}): P
       version: formatGitVersion(bundledProbe.version),
     });
     return accept(bundled, "bundled", bundledProbe.version, null);
+  }
+
+  if (!harnessIsPackaged()) {
+    const pathProbe = await probeBinary("git", options, "command");
+    if (pathProbe.ok) {
+      options.logger?.info("resolved Git on PATH", {
+        source: "path",
+        version: formatGitVersion(pathProbe.version),
+      });
+      return accept("git", "path", pathProbe.version, null);
+    }
   }
 
   throw new GitBinaryNotFoundError(

@@ -67,7 +67,7 @@ export interface SettingsGitRejection {
 
 export interface ResolvedGitBinary {
   readonly gitPath: string;
-  readonly source: "bundled" | "settings";
+  readonly source: "bundled" | "settings" | "path";
   readonly version: string;
   readonly settingsRejection: SettingsGitRejection | null;
 }

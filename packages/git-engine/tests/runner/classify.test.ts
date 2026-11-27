@@ -12,7 +12,19 @@ const MUTATING = ["checkout", "reset", "stash", "clean", "add", "commit", "merge
 
 describe("command classification", () => {
   it("treats inspection commands as read-only", () => {
-    for (const command of ["status", "rev-parse", "diff", "merge-tree", "log", "ls-tree", "ls-files"]) {
+    for (const command of [
+      "status",
+      "rev-parse",
+      "diff",
+      "merge-tree",
+      "log",
+      "ls-tree",
+      "ls-files",
+      "cat-file",
+      "for-each-ref",
+      "show-ref",
+      "rev-list",
+    ]) {
       expect(commandIsReadOnly([command])).toBe(true);
     }
     expect(commandIsReadOnly(["symbolic-ref", "-q", "HEAD"])).toBe(true);

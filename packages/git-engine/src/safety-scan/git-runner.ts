@@ -1,16 +1,19 @@
 import path from "node:path";
-import { scrubbedEnv, spawnCollect } from "./process-run.js";
+import { execGit as runCanonicalGit } from "../runner/exec-git.js";
 import { DEFAULT_COMMAND_TIMEOUT_MS } from "./types.js";
 import type { GitCommandResult, GitExecOptions, GitRunner } from "./types.js";
 
-export function createDefaultGitRunner(gitBinary = "git"): GitRunner {
+export function createDefaultGitRunner(gitBinary?: string): GitRunner {
   return {
     async execGit(args: readonly string[], options: GitExecOptions): Promise<GitCommandResult> {
-      const fullArgs = ["-c", "core.longpaths=true", "-c", "core.quotepath=false", ...args];
-      const result = await spawnCollect(gitBinary, fullArgs, {
+      const consent = options.userExplicitConsentToken;
+      const result = await runCanonicalGit({
+        args,
         cwd: options.cwd,
         timeoutMs: options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
-        env: scrubbedEnv(options.env),
+        ...(options.env !== undefined ? { env: { ...options.env } } : {}),
+        ...(consent !== undefined ? { userExplicitConsentToken: consent } : {}),
+        ...(gitBinary !== undefined ? { gitBinary } : {}),
       });
       return {
         exitCode: result.exitCode,
