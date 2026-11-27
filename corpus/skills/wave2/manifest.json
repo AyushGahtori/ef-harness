@@ -1,0 +1,475 @@
+{
+  "schemaVersion": 1,
+  "wave": 2,
+  "tokenizer": "cl100k-o200k-upper-bound-v1",
+  "skills": [
+    {
+      "skillId": "react-state-and-forms",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:react-state-and-forms",
+      "pinnedCommitSha": "5cadf0828a75e38d19161340f489a39d8f926be9",
+      "license": "MIT",
+      "sha256": "274a177f40c9e20dc1122a34577940ccffe8c4ae86cf52a12df419e3f365cf24",
+      "tokenCount": 429,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "form_input",
+        "interactive_ui"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "react-state-and-forms",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 429
+      }
+    },
+    {
+      "skillId": "playwright-e2e-reliability",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:playwright-e2e-reliability",
+      "pinnedCommitSha": "cef14a7dd3d603df9f38c1e7097bb694fa58bdbc",
+      "license": "MIT",
+      "sha256": "a964fbe4d8818e5c240edb33c4c0718e6e897884122884b68726e18cd0612937",
+      "tokenCount": 350,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "interactive_ui"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "playwright-e2e-reliability",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 350
+      }
+    },
+    {
+      "skillId": "stripe-billing-webhooks",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:stripe-billing-webhooks",
+      "pinnedCommitSha": "4b6f3b412607fc2a97f2701a30b8d962933ac7d1",
+      "license": "MIT",
+      "sha256": "835cfbacc6c308931a2e955c1da353277a63676640e38ff09351bc384173b21e",
+      "tokenCount": 355,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "money",
+        "inbound_webhook"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "stripe-billing-webhooks",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 355
+      }
+    },
+    {
+      "skillId": "auth-session-rbac",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:auth-session-rbac",
+      "pinnedCommitSha": "9a10ca064c59c00b5b121d5065395b7eabbd870f",
+      "license": "MIT",
+      "sha256": "20c993c974feb30d019d322fcd5460a8d1e158b1b3eae1e13e4a51549359333c",
+      "tokenCount": 345,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "authn",
+        "authz",
+        "session"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "auth-session-rbac",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 345
+      }
+    },
+    {
+      "skillId": "rest-openapi-contracts",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:rest-openapi-contracts",
+      "pinnedCommitSha": "03f5c0c8d02f28aeacead2c0c1e0b892aeb5bd22",
+      "license": "MIT",
+      "sha256": "b58a69b132aec706abb0403534d92f52110ddf46defbfb6184e71a8cb7fd5a80",
+      "tokenCount": 368,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "external_api"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "rest-openapi-contracts",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 368
+      }
+    },
+    {
+      "skillId": "cli-ergonomics-and-io",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:cli-ergonomics-and-io",
+      "pinnedCommitSha": "a9a83e6694465c01477bdb6ebae0ed22dc1dce44",
+      "license": "MIT",
+      "sha256": "5dba3446ffb57a9d703032d4b809b7a44651a7f0f25d189c64e3fc8da70b4b27",
+      "tokenCount": 366,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "config_env"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "cli-ergonomics-and-io",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 366
+      }
+    },
+    {
+      "skillId": "background-jobs-idempotency",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:background-jobs-idempotency",
+      "pinnedCommitSha": "617da2c5fae7cfb100591293bda213c56ba502a1",
+      "license": "MIT",
+      "sha256": "8a138e386d0f1655e12c60e1dccefea2218250355612de5e30ab17d4478b9c69",
+      "tokenCount": 348,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "background_job"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "background-jobs-idempotency",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 348
+      }
+    },
+    {
+      "skillId": "file-uploads-and-media",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:file-uploads-and-media",
+      "pinnedCommitSha": "e8272203e58189ce6a444a2933af8cd818ebad0f",
+      "license": "MIT",
+      "sha256": "63d571a33037c037edeeb25bba841f240ef3b97dad6672c988f02c192885733b",
+      "tokenCount": 351,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "file_upload"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "file-uploads-and-media",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 351
+      }
+    },
+    {
+      "skillId": "performance-profiling-sql",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:performance-profiling-sql",
+      "pinnedCommitSha": "16f04cc9c874b479825f5a23dc827800e2f02c8a",
+      "license": "MIT",
+      "sha256": "94abcb2c485eb5bddcb4ad5c8528984cf2a446d9d362932899e7a941b1be0f11",
+      "tokenCount": 355,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "search"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "performance-profiling-sql",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 355
+      }
+    },
+    {
+      "skillId": "brownfield-safe-refactoring",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:brownfield-safe-refactoring",
+      "pinnedCommitSha": "ce36508d5096f7ac5b2b6f6230380ec0abf74d8c",
+      "license": "MIT",
+      "sha256": "cddb8b40c6173faaabb35a3cfe2ab2106112b5534f685c07f147b6a7dda907e3",
+      "tokenCount": 377,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "migration"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "brownfield-safe-refactoring",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 377
+      }
+    },
+    {
+      "skillId": "codemods-and-sweeps",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:codemods-and-sweeps",
+      "pinnedCommitSha": "212be036f28620416ddc1884e4b19d72a8de2d56",
+      "license": "MIT",
+      "sha256": "07a1c515c3a1848a11ad085ed96aac47ac6dc4f700fb82e1cbb249bc313750c4",
+      "tokenCount": 375,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "migration"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "codemods-and-sweeps",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 375
+      }
+    },
+    {
+      "skillId": "desktop-electron-ipc-security",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:desktop-electron-ipc-security",
+      "pinnedCommitSha": "8e412334446648dba815194e91a2f75a6356befb",
+      "license": "MIT",
+      "sha256": "cf5644c5a6366fbb4771634841b4b7e045f602061f8da0892e16f6e1fa3fd0c6",
+      "tokenCount": 349,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "interactive_ui",
+        "credentials"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "desktop-electron-ipc-security",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 349
+      }
+    },
+    {
+      "skillId": "browser-extension-mv3",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:browser-extension-mv3",
+      "pinnedCommitSha": "a2e8a0e26c88188035f36ccc04acd47de9e2601b",
+      "license": "MIT",
+      "sha256": "588f025268032e5f5754b1c4b34a2e36c70004f9c1cb4d3cad9f0ae51c17ec38",
+      "tokenCount": 371,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "interactive_ui",
+        "route"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "browser-extension-mv3",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 371
+      }
+    },
+    {
+      "skillId": "docker-ci-deploy-hygiene",
+      "version": "1",
+      "sourceType": "authored",
+      "upstreamRepo": "offline-vendor:docker-ci-deploy-hygiene",
+      "pinnedCommitSha": "8d7cbad00da4f3cdcac541d4a8beae035800ad87",
+      "license": "MIT",
+      "sha256": "901c5e2bc519d45a40c5679ebd8ff8f44161cd8f97f40c19c7f1ab8935090537",
+      "tokenCount": 338,
+      "allowedRoles": [
+        "worker"
+      ],
+      "allowedTouches": [
+        "config_env"
+      ],
+      "vettingStatus": "vetted",
+      "lastVettedAt": "2026-11-20T13:00:00.000Z",
+      "quarantineReceipt": {
+        "skillId": "docker-ci-deploy-hygiene",
+        "version": "1",
+        "fromStatus": "quarantined",
+        "toStatus": "vetted",
+        "canaryAccesses": 0,
+        "unauthorizedNetworkCalls": 0,
+        "outOfScopeTestEdits": 0,
+        "hiddenUnicode": 0,
+        "globalConfigWrites": 0,
+        "smokePassed": true,
+        "reasons": [],
+        "evaluatedAt": "2026-11-20T13:00:00.000Z",
+        "tokenCount": 338
+      }
+    }
+  ]
+}

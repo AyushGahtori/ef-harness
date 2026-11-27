@@ -1,0 +1,393 @@
+pack: browser-extension
+pack_version: 1
+activation:
+  pack_id: browser-extension
+  explicit_targets:
+    - browser_extension
+  settled_any:
+    - question_id: delivery.platform
+      option_id: browser_extension
+  settled_all: []
+  dormant_platforms:
+    - web_saas
+    - cli
+    - api
+    - mobile_web
+  non_trigger_utterances:
+    - Staff open a link on their phones.
+  skill_ids:
+    - browser-extension-mv3@1
+  not_applicable_question_ids:
+    - ui.pages_inventory
+  not_applicable_criteria:
+    - ui.ssr
+    - ui.seo
+questions:
+  - id: extension.surface
+    code: Q-EXT-01
+    pack: browser-extension
+    version: 1
+    scope: shared
+    title: Which Manifest V3 surface is primary?
+    explain: Decides whether the extension's primary UI is a toolbar popup, a side panel, a content
+      script injected into pages, or an options page. Naming a browser extension is not, by itself,
+      this choice.
+    criteria:
+      - extension.surface
+      - extension.popup
+      - extension.side_panel
+      - extension.content_script
+      - extension.options_page
+    touches:
+      - interactive_ui
+      - route
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires: []
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+      - infer.from_stated_technology
+    options:
+      - id: popup
+        label: Toolbar popup
+        meaning: The action opens a small popup. The popup closes when it loses focus, and it is not a
+          persistent side panel.
+        stage_suitability: &a1
+          - prototype
+          - mvp
+          - production
+        frequency: high
+        conflicts_with: []
+      - id: side_panel
+        label: Side panel
+        meaning: The primary UI stays open in the browser side panel while the user moves across tabs.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: content_script
+        label: Content script
+        meaning: The primary UI is injected into matching pages. There is no persistent extension page for
+          the main task.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: options_page
+        label: Options page
+        meaning: The primary surface is the options page opened from the extension management UI.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: popup
+        rationale: A prototype can prove the action from a toolbar popup before a side panel is built.
+      mvp:
+        option: side_panel
+        rationale: MVP keeps the task open in the side panel so tab changes do not dismiss it.
+      production:
+        option: side_panel
+        rationale: Production keeps the primary task in the side panel and treats the popup as optional.
+    examples:
+      positive:
+        - utterance: The action should open a small popup and close when I click away.
+          settles: popup
+        - utterance: Use a toolbar popup only. I do not want a side panel.
+          settles: popup
+        - utterance: Keep the tool open in the browser side panel while I change tabs.
+          settles: side_panel
+        - utterance: Inject the controls into the page itself. Do not make me open a popup.
+          settles: content_script
+        - utterance: The real screen is the options page from the extensions screen.
+          settles: options_page
+      negative:
+        - utterance: We are building a browser extension.
+          why: Naming the platform does not choose popup, side panel, content script, or options page.
+        - utterance: Put a button in the toolbar.
+          why: A toolbar button does not say whether the UI is a popup, a side panel, or an injected page.
+  - id: extension.host_permissions
+    code: Q-EXT-02
+    pack: browser-extension
+    version: 1
+    scope: shared
+    title: How are host permissions scoped?
+    explain: Decides whether the extension may touch only the active tab, an explicit list of hosts, or
+      every URL. Minimal privilege is the production default.
+    criteria:
+      - extension.host_permissions
+      - extension.active_tab
+      - extension.optional_hosts
+    touches:
+      - external_api
+      - authz
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - extension.surface
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+    options:
+      - id: active_tab_only
+        label: Active tab only
+        meaning: The extension reads a tab only after the user invokes it, and it requests no standing host
+          permission.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: explicit_host_list
+        label: Explicit host list
+        meaning: The manifest lists the hosts the extension may read. Optional hosts are requested at the
+          moment they are needed.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: all_urls
+        label: All URLs
+        meaning: The manifest requests access to every http and https URL.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: extension.store_packaging
+            option_id: chrome_and_firefox_disclosed
+    stage_recommendations:
+      prototype:
+        option: active_tab_only
+        rationale: A prototype stays on the active tab so it does not ask for standing host access.
+      mvp:
+        option: explicit_host_list
+        rationale: MVP names the hosts it needs and asks for any extra host only when the user reaches that
+          site.
+      production:
+        option: explicit_host_list
+        rationale: Production keeps a minimal explicit host list and does not request every URL.
+    examples:
+      positive:
+        - utterance: Only look at the tab I just clicked. Do not keep access after that.
+          settles: active_tab_only
+        - utterance: Active tab is enough. No site permission until I invoke the action.
+          settles: active_tab_only
+        - utterance: List the exact hosts in the manifest. Ask for any other host only when I open it.
+          settles: explicit_host_list
+        - utterance: We need example.com and api.example.com, and nothing else.
+          settles: explicit_host_list
+        - utterance: Grant every website. The extension has to see all URLs.
+          settles: all_urls
+      negative:
+        - utterance: It should work in Chrome.
+          why: The browser name does not choose a host-permission scope.
+        - utterance: Read the page title.
+          why: Reading a title does not decide between active tab, a host list, or all URLs.
+  - id: extension.service_worker_state
+    code: Q-EXT-03
+    pack: browser-extension
+    version: 1
+    scope: shared
+    title: Where does the service worker keep state across idle unload?
+    explain: Decides how Manifest V3 background state survives the service worker being stopped after
+      idle time, and which chrome.storage area and quota apply.
+    criteria:
+      - extension.service_worker
+      - extension.storage_quota
+      - extension.ephemeral_state
+    touches:
+      - caching
+      - config_env
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - extension.surface
+    allowed_inference_rules:
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: chrome_storage_local
+        label: chrome.storage.local
+        meaning: Durable state is written to chrome.storage.local before the worker returns. An idle unload
+          of 30 seconds must not drop it. The stored payload stays inside the local quota.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: chrome_storage_session
+        label: chrome.storage.session
+        meaning: State lives in chrome.storage.session and is cleared when the browser session ends.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: in_memory_only
+        label: Memory only
+        meaning: State is kept in worker memory. An idle unload drops it.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: chrome_storage_local
+        rationale: Even a prototype must keep the last action after the service worker stops.
+      mvp:
+        option: chrome_storage_local
+        rationale: MVP writes durable state to chrome.storage.local so a 30 second idle unload is safe.
+      production:
+        option: chrome_storage_local
+        rationale: Production keeps durable state in chrome.storage.local and treats memory as a cache only.
+    examples:
+      positive:
+        - utterance: Save it in chrome.storage.local. The worker will be killed and I still need the value.
+          settles: chrome_storage_local
+        - utterance: It has to survive the service worker going idle. Use local storage, not memory.
+          settles: chrome_storage_local
+        - utterance: Keep this only for the current browser session, then drop it.
+          settles: chrome_storage_session
+        - utterance: Session storage is enough. A restart should forget it.
+          settles: chrome_storage_session
+        - utterance: Hold it in memory. I do not need it after the worker stops.
+          settles: in_memory_only
+      negative:
+        - utterance: Remember the user's choice.
+          why: Remembering a choice does not choose local storage, session storage, or memory.
+        - utterance: The background script should be fast.
+          why: Speed does not decide where state lives across an idle unload.
+  - id: extension.messaging_csp
+    code: Q-EXT-04
+    pack: browser-extension
+    version: 1
+    scope: shared
+    title: How do extension contexts message each other under CSP?
+    explain: Decides the messaging channel between the popup or side panel, the service worker, and any
+      content script, and the content-security policy that applies to extension pages.
+    criteria:
+      - extension.messaging
+      - extension.csp
+      - extension.cross_origin
+    touches:
+      - route
+      - external_api
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - extension.surface
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+    options:
+      - id: runtime_sendmessage_strict_csp
+        label: Runtime messages and a strict CSP
+        meaning: Contexts talk with runtime.sendMessage. Extension pages use a strict script policy with no
+          remote script and no inline event handler.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: window_postmessage_open
+        label: window.postMessage
+        meaning: The page and the extension talk with window.postMessage and do not check the sender origin.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: externally_connectable_named
+        label: Named external connect
+        meaning: Only the listed origins may connect, and each message names the sender extension id.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: runtime_sendmessage_strict_csp
+        rationale: A prototype still uses runtime messages and a strict extension-page policy.
+      mvp:
+        option: runtime_sendmessage_strict_csp
+        rationale: MVP keeps runtime messages and refuses remote scripts on extension pages.
+      production:
+        option: runtime_sendmessage_strict_csp
+        rationale: Production keeps a strict content-security policy and runtime messages between contexts.
+    examples:
+      positive:
+        - utterance: Use runtime.sendMessage between the panel and the worker, and block remote scripts on
+            extension pages.
+          settles: runtime_sendmessage_strict_csp
+        - utterance: Strict CSP. No inline handlers and no script loaded from another origin.
+          settles: runtime_sendmessage_strict_csp
+        - utterance: Just use window.postMessage and do not check who sent it.
+          settles: window_postmessage_open
+        - utterance: postMessage on the page window is fine even if the origin is not checked.
+          settles: window_postmessage_open
+        - utterance: Only these origins may connect, and the message must name our extension id.
+          settles: externally_connectable_named
+      negative:
+        - utterance: The panel needs to talk to the background.
+          why: Saying they talk does not choose the channel or the content-security policy.
+        - utterance: Make the extension secure.
+          why: A general security wish does not settle messaging or CSP.
+  - id: extension.store_packaging
+    code: Q-EXT-05
+    pack: browser-extension
+    version: 1
+    scope: shared
+    title: How is the extension packaged, and what privacy disclosure ships?
+    explain: Decides Chrome Web Store and Firefox Add-ons packaging, and the privacy disclosure that
+      lists host access and data leaving the browser.
+    criteria:
+      - extension.store
+      - extension.privacy_disclosure
+      - extension.firefox
+    touches:
+      - personal_data
+      - config_env
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - extension.host_permissions
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+    options:
+      - id: unpacked_dev_only
+        label: Unpacked developer load
+        meaning: The extension is loaded unpacked for local development and is not submitted to a store.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: chrome_only_minimal
+        label: Chrome Web Store, minimal disclosure
+        meaning: A Chrome Web Store package is signed for upload, and the privacy form lists only the data
+          the extension actually sends off the device.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: chrome_and_firefox_disclosed
+        label: Chrome and Firefox with a shared disclosure
+        meaning: The same disclosure covers the Chrome Web Store package and the Firefox Add-ons package,
+          including host access.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: extension.host_permissions
+            option_id: all_urls
+    stage_recommendations:
+      prototype:
+        option: unpacked_dev_only
+        rationale: A prototype is loaded unpacked and is not submitted to a store.
+      mvp:
+        option: chrome_only_minimal
+        rationale: MVP publishes one Chrome Web Store package with a disclosure limited to data that
+          actually leaves the browser.
+      production:
+        option: chrome_and_firefox_disclosed
+        rationale: Production ships Chrome and Firefox packages that share one privacy disclosure.
+    examples:
+      positive:
+        - utterance: Load it unpacked. Do not submit it to a store yet.
+          settles: unpacked_dev_only
+        - utterance: Developer mode only. No Chrome Web Store listing.
+          settles: unpacked_dev_only
+        - utterance: Ship on the Chrome Web Store and disclose only the data we actually send off the machine.
+          settles: chrome_only_minimal
+        - utterance: One Chrome package is enough for this release, with a short privacy form.
+          settles: chrome_only_minimal
+        - utterance: Publish to the Chrome Web Store and Firefox Add-ons with the same privacy disclosure.
+          settles: chrome_and_firefox_disclosed
+      negative:
+        - utterance: We will zip the folder.
+          why: A zip file does not choose the store or the privacy disclosure.
+        - utterance: Add a privacy policy page on the website.
+          why: A website policy does not settle the store listing disclosure.

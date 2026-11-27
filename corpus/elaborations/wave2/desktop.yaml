@@ -1,0 +1,441 @@
+pack: desktop
+elaborations:
+  - id: ELAB-Q-DSK-01-UNSIGNED-LOCAL-BUILD
+    question_id: desktop.distribution
+    option_id: unsigned_local_build
+    summary: Unsigned local build
+    touches:
+      any: &a1
+        - config_env
+        - migration
+    clauses:
+      - id: ELAB-Q-DSK-01-UNSIGNED-LOCAL-BUILD.C1
+        text: A developer runs a local build. There is no installer, no signature, and no auto-update.
+        touches:
+          any: *a1
+        oracle_hint: The app runs from a local build and does not check for updates.
+      - id: ELAB-Q-DSK-01-UNSIGNED-LOCAL-BUILD.C2
+        text: This choice stays inside which operating systems, signing, and auto-update posture ship and
+          does not grant a behavior the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The app runs from a local build and does not check for updates.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.distribution stays
+        dormant and unsigned_local_build is not asked.
+    bounds:
+      - key: desktop.distribution.unsigned_local_build.bound
+        value: 0
+        unit: installers
+    oracle_hints:
+      - The app runs from a local build and does not check for updates.
+      - Q-DSK-01 unsigned_local_build is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-01-WINDOWS-SIGNED-INSTALLER
+    question_id: desktop.distribution
+    option_id: windows_signed_installer
+    summary: Signed Windows installer
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-DSK-01-WINDOWS-SIGNED-INSTALLER.C1
+        text: A signed Windows installer is the release. macOS and Linux are not release targets. Updates
+          are user-installed.
+        touches:
+          any: *a1
+        oracle_hint: The Windows installer is signed and no auto-update runs.
+      - id: ELAB-Q-DSK-01-WINDOWS-SIGNED-INSTALLER.C2
+        text: This choice stays inside which operating systems, signing, and auto-update posture ship and
+          does not grant a behavior the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: The Windows installer is signed and no auto-update runs.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.distribution stays
+        dormant and windows_signed_installer is not asked.
+    bounds:
+      - key: desktop.distribution.windows_signed_installer.bound
+        value: 1
+        unit: os
+    oracle_hints:
+      - The Windows installer is signed and no auto-update runs.
+      - Q-DSK-01 windows_signed_installer is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-01-THREE-OS-SIGNED
+    question_id: desktop.distribution
+    option_id: three_os_signed
+    summary: Signed Windows, macOS, and Linux with staged updates
+    touches:
+      any: *a1
+    clauses:
+      - id: ELAB-Q-DSK-01-THREE-OS-SIGNED.C1
+        text: Signed installers exist for Windows, macOS, and Linux. An update downloads only after the
+          signature check and the user confirms it.
+        touches:
+          any: *a1
+        oracle_hint: An update with a bad signature is refused.
+      - id: ELAB-Q-DSK-01-THREE-OS-SIGNED.C2
+        text: This choice stays inside which operating systems, signing, and auto-update posture ship and
+          does not grant a behavior the option does not name.
+        touches:
+          any: *a1
+        oracle_hint: An update with a bad signature is refused.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.distribution stays
+        dormant and three_os_signed is not asked.
+    bounds:
+      - key: desktop.distribution.three_os_signed.bound
+        value: 3
+        unit: os
+    oracle_hints:
+      - An update with a bad signature is refused.
+      - Q-DSK-01 three_os_signed is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-02-USER-DIR-SANDBOXED-IPC
+    question_id: desktop.privilege_boundary
+    option_id: user_dir_sandboxed_ipc
+    summary: User folder and sandboxed IPC
+    touches:
+      any: &a2
+        - credentials
+        - file_upload
+    clauses:
+      - id: ELAB-Q-DSK-02-USER-DIR-SANDBOXED-IPC.C1
+        text: File access stays inside a chosen user folder. IPC messages are an allowlist. The renderer
+          cannot reach the rest of the disk.
+        touches:
+          any: *a2
+        oracle_hint: A path outside the chosen folder is denied.
+      - id: ELAB-Q-DSK-02-USER-DIR-SANDBOXED-IPC.C2
+        text: This choice stays inside what may local files and ipc reach and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a2
+        oracle_hint: A path outside the chosen folder is denied.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.privilege_boundary stays
+        dormant and user_dir_sandboxed_ipc is not asked.
+    bounds:
+      - key: desktop.privilege_boundary.user_dir_sandboxed_ipc.bound
+        value: 1
+        unit: root
+    oracle_hints:
+      - A path outside the chosen folder is denied.
+      - Q-DSK-02 user_dir_sandboxed_ipc is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-02-ELECTRON-CONTEXT-ISOLATION
+    question_id: desktop.privilege_boundary
+    option_id: electron_context_isolation
+    summary: Electron context isolation
+    touches:
+      any: *a2
+    clauses:
+      - id: ELAB-Q-DSK-02-ELECTRON-CONTEXT-ISOLATION.C1
+        text: Electron runs with context isolation, a narrow preload bridge, and no node integration in the
+          renderer. Files stay on the main side of that bridge.
+        touches:
+          any: *a2
+        oracle_hint: The renderer has no Node integration and can call only the preload methods.
+      - id: ELAB-Q-DSK-02-ELECTRON-CONTEXT-ISOLATION.C2
+        text: This choice stays inside what may local files and ipc reach and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a2
+        oracle_hint: The renderer has no Node integration and can call only the preload methods.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.privilege_boundary stays
+        dormant and electron_context_isolation is not asked.
+    bounds:
+      - key: desktop.privilege_boundary.electron_context_isolation.bound
+        value: 1
+        unit: bridge
+    oracle_hints:
+      - The renderer has no Node integration and can call only the preload methods.
+      - Q-DSK-02 electron_context_isolation is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-02-BROAD-FILESYSTEM
+    question_id: desktop.privilege_boundary
+    option_id: broad_filesystem
+    summary: Broad filesystem
+    touches:
+      any: *a2
+    clauses:
+      - id: ELAB-Q-DSK-02-BROAD-FILESYSTEM.C1
+        text: The app may read and write arbitrary local paths the user has not picked.
+        touches:
+          any: *a2
+        oracle_hint: A path the user did not choose is still readable.
+      - id: ELAB-Q-DSK-02-BROAD-FILESYSTEM.C2
+        text: This choice stays inside what may local files and ipc reach and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a2
+        oracle_hint: A path the user did not choose is still readable.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.privilege_boundary stays
+        dormant and broad_filesystem is not asked.
+    bounds:
+      - key: desktop.privilege_boundary.broad_filesystem.bound
+        value: 0
+        unit: prompts
+    oracle_hints:
+      - A path the user did not choose is still readable.
+      - Q-DSK-02 broad_filesystem is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-03-FOREGROUND-ONLY
+    question_id: desktop.lifecycle
+    option_id: foreground_only
+    summary: Foreground only
+    touches:
+      any: &a3
+        - background_job
+        - scheduling
+    clauses:
+      - id: ELAB-Q-DSK-03-FOREGROUND-ONLY.C1
+        text: Closing the window quits the app. There is no tray icon and no resume work after sleep.
+        touches:
+          any: *a3
+        oracle_hint: Closing the last window exits the process.
+      - id: ELAB-Q-DSK-03-FOREGROUND-ONLY.C2
+        text: This choice stays inside how do the tray, daemon, and sleep-resume behave and does not grant a
+          behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: Closing the last window exits the process.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.lifecycle stays dormant
+        and foreground_only is not asked.
+    bounds:
+      - key: desktop.lifecycle.foreground_only.bound
+        value: 0
+        unit: tray_icons
+    oracle_hints:
+      - Closing the last window exits the process.
+      - Q-DSK-03 foreground_only is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-03-TRAY-SLEEP-RESUME
+    question_id: desktop.lifecycle
+    option_id: tray_sleep_resume
+    summary: Tray and sleep-resume
+    touches:
+      any: *a3
+    clauses:
+      - id: ELAB-Q-DSK-03-TRAY-SLEEP-RESUME.C1
+        text: Closing the window leaves a tray icon. After sleep, the app reloads local state and does not
+          replay a half-finished write.
+        touches:
+          any: *a3
+        oracle_hint: After a sleep and wake, unsaved local state is reloaded once and a partial write is not
+          sent twice.
+      - id: ELAB-Q-DSK-03-TRAY-SLEEP-RESUME.C2
+        text: This choice stays inside how do the tray, daemon, and sleep-resume behave and does not grant a
+          behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: After a sleep and wake, unsaved local state is reloaded once and a partial write is not
+          sent twice.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.lifecycle stays dormant
+        and tray_sleep_resume is not asked.
+    bounds:
+      - key: desktop.lifecycle.tray_sleep_resume.bound
+        value: 1
+        unit: resume
+    oracle_hints:
+      - After a sleep and wake, unsaved local state is reloaded once and a partial write is not sent
+        twice.
+      - Q-DSK-03 tray_sleep_resume is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-03-DAEMON-ALWAYS
+    question_id: desktop.lifecycle
+    option_id: daemon_always
+    summary: Background daemon
+    touches:
+      any: *a3
+    clauses:
+      - id: ELAB-Q-DSK-03-DAEMON-ALWAYS.C1
+        text: A daemon stays running when the window is closed and when the user is logged out of the UI.
+        touches:
+          any: *a3
+        oracle_hint: The daemon is still running after the window closes.
+      - id: ELAB-Q-DSK-03-DAEMON-ALWAYS.C2
+        text: This choice stays inside how do the tray, daemon, and sleep-resume behave and does not grant a
+          behavior the option does not name.
+        touches:
+          any: *a3
+        oracle_hint: The daemon is still running after the window closes.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.lifecycle stays dormant
+        and daemon_always is not asked.
+    bounds:
+      - key: desktop.lifecycle.daemon_always.bound
+        value: 1
+        unit: daemon
+    oracle_hints:
+      - The daemon is still running after the window closes.
+      - Q-DSK-03 daemon_always is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-04-OS-KEYCHAIN
+    question_id: desktop.secret_storage
+    option_id: os_keychain
+    summary: OS keychain
+    touches:
+      any: &a4
+        - credentials
+        - config_env
+    clauses:
+      - id: ELAB-Q-DSK-04-OS-KEYCHAIN.C1
+        text: "Secrets are stored in the OS keychain: DPAPI on Windows, Keychain on macOS, and the desktop
+          secret service on Linux. They are not written to a JSON file."
+        touches:
+          any: *a4
+        oracle_hint: Desktop app stores secrets in OS keychain rather than plaintext JSON.
+      - id: ELAB-Q-DSK-04-OS-KEYCHAIN.C2
+        text: This choice stays inside where are local credentials stored and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a4
+        oracle_hint: Desktop app stores secrets in OS keychain rather than plaintext JSON.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.secret_storage stays
+        dormant and os_keychain is not asked.
+    bounds:
+      - key: desktop.secret_storage.os_keychain.bound
+        value: 0
+        unit: plaintext_files
+    oracle_hints:
+      - Desktop app stores secrets in OS keychain rather than plaintext JSON.
+      - Q-DSK-04 os_keychain is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-04-ENCRYPTED-FILE-WITH-OS-KEY
+    question_id: desktop.secret_storage
+    option_id: encrypted_file_with_os_key
+    summary: Encrypted file with an OS key
+    touches:
+      any: *a4
+    clauses:
+      - id: ELAB-Q-DSK-04-ENCRYPTED-FILE-WITH-OS-KEY.C1
+        text: The payload is an encrypted file, and the key that opens it lives in the OS keychain.
+        touches:
+          any: *a4
+        oracle_hint: The file on disk is not readable without the OS key.
+      - id: ELAB-Q-DSK-04-ENCRYPTED-FILE-WITH-OS-KEY.C2
+        text: This choice stays inside where are local credentials stored and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a4
+        oracle_hint: The file on disk is not readable without the OS key.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.secret_storage stays
+        dormant and encrypted_file_with_os_key is not asked.
+    bounds:
+      - key: desktop.secret_storage.encrypted_file_with_os_key.bound
+        value: 1
+        unit: files
+    oracle_hints:
+      - The file on disk is not readable without the OS key.
+      - Q-DSK-04 encrypted_file_with_os_key is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-04-PLAINTEXT-JSON
+    question_id: desktop.secret_storage
+    option_id: plaintext_json
+    summary: Plaintext JSON
+    touches:
+      any: *a4
+    clauses:
+      - id: ELAB-Q-DSK-04-PLAINTEXT-JSON.C1
+        text: Secrets are written as plaintext JSON on disk.
+        touches:
+          any: *a4
+        oracle_hint: A JSON file contains the secret in the clear.
+      - id: ELAB-Q-DSK-04-PLAINTEXT-JSON.C2
+        text: This choice stays inside where are local credentials stored and does not grant a behavior the
+          option does not name.
+        touches:
+          any: *a4
+        oracle_hint: A JSON file contains the secret in the clear.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.secret_storage stays
+        dormant and plaintext_json is not asked.
+    bounds:
+      - key: desktop.secret_storage.plaintext_json.bound
+        value: 1
+        unit: plaintext_files
+    oracle_hints:
+      - A JSON file contains the secret in the clear.
+      - Q-DSK-04 plaintext_json is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-05-SINGLE-MONITOR-BASIC-MENU
+    question_id: desktop.ergonomics
+    option_id: single_monitor_basic_menu
+    summary: One monitor and a basic menu
+    touches:
+      any: &a5
+        - interactive_ui
+    clauses:
+      - id: ELAB-Q-DSK-05-SINGLE-MONITOR-BASIC-MENU.C1
+        text: A native menu lists the primary actions. Shortcuts are the menu accelerators. The window does
+          not remember a second monitor.
+        touches:
+          any: *a5
+        oracle_hint: The menu shows the primary actions and a second display is not remembered.
+      - id: ELAB-Q-DSK-05-SINGLE-MONITOR-BASIC-MENU.C2
+        text: This choice stays inside how do native menus, shortcuts, and multiple monitors work and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: The menu shows the primary actions and a second display is not remembered.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.ergonomics stays dormant
+        and single_monitor_basic_menu is not asked.
+    bounds:
+      - key: desktop.ergonomics.single_monitor_basic_menu.bound
+        value: 1
+        unit: menu
+    oracle_hints:
+      - The menu shows the primary actions and a second display is not remembered.
+      - Q-DSK-05 single_monitor_basic_menu is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-05-MULTI-MONITOR-SHORTCUTS
+    question_id: desktop.ergonomics
+    option_id: multi_monitor_shortcuts
+    summary: Shortcuts and multi-monitor restore
+    touches:
+      any: *a5
+    clauses:
+      - id: ELAB-Q-DSK-05-MULTI-MONITOR-SHORTCUTS.C1
+        text: Accelerators work from the menu, and the window reopens on the display where the user left it.
+        touches:
+          any: *a5
+        oracle_hint: After restart the window returns to the same display.
+      - id: ELAB-Q-DSK-05-MULTI-MONITOR-SHORTCUTS.C2
+        text: This choice stays inside how do native menus, shortcuts, and multiple monitors work and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: After restart the window returns to the same display.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.ergonomics stays dormant
+        and multi_monitor_shortcuts is not asked.
+    bounds:
+      - key: desktop.ergonomics.multi_monitor_shortcuts.bound
+        value: 2
+        unit: displays
+    oracle_hints:
+      - After restart the window returns to the same display.
+      - Q-DSK-05 multi_monitor_shortcuts is observable without guessing a second platform.
+  - id: ELAB-Q-DSK-05-MENU-SHORTCUTS-PER-DISPLAY
+    question_id: desktop.ergonomics
+    option_id: menu_shortcuts_per_display
+    summary: Per-display menu and shortcuts
+    touches:
+      any: *a5
+    clauses:
+      - id: ELAB-Q-DSK-05-MENU-SHORTCUTS-PER-DISPLAY.C1
+        text: Each display can host a window, and that window uses the same menu and shortcuts.
+        touches:
+          any: *a5
+        oracle_hint: Two displays can each show a window with the same menu.
+      - id: ELAB-Q-DSK-05-MENU-SHORTCUTS-PER-DISPLAY.C2
+        text: This choice stays inside how do native menus, shortcuts, and multiple monitors work and does
+          not grant a behavior the option does not name.
+        touches:
+          any: *a5
+        oracle_hint: Two displays can each show a window with the same menu.
+    edge_cases:
+      - If the surrounding project is not targeting this platform, desktop.ergonomics stays dormant
+        and menu_shortcuts_per_display is not asked.
+    bounds:
+      - key: desktop.ergonomics.menu_shortcuts_per_display.bound
+        value: 2
+        unit: windows
+    oracle_hints:
+      - Two displays can each show a window with the same menu.
+      - Q-DSK-05 menu_shortcuts_per_display is observable without guessing a second platform.

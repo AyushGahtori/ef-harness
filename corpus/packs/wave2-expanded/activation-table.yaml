@@ -1,0 +1,73 @@
+schema_version: 1
+rule: A pack activates only on an explicit target or a settled option in this table. Web SaaS, CLI,
+  and API projects with none of those signals activate zero Wave 2 questions. The utterance 'Staff
+  open a link on their phones.' settles mobile_web and does not activate the native mobile pack.
+packs:
+  - pack_id: browser-extension
+    explicit_targets:
+      - browser_extension
+    settled_any:
+      - question_id: delivery.platform
+        option_id: browser_extension
+    settled_all: []
+    dormant_platforms:
+      - web_saas
+      - cli
+      - api
+      - mobile_web
+    non_trigger_utterances:
+      - Staff open a link on their phones.
+    skill_ids:
+      - browser-extension-mv3@1
+    not_applicable_question_ids:
+      - ui.pages_inventory
+    not_applicable_criteria:
+      - ui.ssr
+      - ui.seo
+  - pack_id: mobile
+    explicit_targets:
+      - native_mobile
+    settled_any:
+      - question_id: delivery.platform
+        option_id: native_mobile
+    settled_all: []
+    dormant_platforms:
+      - web_saas
+      - cli
+      - api
+      - mobile_web
+      - web_browser
+    non_trigger_utterances:
+      - Staff open a link on their phones.
+      - People will open the link on their phones.
+    skill_ids: []
+    not_applicable_question_ids: []
+    not_applicable_criteria: []
+  - pack_id: desktop
+    explicit_targets:
+      - desktop_app
+    settled_any:
+      - question_id: delivery.platform
+        option_id: desktop
+    settled_all:
+      - question_id: desktop.shell
+        option_id: electron
+      - question_id: data.storage.engine
+        option_id: sqlite
+    dormant_platforms:
+      - web_saas
+      - cli
+      - api
+      - mobile_web
+    non_trigger_utterances:
+      - Staff open a link on their phones.
+    skill_ids:
+      - desktop-electron-ipc-security@1
+    not_applicable_question_ids:
+      - ui.pages_inventory
+    not_applicable_criteria:
+      - ui.ssr
+      - ui.seo
+web_only_ssr_suppressed_when:
+  - browser-extension
+  - desktop

@@ -1,0 +1,389 @@
+pack: desktop
+pack_version: 1
+activation:
+  pack_id: desktop
+  explicit_targets:
+    - desktop_app
+  settled_any:
+    - question_id: delivery.platform
+      option_id: desktop
+  settled_all:
+    - question_id: desktop.shell
+      option_id: electron
+    - question_id: data.storage.engine
+      option_id: sqlite
+  dormant_platforms:
+    - web_saas
+    - cli
+    - api
+    - mobile_web
+  non_trigger_utterances:
+    - Staff open a link on their phones.
+  skill_ids:
+    - desktop-electron-ipc-security@1
+  not_applicable_question_ids:
+    - ui.pages_inventory
+  not_applicable_criteria:
+    - ui.ssr
+    - ui.seo
+questions:
+  - id: desktop.distribution
+    code: Q-DSK-01
+    pack: desktop
+    version: 1
+    scope: shared
+    title: Which operating systems, signing, and auto-update posture ship?
+    explain: Decides Windows, macOS, and Linux targets, whether the installer is code-signed, and
+      whether the app updates itself.
+    criteria:
+      - desktop.os_targets
+      - desktop.code_signing
+      - desktop.auto_update
+    touches:
+      - config_env
+      - migration
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires: []
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+      - infer.from_stated_technology
+    options:
+      - id: unsigned_local_build
+        label: Unsigned local build
+        meaning: A developer runs a local build. There is no installer, no signature, and no auto-update.
+        stage_suitability: &a1
+          - prototype
+          - mvp
+          - production
+        frequency: high
+        conflicts_with: []
+      - id: windows_signed_installer
+        label: Signed Windows installer
+        meaning: A signed Windows installer is the release. macOS and Linux are not release targets. Updates
+          are user-installed.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: three_os_signed
+        label: Signed Windows, macOS, and Linux with staged updates
+        meaning: Signed installers exist for Windows, macOS, and Linux. An update downloads only after the
+          signature check and the user confirms it.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: unsigned_local_build
+        rationale: A prototype runs as a local build without an installer or an updater.
+      mvp:
+        option: windows_signed_installer
+        rationale: MVP ships one signed Windows installer and does not auto-update.
+      production:
+        option: three_os_signed
+        rationale: Production signs Windows, macOS, and Linux builds and checks the signature before an
+          update.
+    examples:
+      positive:
+        - utterance: Run it from the local build. No installer and no updater.
+          settles: unsigned_local_build
+        - utterance: Developers start the unsigned build. Do not ship an installer.
+          settles: unsigned_local_build
+        - utterance: Ship a signed Windows installer. Skip macOS and Linux for now, and do not auto-update.
+          settles: windows_signed_installer
+        - utterance: Windows only, code-signed, and the user installs the next version themselves.
+          settles: windows_signed_installer
+        - utterance: Sign Windows, macOS, and Linux, and refuse an update whose signature does not check.
+          settles: three_os_signed
+      negative:
+        - utterance: Make a desktop app.
+          why: Naming a desktop app does not choose the operating systems, signing, or updates.
+        - utterance: Put a shortcut on the desktop.
+          why: A shortcut does not settle installers or code signing.
+  - id: desktop.privilege_boundary
+    code: Q-DSK-02
+    pack: desktop
+    version: 1
+    scope: shared
+    title: What may local files and IPC reach?
+    explain: Decides the filesystem boundary and the IPC sandbox. An Electron shell must keep context
+      isolation on, expose a narrow preload bridge, and refuse node integration in untrusted
+      renderers.
+    criteria:
+      - desktop.filesystem
+      - desktop.ipc
+      - desktop.sandbox
+    touches:
+      - credentials
+      - file_upload
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    requires:
+      - desktop.distribution
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+      - infer.from_stated_technology
+    options:
+      - id: user_dir_sandboxed_ipc
+        label: User folder and sandboxed IPC
+        meaning: File access stays inside a chosen user folder. IPC messages are an allowlist. The renderer
+          cannot reach the rest of the disk.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: electron_context_isolation
+        label: Electron context isolation
+        meaning: Electron runs with context isolation, a narrow preload bridge, and no node integration in
+          the renderer. Files stay on the main side of that bridge.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: desktop.secret_storage
+            option_id: plaintext_json
+      - id: broad_filesystem
+        label: Broad filesystem
+        meaning: The app may read and write arbitrary local paths the user has not picked.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: user_dir_sandboxed_ipc
+        rationale: A prototype confines files to one user folder and an IPC allowlist.
+      mvp:
+        option: electron_context_isolation
+        rationale: MVP uses Electron context isolation, a narrow preload bridge, and no node integration.
+      production:
+        option: electron_context_isolation
+        rationale: Production keeps context isolation and refuses a renderer with node integration.
+    examples:
+      positive:
+        - utterance: Only the folder the user picked, and IPC is an allowlist.
+          settles: user_dir_sandboxed_ipc
+        - utterance: Sandbox the files to one directory. Do not scan the disk.
+          settles: user_dir_sandboxed_ipc
+        - utterance: Electron with context isolation, a small preload bridge, and no node integration.
+          settles: electron_context_isolation
+        - utterance: Use Electron, but the renderer must not get Node.
+          settles: electron_context_isolation
+        - utterance: Let the app read any path on the machine without asking.
+          settles: broad_filesystem
+      negative:
+        - utterance: Use Electron.
+          why: Choosing Electron does not by itself settle context isolation, the preload bridge, or the
+            folder boundary.
+        - utterance: Save a file.
+          why: Saving a file does not decide the sandbox.
+  - id: desktop.lifecycle
+    code: Q-DSK-03
+    pack: desktop
+    version: 1
+    scope: shared
+    title: How do the tray, daemon, and sleep-resume behave?
+    explain: Decides whether the app is foreground-only, lives in a tray and resumes after sleep, or
+      runs a background daemon.
+    criteria:
+      - desktop.tray
+      - desktop.daemon
+      - desktop.sleep_resume
+    touches:
+      - background_job
+      - scheduling
+    impact: high
+    reversibility: costly
+    must_ask: true
+    requires:
+      - desktop.distribution
+    allowed_inference_rules:
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: foreground_only
+        label: Foreground only
+        meaning: Closing the window quits the app. There is no tray icon and no resume work after sleep.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: tray_sleep_resume
+        label: Tray and sleep-resume
+        meaning: Closing the window leaves a tray icon. After sleep, the app reloads local state and does
+          not replay a half-finished write.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: daemon_always
+        label: Background daemon
+        meaning: A daemon stays running when the window is closed and when the user is logged out of the UI.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: foreground_only
+        rationale: A prototype quits when the window closes.
+      mvp:
+        option: tray_sleep_resume
+        rationale: MVP stays in the tray and reloads cleanly after sleep.
+      production:
+        option: tray_sleep_resume
+        rationale: Production uses the tray and a single sleep-resume reload rather than a logout daemon.
+    examples:
+      positive:
+        - utterance: Quit when the window closes. No tray icon.
+          settles: foreground_only
+        - utterance: Foreground only. Sleep does not need a resume path.
+          settles: foreground_only
+        - utterance: Leave a tray icon, and after the laptop wakes reload state without repeating a write.
+          settles: tray_sleep_resume
+        - utterance: Closing the window should not quit. Resume cleanly after sleep.
+          settles: tray_sleep_resume
+        - utterance: Keep a daemon running even when the window is closed.
+          settles: daemon_always
+      negative:
+        - utterance: It should start when I log in.
+          why: A login start does not choose tray resume versus a daemon.
+        - utterance: Use Electron and a local SQLite file.
+          why: The shell and the database do not settle sleep-resume behavior.
+  - id: desktop.secret_storage
+    code: Q-DSK-04
+    pack: desktop
+    version: 1
+    scope: shared
+    title: Where are local credentials stored?
+    explain: Decides whether secrets use the operating system keychain, including DPAPI on Windows and
+      Keychain on macOS, an encrypted file whose key is in that store, or a plaintext JSON file.
+    criteria:
+      - desktop.keychain
+      - desktop.dpapi
+      - desktop.credential_file
+    touches:
+      - credentials
+      - config_env
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    requires:
+      - desktop.privilege_boundary
+    allowed_inference_rules:
+      - infer.from_explicit_acceptance
+    options:
+      - id: os_keychain
+        label: OS keychain
+        meaning: "Secrets are stored in the OS keychain: DPAPI on Windows, Keychain on macOS, and the
+          desktop secret service on Linux. They are not written to a JSON file."
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: encrypted_file_with_os_key
+        label: Encrypted file with an OS key
+        meaning: The payload is an encrypted file, and the key that opens it lives in the OS keychain.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: plaintext_json
+        label: Plaintext JSON
+        meaning: Secrets are written as plaintext JSON on disk.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with:
+          - question_id: desktop.privilege_boundary
+            option_id: electron_context_isolation
+    stage_recommendations:
+      prototype:
+        option: os_keychain
+        rationale: A prototype still stores secrets in the OS keychain rather than plaintext JSON.
+      mvp:
+        option: os_keychain
+        rationale: MVP uses DPAPI or Keychain and does not write credentials to JSON.
+      production:
+        option: os_keychain
+        rationale: Production keeps secrets in the OS keychain on every desktop target.
+    examples:
+      positive:
+        - utterance: Put tokens in the OS keychain. Windows should use DPAPI and macOS should use Keychain.
+          settles: os_keychain
+        - utterance: Never write the secret to a JSON file. Use the operating system store.
+          settles: os_keychain
+        - utterance: Encrypt a local file, but keep the key in the OS keychain.
+          settles: encrypted_file_with_os_key
+        - utterance: The file can sit on disk if the key is in Keychain or DPAPI.
+          settles: encrypted_file_with_os_key
+        - utterance: Store the token in a JSON file in the app folder.
+          settles: plaintext_json
+      negative:
+        - utterance: Remember the login.
+          why: Remembering a login does not choose the keychain, an encrypted file, or plaintext JSON.
+        - utterance: Use a local SQLite database.
+          why: Choosing SQLite does not decide where credentials are stored.
+  - id: desktop.ergonomics
+    code: Q-DSK-05
+    pack: desktop
+    version: 1
+    scope: shared
+    title: How do native menus, shortcuts, and multiple monitors work?
+    explain: Decides native menus, keyboard shortcuts, and whether window position is remembered per
+      monitor.
+    criteria:
+      - desktop.menu
+      - desktop.shortcuts
+      - desktop.multi_monitor
+    touches:
+      - interactive_ui
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    requires:
+      - desktop.distribution
+    allowed_inference_rules:
+      - infer.from_stated_behavior
+      - infer.from_explicit_acceptance
+    options:
+      - id: single_monitor_basic_menu
+        label: One monitor and a basic menu
+        meaning: A native menu lists the primary actions. Shortcuts are the menu accelerators. The window
+          does not remember a second monitor.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: multi_monitor_shortcuts
+        label: Shortcuts and multi-monitor restore
+        meaning: Accelerators work from the menu, and the window reopens on the display where the user left
+          it.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+      - id: menu_shortcuts_per_display
+        label: Per-display menu and shortcuts
+        meaning: Each display can host a window, and that window uses the same menu and shortcuts.
+        stage_suitability: *a1
+        frequency: high
+        conflicts_with: []
+    stage_recommendations:
+      prototype:
+        option: single_monitor_basic_menu
+        rationale: A prototype ships one native menu and does not track extra monitors.
+      mvp:
+        option: multi_monitor_shortcuts
+        rationale: MVP restores the window to the display the user last used.
+      production:
+        option: menu_shortcuts_per_display
+        rationale: Production allows a window per display with the same menu and shortcuts.
+    examples:
+      positive:
+        - utterance: One native menu is enough. Do not remember a second monitor.
+          settles: single_monitor_basic_menu
+        - utterance: Basic menu and shortcuts, single display.
+          settles: single_monitor_basic_menu
+        - utterance: Remember which monitor the window was on, and keep the keyboard shortcuts.
+          settles: multi_monitor_shortcuts
+        - utterance: Restore the window on the same display after a restart.
+          settles: multi_monitor_shortcuts
+        - utterance: Allow a window on each monitor, with the same menu and shortcuts.
+          settles: menu_shortcuts_per_display
+      negative:
+        - utterance: Make it feel like a desktop app.
+          why: A desktop feel does not settle menus, shortcuts, or multi-monitor restore.
+        - utterance: Use Electron and local SQLite.
+          why: The shell and the database do not choose monitor behavior.
