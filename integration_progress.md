@@ -19,7 +19,7 @@
 | C10 | Wave 1 | done | 77877f0 | F-006, F-012, F-013, F-026, F-064 | build/typecheck/lint OK; db 65 files 371/371; schema 67/67 |
 | C11 | Wave 1 | done | 3d26ce9 | F-007, F-010, F-011, F-012 | build/typecheck/lint OK; db 67 files 374/374; schema 67/67 |
 | C12 | Wave 1 | done | b439532 | F-003, F-006, F-013, F-014 | build/typecheck/lint OK; ipc 14 files 63/63; db 67 files 374/374; schema 67/67 |
-| C13 | Wave 1 | pending | - | F-007, F-011, F-013, F-014, F-015, F-016 | - |
+| C13 | Wave 1 | done | e0ed3c6 | F-007, F-011, F-013, F-014, F-015, F-016 | build/typecheck/lint OK; ipc 15 files 66/66; sim 2 files 19/19; db 67 files 374/374; schema 67/67 |
 | C14 | Wave 2 | pending | - | F-017 | - |
 | C15 | Wave 2 | pending | - | F-012, F-017 | - |
 | C16 | Wave 2 | pending | - | F-022, F-060, F-070 | - |

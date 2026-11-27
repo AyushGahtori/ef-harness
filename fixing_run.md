@@ -417,3 +417,33 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/ipc test`: exit `0` — `Test Files 14 passed (14)`, `Tests 63 passed (63)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 
+
+## [C13] — Channel 1 credit-windowed streams bound to CasBlobStore, and M0 sim certifies the real kernel
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `e0ed3c6891ce80527515ed3a21fc72cfe0cbb901` (`integrate: C13 bind streams to CAS and sim to the kernel`)
+- **Findings Fixed:** `F-007`, `F-011`, `F-013`, `F-014`, `F-015`, `F-016` (this seam only)
+
+### What Changed
+- Re-verified on `b4395324530419cd30767dd662e0825c3d04f550`. Did not re-merge `origin/task/033-binary-artifact-streaming` (`6dfa32b`) or `origin/task/034-m0-deterministic-sim-exit-gate` (`15c4663`). `git merge-base --is-ancestor` exited `0` for both. No dirty patch for C13. Did not start C14. Did not edit `schema/**`, `packages/git-engine`, Windows Job Object, DPAPI, or NSIS. `path_leases.mode` stays `'intent' | 'granted'`. C06–C12 binds stay in place.
+- Channel 0 `stream.credit` and `stream.cancel` demux onto `@ef-harness/shared-contracts` `StreamCreditGrantSchema` / `StreamCancelNotificationSchema`: params are `{ stream_id, credits }` (credits 1–1024) and `{ stream_id, reason? }`. The streams scheduler still counts chunk credits internally (`grantCredit(streamId, chunks)`, window 1–256, outstanding 512). The freeze text `{ stream_id, bytes }` was not added. A credit for a stream that has already closed is dropped; a live stream still rejects `-1`, `999999`, and `2^31`.
+- `encodeJsonFrame` / `encodeBinaryFrame` delegate to `FrameCodec.encode`. `BinaryStreamManager` and `ArtifactPipeServer` take an optional `blobs: CasBlobStore`. `createCasArtifactCatalog` reads through `openReadStream`. A stream `ByteRange` `{ offset, length }` becomes a CAS range `{ start: offset, end: offset + length }`. Digests cross the boundary with `toBareSha256Hex` / `toPrefixedSha256`.
+- `@ef-harness/sim` now depends on `@ef-harness/db`, `@ef-harness/ipc`, and `@ef-harness/shared-observability`. `KernelSession` opens `ProjectStateDb` and `GlobalBrokerDb` and binds `CoordinatorWriteQueue`, `OutboxRepo`, and `CasBlobStore`. Epoch bumps go through `submitOperationSync`. Outbox rows go through `appendEvent`. Named-pipe restart uses `NamedPipeServer`, `NamedPipeClient`, `FrameCodec`, and `SecretRedactor`. `packages/sim/src` no longer constructs `DatabaseSync`. The disk lock probe uses `openDatabase` from `@ef-harness/db` with `busy_timeout = 0`.
+
+### What It Fixed
+- **F-007:** Packet `sha256:` digests and bare CAS hashes cross the stream boundary through `toBareSha256Hex`. `cas_blobs.hash` stays bare.
+- **F-011 / F-013:** `BinaryStreamManager` and `ArtifactPipeServer` read artifact bytes from the unified `CasBlobStore.openReadStream`, not a private file layout.
+- **F-014:** Channel 1 `encodeJsonFrame` and `encodeBinaryFrame` call the transport `FrameCodec.encode`. Static and instance `encode` from C12 stay.
+- **F-015:** `stream.credit` and `stream.cancel` are validated against the shared-contracts notification schemas and routed to `BinaryStreamManager`. `stream.end` and `stream.error` still reach `ArtifactStreamClient`, which accepts both `stream_id` / `bytes_sent` and the existing camelCase fields.
+- **F-016:** The M0 simulator's success path drives real `@ef-harness/db` and `@ef-harness/ipc`. A 4 MB raw CAS blob streamed over Channel 1 with a 2-chunk (128 KB) credit window came back with the same SHA-256. Seed 42 and seed 1337 still share a trace hash, and the 500-memory plus 10-disk sweep passed with `failed === 0`.
+- **Observable credit pause:** `BinaryStreamManager` still stops prefetch when `readBudget` is 0 and resumes on the next `stream.credit`. The pipe test rejects an oversize grant and drops a late grant after `stream.cancel`.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `6dfa32b` and `15c4663`: exit `0` (both ancestors of `b4395324530419cd30767dd662e0825c3d04f550`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`
+- `pnpm --filter @ef-harness/ipc test`: exit `0` — `Test Files 15 passed (15)`, `Tests 66 passed (66)`
+- `pnpm --filter @ef-harness/sim test`: exit `0` — `Test Files 2 passed (2)`, `Tests 19 passed (19)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
