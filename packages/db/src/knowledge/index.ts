@@ -28,6 +28,7 @@ export {
 export type { StaleEdgeRead, StaleNodeRead, StaleRead } from "./errors.js";
 export { loadQueryCatalog, parseQueryCatalog } from "./query-catalog.js";
 export type { QueryCatalog } from "./query-catalog.js";
+export { bindKnowledgeGraph } from "./project-bind.js";
 export { KnowledgeGraphRepo } from "./repo.js";
 export { openStateConnection, readQueriesSql } from "./sql.js";
 export type { OpenStateConnectionOptions, SqlConnection, SqlRow, SqlStatement, SqlValue } from "./sql.js";

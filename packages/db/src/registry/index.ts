@@ -59,6 +59,7 @@ export type {
 
 export { openMemoryStateDb, relationsInFieldsSql } from "./state-schema.js";
 
+export { bindNameRegistry } from "./project-bind.js";
 export {
   NameRegistryService,
   createNameRegistryService,

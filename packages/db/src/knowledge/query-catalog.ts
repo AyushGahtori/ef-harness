@@ -1,10 +1,10 @@
+import { parseQueryCatalog as parseNamedQueryFile } from "../driver/sql.js";
 import { QueryCatalogError } from "./errors.js";
 import type { SqlConnection, SqlRow, SqlStatement, SqlValue } from "./sql.js";
 
 /**
- * Parses `-- name:` blocks from schema/queries.sql.
- * This is the Task 012 `loadQueryCatalog` binding used until
- * `packages/db/src/driver` is wired into the db barrel. Statements are not copied
+ * Named statements from schema/queries.sql.
+ * Parsing is the driver catalog's `-- name:` reader. Statements are not copied
  * into TypeScript; every call executes the named block from that file.
  */
 export interface QueryCatalog {
@@ -64,28 +64,9 @@ export function loadQueryCatalog(connection: SqlConnection, queriesSql: string):
 
 export function parseQueryCatalog(queriesSql: string): Map<string, ParsedQuery> {
   const queries = new Map<string, ParsedQuery>();
-  for (const block of queriesSql.split(/^-- name: /m).slice(1)) {
-    const newline = block.indexOf("\n");
-    const name = (newline === -1 ? block : block.slice(0, newline)).trim();
-    const body = newline === -1 ? "" : block.slice(newline + 1);
-    const sql = body
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n")
-      .trim()
-      .replace(/;\s*$/, "");
-    if (!name || !sql) continue;
-    queries.set(name, { sql, params: parameterNames(sql) });
+  for (const query of parseNamedQueryFile(queriesSql)) {
+    if (query.sql.length === 0) continue;
+    queries.set(query.name, { sql: query.sql, params: query.params });
   }
   return queries;
-}
-
-function parameterNames(sql: string): string[] {
-  const withoutStrings = sql.replace(/'(?:''|[^'])*'/g, "''");
-  const names = new Set<string>();
-  for (const match of withoutStrings.matchAll(/(?<!:):([A-Za-z_][A-Za-z0-9_]*)/g)) {
-    const name = match[1];
-    if (name) names.add(name);
-  }
-  return [...names];
 }

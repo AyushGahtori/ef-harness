@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import { toPrefixedSha256 } from "@ef-harness/shared-contracts";
 import {
   canonicalizeName,
   canonicalizePrefix,
@@ -8,6 +8,7 @@ import {
   prefixCovers,
   type StoredName,
 } from "./canonicalize.js";
+import type { RegistryDatabase } from "./database.js";
 import {
   CodeNameAuditError,
   DanglingRelationError,
@@ -116,11 +117,11 @@ const normalizer = new RelationsNormalizer();
 
 /**
  * Resource-name registry over the trigger-maintained `names` and `name_prefixes` tables.
- * Pass the writer connection owned by `ProjectStateDb` (Task 013). This branch does not
- * contain that type yet; `openMemoryStateDb` opens a schema-complete connection for tests.
+ * `bindNameRegistry` passes the `ProjectStateDb` writer. `openMemoryStateDb` remains
+ * the in-memory schema fixture for tests.
  */
 export class NameRegistryService {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: RegistryDatabase) {}
 
   allocateFeaturePrefix(input: { kind: string; prefix: string; feature: string }): AllocatedPrefix {
     if (!isNameKind(input.kind)) throw new InvalidNameKindError(input.kind);
@@ -607,7 +608,7 @@ export class NameRegistryService {
   }
 }
 
-export function createNameRegistryService(db: DatabaseSync): NameRegistryService {
+export function createNameRegistryService(db: RegistryDatabase): NameRegistryService {
   return new NameRegistryService(db);
 }
 
@@ -669,7 +670,8 @@ function explicitOrderFromFields(fieldsJson: string, kind: string, value: string
 }
 
 function contentHash(parts: readonly string[]): string {
-  return createHash("sha256").update(parts.join("\u001e")).digest("hex");
+  const bare = createHash("sha256").update(parts.join("\u001e")).digest("hex");
+  return toPrefixedSha256(bare);
 }
 
 function assertToken(label: string, value: string): string {

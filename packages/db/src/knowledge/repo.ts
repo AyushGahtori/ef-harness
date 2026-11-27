@@ -1,3 +1,4 @@
+import { toPrefixedSha256 } from "@ef-harness/shared-contracts";
 import { canonicalizeJson, computeNodeContentHash, formatEntityId, normalizeNfc } from "./canonical.js";
 import {
   DanglingReferenceError,
@@ -456,7 +457,7 @@ export class KnowledgeGraphRepo {
     const id = mutation.id ?? this.allocateInside(requiredPrefix(mutation.idPrefix));
     const title = normalizeNfc(mutation.title);
     const text = normalizeNfc(mutation.text ?? "");
-    const fields = normalizeNfc(mutation.fields === undefined ? {} : mutation.fields);
+    const fields = canonicalNameFields(normalizeNfc(mutation.fields === undefined ? {} : mutation.fields));
     this.assertBasis(fields);
     const status = mutation.status ?? "active";
     return {
@@ -470,7 +471,7 @@ export class KnowledgeGraphRepo {
       fieldsJson: canonicalizeJson(fields),
       status,
       ownerRole: optionalStoredText(mutation.ownerRole),
-      contentHash: computeNodeContentHash({ kind: mutation.kind, title, text, fields }),
+      contentHash: prefixedContentHash({ kind: mutation.kind, title, text, fields }),
       changeClass: "created",
     };
   }
@@ -488,9 +489,9 @@ export class KnowledgeGraphRepo {
   ): PlannedNode {
     const title = normalizeNfc(next.title);
     const text = normalizeNfc(next.text);
-    const fields = normalizeNfc(next.fields);
+    const fields = canonicalNameFields(normalizeNfc(next.fields));
     this.assertBasis(fields);
-    const contentHash = computeNodeContentHash({ kind: current.kind, title, text, fields });
+    const contentHash = prefixedContentHash({ kind: current.kind, title, text, fields });
     const ownerRole = next.ownerRole === null ? null : normalizeNfc(next.ownerRole);
     const sameContent = contentHash === current.contentHash && next.status === current.status;
     return {
@@ -960,6 +961,43 @@ function compareText(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
+}
+
+function prefixedContentHash(node: {
+  readonly kind: string;
+  readonly title: string;
+  readonly text: string;
+  readonly fields?: unknown;
+}): string {
+  return toPrefixedSha256(computeNodeContentHash(node));
+}
+
+function canonicalNameFields(fields: unknown): unknown {
+  if (!isJsonObject(fields) || !Object.prototype.hasOwnProperty.call(fields, "names")) return fields;
+  const names = fields.names;
+  if (!Array.isArray(names)) {
+    throw new InvalidProposalError("fields.names must be an array of {kind, value} objects");
+  }
+  return { ...fields, names: names.map((entry, index) => normalizeNameEntry(entry, index)) };
+}
+
+function normalizeNameEntry(entry: unknown, index: number): Record<string, unknown> {
+  const label = `fields.names[${String(index)}]`;
+  if (typeof entry === "string" || !isJsonObject(entry)) {
+    throw new InvalidProposalError(`${label} must be an object {kind, value}`);
+  }
+  const kind = entry.kind;
+  const value = entry.value;
+  if (typeof kind !== "string" || kind.length === 0 || typeof value !== "string" || value.length === 0) {
+    throw new InvalidProposalError(`${label} must include non-empty string kind and value`);
+  }
+  const stored: Record<string, unknown> = { kind, value };
+  for (const key of Object.keys(entry)) {
+    if (key === "kind" || key === "value") continue;
+    const extra = entry[key];
+    if (extra !== undefined) stored[key] = extra;
+  }
+  return stored;
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

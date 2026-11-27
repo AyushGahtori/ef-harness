@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
-import { splitSearchText } from "./canonical.js";
+import { registerEfSearchText } from "../driver/search-text.js";
 
 export type SqlValue = SQLInputValue;
 export type SqlRow = Record<string, SQLInputValue | undefined>;
@@ -67,7 +67,7 @@ export function openStateConnection(options: OpenStateConnectionOptions = {}): S
   const db = new DatabaseSync(location);
   db.exec("PRAGMA foreign_keys = ON");
   db.exec("PRAGMA busy_timeout = 5000");
-  db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));
+  registerEfSearchText(db);
   const connection = new NodeSqliteConnection(db);
   if (options.initialize !== false) {
     const schemaPath = options.schemaPath ?? canonicalAssetAbsolute("stateSql");

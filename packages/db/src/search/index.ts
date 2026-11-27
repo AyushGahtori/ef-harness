@@ -1,4 +1,4 @@
-export { asSqliteConnection } from "./connection.js";
+export { asSqliteConnection, searchConnectionFromDriver } from "./connection.js";
 export {
   canonicalizeJson,
   computeResultSetHash,
@@ -18,6 +18,7 @@ export {
   SEARCH_READ_CAP,
 } from "./filters.js";
 export { extractIdentNeedles, extractSearchTokens, sanitizeFtsQuery } from "./sanitize.js";
+export { bindKnowledgeSearch } from "./project-bind.js";
 export { KnowledgeSearchService } from "./service.js";
 export type {
   KnowledgeSearchOptions,

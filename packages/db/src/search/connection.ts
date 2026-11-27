@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection as DriverConnection } from "../driver/types.js";
 import type { SqliteConnection, SqliteStatement, SqlValue } from "./types.js";
 
 /**
@@ -32,6 +33,43 @@ export function asSqliteConnection(db: DatabaseSync): SqliteConnection {
       };
     },
   };
+}
+
+/** Adapt the shared `ProjectStateDb` writer to the search connection shape. */
+export function searchConnectionFromDriver(connection: DriverConnection): SqliteConnection {
+  return {
+    exec(sql: string): void {
+      connection.exec(sql);
+    },
+    prepare(sql: string): SqliteStatement {
+      const statement = connection.prepare(sql);
+      return {
+        all(params?: Readonly<Record<string, SqlValue>>) {
+          const rows = params === undefined ? statement.all() : statement.all({ ...params });
+          return rows.map(asRecord);
+        },
+        get(params?: Readonly<Record<string, SqlValue>>) {
+          const row = params === undefined ? statement.get() : statement.get({ ...params });
+          if (row === undefined || row === null) return undefined;
+          return asRecord(row);
+        },
+        run(params?: Readonly<Record<string, SqlValue>>) {
+          const result = params === undefined ? statement.run() : statement.run({ ...params });
+          return {
+            changes: result.changes,
+            lastInsertRowid: result.lastInsertRowid,
+          };
+        },
+      };
+    },
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("SQLite row was not an object");
+  }
+  return { ...value };
 }
 
 function normalizeInteger(value: number | bigint): number {
