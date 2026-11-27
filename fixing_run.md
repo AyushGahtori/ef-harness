@@ -569,3 +569,34 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
 - Windows-host checks still skipped on this Linux VM (assertions kept): `tests/harness-run/engine.test.ts` detached-grandchild kill and `vite.cmd` dev-server timeout (`it.skipIf` not win32; win32 still uses `NestedCommandJobManager`); `tests/job-objects/windows-job-manager.test.ts` (10 tests, pre-existing `describe` skip off win32); `tests/tier-c-d-selector/tier-c-live.test.ts` (pre-existing `skipIf` not win32). `tests/doc-fetcher/renderer.test.ts` is skipped because Chromium is not installed. Live MXC `osBuild` `/^\d+\.\d+$/` stays inside the win32 branch; Linux expects `reason: "not_windows"`. Tier B `lpDesktop` `EFHarnessSandboxWinSta\EFHarnessSandboxDesktop` stays inside the win32 branch; Linux expects `null`.
+
+## [C18] — Lockfile resolve, honest tier, and MCP kernel binds
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `fc94482468252f5a5129061a2c6788dc5977e8db` (`integrate: C18 wire lockfile resolve and mcp kernel`)
+- **Findings Fixed:** `F-018` (remainder: default job host, honest tier when no isolation selector is injected, db artifact ports), `F-020` (lockfile resolution), `F-021` (`task-048.patch`, git runner, kernel deps), `F-039` (kb aliases), `F-049` (private read-set DDL removed; `harness.read_result` stays on the injected artifact port). Did not add `@ef-harness/db` to sandbox. Did not add `@ef-harness/test-env` to mcp-server. Did not edit `research-engine` or `runtime-adapters`. Did not start C19. Did not merge `main`. Did not open a pull request.
+
+### What Changed
+- Re-verified on `19346259de6b56d67b5a89177437546373b1278a`. `git apply --stat` and `git apply --check` for `dirty_worktree_patches/task-048.patch` exited `0` (clean: `packages/mcp-server/src/scope.ts`, `server.ts`, `tools.ts`). Applied only that patch. Did not re-apply `task-008`/`009`/`011` or later worker-loop patches. `createJob` stays inside the warm-slot `try`/`finally`.
+- Default command host is `PosixCommandJobManager` on every platform. `NestedCommandJobManager` is no longer the default. The two win32-only harness-run tests inject it explicitly. When no `SandboxTierSelector` is injected, `HarnessRunEngine` reports `UNSANDBOXED` instead of `C`. A resolved isolation tier is still reported as returned. No proxy client was defaulted to `http://127.0.0.1:9`. `path_leases.mode` stays `'intent' | 'granted'`. No Windows Job Object, DPAPI, named-pipe, or NSIS stubs.
+- `KernelPackageInstaller.addApprovedDependency` and `applyReconciledIntents` update `package.json`, run `packageResolveCommand` (`pnpm install --lockfile-only --ignore-scripts`, `npm install --package-lock-only --ignore-scripts`, or `yarn install --mode update-lockfile --ignore-scripts`), then `installBody` (`--frozen-lockfile` with the lockfile hash check). The hand-spliced `packages:` / npm / yarn lockfile text is gone.
+- `packages/mcp-server` depends on `@ef-harness/db`, `@ef-harness/sandbox`, and `@ef-harness/git-engine`. `createKernelAttemptMcpDeps` binds `KnowledgeGraphRepo` / `KnowledgeSearchService`, a db-backed command artifact port and `harness.read_result` port, `HarnessRunEngine`, and `GitRunner.execGit` (no `gitBinary`, so the C14 PATH fallback runs). Snapshot `add` / `commit` pass `developerCheckout: false`. Existing tool names stay. `kb.get_node` aliases `kb.get`, `kb.get_contract` aliases `kb.contract`, and `kb.list_rules` aliases the planner name `kb.list_rules_for_tags`. Private `READ_SET_DDL` is deleted. `openReadSetDatabase` applies `schema/state.sql`. The scratch opener leaves foreign keys off because `ProjectStateDb` is the coordinator that enforces them; the kernel store writes the schema tables through that writer.
+
+### What It Fixed
+- **F-018:** Commands no longer default to the developer-token Windows job host, and a missing isolation selector is stamped `UNSANDBOXED`. Warm-slot release on `createJob` failure is unchanged. Kernel command artifacts and `harness.read_result` can use `@ef-harness/db` without sandbox importing that package.
+- **F-020:** Approved dependency adds resolve the lockfile with ignore-scripts before the frozen install. The frozen step no longer runs against a hand-spliced lockfile.
+- **F-021:** `**/` zero-segment globs, `core.quotepath=false`, pull-quota charges of `0`, and the first `shutdownReason` are on `harness/integration`. Git scope checks go through `GitRunner.execGit`.
+- **F-039:** Planner tool names `kb.get_node`, `kb.get_contract`, and `kb.list_rules` / `kb.list_rules_for_tags` reach the live MCP handlers. Existing `kb.get` and `kb.contract` names stay.
+- **F-049:** MCP read-set persistence uses `schema/state.sql` `read_sets`, `search_reads`, and `edge_read_sets` instead of a private DDL. `harness.read_result` still reads the injected artifact port.
+
+### Verification Run & Results
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-048.patch`: exit `0` (3 files, `scope.ts` / `server.ts` / `tools.ts`)
+- `git apply --check` on that patch: exit `0` (clean on `19346259de6b56d67b5a89177437546373b1278a`)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0` (re-run after the final read-set opener edit; same `tsc -b`)
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/sandbox test`: exit `0` — `Test Files 30 passed | 2 skipped (32)`, `Tests 169 passed | 14 skipped (183)`
+- `pnpm --filter @ef-harness/mcp-server test`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Windows-host checks still skipped on this Linux VM (assertions kept). The two `it.skipIf(process.platform !== "win32")` harness-run tests inject `NestedCommandJobManager`; the engine default does not.
