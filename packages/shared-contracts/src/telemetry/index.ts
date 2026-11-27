@@ -21,6 +21,7 @@ export {
   resetSharedSecretRedactor,
   scanForSecrets,
   SecretRedactor,
+  SecretRedactor as PacketSecurityRedactor,
   StreamingRedactor,
 } from "./redactor.js";
 export {

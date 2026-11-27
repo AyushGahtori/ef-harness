@@ -1,24 +1,16 @@
+import {
+  getSharedSecretRedactor,
+  type LogLevel as TelemetryLogLevel,
+} from "@ef-harness/shared-contracts";
+
 export const packageName = "@ef-harness/shared-observability" as const;
 export const layer = 0 as const;
 
-const SECRET_PARTS: readonly (readonly string[])[] = [
-  ["sk", "_live_"],
-  ["sk-ant", "-"],
-  ["sk-proj", "-"],
-  ["ghp", "_"],
-  ["AK", "IA"],
-  ["BEGIN ", "PRIVATE KEY"],
-];
-
 export function redactSecrets(value: string): string {
-  let redacted = value;
-  for (const parts of SECRET_PARTS) {
-    redacted = redacted.split(parts.join("")).join("[redacted]");
-  }
-  return redacted;
+  return getSharedSecretRedactor().redact(value);
 }
 
-export type LogLevel = "debug" | "info" | "warn" | "error";
+export type LogLevel = TelemetryLogLevel;
 
 export function formatLog(
   level: LogLevel,
@@ -49,3 +41,59 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export {
+  DEFAULT_LOG_MAX_BYTES,
+  DEFAULT_LOG_PREFIX,
+  DEFAULT_LOG_RETENTION_DAYS,
+  DEFAULT_RING_CAPACITY,
+  DEFAULT_STREAM_OVERLAP,
+  LocalTracer,
+  MIN_REGISTERED_SECRET_LENGTH,
+  MachineKeyError,
+  PacketSecurityRedactor,
+  RotatingJsonlSink,
+  SECRET_LABEL,
+  SecretRedactor,
+  StreamingRedactor,
+  StructuredLogger,
+  UNSET_SPAN_ID,
+  UNSET_TRACE_ID,
+  clearMachineKeyCache,
+  computeSecretHmac,
+  createHarnessTelemetry,
+  defaultHarnessHome,
+  defaultLogDirectory,
+  defaultTraceDirectory,
+  getSharedSecretRedactor,
+  loadOrCreateMachineKey,
+  machineKeyPath,
+  normalizeRedactionLabel,
+  redactionPlaceholder,
+  resetSharedSecretRedactor,
+  scanForSecrets,
+} from "@ef-harness/shared-contracts";
+export type {
+  AttemptSpanInput,
+  CompletedSpan,
+  DiskWarning,
+  HarnessTelemetry,
+  HarnessTelemetryOptions,
+  LocalTracerOptions,
+  LogContext,
+  LogRecord,
+  LogSink,
+  ModelCallSpanInput,
+  RotatingJsonlSinkOptions,
+  SecretFinding,
+  SecretHmacOptions,
+  SpanEvent,
+  SpanHandle,
+  SpanKind,
+  SpanSnapshot,
+  SpanStatus,
+  StartSpanOptions,
+  StructuredLoggerOptions,
+  TraceContext,
+  TraceContextSource,
+} from "@ef-harness/shared-contracts";

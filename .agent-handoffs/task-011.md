@@ -112,7 +112,7 @@ None. `redactions.secret_fingerprint` stays an HMAC-SHA256 hex digest of the sec
 
 Ran from `C:\Users\Ayush\Desktop\ef-wt\task-011-logger-tracer-redactor`:
 
-- `pnpm --filter @ef-harness/shared-contracts test -- telemetry` — pass, 7 files, 40 tests. Covers exact, Base64, Base64URL, URL-encoded, nested URL-encoded Base64, JSON-escaped, header, Error stack/cause, short-string, split-chunk, overlap, PEM, provider-token, `scanForSecrets` offsets, false-positive code, HMAC, size/day rotation, 14-day prune with the open file skipped, EPERM/EBUSY rename, ENOSPC stderr fallback, buffered flush, `beforeExit` flush, parent/child span trees, monotonic duration across a backward wall clock, ring buffer, model-call linkage, and the canary zero-leak property.
+- `pnpm --filter @ef-harness/shared-contracts test -- telemetry` — pass, 7 files, 42 tests (plus split-key and split-UTF-8 regression tests added). Covers exact, Base64, Base64URL, URL-encoded, nested URL-encoded Base64, JSON-escaped, header, Error stack/cause, short-string, split-chunk, variable-length split-chunk, split-UTF-8, overlap, PEM, provider-token, `scanForSecrets` offsets, false-positive code, HMAC, size/day rotation, 14-day prune with the open file skipped, EPERM/EBUSY rename, ENOSPC stderr fallback, buffered flush, `beforeExit` flush, parent/child span trees, monotonic duration across a backward wall clock, ring buffer, model-call linkage, and the canary zero-leak property.
 - `pnpm --filter @ef-harness/shared-contracts typecheck` — pass (`tsc -b --pretty false`).
 - `pnpm --filter @ef-harness/shared-contracts lint` — pass (`eslint .`).
 - `node scripts/verify-harmony.mjs --task 011` — pass (`harmony ok for Task-011`). This also re-ran repository typecheck, lint, and the full test suite.

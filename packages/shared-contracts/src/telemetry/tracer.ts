@@ -141,7 +141,7 @@ export class LocalTracer implements TraceContextSource {
     this.redactor = options.redactor ?? getSharedSecretRedactor();
     this.monotonicClock = options.monotonicNow ?? (() => performance.now());
     this.wallClock = options.wallNow ?? (() => Date.now());
-    this.idFactory = options.idFactory ?? ((bytes) => randomBytes(bytes).toString("hex"));
+    this.idFactory = options.idFactory ?? createPooledIdFactory();
     const requested = options.ringCapacity;
     this.ringCapacity =
       requested === undefined ? DEFAULT_RING_CAPACITY : Math.max(0, Math.floor(requested));
@@ -339,6 +339,23 @@ export class LocalTracer implements TraceContextSource {
     }
     return spans;
   }
+}
+
+function createPooledIdFactory(): (bytes: number) => string {
+  const POOL_SIZE = 4096;
+  let pool = randomBytes(POOL_SIZE);
+  let offset = 0;
+  return (bytes: number): string => {
+    if (bytes <= 0) return "";
+    if (bytes > POOL_SIZE) return randomBytes(bytes).toString("hex");
+    if (offset + bytes > POOL_SIZE) {
+      pool = randomBytes(POOL_SIZE);
+      offset = 0;
+    }
+    const slice = pool.subarray(offset, offset + bytes);
+    offset += bytes;
+    return slice.toString("hex");
+  };
 }
 
 function definedKind(kind: SpanKind, attributes?: Record<string, unknown>): StartSpanOptions {

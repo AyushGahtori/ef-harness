@@ -217,6 +217,58 @@ describe("SecretRedactor", () => {
     expect(buffered).toContain("[REDACTED:CANARY]");
   });
 
+  it("forgets an existing label when re-registered with a short value", () => {
+    const redactor = new SecretRedactor();
+    const longValue = "longRegisteredSecret123";
+    redactor.register("ROTATED", longValue);
+    expect(redactor.redact(`val=${longValue}`)).toBe("val=[REDACTED:ROTATED]");
+    redactor.register("ROTATED", "short");
+    expect(redactor.redact(`val=${longValue} short`)).toBe(`val=${longValue} short`);
+    expect(redactor.forget("ROTATED")).toBe(false);
+  });
+
+  it("does not leak the tail of a variable-length builtin key split across chunks", () => {
+    const redactor = new SecretRedactor();
+    const stripe = `${prefixes.stripeLive}${repeatAlphabet(32)}`;
+    const chunk1 = `${"a".repeat(100)} ${stripe.slice(0, 24)}`;
+    const chunk2 = `${stripe.slice(24)} tail`;
+    const stream = redactor.openStream({ overlap: 16 });
+    const output = stream.push(chunk1) + stream.push(chunk2) + stream.flush();
+    expect(output).not.toContain(stripe);
+    expect(output).not.toContain(stripe.slice(24));
+    expect(output).toContain(`[REDACTED:${SECRET_LABEL.stripeLive}]`);
+    expect(output).toContain(" tail");
+  });
+
+  it("redacts stripe live tokens split at every byte offset with zero leaked tail bytes", () => {
+    const redactor = new SecretRedactor();
+    const token = `${prefixes.stripeLive}1234567890abcdef`;
+    const payload = `head ${token} tail`;
+    const bytes = Buffer.from(payload, "utf8");
+    for (let split = 1; split < bytes.length; split += 1) {
+      const stream = redactor.openStream({ overlap: 16 });
+      const output =
+        stream.push(bytes.subarray(0, split)) +
+        stream.push(bytes.subarray(split)) +
+        stream.flush();
+      expect(output).toBe(`head [REDACTED:${SECRET_LABEL.stripeLive}] tail`);
+    }
+  });
+
+  it("decodes multi-byte UTF-8 split across Uint8Array chunks without corruption", () => {
+    const redactor = new SecretRedactor();
+    const secret = "caféSecretValue123";
+    redactor.register("UTF8_KEY", secret);
+    const bytes = Buffer.from(`prefix ${secret} suffix`, "utf8");
+    const splitAt = bytes.indexOf(0xc3) + 1;
+    const stream = redactor.openStream({ overlap: 8 });
+    const output =
+      stream.push(bytes.subarray(0, splitAt)) +
+      stream.push(bytes.subarray(splitAt)) +
+      stream.flush();
+    expect(output).toBe("prefix [REDACTED:UTF8_KEY] suffix");
+  });
+
   it("keeps a secret fragment that straddles a large chunk inside the overlap window", () => {
     const redactor = new SecretRedactor();
     const secret = `canary${repeatAlphabet(34)}`;

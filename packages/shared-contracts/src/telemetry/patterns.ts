@@ -206,6 +206,106 @@ export function findBuiltinSecretSpans(text: string): SecretSpan[] {
   return spans;
 }
 
+const PARTIAL_PREFIX_MARKERS: readonly { prefix: string; boundary: boolean }[] = [
+  { prefix: STRIPE_LIVE, boundary: true },
+  { prefix: STRIPE_TEST, boundary: true },
+  { prefix: ANTHROPIC, boundary: true },
+  { prefix: OPENAI_PROJECT, boundary: true },
+  { prefix: OPENROUTER, boundary: true },
+  { prefix: GITHUB, boundary: true },
+  { prefix: GITHUB_OAUTH, boundary: true },
+  { prefix: GITHUB_FINE, boundary: true },
+  { prefix: AWS, boundary: true },
+  { prefix: "AIza", boundary: true },
+  { prefix: "Bearer ", boundary: true },
+  { prefix: "bearer ", boundary: true },
+  { prefix: `-----${BEGIN}`, boundary: false },
+];
+
+const PARTIAL_TOKEN_TAIL = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    `${escapeRegExp(STRIPE_LIVE)}[A-Za-z0-9]*`,
+    `${escapeRegExp(STRIPE_TEST)}[A-Za-z0-9]*`,
+    `${escapeRegExp(ANTHROPIC)}[A-Za-z0-9_-]*`,
+    `${escapeRegExp(OPENAI_PROJECT)}[A-Za-z0-9_-]*`,
+    `${escapeRegExp(OPENROUTER)}[A-Za-z0-9]*`,
+    `${escapeRegExp(GITHUB)}[A-Za-z0-9]*`,
+    `${escapeRegExp(GITHUB_OAUTH)}[A-Za-z0-9]*`,
+    `${escapeRegExp(GITHUB_FINE)}[A-Za-z0-9_]*`,
+    `${escapeRegExp(AWS)}[0-9A-Z]*`,
+    `AIza[0-9A-Za-z_-]*`,
+    `Bearer\\s+[A-Za-z0-9_.-]*`,
+  ].join("|")})$`,
+  "i",
+);
+
+const PARTIAL_URL_AUTH_TAIL = /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]*$/i;
+const PARTIAL_QUOTED_ASSIGN_TAIL = new RegExp(
+  `(?:["'])?(?:${ASSIGNMENT_KEY})(?:["'])?\\s*${ASSIGNMENT_OPERATOR}\\s*(["'])[^"'\\r\\n]*$`,
+  "i",
+);
+const PARTIAL_UNQUOTED_ASSIGN_TAIL = new RegExp(
+  `(?:["'])?(?:${ASSIGNMENT_KEY})(?:["'])?\\s*${ASSIGNMENT_OPERATOR}\\s*[^\\s"'\\\\\`;,)}\\]]+$`,
+  "i",
+);
+const PARTIAL_PEM_HEADER_TAIL = new RegExp(`-----${BEGIN}${PEM_KIND}(?:\\s+(?:P(?:R(?:I(?:V(?:A(?:T(?:E(?:\\s+K(?:E(?:Y)?)?)?)?)?)?)?)?)?)?)?(?:-*)?$`);
+const MAX_PARTIAL_LOOKBACK = 2048;
+
+/**
+ * Returns the earliest offset in `text` where an incomplete built-in secret
+ * or prefix marker starts and extends to the end of `text`, so streaming
+ * overlap slicing never splits a token before its minimum length is reached.
+ */
+export function findBuiltinPartialStart(text: string): number | undefined {
+  if (text.length === 0) return undefined;
+  let earliest: number | undefined;
+  const record = (index: number) => {
+    if (earliest === undefined || index < earliest) earliest = index;
+  };
+
+  const pemLookbackStart = Math.max(0, text.length - 65536);
+  const pemTail = text.slice(pemLookbackStart);
+  const pemIndex = pemTail.lastIndexOf(`-----${BEGIN}`);
+  if (pemIndex >= 0) {
+    const pemCandidate = pemTail.slice(pemIndex);
+    if (!new RegExp(PEM_FOOTER).test(pemCandidate)) {
+      record(pemLookbackStart + pemIndex);
+    }
+  }
+
+  const lookbackStart = Math.max(0, text.length - MAX_PARTIAL_LOOKBACK);
+  const tail = text.slice(lookbackStart);
+
+  for (const regex of [
+    PARTIAL_TOKEN_TAIL,
+    PARTIAL_URL_AUTH_TAIL,
+    PARTIAL_QUOTED_ASSIGN_TAIL,
+    PARTIAL_UNQUOTED_ASSIGN_TAIL,
+    PARTIAL_PEM_HEADER_TAIL,
+  ]) {
+    const match = regex.exec(tail);
+    if (match && match.index !== undefined) {
+      record(lookbackStart + match.index);
+    }
+  }
+
+  for (const { prefix, boundary } of PARTIAL_PREFIX_MARKERS) {
+    const maxLen = Math.min(prefix.length - 1, tail.length);
+    for (let len = maxLen; len >= 1; len -= 1) {
+      if (!tail.endsWith(prefix.slice(0, len))) continue;
+      const startInTail = tail.length - len;
+      const globalStart = lookbackStart + startInTail;
+      if (boundary && globalStart > 0 && /[A-Za-z0-9]/.test(text[globalStart - 1] ?? "")) {
+        continue;
+      }
+      record(globalStart);
+      break;
+    }
+  }
+
+  return earliest;
+}
+
 export function mayContainBuiltinSecret(text: string): boolean {
   if (
     text.includes("sk") ||

@@ -632,6 +632,10 @@ importers:
         version: 5.1.1(@types/node@24.19.2)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   packages/shared-observability:
+    dependencies:
+      '@ef-harness/shared-contracts':
+        specifier: workspace:*
+        version: link:../shared-contracts
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

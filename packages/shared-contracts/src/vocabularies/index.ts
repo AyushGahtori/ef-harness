@@ -2,12 +2,15 @@ export { assertNever } from "./assert-never.js";
 export {
   CRITERION_STATUSES,
   CriterionStatusSchema,
+  DECISION_BASES,
+  DecisionBasisSchema,
   isCriterionStatus,
+  isDecisionBasis,
   isSettledBasis,
   SETTLED_BASES,
   SettledBasisSchema,
 } from "./basis-status.js";
-export type { CriterionStatus, SettledBasis } from "./basis-status.js";
+export type { CriterionStatus, DecisionBasis, SettledBasis } from "./basis-status.js";
 export {
   CURRENCY_UNITS,
   CurrencyCodeSchema,
@@ -106,3 +109,40 @@ export type {
 } from "./stages.js";
 export { isTouchesTag, TOUCHES_TAG_GROUPS, TOUCHES_TAGS, TouchesTagSchema } from "./touches.js";
 export type { TouchesTag, TouchesTagGroupName } from "./touches.js";
+export {
+  CREW_PRESETS,
+  CrewPresetSchema,
+  GOVERNOR_PRESSURES,
+  GovernorPressureSchema,
+  isCrewPreset,
+  isGovernorPressure,
+  isNodeStatus,
+  isPressureLevel,
+  isProjectKind,
+  isTaskHoldReason,
+  isUiProjectKind,
+  isWorkerTier,
+  NODE_STATUSES,
+  NodeStatusSchema,
+  normalizeCrewPreset,
+  normalizeProjectKind,
+  normalizeWorkerTier,
+  PRESSURE_LEVELS,
+  PressureLevelSchema,
+  PROJECT_KINDS,
+  ProjectKindSchema,
+  TASK_HOLD_REASONS,
+  TaskHoldReasonSchema,
+  UI_PROJECT_KINDS,
+  WORKER_TIERS,
+  WorkerTierSchema,
+} from "./runtime.js";
+export type {
+  CrewPreset,
+  GovernorPressure,
+  NodeStatus,
+  PressureLevel,
+  ProjectKind,
+  TaskHoldReason,
+  WorkerTier,
+} from "./runtime.js";

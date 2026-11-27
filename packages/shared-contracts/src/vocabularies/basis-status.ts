@@ -31,3 +31,8 @@ export const CriterionStatusSchema = z.enum(CRITERION_STATUSES);
 
 export const isSettledBasis = isOneOf(SETTLED_BASES);
 export const isCriterionStatus = isOneOf(CRITERION_STATUSES);
+
+export const DECISION_BASES = SETTLED_BASES;
+export type DecisionBasis = SettledBasis;
+export const DecisionBasisSchema = SettledBasisSchema;
+export const isDecisionBasis = isSettledBasis;

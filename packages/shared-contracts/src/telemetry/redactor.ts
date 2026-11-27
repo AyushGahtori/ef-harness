@@ -1,5 +1,10 @@
 import { Buffer } from "node:buffer";
-import { findBuiltinSecretSpans, mayContainBuiltinSecret } from "./patterns.js";
+import { StringDecoder } from "node:string_decoder";
+import {
+  findBuiltinPartialStart,
+  findBuiltinSecretSpans,
+  mayContainBuiltinSecret,
+} from "./patterns.js";
 import { sanitizeForLog, sensitiveHeaderLabel } from "./sanitize.js";
 import type { SecretFinding } from "./types.js";
 
@@ -40,6 +45,10 @@ export class SecretRedactor {
   register(label: string, value: string): void {
     if (typeof value !== "string" || value.length === 0) return;
     const normalized = normalizeRedactionLabel(label);
+    if (value.length < MIN_REGISTERED_SECRET_LENGTH) {
+      this.forget(normalized);
+      return;
+    }
     const entry = createVaultEntry(normalized, value);
     const existing = this.vault.findIndex((item) => item.label === normalized);
     if (existing >= 0) this.vault[existing] = entry;
@@ -106,6 +115,28 @@ export class SecretRedactor {
     return new StreamingRedactor(this, overlap);
   }
 
+  collectHits(text: string): Hit[] {
+    return this.collect(text);
+  }
+
+  findPartialStart(text: string, fromIndex = 0): number | undefined {
+    const tail = fromIndex > 0 ? text.slice(fromIndex) : text;
+    if (tail.length === 0) return undefined;
+    let earliest = findBuiltinPartialStart(tail);
+    for (const entry of this.vault) {
+      for (const variant of entry.variants) {
+        const maxLen = Math.min(variant.length - 1, tail.length);
+        for (let len = maxLen; len >= 1; len -= 1) {
+          if (!tail.endsWith(variant.slice(0, len))) continue;
+          const start = tail.length - len;
+          if (earliest === undefined || start < earliest) earliest = start;
+          break;
+        }
+      }
+    }
+    return earliest === undefined ? undefined : fromIndex + earliest;
+  }
+
   private collect(text: string): Hit[] {
     const hits: Hit[] = [];
     if (mayContainBuiltinSecret(text)) {
@@ -152,6 +183,7 @@ export function scanForSecrets(text: string, redactor?: SecretRedactor): SecretF
 
 export class StreamingRedactor {
   private pending = "";
+  private readonly decoder = new StringDecoder("utf8");
 
   constructor(
     private readonly redactor: SecretRedactor,
@@ -163,32 +195,59 @@ export class StreamingRedactor {
   }
 
   push(chunk: string | Uint8Array): string {
-    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    const text = typeof chunk === "string" ? chunk : this.decoder.write(Buffer.from(chunk));
     const combined = this.pending + text;
-    const redacted = this.redactor.redact(combined);
-    if (redacted.length <= this.overlap) {
-      this.pending = redacted;
+    if (combined.length <= this.overlap) {
+      this.pending = combined;
       return "";
     }
-    const cut = avoidPlaceholderSplit(redacted, redacted.length - this.overlap);
-    this.pending = redacted.slice(cut);
-    return redacted.slice(0, cut);
+    const hits = this.redactor.collectHits(combined);
+    let cut = combined.length - this.overlap;
+    const lastHitEnd = hits.length > 0 ? (hits[hits.length - 1]?.end ?? 0) : 0;
+    const partialStart = this.redactor.findPartialStart(combined, lastHitEnd);
+    if (partialStart !== undefined && partialStart < cut) {
+      cut = partialStart;
+    }
+    for (const hit of hits) {
+      if (hit.start < cut && hit.end > cut) {
+        if (hit.start > 0) {
+          cut = hit.start;
+        } else if (hit.end < combined.length) {
+          cut = hit.end;
+        } else {
+          this.pending = combined;
+          return "";
+        }
+        break;
+      }
+    }
+    if (cut <= 0) {
+      this.pending = combined;
+      return "";
+    }
+    this.pending = combined.slice(cut);
+    return renderRedactedPrefix(combined, cut, hits);
   }
 
   flush(): string {
-    const rest = this.redactor.redact(this.pending);
+    const tail = this.decoder.end();
+    const combined = this.pending + tail;
     this.pending = "";
-    return rest;
+    return this.redactor.redact(combined);
   }
 }
 
-function avoidPlaceholderSplit(text: string, cut: number): number {
-  const windowStart = Math.max(0, cut - 80);
-  const marker = text.lastIndexOf("[REDACTED:", cut);
-  if (marker < windowStart) return cut;
-  const close = text.indexOf("]", marker);
-  if (close >= cut && close - marker < 80) return marker;
-  return cut;
+function renderRedactedPrefix(text: string, cut: number, hits: readonly Hit[]): string {
+  let output = "";
+  let cursor = 0;
+  for (const hit of hits) {
+    if (hit.end > cut) break;
+    output += text.slice(cursor, hit.start);
+    output += `[REDACTED:${hit.label}]`;
+    cursor = hit.end;
+  }
+  output += text.slice(cursor, cut);
+  return output;
 }
 
 function createVaultEntry(label: string, value: string): VaultEntry {
