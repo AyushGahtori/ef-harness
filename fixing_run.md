@@ -1243,3 +1243,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1` pre-commit `verify-harmony.mjs`: exit `0` — `harmony ok`
 - Stopped before C37.
+
+## [C37] — master plan, sealed oracles, and graph compiler on ProjectStateDb
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `3c1f29053ca65f29efb11aa6760c995dcef29fbe` (`integrate: C37 wire master plan, sealed oracles, and graph compiler`)
+- **Branches merged:** `origin/task/090-master-planner-wave-budgets` (`b6b1e95826a62b3215216bee765cfa337df35c51`) as `46e73932317687f996119ecacb1dd1cadb3a28e7`, then `origin/task/091-feature-planner-sealed-oracles` (`c779647d472773cdc087b300ba147ad687cae984`) as `42de073334d1b63560d20e9f17ea1808cb498a09`, then `origin/task/092-deterministic-graph-compiler` (`95d6eb504141a3ded030de27625536de4909565a`) as `6add0bfca4f1137f41c45d7ced898bd6946033a4`, all `git merge --no-ff`. No dirty-worktree patch was assigned. Did not reapply `task-079.patch`. Did not merge `task/162` or `task/164`. Did not edit `schema/**`. `path_leases.mode` stays `intent|granted`. No `doc_span` arm. Did not merge `main`. Did not open a pull request. Did not start C38.
+- **Findings Fixed:** `F-040` for canonical `ProjectKind` and `WorkerTier` on the three engines and barrel exports, `F-041` for deleting the private planner SQLite schemas and persisting features, tasks, `depends_on` edges, budgets, and sealed checks on `ProjectStateDb`, and the C37 slice of `F-080` (`listSealedForFeatures` on `HiddenCheckPoolStore`). `DeterministicGraphCompiler` gained `compileFeatureWave` and `validateDisjointWriteScopes`.
+
+### What Changed
+- Merged task 090, then 091, then 092 onto `b94ed45`. `MasterPlanStore`, `FeaturePlanDatabase`, and `HiddenCheckPoolStore` write through `@ef-harness/db` `ProjectStateDb`. Plan documents are `plan` nodes. Features, phase-0 tasks, and compiled tasks are `feature` / `task` nodes with `feature_runtime` / `task_runtime`. Dependencies are `depends_on` edges. Paperwork budgets are `wave_paperwork` rows parented to one project scope. Sealed check bodies are CAS files; the check node text stays empty and `visibility` is `held_back`.
+- `touches_entity` is stored as canonical `documents` plus `fields.touched_entities`, because `schema/state.sql` has no `touches_entity` edge type. `listEdges` still reports `touches_entity`.
+- `ProjectKind` normalizes through `@ef-harness/shared-contracts` (`headless_cli` to `cli_tool`, `api` to `api_service`). Brownfield is a flag, not a kind. Phase 0 levels use `WorkerTier`. Feature planning and oracle authoring `complete()` return `Promise`. `MasterPlanOrchestrator.planFromModel` awaits the master-planner model port.
+- `compileFeatureWave` refuses a feature with no sealed checks and a slicer `MustBandOversizeRefusal`. The traceability gate evaluates the named queries from `schema/queries.sql` with the same coverage rules as `schema/state.sql` views, without a per-compile database, so the 500-task compile stays inside 100 ms.
+
+### What It Fixed
+- **F-040:** The three engines share the canonical project kind and worker tier, export from `@ef-harness/planner`, and call models through async ports.
+- **F-041:** Private `CREATE TABLE` schemas in 090, 091, and 092 are gone. Planning and compilation persist on the shared `ProjectStateDb` writer. Budget children are not a second `project` scope.
+- **F-080:** `HiddenCheckPoolStore.listSealedForFeatures` returns every sealed check for the named features, for the later portability exporter.
+
+### Verification Run & Results
+- No dirty-worktree patch was assigned to C37. `task-079.patch` was not applied again.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm exec vitest run --config vitest.config.ts` in `packages/planner`: exit `0` — `Test Files 43 passed (43)`, `Tests 211 passed (211)` (`0` skipped). The previous 30 files / 151 tests still pass inside this run.
+- `pnpm --filter @ef-harness/intake exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 18 passed (18)`, `Tests 73 passed (73)` (`0` skipped)
+- `pnpm --filter @ef-harness/mcp-server exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 17 passed (17)` (`0` skipped)
+- `pnpm --filter @ef-harness/research-engine exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 7 passed (7)`, `Tests 19 passed (19)` (`0` skipped)
+- `pnpm --filter @ef-harness/spec-expansion exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped). The 5 ms catalog budget was not changed.
+- `pnpm --filter @ef-harness/discovery exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus exec vitest run --config vitest.config.ts`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1` pre-commit `verify-harmony.mjs`: exit `0` — `harmony ok`
+- Stopped before C38.
