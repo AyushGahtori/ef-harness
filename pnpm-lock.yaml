@@ -471,6 +471,9 @@ importers:
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/test-env':
+        specifier: workspace:*
+        version: link:../test-env
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@3.25.76)

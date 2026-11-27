@@ -618,8 +618,8 @@ export class TestEnvOrchestrator {
   }
 
   private async listenerIsChild(port: number, pid: number): Promise<boolean> {
-    if (process.platform !== "win32") return true;
-    const listener = await listeningPid(port);
+    if (process.platform !== "win32" && process.platform !== "linux") return true;
+    const listener = await listeningPid(port, pid);
     return listener === pid;
   }
 
@@ -627,7 +627,7 @@ export class TestEnvOrchestrator {
     if (expectedPort === IGNORED_APP_PORT) return null;
     const open = await tcpConnectable(IGNORED_APP_PORT, "127.0.0.1", 80);
     if (!open) return null;
-    const listener = await listeningPid(IGNORED_APP_PORT);
+    const listener = await listeningPid(IGNORED_APP_PORT, pid);
     if (listener === pid) return IGNORED_APP_PORT;
     return null;
   }

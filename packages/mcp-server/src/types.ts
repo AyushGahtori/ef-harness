@@ -203,6 +203,7 @@ export interface SandboxedCommandResult {
   exitCode: number;
   summary: string;
   artifactId?: string;
+  env?: Readonly<Record<string, string>>;
 }
 
 /** Task 047 sandboxed command runner. */

@@ -22,6 +22,7 @@
     "@ef-harness/git-engine": "workspace:*",
     "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/test-env": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^3.25.0"
   },

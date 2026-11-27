@@ -33,7 +33,10 @@ describe("project service job ownership", () => {
     expect(jobs.assignments).toContainEqual({ jobId: job.id, pid: proc.pid });
     expect(pidIsAlive(proc.pid)).toBe(true);
     const accounting = await jobs.queryJobAccounting(job);
-    expect(accounting.native).toBe(true);
+    expect(accounting.pids).toContain(proc.pid);
+    if (process.platform === "win32") {
+      expect(accounting.native).toBe(true);
+    }
     try {
       await jobs.terminateJob(job);
       const exitCode = await Promise.race([

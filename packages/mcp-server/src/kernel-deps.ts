@@ -1,4 +1,7 @@
+import os from "node:os";
+import path from "node:path";
 import { HarnessRunEngine } from "@ef-harness/sandbox";
+import { AttemptIsolationHost, type AttemptIsolation } from "@ef-harness/test-env";
 import type { ArtifactManager as DbArtifactManager, CasBlobStore, KnowledgeGraphRepo, KnowledgeSearchService as DbKnowledgeSearch, ProjectStateDb } from "@ef-harness/db";
 import type { ArtifactKind, ArtifactRetention, CasRetention, NodeRecord } from "@ef-harness/db";
 import type { ArtifactManager as CommandArtifactPort, OsCommandSupervisor, SandboxTierSelector } from "@ef-harness/sandbox";
@@ -269,14 +272,18 @@ export function createKernelAttemptMcpDeps(input: KernelAttemptPorts): AttemptMc
     ...(input.isolation ? { isolation: input.isolation } : {}),
     ...(input.osJobs ? { osJobs: input.osJobs } : {}),
   });
+  const isolation = new AttemptIsolationHost({
+    projectId: input.projectId,
+    rootDir: path.join(os.tmpdir(), "ef-harness-attempt-isolation", input.projectId),
+  });
   const deps: AttemptMcpDependencies = {
     epoch: input.epoch,
     knowledge: bindKnowledgeService(input.graph, input.search),
     submissions: input.submissions,
     docs: input.docs,
-    runner: adaptRunner(engine, input.worktreePath),
+    runner: adaptRunner(engine, input.worktreePath, isolation),
     artifacts: bindReadResultArtifacts(input),
-    startService: input.startService,
+    startService: adaptStartService(input.startService, isolation),
     askOwner: input.askOwner,
     disputeTest: input.disputeTest,
     codeLookup: input.codeLookup,
@@ -295,9 +302,14 @@ export function createKernelAttemptMcpDeps(input: KernelAttemptPorts): AttemptMc
   return deps;
 }
 
-function adaptRunner(engine: HarnessRunEngine, worktreePath: string): McpHarnessRun {
+function adaptRunner(
+  engine: HarnessRunEngine,
+  worktreePath: string,
+  isolation: AttemptIsolationHost,
+): McpHarnessRun {
   return {
     async run(commandInput) {
+      const attempt = await isolation.ensure(commandInput.attemptId);
       const result = await engine.executeSandboxedCommand({
         attemptId: commandInput.attemptId,
         projectId: commandInput.projectId,
@@ -312,9 +324,28 @@ function adaptRunner(engine: HarnessRunEngine, worktreePath: string): McpHarness
         exitCode: result.exitCode,
         summary: result.summary,
         artifactId: result.artifactId,
+        env: attempt.vars,
       };
     },
   };
+}
+
+function adaptStartService(inner: StartService, isolation: AttemptIsolationHost): StartService {
+  return {
+    async startService(request) {
+      if (request.name === "oauth" || request.name === "stripe" || request.name === "sqlite") {
+        const attempt = await isolation.ensure(request.attemptId);
+        return { url: isolatedServiceUrl(request.name, attempt) };
+      }
+      return inner.startService(request);
+    },
+  };
+}
+
+function isolatedServiceUrl(name: "oauth" | "stripe" | "sqlite", attempt: AttemptIsolation): string {
+  if (name === "oauth") return attempt.oauthIssuer;
+  if (name === "stripe") return attempt.stripeApiBase;
+  return attempt.databaseUrl;
 }
 
 function projectReadSetSql(state: ProjectStateDb): ReadSetSql {

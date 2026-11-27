@@ -339,3 +339,14 @@ export type {
   TemplateHandle,
   TemplateManagerStats,
 } from "./synthetic-data/index.js";
+export {
+  AttemptIsolationHost,
+  adaptAuthPaymentProvider,
+  adaptTemplateDatabase,
+  registerAttemptMockProviders,
+} from "./attempt-services.js";
+export type {
+  AdaptedAuthProvider,
+  AttemptIsolation,
+  AttemptIsolationOptions,
+} from "./attempt-services.js";

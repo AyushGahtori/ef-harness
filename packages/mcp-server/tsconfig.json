@@ -19,6 +19,9 @@
       "path": "../sandbox"
     },
     {
+      "path": "../test-env"
+    },
+    {
       "path": "../shared-contracts"
     }
   ]

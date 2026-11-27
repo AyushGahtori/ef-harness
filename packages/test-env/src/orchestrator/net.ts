@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { promisify } from "node:util";
@@ -81,16 +82,87 @@ export function parseListeningPid(output: string, port: number): number | null {
   return null;
 }
 
-export async function listeningPid(port: number): Promise<number | null> {
-  if (process.platform !== "win32") return null;
+export async function listeningPid(port: number, hintPid?: number): Promise<number | null> {
+  if (process.platform === "win32") {
+    try {
+      const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"], {
+        windowsHide: true,
+        timeout: 2_000,
+      });
+      return parseListeningPid(stdout, port);
+    } catch (error) {
+      if (error instanceof Error) return null;
+      return null;
+    }
+  }
+  if (process.platform === "linux") return linuxListeningPid(port, hintPid);
+  return null;
+}
+
+function linuxListeningPid(port: number, hintPid?: number): number | null {
+  const inodes = linuxListenInodes(port);
+  if (inodes.size === 0) return null;
+  if (hintPid !== undefined && processOwnsSocket(hintPid, inodes)) return hintPid;
+  let entries: string[];
   try {
-    const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"], {
-      windowsHide: true,
-      timeout: 2_000,
-    });
-    return parseListeningPid(stdout, port);
+    entries = readdirSync("/proc");
   } catch (error) {
     if (error instanceof Error) return null;
     return null;
   }
+  for (const entry of entries) {
+    if (!/^[1-9]\d*$/.test(entry)) continue;
+    const pid = Number(entry);
+    if (hintPid !== undefined && pid === hintPid) continue;
+    if (processOwnsSocket(pid, inodes)) return pid;
+  }
+  return null;
+}
+
+function linuxListenInodes(port: number): Set<string> {
+  const inodes = new Set<string>();
+  const portHex = port.toString(16).toUpperCase().padStart(4, "0");
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let text = "";
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      if (error instanceof Error) continue;
+      continue;
+    }
+    for (const line of text.split("\n")) {
+      const fields = line.trim().split(/\s+/);
+      const local = fields[1];
+      const state = fields[3];
+      const inode = fields[9];
+      if (!local || !state || !inode) continue;
+      const hexPort = local.split(":")[1]?.toUpperCase();
+      if (hexPort !== portHex || state.toUpperCase() !== "0A" || inode === "0") continue;
+      inodes.add(inode);
+    }
+  }
+  return inodes;
+}
+
+function processOwnsSocket(pid: number, inodes: Set<string>): boolean {
+  let fds: string[];
+  try {
+    fds = readdirSync(`/proc/${pid}/fd`);
+  } catch (error) {
+    if (error instanceof Error) return false;
+    return false;
+  }
+  for (const fd of fds) {
+    let link = "";
+    try {
+      link = readlinkSync(`/proc/${pid}/fd/${fd}`);
+    } catch (error) {
+      if (error instanceof Error) continue;
+      continue;
+    }
+    const match = /^socket:\[(\d+)\]$/.exec(link);
+    const inode = match?.[1];
+    if (inode && inodes.has(inode)) return true;
+  }
+  return false;
 }

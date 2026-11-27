@@ -1,9 +1,23 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+const HARD_CODED_APP_PORT = 3000;
+const HARD_CODED_APP_PORT_WAIT_MS = 4_000;
+
 export function listenLoopback(server: Server, port: number): Promise<number> {
+  const deadline = port === HARD_CODED_APP_PORT ? Date.now() + HARD_CODED_APP_PORT_WAIT_MS : 0;
+  return bindLoopback(server, port, deadline);
+}
+
+function bindLoopback(server: Server, port: number, deadline: number): Promise<number> {
   return new Promise((resolve, reject) => {
-    const onError = (error: Error): void => {
+    const onError = (error: NodeJS.ErrnoException): void => {
       server.off("listening", onListening);
+      if (error.code === "EADDRINUSE" && port === HARD_CODED_APP_PORT && Date.now() < deadline) {
+        setTimeout(() => {
+          bindLoopback(server, port, deadline).then(resolve, reject);
+        }, 20);
+        return;
+      }
       reject(error);
     };
     const onListening = (): void => {
