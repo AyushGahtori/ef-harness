@@ -76,13 +76,13 @@ export class FeaturePlanningSession {
     this.normalizer = new RelationsToEdgesNormalizer(db);
   }
 
-  planAndSeal(input: SessionInput): SealReceipt {
+  async planAndSeal(input: SessionInput): Promise<SealReceipt> {
     if (this.plan) {
       throw new FeaturePlanError("incremental_scope", "Feature is already planned; replan the impacted requirements");
     }
     const context = this.contextFrom(input);
-    const plan = this.planner.plan({ context, model: input.model, roster: input.roster });
-    const authored = this.sealer.author({
+    const plan = await this.planner.plan({ context, model: input.model, roster: input.roster });
+    const authored = await this.sealer.author({
       featureId: input.featureId,
       requirements: input.requirements,
       contracts: input.contracts,
@@ -115,7 +115,7 @@ export class FeaturePlanningSession {
     return authored.receipt;
   }
 
-  replan(input: ReplanInput): SealReceipt {
+  async replan(input: ReplanInput): Promise<SealReceipt> {
     if (!this.plan || !this.receipt || !this.roster || !this.buildWorker || !this.model || !this.architecture) {
       throw new FeaturePlanError("architecture_not_ready", "Re-plan requires a sealed feature plan");
     }
@@ -128,7 +128,7 @@ export class FeaturePlanningSession {
       contracts: this.contracts,
       entities: this.entities,
     };
-    const plan = this.planner.replan({
+    const plan = await this.planner.replan({
       context,
       model: this.model,
       roster: this.roster,
@@ -137,7 +137,7 @@ export class FeaturePlanningSession {
     });
     const impacted = new Set(input.impactedRequirementIds);
     const impactedRequirements = input.requirements.filter((requirement) => impacted.has(requirement.id));
-    const authored = this.sealer.author({
+    const authored = await this.sealer.author({
       featureId,
       requirements: impactedRequirements,
       contracts: this.contracts,

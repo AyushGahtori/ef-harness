@@ -78,12 +78,15 @@ function assertWaveProjection(plan: MasterPlan, wave: PlannedWave): void {
 }
 
 function assertPhase0(plan: MasterPlan): void {
-  const expected = expectedPhase0Ids(plan.projectKind, plan.capabilities);
+  const expected = expectedPhase0Ids(
+    { projectKind: plan.projectKind, brownfield: plan.brownfield },
+    plan.capabilities,
+  );
   const actual = plan.phase0.map((recipe) => recipe.id);
   if (actual.join(",") !== expected.join(",")) {
     throw new MasterPlanError("phase0_order", `Phase 0 recipes ${actual.join(",")} !== ${expected.join(",")}`);
   }
-  if (plan.projectKind === "brownfield") {
+  if (plan.brownfield) {
     for (const recipe of plan.phase0) {
       if (recipe.stage !== "parallel" || recipe.dependsOn.length !== 0) {
         throw new MasterPlanError("phase0_order", `${recipe.id} must stay parallel in brownfield mode`);

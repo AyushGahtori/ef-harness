@@ -1,3 +1,4 @@
+import type { MustBandOversizeRefusal } from "../slicer/types.js";
 import { JUNIOR_MUST_TOKEN_CEILING, SENIOR_MUST_TOKEN_CEILING } from "./vocabulary.js";
 import type {
   BudgetSnapshot,
@@ -65,7 +66,7 @@ export class LocalOversizedMustAutoSplitGuard implements OversizedMustAutoSplitG
 }
 
 export interface KnowledgePacketSlicer {
-  measureMust(task: PlanTask): MustBandMeasurement;
+  measureMust(task: PlanTask): MustBandMeasurement | MustBandOversizeRefusal;
 }
 
 export class LocalKnowledgePacketSlicer implements KnowledgePacketSlicer {

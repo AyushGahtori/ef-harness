@@ -1,3 +1,5 @@
+import type { WorkerTier } from "@ef-harness/shared-contracts";
+
 import type { TouchTag } from "./touches.js";
 
 export const FEATURE_PLANNER_SCHEMA = "feature-planner@1" as const;
@@ -32,7 +34,7 @@ export type EdgeType = (typeof EDGE_TYPES)[number];
 
 export type CheckKind = "api" | "ui" | "unit";
 export type Diversity = "happy" | "boundary" | "negative" | "adversarial";
-export type TaskLevel = "Junior" | "Mid" | "Senior";
+export type TaskLevel = WorkerTier;
 export type TaskType = "leaf" | "wiring" | "feature_integration";
 export type OracleIndependence = "cross_family" | "same_family_only";
 export type RequirementNodeKind = "spec_item" | "edge_case" | "rule";
@@ -224,5 +226,5 @@ export interface ModelRequest {
 }
 
 export interface PlannerOracleModel {
-  complete(request: ModelRequest): unknown;
+  complete(request: ModelRequest): Promise<unknown>;
 }

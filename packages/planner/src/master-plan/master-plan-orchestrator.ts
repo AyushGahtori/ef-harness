@@ -12,6 +12,10 @@ import { MasterPlanStore } from "./state-db.js";
 import type { FeatureInput, MasterPlan, PlannedFeature } from "./types.js";
 import { allocationWeights, WaveDagBuilder } from "./wave-dag-builder.js";
 
+export interface MasterPlannerModel {
+  complete(request: MasterPlanRequest): Promise<unknown>;
+}
+
 export interface MasterPlanOrchestratorDeps {
   readonly recipes?: Phase0RecipeGenerator;
   readonly waves?: WaveDagBuilder;
@@ -274,7 +278,8 @@ export class MasterPlanOrchestrator {
       payloadVersion: 1,
       planId,
       projectId: request.projectId,
-      projectKind: request.architecture.projectKind,
+      projectKind: phase0.projectKind,
+      brownfield: phase0.brownfield,
       createdAt,
       currency: request.budget.currency,
       currencyCode: currencyCode(request.budget.currency, connectionId),
@@ -296,6 +301,11 @@ export class MasterPlanOrchestrator {
     parseMasterPlannerV1(toMasterPlannerV1(plan));
     validateMasterPlan(plan);
     return plan;
+  }
+
+  async planFromModel(request: MasterPlanRequest, model: MasterPlannerModel): Promise<MasterPlan> {
+    const modelOutput = await model.complete(request);
+    return this.plan({ ...request, modelOutput });
   }
 
   commit(store: MasterPlanStore, request: MasterPlanRequest): MasterPlan {

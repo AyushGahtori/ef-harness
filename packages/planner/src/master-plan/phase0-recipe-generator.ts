@@ -5,6 +5,7 @@ import {
   expectedPhase0Ids,
   greenfieldIds,
   omissionReason,
+  planningProfile,
   resolvePhase0Capabilities,
   type Phase0SelectionInput,
 } from "./phase0-shared.js";
@@ -21,9 +22,10 @@ export type Phase0Input = Phase0SelectionInput;
  */
 export class Phase0RecipeGenerator {
   generate(input: Phase0Input): Phase0Plan {
+    const profile = planningProfile(input.projectKind, input.brownfield);
     const capabilities = resolvePhase0Capabilities(input);
-    const ids = expectedPhase0Ids(input.projectKind, capabilities);
-    const catalog = phase0Catalog(input.projectKind);
+    const ids = expectedPhase0Ids(profile, capabilities);
+    const catalog = phase0Catalog(profile);
     const recipes: Phase0Recipe[] = [];
     for (const id of ids) {
       const found = catalog.get(id);
@@ -32,7 +34,7 @@ export class Phase0RecipeGenerator {
       }
       recipes.push(found);
     }
-    if (input.projectKind === "brownfield") {
+    if (profile.brownfield) {
       for (const recipe of recipes) {
         if (recipe.stage !== "parallel" || recipe.dependsOn.length !== 0) {
           throw new MasterPlanError("phase0_order", `${recipe.id} must be parallel and independent`);
@@ -52,11 +54,12 @@ export class Phase0RecipeGenerator {
       assertDisjointWriteScopes(recipes);
     }
     const selected = new Set(ids);
-    const omitted = (input.projectKind === "brownfield" ? [...greenfieldIds()] : [...greenfieldIds()].filter((id) => !selected.has(id))).map(
-      (id) => ({ id, reason: omissionReason(id, input.projectKind, capabilities) }),
+    const omitted = (profile.brownfield ? [...greenfieldIds()] : [...greenfieldIds()].filter((id) => !selected.has(id))).map(
+      (id) => ({ id, reason: omissionReason(id, profile, capabilities) }),
     );
     return {
-      projectKind: input.projectKind,
+      projectKind: profile.projectKind,
+      brownfield: profile.brownfield,
       capabilities,
       recipes,
       omitted,

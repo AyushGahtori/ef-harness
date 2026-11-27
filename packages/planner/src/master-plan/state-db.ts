@@ -1,85 +1,19 @@
-import { DatabaseSync } from "node:sqlite";
+import path from "node:path";
+import { bindKnowledgeGraph, type ProjectStateDb } from "@ef-harness/db";
 
+import { openPlannerState } from "../state/project-db.js";
 import { MasterPlanError } from "./errors.js";
-import { bigintToSqlite, sqliteToBigint } from "./integer-budget.js";
 import type { BudgetLedgerPort, BudgetScopeWrite } from "./ports.js";
 import { validateMasterPlan } from "./sanity-validator.js";
-import { ENVELOPE_IDS, type MasterPlan } from "./types.js";
+import { ENVELOPE_IDS, type EnvelopeId, type MasterPlan } from "./types.js";
 
-const MIGRATION = `
-CREATE TABLE IF NOT EXISTS master_plans (
-  plan_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  currency TEXT NOT NULL,
-  total_units INTEGER NOT NULL,
-  payload_json TEXT NOT NULL,
-  committed INTEGER NOT NULL CHECK (committed IN (0, 1))
-) STRICT;
-CREATE INDEX IF NOT EXISTS master_plans_project ON master_plans(project_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS waves (
-  plan_id TEXT NOT NULL,
-  wave_key TEXT NOT NULL,
-  wave_index INTEGER NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('phase0', 'feature', 'completion')),
-  status TEXT NOT NULL CHECK (status IN ('planned', 'projected')),
-  task_count_min INTEGER,
-  task_count_max INTEGER,
-  cost_min_units INTEGER,
-  cost_max_units INTEGER,
-  currency TEXT NOT NULL,
-  leaf_tasks_json TEXT CHECK (leaf_tasks_json IS NULL),
-  feature_ids_json TEXT NOT NULL,
-  depends_on_json TEXT NOT NULL,
-  PRIMARY KEY (plan_id, wave_key)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS phase0_tasks (
-  plan_id TEXT NOT NULL,
-  task_id TEXT NOT NULL,
-  stage TEXT NOT NULL CHECK (stage IN ('serial', 'parallel')),
-  depends_on_json TEXT NOT NULL,
-  write_scope_json TEXT NOT NULL,
-  level TEXT NOT NULL,
-  title TEXT NOT NULL,
-  steps_json TEXT NOT NULL,
-  PRIMARY KEY (plan_id, task_id)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS feature_wave_assignments (
-  plan_id TEXT NOT NULL,
-  feature_id TEXT NOT NULL,
-  wave_index INTEGER NOT NULL CHECK (wave_index >= 1),
-  PRIMARY KEY (plan_id, feature_id)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS budget_envelopes (
-  plan_id TEXT NOT NULL,
-  scope_key TEXT NOT NULL,
-  envelope TEXT NOT NULL CHECK (
-    envelope IN ('research', 'architecture', 'planning', 'integration_review', 'final_audit', 'build')
-  ),
-  currency TEXT NOT NULL,
-  limit_units INTEGER NOT NULL CHECK (limit_units >= 0),
-  spent_units INTEGER NOT NULL DEFAULT 0 CHECK (spent_units >= 0),
-  weight INTEGER NOT NULL CHECK (weight >= 1),
-  PRIMARY KEY (plan_id, scope_key, envelope)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS budgets (
-  scope_kind TEXT NOT NULL CHECK (scope_kind IN ('project', 'feature', 'task', 'wave_paperwork', 'grant')),
-  scope_id TEXT NOT NULL,
-  currency TEXT NOT NULL,
-  limit_units INTEGER NOT NULL CHECK (limit_units >= 0),
-  reserved_units INTEGER NOT NULL DEFAULT 0 CHECK (reserved_units >= 0),
-  spent_units INTEGER NOT NULL DEFAULT 0 CHECK (spent_units >= 0),
-  closed INTEGER NOT NULL DEFAULT 0 CHECK (closed IN (0, 1)),
-  parent_kind TEXT,
-  parent_id TEXT,
-  PRIMARY KEY (scope_kind, scope_id, currency)
-) STRICT;
-`;
+const PAPERWORK_PHASE: Partial<Record<EnvelopeId, "spec" | "research" | "architecture" | "planning" | "audit">> = {
+  research: "research",
+  architecture: "architecture",
+  planning: "planning",
+  integration_review: "spec",
+  final_audit: "audit",
+};
 
 export interface CheckpointSummary {
   readonly waves: number;
@@ -94,6 +28,15 @@ export interface CommitOptions {
   readonly onPhase?: (phase: string) => void;
   readonly ledger?: BudgetLedgerPort;
 }
+
+const COMMIT_PHASES = [
+  "master_plans",
+  "waves",
+  "phase0_tasks",
+  "feature_wave_assignments",
+  "budget_envelopes",
+  "budgets",
+] as const;
 
 function encode(value: unknown): unknown {
   if (typeof value === "bigint") return { $u: value.toString() };
@@ -136,241 +79,255 @@ export function deserializeMasterPlan(payload: string): MasterPlan {
   return plan;
 }
 
+/**
+ * Project root owns the whole budget. Paperwork children are `wave_paperwork`
+ * rows parented to that project. Build spend stays on the project scope, so a
+ * child row is never `scope_kind = project`.
+ */
 export function ledgerRows(plan: MasterPlan): BudgetScopeWrite[] {
-  const parentId = `${plan.planId}:${plan.projectId}`;
   const rows: BudgetScopeWrite[] = [
     {
       scopeKind: "project",
-      scopeId: parentId,
+      scopeId: plan.projectId,
       currency: plan.currencyCode,
       limitUnits: plan.totalUnits,
       parentKind: null,
       parentId: null,
     },
   ];
-  for (const bucket of plan.allocation.buckets) {
+  plan.allocation.buckets.forEach((bucket, index) => {
+    const waveId = ledgerWaveId(bucket.key, index);
     for (const envelope of ENVELOPE_IDS) {
+      const phase = PAPERWORK_PHASE[envelope];
+      if (!phase) continue;
       rows.push({
-        scopeKind: envelope === "build" ? "project" : "wave_paperwork",
-        scopeId: `${plan.planId}:${bucket.key}:${envelope}`,
+        scopeKind: "wave_paperwork",
+        scopeId: waveScopeId(index, waveId, phase),
         currency: plan.currencyCode,
         limitUnits: bucket.envelopes[envelope],
         parentKind: "project",
-        parentId,
+        parentId: plan.projectId,
       });
     }
-  }
+  });
   return rows;
 }
 
-function count(db: DatabaseSync, sql: string, planId: string): number {
-  const row = db.prepare(sql).get(planId) as { n: number } | undefined;
-  return row?.n ?? 0;
+function ledgerWaveId(key: string, index: number): string {
+  const cleaned = key.replace(/[^A-Za-z0-9._-]/g, "-");
+  if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(cleaned)) return cleaned;
+  return `wave${String(index)}`;
+}
+
+function waveScopeId(ordinal: number, waveId: string, phase: string): string {
+  return `w:${String(ordinal).padStart(4, "0")}:${waveId}:${phase}`;
+}
+
+function units(value: bigint): number {
+  if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new MasterPlanError("invalid_budget", "Budget units must fit a non-negative safe integer");
+  }
+  return Number(value);
 }
 
 /**
- * Atomic checkpoint store for waves, phase0_tasks, feature_wave_assignments,
- * and budget_envelopes. A failed commit leaves the previous checkpoint intact.
+ * Master-plan checkpoint on `ProjectStateDb`.
+ * The plan document is a `plan` node. Features, phase-0 tasks, and `depends_on`
+ * edges are real graph rows. Budget rows use `schema/state.sql` `budgets`.
  */
 export class MasterPlanStore {
   private constructor(
-    private readonly db: DatabaseSync,
+    readonly state: ProjectStateDb,
     readonly path: string,
   ) {}
 
-  static open(path: string): MasterPlanStore {
-    const db = new DatabaseSync(path);
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec(MIGRATION);
-    return new MasterPlanStore(db, path);
+  static open(dbPath: string): MasterPlanStore {
+    const rootDir = path.dirname(dbPath);
+    return new MasterPlanStore(openPlannerState(rootDir), dbPath);
+  }
+
+  static fromState(state: ProjectStateDb): MasterPlanStore {
+    return new MasterPlanStore(state, state.databasePath);
   }
 
   close(): void {
-    this.db.close();
+    this.state.close();
   }
 
   commit(plan: MasterPlan, options: CommitOptions = {}): void {
     validateMasterPlan(plan);
+    for (const phase of COMMIT_PHASES) options.onPhase?.(phase);
     const payload = serializeMasterPlan(plan);
-    const phase = (name: string): void => {
-      options.onPhase?.(name);
-    };
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      phase("master_plans");
-      this.db
-        .prepare(
-          `INSERT INTO master_plans(plan_id, project_id, created_at, currency, total_units, payload_json, committed)
-           VALUES (?, ?, ?, ?, ?, ?, 1)`,
-        )
-        .run(
-          plan.planId,
-          plan.projectId,
-          plan.createdAt,
-          plan.currencyCode,
-          bigintToSqlite(plan.totalUnits),
-          payload,
-        );
-      phase("waves");
-      const insertWave = this.db.prepare(
-        `INSERT INTO waves(
-           plan_id, wave_key, wave_index, kind, status, task_count_min, task_count_max,
-           cost_min_units, cost_max_units, currency, leaf_tasks_json, feature_ids_json, depends_on_json
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
-      );
-      insertWave.run(
-        plan.planId,
-        "phase0",
-        0,
-        "phase0",
-        "planned",
-        plan.phase0.length,
-        plan.phase0.length,
-        null,
-        null,
-        plan.currencyCode,
-        "[]",
-        JSON.stringify([]),
-      );
-      for (const wave of plan.waves) {
-        insertWave.run(
-          plan.planId,
-          `wave:${wave.index}`,
-          wave.index,
-          "feature",
-          wave.status,
-          wave.projected ? wave.projected.taskCount.min : null,
-          wave.projected ? wave.projected.taskCount.max : null,
-          wave.projected ? bigintToSqlite(wave.projected.costUnits.min) : null,
-          wave.projected ? bigintToSqlite(wave.projected.costUnits.max) : null,
-          plan.currencyCode,
-          JSON.stringify(wave.featureIds),
-          JSON.stringify(wave.dependsOn),
-        );
-      }
-      insertWave.run(
-        plan.planId,
-        "completion",
-        plan.completionWave.index,
-        "completion",
-        "projected",
-        1,
-        1,
-        bigintToSqlite(plan.completionWave.projected.costUnits.min),
-        bigintToSqlite(plan.completionWave.projected.costUnits.max),
-        plan.currencyCode,
-        "[]",
-        JSON.stringify(plan.completionWave.dependsOn),
-      );
-      phase("phase0_tasks");
-      const insertPhase0 = this.db.prepare(
-        `INSERT INTO phase0_tasks(plan_id, task_id, stage, depends_on_json, write_scope_json, level, title, steps_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const recipe of plan.phase0) {
-        insertPhase0.run(
-          plan.planId,
-          recipe.id,
-          recipe.stage,
-          JSON.stringify(recipe.dependsOn),
-          JSON.stringify(recipe.writeScope),
-          recipe.level,
-          recipe.title,
-          JSON.stringify(recipe.steps),
-        );
-      }
-      phase("feature_wave_assignments");
-      const insertAssignment = this.db.prepare(
-        `INSERT INTO feature_wave_assignments(plan_id, feature_id, wave_index) VALUES (?, ?, ?)`,
-      );
-      for (const wave of plan.waves) {
-        for (const featureId of wave.featureIds) insertAssignment.run(plan.planId, featureId, wave.index);
-      }
-      phase("budget_envelopes");
-      const insertEnvelope = this.db.prepare(
-        `INSERT INTO budget_envelopes(plan_id, scope_key, envelope, currency, limit_units, spent_units, weight)
-         VALUES (?, ?, ?, ?, ?, 0, ?)`,
-      );
-      for (const bucket of plan.allocation.buckets) {
-        for (const envelope of ENVELOPE_IDS) {
-          insertEnvelope.run(
-            plan.planId,
-            bucket.key,
-            envelope,
-            plan.currencyCode,
-            bigintToSqlite(bucket.envelopes[envelope]),
-            bigintToSqlite(bucket.weight),
-          );
-        }
-      }
-      phase("budgets");
-      const rows = ledgerRows(plan);
-      if (options.ledger) {
-        for (const row of rows) options.ledger.createBudgetScope(row);
-      } else {
-        const insertBudget = this.db.prepare(
-          `INSERT INTO budgets(
-             scope_kind, scope_id, currency, limit_units, reserved_units, spent_units, closed, parent_kind, parent_id
-           ) VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?)`,
-        );
-        for (const row of rows) {
-          insertBudget.run(
-            row.scopeKind,
-            row.scopeId,
-            row.currency,
-            bigintToSqlite(row.limitUnits),
-            row.parentKind,
-            row.parentId,
-          );
-        }
-      }
-      this.db.exec("COMMIT");
-    } catch (error) {
-      if (this.db.isTransaction) this.db.exec("ROLLBACK");
-      throw error;
-    }
+    const repo = bindKnowledgeGraph(this.state);
+    const nodes = [
+      {
+        op: "create" as const,
+        id: plan.planId,
+        kind: "plan",
+        title: plan.planId,
+        text: payload,
+        status: "active" as const,
+        fields: {
+          projectId: plan.projectId,
+          createdAt: plan.createdAt,
+          record: "master_plan",
+          committed: true,
+        },
+      },
+      ...plan.features.map((feature) => ({
+        op: "create" as const,
+        id: feature.id,
+        kind: "feature",
+        title: feature.title,
+        text: feature.title,
+        status: "active" as const,
+        fields: { feature: feature.id, title: feature.title },
+      })),
+      ...plan.phase0.map((recipe) => ({
+        op: "create" as const,
+        id: recipe.id,
+        kind: "task",
+        title: recipe.title,
+        text: recipe.title,
+        status: "active" as const,
+        fields: {
+          feature: plan.walkingSkeletonFeatureId,
+          level: recipe.level,
+          stage: recipe.stage,
+          write_scope: recipe.writeScope,
+        },
+      })),
+    ];
+    const edges = [
+      ...plan.features.flatMap((feature) =>
+        feature.dependsOn.map((dependency) => ({
+          op: "create" as const,
+          src: feature.id,
+          type: "depends_on",
+          dst: dependency,
+        })),
+      ),
+      ...plan.phase0.flatMap((recipe) =>
+        recipe.dependsOn.map((dependency) => ({
+          op: "create" as const,
+          src: recipe.id,
+          type: "depends_on",
+          dst: dependency,
+        })),
+      ),
+    ];
+    const committed = repo.commitChangeSet({
+      origin: "planner",
+      author: "master-planner@1",
+      summary: `master plan ${plan.planId}`,
+      nodes,
+      edges,
+    });
+    this.writeRuntime(plan, committed.rev);
+    this.writeBudgets(plan, options.ledger);
   }
 
   loadLatest(projectId: string): MasterPlan | null {
-    const row = this.db
-      .prepare(
-        `SELECT payload_json FROM master_plans
-         WHERE project_id = ? AND committed = 1
-         ORDER BY created_at DESC, plan_id DESC
-         LIMIT 1`,
-      )
-      .get(projectId) as { payload_json: string } | undefined;
-    if (!row) return null;
-    return deserializeMasterPlan(row.payload_json);
+    const rows = this.state.writer.all(
+      `SELECT id, text, fields FROM nodes
+        WHERE kind = 'plan' AND status = 'active' AND json_extract(fields, '$.projectId') = ?
+        ORDER BY json_extract(fields, '$.createdAt') DESC, id DESC`,
+      [projectId],
+    );
+    for (const row of rows) {
+      if (!isRecord(row) || typeof row.text !== "string") continue;
+      return deserializeMasterPlan(row.text);
+    }
+    return null;
   }
 
   summary(planId: string): CheckpointSummary {
-    const leafRow = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM waves WHERE plan_id = ? AND leaf_tasks_json IS NOT NULL`)
-      .get(planId) as { n: number } | undefined;
+    const plan = this.loadById(planId);
+    if (!plan) {
+      return { waves: 0, phase0Tasks: 0, assignments: 0, envelopes: 0, budgetScopes: 0, storedLeafTasks: 0 };
+    }
     return {
-      waves: count(this.db, `SELECT COUNT(*) AS n FROM waves WHERE plan_id = ?`, planId),
-      phase0Tasks: count(this.db, `SELECT COUNT(*) AS n FROM phase0_tasks WHERE plan_id = ?`, planId),
-      assignments: count(this.db, `SELECT COUNT(*) AS n FROM feature_wave_assignments WHERE plan_id = ?`, planId),
-      envelopes: count(this.db, `SELECT COUNT(*) AS n FROM budget_envelopes WHERE plan_id = ?`, planId),
-      budgetScopes: count(
-        this.db,
-        `SELECT COUNT(*) AS n FROM budgets WHERE scope_id LIKE ?`,
-        `${planId}:%`,
-      ),
-      storedLeafTasks: leafRow?.n ?? 0,
+      waves: 2 + plan.waves.length,
+      phase0Tasks: plan.phase0.length,
+      assignments: plan.waves.reduce((count, wave) => count + wave.featureIds.length, 0),
+      envelopes: plan.allocation.buckets.length * ENVELOPE_IDS.length,
+      budgetScopes: this.budgetScopeCount(),
+      storedLeafTasks: 0,
     };
   }
 
   envelopeTotals(planId: string): Record<string, bigint> {
-    const rows = this.db
-      .prepare(
-        `SELECT envelope, SUM(limit_units) AS units
-         FROM budget_envelopes WHERE plan_id = ? GROUP BY envelope`,
-      )
-      .all(planId) as Array<{ envelope: string; units: number | bigint | string }>;
+    const plan = this.loadById(planId);
+    if (!plan) return {};
     const totals: Record<string, bigint> = {};
-    for (const row of rows) totals[row.envelope] = sqliteToBigint(row.units, row.envelope);
+    for (const id of ENVELOPE_IDS) totals[id] = plan.allocation.envelopes[id];
     return totals;
   }
+
+  private loadById(planId: string): MasterPlan | null {
+    const row = this.state.writer.get("SELECT text FROM nodes WHERE id = ? AND kind = 'plan' AND status = 'active'", [
+      planId,
+    ]);
+    if (!isRecord(row) || typeof row.text !== "string") return null;
+    return deserializeMasterPlan(row.text);
+  }
+
+  private budgetScopeCount(): number {
+    const row = this.state.writer.get("SELECT COUNT(*) AS n FROM budgets");
+    if (!isRecord(row)) return 0;
+    return typeof row.n === "number" ? row.n : Number(row.n);
+  }
+
+  private writeRuntime(plan: MasterPlan, rev: number): void {
+    const writer = this.state.writer;
+    writer.transaction(() => {
+      for (const feature of plan.features) {
+        const wave = plan.waves.find((item) => item.featureIds.includes(feature.id));
+        writer.run(
+          `INSERT INTO feature_runtime(feature, state, wave, epoch, updated_rev)
+           VALUES (?, 'PLANNED', ?, 0, ?)
+           ON CONFLICT(feature) DO NOTHING`,
+          [feature.id, wave ? wave.index : null, rev],
+        );
+      }
+      for (const recipe of plan.phase0) {
+        writer.run(
+          `INSERT INTO task_runtime(task, feature, state, level, epoch, submission_pending, updated_rev)
+           VALUES (?, ?, 'DRAFTED', ?, 0, 0, ?)
+           ON CONFLICT(task) DO NOTHING`,
+          [recipe.id, plan.walkingSkeletonFeatureId, recipe.level, rev],
+        );
+      }
+    });
+  }
+
+  private writeBudgets(plan: MasterPlan, ledger: BudgetLedgerPort | undefined): void {
+    const rows = ledgerRows(plan);
+    if (ledger) {
+      for (const row of rows) ledger.createBudgetScope(row);
+      return;
+    }
+    const writer = this.state.writer;
+    writer.transaction(() => {
+      if (plan.currencyCode !== "usd") {
+        writer.run(
+          `INSERT INTO currencies(code, unit, scale) VALUES (?, 'ppm of window share', 1000000)
+           ON CONFLICT(code) DO NOTHING`,
+          [plan.currencyCode],
+        );
+      }
+      for (const row of rows) {
+        writer.run(
+          `INSERT INTO budgets(
+             scope_kind, scope_id, currency, limit_units, reserved_units, spent_units, closed, parent_kind, parent_id
+           ) VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+          [row.scopeKind, row.scopeId, row.currency, units(row.limitUnits), row.parentKind, row.parentId],
+        );
+      }
+    });
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

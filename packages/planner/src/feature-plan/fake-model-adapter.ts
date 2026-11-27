@@ -27,7 +27,7 @@ export class FakeModelAdapter implements PlannerOracleModel {
     this.repairScripts.push(output);
   }
 
-  complete(request: ModelRequest): unknown {
+  async complete(request: ModelRequest): Promise<unknown> {
     this.calls.push(JSON.parse(JSON.stringify(request)) as ModelRequest);
     if (request.repair) {
       const scripted = this.repairScripts.shift();

@@ -9,11 +9,11 @@ import {
 import { cutoffRequirement, openAiOnly, openSession, roster, sessionInput } from "./fixture.js";
 
 describe("IndependentOracleAuthorSealer", () => {
-  it("repairs a tautology, a timer, and a live stripe url in one pass", () => {
+  it("repairs a tautology, a timer, and a live stripe url in one pass", async () => {
     const model = new FakeModelAdapter();
     model.pushOracle(scriptedOracle(weakHappy()));
     const { db, session } = openSession(sessionInput({ model, requirements: [cutoffRequirement()] }));
-    const receipt = session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }));
+    const receipt = await session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }));
     expect(receipt.repairAttempts).toBe(1);
     const repairs = model.calls.filter((call) => call.repair !== null);
     expect(repairs).toHaveLength(1);
@@ -29,7 +29,7 @@ describe("IndependentOracleAuthorSealer", () => {
     expect(db.listHidden(session.currentPlan().featureId).every((row) => row.status === "sealed")).toBe(true);
   });
 
-  it("does not seal when the single repair is still weak", () => {
+  it("does not seal when the single repair is still weak", async () => {
     const model = new FakeModelAdapter();
     model.pushOracle(scriptedOracle(weakHappy()));
     model.pushRepair(scriptedOracle(weakHappy()));
@@ -37,7 +37,7 @@ describe("IndependentOracleAuthorSealer", () => {
     const session = new FeaturePlanningSession(db);
     let caught: unknown;
     try {
-      session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }));
+      await session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }));
     } catch (error) {
       caught = error;
     }
@@ -48,7 +48,7 @@ describe("IndependentOracleAuthorSealer", () => {
     expect(db.listHidden()).toEqual([]);
   });
 
-  it("rejects a single happy-path case and demands the cutoff boundary", () => {
+  it("rejects a single happy-path case and demands the cutoff boundary", async () => {
     const model = new FakeModelAdapter();
     model.pushOracle({
       schema: "oracle-author@1",
@@ -57,7 +57,7 @@ describe("IndependentOracleAuthorSealer", () => {
     });
     const db = FeaturePlanDatabase.memory();
     const session = new FeaturePlanningSession(db);
-    expect(() => session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }))).toThrow(
+    await expect(session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }))).rejects.toThrow(
       FeaturePlanError,
     );
     try {
@@ -66,7 +66,7 @@ describe("IndependentOracleAuthorSealer", () => {
         held_back: [cleanCase("S-only", "happy", '{"at":"10:59"}', "201", "expect(res.status).toBe(201)")],
         rubrics: [],
       });
-      session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }));
+      await session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement()] }));
     } catch (error) {
       expect((error as FeaturePlanError).code).toBe("insufficient_oracle_pool");
       expect((error as FeaturePlanError).details.missing).toEqual(expect.arrayContaining(["boundary", "negative"]));
@@ -75,7 +75,7 @@ describe("IndependentOracleAuthorSealer", () => {
     expect(db.listHidden()).toEqual([]);
   });
 
-  it("stamps same_family_only when only one provider is connected", () => {
+  it("stamps same_family_only when only one provider is connected", async () => {
     const model = new FakeModelAdapter();
     const { session } = openSession();
     const input = sessionInput({
@@ -84,7 +84,7 @@ describe("IndependentOracleAuthorSealer", () => {
       buildWorker: { family: "openai", model: "gpt-senior" },
       requirements: [cutoffRequirement()],
     });
-    const receipt = session.planAndSeal(input);
+    const receipt = await session.planAndSeal(input);
     expect(receipt.oracleIndependence).toBe("same_family_only");
     expect(receipt.selectedFamily).toBe("openai");
     expect(receipt.selectedModel).toBe("gpt-mini");
@@ -95,18 +95,18 @@ describe("IndependentOracleAuthorSealer", () => {
     expect(session.store.listForFeature(input.featureId).length).toBeGreaterThanOrEqual(3);
   });
 
-  it("refuses worker code as oracle input", () => {
+  it("refuses worker code as oracle input", async () => {
     const { session } = openSession();
-    expect(() =>
+    await expect(
       session.planAndSeal(
         sessionInput({
           requirements: [cutoffRequirement()],
           workerCode: "export function placeOrder() { return true }",
         }),
       ),
-    ).toThrow(FeaturePlanError);
+    ).rejects.toThrow(FeaturePlanError);
     try {
-      session.planAndSeal(
+      await session.planAndSeal(
         sessionInput({
           requirements: [cutoffRequirement()],
           workerCode: "export function placeOrder() { return true }",

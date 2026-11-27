@@ -1,3 +1,4 @@
+import type { MustBandOversizeRefusal } from "../slicer/types.js";
 import { budgetDiagnostics } from "./budget.js";
 import { tagAndRuleDiagnostics } from "./coverage.js";
 import { cycleDiagnostics } from "./cycles.js";
@@ -96,6 +97,32 @@ export class DeterministicGraphCompiler {
     return failure;
   }
 
+  compileFeatureWave(input: CompilationInput): CompilationResult {
+    return this.compile(input);
+  }
+
+  validateDisjointWriteScopes(input: CompilationInput): readonly CompilationDiagnostic[] {
+    const taskIds = new Set(input.tasks.map((task) => task.id));
+    const featureIds = new Set(input.features.map((feature) => feature.id));
+    const taskOrder = buildOrderingIndex(
+      [...taskIds],
+      input.tasks.flatMap((task) =>
+        task.dependsOn
+          .filter((dependency) => taskIds.has(dependency))
+          .map((dependency) => ({ from: dependency, to: task.id })),
+      ),
+    );
+    const featureOrder = buildOrderingIndex(
+      [...featureIds],
+      input.features.flatMap((feature) =>
+        feature.dependsOn
+          .filter((dependency) => featureIds.has(dependency))
+          .map((dependency) => ({ from: dependency, to: feature.id })),
+      ),
+    );
+    return this.writeScopes.check(input, taskOrder, featureOrder);
+  }
+
   private runPasses(input: CompilationInput): PassOutcome {
     const started = performance.now();
     const diagnostics: CompilationDiagnostic[] = [];
@@ -124,7 +151,25 @@ export class DeterministicGraphCompiler {
     const slicer = this.ports.slicer ?? new LocalKnowledgePacketSlicer();
     const guard = this.ports.mustGuard ?? new LocalOversizedMustAutoSplitGuard();
     for (const task of input.tasks) {
-      const measurement = measureTask(task, slicer.measureMust(task));
+      const measured = slicer.measureMust(task);
+      if (isOversizeRefusal(measured)) {
+        diagnostics.push(
+          diagnostic({
+            pass: 4,
+            code: "oversized_must",
+            message: measured.summary,
+            taskIds: [task.id],
+            details: {
+              code: measured.code,
+              mustTokens: measured.mustTokens,
+              ceiling: measured.ceiling,
+              recommendations: measured.recommendations.map((item) => item.action),
+            },
+          }),
+        );
+        continue;
+      }
+      const measurement = measureTask(task, measured);
       diagnostics.push(...taskSizeDiagnostics(task, measurement, guard));
       diagnostics.push(...tagAndRuleDiagnostics(task, measurement));
     }
@@ -184,6 +229,12 @@ interface FailingOutcome {
 }
 
 type PassOutcome = PassingOutcome | FailingOutcome;
+
+function isOversizeRefusal(
+  value: MustBandMeasurement | MustBandOversizeRefusal,
+): value is MustBandOversizeRefusal {
+  return "code" in value && value.code === "MustBandOversizeRefusal";
+}
 
 function measureTask(task: PlanTask, measured: MustBandMeasurement): MustBandMeasurement {
   const tokens = Math.max(measured.tokens, task.mustBandTokens);

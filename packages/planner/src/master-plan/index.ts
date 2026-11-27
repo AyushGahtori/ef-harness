@@ -14,7 +14,7 @@ export {
   usdDecimalToMicroUnits,
 } from "./integer-budget.js";
 export { MasterPlanOrchestrator } from "./master-plan-orchestrator.js";
-export type { MasterPlanOrchestratorDeps } from "./master-plan-orchestrator.js";
+export type { MasterPlanOrchestratorDeps, MasterPlannerModel } from "./master-plan-orchestrator.js";
 export { PaperworkBudgetEnvelopeAllocator } from "./paperwork-budget-envelope-allocator.js";
 export type { AdmitDecision, AdmitRequest, WarningMetric } from "./paperwork-budget-envelope-allocator.js";
 export { Phase0RecipeGenerator } from "./phase0-recipe-generator.js";
@@ -47,6 +47,7 @@ export type {
   PlannedWave,
   ProjectAllocation,
   ProjectKind,
+  WorkerTier,
 } from "./types.js";
 export { ENVELOPE_IDS, PAPERWORK_ENVELOPE_IDS } from "./types.js";
 export { allocationWeights, projectedCost, projectedTaskCount, WaveDagBuilder } from "./wave-dag-builder.js";

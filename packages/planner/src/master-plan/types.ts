@@ -1,5 +1,6 @@
-export const PROJECT_KINDS = ["web_saas", "headless_cli", "api", "brownfield"] as const;
-export type ProjectKind = (typeof PROJECT_KINDS)[number];
+import type { ProjectKind, WorkerTier } from "@ef-harness/shared-contracts";
+
+export type { ProjectKind, WorkerTier };
 
 export const CURRENCIES = ["usd", "allowance_ppm"] as const;
 export type CurrencyKind = (typeof CURRENCIES)[number];
@@ -49,7 +50,7 @@ export interface Phase0Recipe {
   readonly title: string;
   readonly stage: "serial" | "parallel";
   readonly dependsOn: readonly string[];
-  readonly level: "junior" | "mid" | "senior" | "manager";
+  readonly level: WorkerTier;
   readonly writeScope: readonly string[];
   readonly steps: readonly string[];
   readonly expectedOutputs: readonly string[];
@@ -63,6 +64,7 @@ export interface Phase0Omission {
 
 export interface Phase0Plan {
   readonly projectKind: ProjectKind;
+  readonly brownfield: boolean;
   readonly capabilities: Phase0Capabilities;
   readonly recipes: readonly Phase0Recipe[];
   readonly omitted: readonly Phase0Omission[];
@@ -165,6 +167,7 @@ export interface MasterPlan {
   readonly planId: string;
   readonly projectId: string;
   readonly projectKind: ProjectKind;
+  readonly brownfield: boolean;
   readonly createdAt: number;
   readonly currency: CurrencyKind;
   readonly currencyCode: string;

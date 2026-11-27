@@ -4,6 +4,7 @@ export {
   UncompiledDispatchError,
 } from "./dispatch.js";
 export { DeterministicGraphCompiler } from "./compiler.js";
+export { persistCompiledGraph } from "./persist.js";
 export {
   compilationInputFromKnowledgeGraph,
   KnowledgeGraphProjectionError,

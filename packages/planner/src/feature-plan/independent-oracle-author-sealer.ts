@@ -44,7 +44,7 @@ export interface AuthoredOracles {
  * on an independent model family, before graph compile and before workers run.
  */
 export class IndependentOracleAuthorSealer {
-  author(input: SealAuthorInput): AuthoredOracles {
+  async author(input: SealAuthorInput): Promise<AuthoredOracles> {
     if (input.compileStarted) {
       throw new FeaturePlanError(
         "step3b_before_compile",
@@ -62,7 +62,7 @@ export class IndependentOracleAuthorSealer {
     });
     assertOracleInputClean(oracleInput);
     const first = OracleAuthorV1Schema.parse(
-      input.model.complete({
+      await input.model.complete({
         role: "oracle-author@1",
         family: selection.assignment.family,
         model: selection.assignment.model,
@@ -70,7 +70,7 @@ export class IndependentOracleAuthorSealer {
         repair: null,
       }),
     );
-    const repaired = repairOnce(first, input);
+    const repaired = await repairOnce(first, input);
     assertDiversePools(input.requirements, repaired.document.heldBack);
     assertRubrics(repaired.document);
     const cases = repaired.document.heldBack;
@@ -95,16 +95,16 @@ export class IndependentOracleAuthorSealer {
   }
 }
 
-function repairOnce(
+async function repairOnce(
   document: OracleAuthorDocument,
   input: SealAuthorInput,
-): { document: OracleAuthorDocument; repairAttempts: number } {
+): Promise<{ document: OracleAuthorDocument; repairAttempts: number }> {
   const failing = document.heldBack.filter((item) => lintHeldBack(item).length > 0);
   if (failing.length === 0) return { document, repairAttempts: 0 };
   const reasons = repairReasons(failing.flatMap((item) => lintHeldBack(item)));
   const selection = selectOracleAuthor(input.roster, input.buildWorker);
   const repaired = OracleAuthorV1Schema.parse(
-    input.model.complete({
+    await input.model.complete({
       role: "oracle-author@1",
       family: selection.assignment.family,
       model: selection.assignment.model,

@@ -1,4 +1,4 @@
-import type { CurrencyKind, FeatureInput, ProjectKind } from "./types.js";
+import type { CurrencyKind, FeatureInput } from "./types.js";
 
 /**
  * Local port for Task 083 `SystemArchitectureSynthesizer`.
@@ -8,7 +8,7 @@ import type { CurrencyKind, FeatureInput, ProjectKind } from "./types.js";
 export interface LockedSystemArchitecture {
   readonly schema: "system-architect@1";
   readonly projectId: string;
-  readonly projectKind: ProjectKind;
+  readonly projectKind: string;
   readonly featureIds: readonly string[];
   readonly database?: boolean;
   readonly auth?: boolean;

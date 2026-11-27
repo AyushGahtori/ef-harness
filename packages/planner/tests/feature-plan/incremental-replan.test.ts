@@ -4,10 +4,10 @@ import { FakeModelAdapter } from "../../src/feature-plan/index.js";
 import { cutoffRequirement, noteRequirement, openSession, sessionInput } from "./fixture.js";
 
 describe("incremental feature re-planning", () => {
-  it("replans and reseals only the impacted requirement", () => {
+  it("replans and reseals only the impacted requirement", async () => {
     const model = new FakeModelAdapter();
     const { db, session, input } = openSession(sessionInput({ model }));
-    session.planAndSeal(input);
+    await session.planAndSeal(input);
     const before = session.currentPlan();
     const cutoffBefore = before.tasks.find((task) => task.requirementIds.includes("REQ-cutoff"));
     const noteBefore = before.tasks.find((task) => task.requirementIds.includes("REQ-note"));
@@ -25,7 +25,7 @@ describe("incremental feature re-planning", () => {
 
     const revisedNote = { ...noteRequirement(), oracleSketch: "unicode name revised" };
     const callsBefore = model.calls.length;
-    const receipt = session.replan({
+    const receipt = await session.replan({
       requirements: [cutoffRequirement(), revisedNote],
       impactedRequirementIds: ["REQ-note"],
       now: input.now + 50,

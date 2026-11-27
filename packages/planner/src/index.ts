@@ -550,3 +550,30 @@ export type {
   WaveMembership,
   WorkerLevel as RuleMatchingWorkerLevel,
 } from "./rule-matching/index.js";
+export {
+  MasterPlanError,
+  MasterPlanOrchestrator,
+  MasterPlanStore,
+  PaperworkBudgetEnvelopeAllocator,
+  Phase0RecipeGenerator,
+  ledgerRows,
+  validateMasterPlan,
+} from "./master-plan/index.js";
+export type {
+  MasterPlan,
+  MasterPlanRequest,
+  Phase0Recipe,
+  ProjectKind,
+  WorkerTier,
+} from "./master-plan/index.js";
+export {
+  FeaturePlanDatabase,
+  FeaturePlanError,
+  FeaturePlanningSession,
+  HiddenCheckPoolStore,
+  IndependentOracleAuthorSealer,
+  JitFeaturePlanner,
+} from "./feature-plan/index.js";
+export type { HeldBackCase, PlannerOracleModel, SealReceipt } from "./feature-plan/index.js";
+export { DeterministicGraphCompiler, persistCompiledGraph, TraceabilitySqlGate } from "./graph-compiler/index.js";
+export type { CompilationInput, CompilationResult } from "./graph-compiler/index.js";

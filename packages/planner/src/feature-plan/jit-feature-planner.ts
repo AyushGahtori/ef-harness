@@ -22,10 +22,10 @@ export interface ReplanRun extends PlannerRun {
  * tasks plus the Task 096 integration slot, after architecture consistency passes.
  */
 export class JitFeaturePlanner {
-  plan(input: PlannerRun): FeaturePlanDocument {
+  async plan(input: PlannerRun): Promise<FeaturePlanDocument> {
     assertArchitectureReady(input.context.architecture, input.context.featureId);
     const assignment = selectPlannerModel(input.roster);
-    const output = input.model.complete({
+    const output = await input.model.complete({
       role: "feature-planner@1",
       family: assignment.family,
       model: assignment.model,
@@ -37,7 +37,7 @@ export class JitFeaturePlanner {
     return document;
   }
 
-  replan(input: ReplanRun): FeaturePlanDocument {
+  async replan(input: ReplanRun): Promise<FeaturePlanDocument> {
     assertArchitectureReady(input.context.architecture, input.context.featureId);
     const impacted = new Set(input.impactedRequirementIds);
     if (impacted.size === 0) {
@@ -49,7 +49,7 @@ export class JitFeaturePlanner {
       throw new FeaturePlanError("dangling_node", `Impacted requirement ${missing} does not exist`, { nodeId: missing });
     }
     const assignment = selectPlannerModel(input.roster);
-    const output = input.model.complete({
+    const output = await input.model.complete({
       role: "feature-planner@1",
       family: assignment.family,
       model: assignment.model,

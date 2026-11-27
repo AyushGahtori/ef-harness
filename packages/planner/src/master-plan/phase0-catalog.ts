@@ -1,4 +1,7 @@
-import type { Phase0Recipe, ProjectKind } from "./types.js";
+import { isUiProjectKind } from "@ef-harness/shared-contracts";
+
+import type { PlanningProfile } from "./phase0-shared.js";
+import type { Phase0Recipe } from "./types.js";
 
 const SCAFFOLD_FILES = [
   "package.json",
@@ -15,10 +18,10 @@ function recipe(input: Phase0Recipe): Phase0Recipe {
   return input;
 }
 
-export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Phase0Recipe> {
-  const entry = projectKind === "headless_cli" ? "src/cli.ts" : "src/server.ts";
-  const ui = projectKind === "web_saas";
-  const cli = projectKind === "headless_cli";
+export function phase0Catalog(profile: PlanningProfile): ReadonlyMap<string, Phase0Recipe> {
+  const cli = profile.projectKind === "cli_tool" && !profile.brownfield;
+  const entry = cli ? "src/cli.ts" : "src/server.ts";
+  const ui = isUiProjectKind(profile.projectKind) && !profile.brownfield;
   const smokeScope = ui
     ? ["tests/smoke/**", "tests/e2e/**", "playwright.config.ts", "test-env/**", ".github/workflows/ci.yml"]
     : ["tests/smoke/**", "test-env/**", ".github/workflows/ci.yml"];
@@ -46,7 +49,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Project scaffold, manifest, lockfile, configs, env example, and test runner",
       stage: "serial",
       dependsOn: [],
-      level: "junior",
+      level: "Junior",
       writeScope: [...SCAFFOLD_FILES, entry],
       steps: [
         "Create the package manifest with a private name, type module, and scripts for typecheck, lint, and test.",
@@ -64,7 +67,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Primary database schema skeleton, migration harness, and template database",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "mid",
+      level: "Mid",
       writeScope: ["db/schema.sql", "db/migrations/**", "db/template/**"],
       steps: [
         "Write the skeleton schema with primary keys, ownership, and the relations other features share.",
@@ -79,7 +82,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Auth, session, and tenant middleware plus the shared error envelope",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "mid",
+      level: "Mid",
       writeScope: ["src/auth/**", "src/http/**"],
       steps: [
         "Add session, tenant, and role-check middleware primitives.",
@@ -94,7 +97,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "UI design system foundation and styleguide harness",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "mid",
+      level: "Mid",
       writeScope: [
         "design/tokens.json",
         "src/styles/**",
@@ -122,7 +125,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Shared domain types, validation schemas, and brand asset registry",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "junior",
+      level: "Junior",
       writeScope: ["src/domain/**", "src/validation/**", "brand/**"],
       steps: [
         "Add shared domain types that later features import instead of redeclaring.",
@@ -137,7 +140,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Test environment, smoke harness, and CI workflow stub",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "junior",
+      level: "Junior",
       writeScope: smokeScope,
       steps: smokeSteps,
       expectedOutputs: smokeScope,
@@ -148,7 +151,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Observability, health checks, and deterministic clock hooks",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "mid",
+      level: "Mid",
       writeScope: ["src/observability/**", "src/health/**", "src/clock/**"],
       steps: [
         "Add request logging and a health-check middleware.",
@@ -163,7 +166,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Dev JSX source tagging and preview server entrypoint",
       stage: "parallel",
       dependsOn: ["P0.1"],
-      level: "junior",
+      level: "Junior",
       writeScope: ["plugins/jsx-source-tag/**", "src/preview/**"],
       steps: [
         "Add the dev-only JSX source-tagging plugin (Task 161).",
@@ -178,7 +181,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Brownfield characterization tests and baseline test health",
       stage: "parallel",
       dependsOn: [],
-      level: "mid",
+      level: "Mid",
       writeScope: ["tests/characterization/**", "tests/baseline/**"],
       steps: [
         "Add characterization tests that lock the behavior this change must not break.",
@@ -193,7 +196,7 @@ export function phase0Catalog(projectKind: ProjectKind): ReadonlyMap<string, Pha
       title: "Brownfield dependency preparation without scaffold changes",
       stage: "parallel",
       dependsOn: [],
-      level: "junior",
+      level: "Junior",
       writeScope: [".ef/dependency-intents/**", ".ef/prep/**"],
       steps: [
         "Write additive dependency intents for the kernel installer.",

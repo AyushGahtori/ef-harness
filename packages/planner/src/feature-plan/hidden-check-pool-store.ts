@@ -68,6 +68,11 @@ export class HiddenCheckPoolStore {
     return `kernel://state.db/hidden_checks/${id}`;
   }
 
+  listSealedForFeatures(featureIds: readonly string[]): readonly StoredHiddenCheck[] {
+    const allowed = new Set(featureIds);
+    return this.db.listHidden().filter((row) => row.status === "sealed" && allowed.has(row.featureId));
+  }
+
   listForFeature(featureId: string): readonly StoredHiddenCheck[] {
     return this.db.listHidden(featureId).filter((row) => row.status === "sealed");
   }

@@ -16,9 +16,9 @@ import type { PlannedTask, SessionInput } from "../../src/feature-plan/index.js"
 import { architecture, cutoffRequirement, noteRequirement, openSession, sessionInput } from "./fixture.js";
 
 describe("JitFeaturePlanner and sealed oracles", () => {
-  it("decomposes a feature into bounded disjoint leaves plus the Task 096 slot", () => {
+  it("decomposes a feature into bounded disjoint leaves plus the Task 096 slot", async () => {
     const { db, session, input } = openSession();
-    const receipt = session.planAndSeal(input);
+    const receipt = await session.planAndSeal(input);
     const plan = session.currentPlan();
     expect(plan.integration.integrationSlot).toBe("096");
     expect(plan.integration.taskType).toBe("feature_integration");
@@ -57,12 +57,12 @@ describe("JitFeaturePlanner and sealed oracles", () => {
     expect(TOUCH_TAGS).toHaveLength(28);
   });
 
-  it("seals an independent pool before compile and keeps it out of worker briefs", () => {
+  it("seals an independent pool before compile and keeps it out of worker briefs", async () => {
     const model = new FakeModelAdapter();
     const { session, input } = openSession(sessionInput({ model }));
     expect(() => session.beginGraphCompile(1)).toThrow(FeaturePlanError);
     expect(() => session.authorizeWorker("task-F-orders-REQ-cutoff")).toThrow(FeaturePlanError);
-    const receipt = session.planAndSeal(input);
+    const receipt = await session.planAndSeal(input);
     const oracleCall = model.calls.find((call) => call.role === "oracle-author@1" && call.repair === null);
     expect(oracleCall?.family).toBe("anthropic");
     expect(oracleCall?.model).toBe("claude-senior");
@@ -99,13 +99,13 @@ describe("JitFeaturePlanner and sealed oracles", () => {
     expect(sealed.every((row) => row.encryptedAtRest === false)).toBe(true);
   });
 
-  it("refuses to plan before feature architecture passes consistency", () => {
+  it("refuses to plan before feature architecture passes consistency", async () => {
     const model = new FakeModelAdapter();
     const { db, session } = openSession();
     const input = sessionInput({ model, architecture: architecture(false) });
-    expect(() => session.planAndSeal(input)).toThrow(FeaturePlanError);
+    await expect(session.planAndSeal(input)).rejects.toThrow(FeaturePlanError);
     try {
-      session.planAndSeal(input);
+      await session.planAndSeal(input);
     } catch (error) {
       expect((error as FeaturePlanError).code).toBe("architecture_not_ready");
     }
@@ -113,20 +113,20 @@ describe("JitFeaturePlanner and sealed oracles", () => {
     expect(db.listNodes()).toEqual([]);
   });
 
-  it("flags an 18-file mega-task and overlapping write scopes", () => {
+  it("flags an 18-file mega-task and overlapping write scopes", async () => {
     const files = Array.from({ length: 18 }, (_, index) => `src/mega/file-${index}.ts`);
     const model = new FakeModelAdapter();
     const { db, session } = openSession();
-    expect(() =>
+    await expect(
       session.planAndSeal(
         sessionInput({
           model,
           requirements: [cutoffRequirement(files)],
         }),
       ),
-    ).toThrow(FeaturePlanError);
+    ).rejects.toThrow(FeaturePlanError);
     try {
-      session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement(files)] }));
+      await session.planAndSeal(sessionInput({ model, requirements: [cutoffRequirement(files)] }));
     } catch (error) {
       expect((error as FeaturePlanError).code).toBe("oversized_task");
       expect((error as FeaturePlanError).message).toContain("18");
@@ -141,15 +141,17 @@ describe("JitFeaturePlanner and sealed oracles", () => {
         { ...noteRequirement(), files: ["src/f-orders/shared.ts"] },
       ],
     });
-    expect(() => new FeaturePlanningSession(FeaturePlanDatabase.memory()).planAndSeal(shared)).toThrow(FeaturePlanError);
+    await expect(new FeaturePlanningSession(FeaturePlanDatabase.memory()).planAndSeal(shared)).rejects.toThrow(
+      FeaturePlanError,
+    );
     try {
-      new FeaturePlanningSession(FeaturePlanDatabase.memory()).planAndSeal(shared);
+      await new FeaturePlanningSession(FeaturePlanDatabase.memory()).planAndSeal(shared);
     } catch (error) {
       expect((error as FeaturePlanError).code).toBe("write_scope_overlap");
     }
   });
 
-  it("rejects a planner reference to REQ-999 before any task row is committed", () => {
+  it("rejects a planner reference to REQ-999 before any task row is committed", async () => {
     const model = new FakeModelAdapter();
     const input = sessionInput({ model, requirements: [cutoffRequirement()] });
     const raw = deterministicFeaturePlan(buildPlannerModelInput(contextOf(input), input.requirements)) as {
@@ -159,10 +161,10 @@ describe("JitFeaturePlanner and sealed oracles", () => {
     model.pushPlanner(raw);
     const db = FeaturePlanDatabase.memory();
     const session = new FeaturePlanningSession(db);
-    expect(() => session.planAndSeal(input)).toThrow(FeaturePlanError);
+    await expect(session.planAndSeal(input)).rejects.toThrow(FeaturePlanError);
     try {
       model.pushPlanner(raw);
-      session.planAndSeal(input);
+      await session.planAndSeal(input);
     } catch (error) {
       expect((error as FeaturePlanError).code).toBe("dangling_node");
       expect((error as FeaturePlanError).message).toContain("REQ-999");
