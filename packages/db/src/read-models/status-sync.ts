@@ -1,7 +1,7 @@
 import { InvalidSyncRequestError } from "./errors.js";
 import { rebuildRequirementRollups } from "./drift.js";
 import type { QueryCatalog } from "./query-catalog.js";
-import type { ReadModelConnection, ReadModelStatement } from "./sql.js";
+import type { ReadModelDatabase, ReadModelStatement } from "./sql.js";
 import { ensureMonotonicCheckTimestamps } from "./timestamps.js";
 import type {
   RecomputedRequirement,
@@ -20,7 +20,7 @@ interface StoredStatus {
 }
 
 export function syncRequirementStatuses(
-  connection: ReadModelConnection,
+  connection: ReadModelDatabase,
   catalog: QueryCatalog,
   request: RequirementStatusSyncRequest & { readonly all?: boolean },
   updatedRev: number,
@@ -71,7 +71,7 @@ export function assertTargetedSync(request: RequirementStatusSyncRequest): void 
 }
 
 function targetIds(
-  connection: ReadModelConnection,
+  connection: ReadModelDatabase,
   request: RequirementStatusSyncRequest,
 ): Set<string> {
   const ids = new Set<string>(request.requirementIds ?? []);
@@ -95,7 +95,7 @@ function unionIds(
   return ids;
 }
 
-function loadStored(connection: ReadModelConnection): Map<string, StoredStatus> {
+function loadStored(connection: ReadModelDatabase): Map<string, StoredStatus> {
   const rows = connection
     .prepare("SELECT requirement, feature, status, updated_rev FROM requirement_status")
     .all();
@@ -118,7 +118,7 @@ interface StatusStatements {
   readonly replace: ReadModelStatement;
 }
 
-function statusStatements(connection: ReadModelConnection): StatusStatements {
+function statusStatements(connection: ReadModelDatabase): StatusStatements {
   return {
     insert: connection.prepare(
       `INSERT INTO requirement_status(requirement, feature, status, updated_rev)

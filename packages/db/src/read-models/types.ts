@@ -37,6 +37,11 @@ export interface BoardSummary {
   readonly readRows: number;
 }
 
+export interface BoardSnapshotPage {
+  readonly features: readonly FeatureProgress[];
+  readonly nextCursor: string | null;
+}
+
 export interface TaskRollupDriftRow {
   readonly feature: string;
   readonly state: string;

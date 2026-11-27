@@ -927,6 +927,7 @@ export {
   InvalidOutboxEventError,
   OutboxDispatcher,
   OutboxRepo,
+  bindOutbox,
   OutboxStartupReplayPendingError,
   OutboxTransactionRequiredError,
   PENDING_FOR_CONSUMER_SQL,
@@ -980,6 +981,7 @@ export {
   ReadModelQueryError,
   ReadModelRepo,
   ReadModelTransactionError,
+  bindReadModels,
   RollupWriteForbiddenError,
   WaiverApprovalRequiredError,
   createMemoryLogger,
@@ -989,7 +991,9 @@ export {
   openReadModelRepo,
 } from "./read-models/index.js";
 export type {
+  BoardSnapshotPage,
   BoardSummary,
+  ReadModelDatabase,
   CanonicalReadModelQuery,
   DriftBugAlert,
   DriftReport,

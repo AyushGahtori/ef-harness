@@ -1,4 +1,4 @@
-import { ReadModelTransactionError } from "./errors.js";
+import { ReadModelHealError, ReadModelQueryError, ReadModelTransactionError } from "./errors.js";
 import { BoardReader } from "./board.js";
 import {
   alertDrift,
@@ -15,10 +15,11 @@ import {
   openReadModelDatabase,
   readQueriesSql,
   type OpenReadModelDatabaseOptions,
-  type ReadModelConnection,
+  type ReadModelDatabase,
 } from "./sql.js";
 import { assertTargetedSync, syncRequirementStatuses } from "./status-sync.js";
 import type {
+  BoardSnapshotPage,
   BoardSummary,
   CanonicalReadModelQuery,
   DriftReport,
@@ -46,7 +47,7 @@ export class ReadModelRepo {
   private closed = false;
 
   constructor(
-    readonly database: ReadModelConnection,
+    readonly database: ReadModelDatabase,
     options: ReadModelOptions = {},
   ) {
     this.logger = options.logger ?? createReadModelLogger();
@@ -75,6 +76,33 @@ export class ReadModelRepo {
 
   getBoardSummary(): BoardSummary {
     return this.board.summary();
+  }
+
+  /**
+   * Cursor page over the trigger-maintained board rollup.
+   * `cursor` is the last feature id already returned. Rollup rows are the source; this does not `COUNT(*)` task facts.
+   */
+  getBoardSnapshot(cursor?: string, limit?: number): BoardSnapshotPage {
+    const pageLimit = boardPageLimit(limit);
+    const features = this.board.summary().features;
+    const start = cursor === undefined ? 0 : indexAfterCursor(features, cursor);
+    const page = features.slice(start, start + pageLimit);
+    const last = page[page.length - 1];
+    const more = start + page.length < features.length;
+    if (!more || last === undefined) return { features: page, nextCursor: null };
+    return { features: page, nextCursor: last.feature };
+  }
+
+  getFeatureRollups(): readonly FeatureProgress[] {
+    return this.board.summary().features;
+  }
+
+  recomputeRollupsAndVerifyZeroDrift(): DriftReport {
+    const report = this.runDriftCheckAndHeal();
+    if (report.drifted && !report.healed) {
+      throw new ReadModelHealError("rollup recompute left drift in place");
+    }
+    return report;
   }
 
   getFeatureProgress(feature: string): FeatureProgress {
@@ -161,8 +189,22 @@ export class ReadModelRepo {
   }
 }
 
+function boardPageLimit(limit: number | undefined): number {
+  if (limit === undefined) return 100;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    throw new ReadModelQueryError("board snapshot limit must be an integer from 1 to 1000");
+  }
+  return limit;
+}
+
+function indexAfterCursor(features: readonly FeatureProgress[], cursor: string): number {
+  const index = features.findIndex((row) => row.feature === cursor);
+  if (index < 0) return features.length;
+  return index + 1;
+}
+
 export function createReadModelRepo(
-  database: ReadModelConnection,
+  database: ReadModelDatabase,
   options: ReadModelOptions = {},
 ): ReadModelRepo {
   return new ReadModelRepo(database, options);

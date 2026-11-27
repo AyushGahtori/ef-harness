@@ -52,6 +52,8 @@ export interface OutboxRepoOptions {
   readonly replayLimit?: number;
   readonly onAlert?: (alert: OutboxAuditAlert) => void;
   readonly onLag?: (metric: OutboxLagMetric) => void;
+  /** When set, `appendEvent`, `readSinceSeq`, `ackDelivery`, and `currentStreamEpoch` use this connection. */
+  readonly connection?: OutboxConnection;
 }
 
 function assertInteger(value: number, field: string): number {
@@ -89,6 +91,19 @@ function run(statement: OutboxStatement, params: Readonly<Record<string, SqlValu
   return statement.run(params);
 }
 
+const CANONICAL_EPOCH = /^(?:0|[1-9][0-9]*)$/;
+
+function assertCanonicalEpoch(value: string | null, field: string): string {
+  if (value === null || !CANONICAL_EPOCH.test(value)) {
+    throw new InvalidOutboxEventError(`${field} must be a non-empty canonical integer string`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new InvalidOutboxEventError(`${field} must be a safe integer string`);
+  }
+  return value;
+}
+
 export class OutboxRepo {
   private readonly now: () => number;
   private readonly retentionMs: number;
@@ -96,6 +111,7 @@ export class OutboxRepo {
   private readonly replayLimit: number;
   private readonly onAlert: ((alert: OutboxAuditAlert) => void) | undefined;
   private readonly onLag: ((metric: OutboxLagMetric) => void) | undefined;
+  private readonly boundConnection: OutboxConnection | null;
   private readonly alerts: OutboxAuditAlert[] = [];
   private readonly lagMetrics: OutboxLagMetric[] = [];
 
@@ -106,6 +122,7 @@ export class OutboxRepo {
     this.replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT;
     this.onAlert = options.onAlert;
     this.onLag = options.onLag;
+    this.boundConnection = options.connection ?? null;
     canonicalOutboxQueries();
   }
 
@@ -312,6 +329,49 @@ export class OutboxRepo {
   }
 
   /**
+   * Insert the event and its delivery rows on the bound connection.
+   * The caller must already own `BEGIN IMMEDIATE` (the write queue savepoint does).
+   */
+  appendEvent(event: OutboxEventDraft, consumers: readonly string[]): AppendedOutboxEvent {
+    return this.appendEventInTx(this.requireBound(), event, consumers);
+  }
+
+  ackDelivery(eventId: string, consumer: string, deliveredAt?: number): boolean {
+    const conn = this.requireBound();
+    if (deliveredAt === undefined) return this.acknowledgeDelivery(conn, eventId, consumer);
+    return this.acknowledgeDelivery(conn, eventId, consumer, deliveredAt);
+  }
+
+  /**
+   * Cursor page of domain events after `afterSeq`.
+   * A different canonical epoch string returns an empty resync batch and does not scan the table.
+   */
+  readSinceSeq(streamEpoch: string, afterSeq: number, limit?: number): OutboxReplayBatch {
+    assertCanonicalEpoch(streamEpoch, "streamEpoch");
+    const current = this.currentStreamEpoch();
+    const conn = this.requireBound();
+    if (streamEpoch !== current) {
+      return this.batch(
+        afterSeq,
+        [],
+        true,
+        false,
+        this.getMinRetainedSeq(conn),
+        this.getHighWaterSeq(conn),
+        current,
+      );
+    }
+    if (limit === undefined) return this.replayEventsSince(conn, afterSeq);
+    return this.replayEventsSince(conn, afterSeq, undefined, limit);
+  }
+
+  /** `meta.stream_epoch` as the non-empty decimal integer string stored in `state.db`. */
+  currentStreamEpoch(): string {
+    const value = this.getStreamEpoch(this.requireBound());
+    return assertCanonicalEpoch(value, "stream_epoch");
+  }
+
+  /**
    * Runs `prune_outbox` from schema/queries.sql. Default cutoff is now minus 7 days.
    * Pass a numeric cutoff to match schema-test.js (`created_at < :cutoff`).
    */
@@ -383,6 +443,13 @@ export class OutboxRepo {
       }
       return lag;
     });
+  }
+
+  private requireBound(): OutboxConnection {
+    if (this.boundConnection === null) {
+      throw new InvalidOutboxEventError("OutboxRepo is not bound to ProjectStateDb");
+    }
+    return this.boundConnection;
   }
 
   private readById(conn: OutboxConnection, id: string): StoredOutboxEvent {

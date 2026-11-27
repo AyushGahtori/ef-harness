@@ -1,7 +1,7 @@
 import { ReadModelHealError } from "./errors.js";
 import type { ReadModelLogger } from "./logger.js";
 import type { QueryCatalog } from "./query-catalog.js";
-import type { ReadModelConnection } from "./sql.js";
+import type { ReadModelDatabase } from "./sql.js";
 import { ensureMonotonicCheckTimestamps } from "./timestamps.js";
 import type {
   DriftBugAlert,
@@ -36,7 +36,7 @@ export interface DriftSnapshot {
   readonly requirementStatus: readonly RequirementStatusDriftRow[];
 }
 
-export function detectDrift(connection: ReadModelConnection, catalog: QueryCatalog): DriftSnapshot {
+export function detectDrift(connection: ReadModelDatabase, catalog: QueryCatalog): DriftSnapshot {
   const timestampsAdjusted = ensureMonotonicCheckTimestamps(connection);
   const taskRollup = catalog
     .all("rollup_drift")
@@ -64,7 +64,7 @@ export function detectDrift(connection: ReadModelConnection, catalog: QueryCatal
 }
 
 export function healDrift(
-  connection: ReadModelConnection,
+  connection: ReadModelDatabase,
   catalog: QueryCatalog,
   snapshot: DriftSnapshot,
   updatedRev: number,
@@ -82,7 +82,7 @@ export function healDrift(
   }
 }
 
-export function confirmHealed(connection: ReadModelConnection, catalog: QueryCatalog): void {
+export function confirmHealed(connection: ReadModelDatabase, catalog: QueryCatalog): void {
   const again = detectDrift(connection, catalog);
   const remaining =
     again.taskRollup.length + again.requirementRollup.length + again.requirementStatus.length;
@@ -119,7 +119,7 @@ export function alertDrift(logger: ReadModelLogger, snapshot: DriftSnapshot): vo
   logger.alert(entry);
 }
 
-export function rebuildRequirementRollups(connection: ReadModelConnection): void {
+export function rebuildRequirementRollups(connection: ReadModelDatabase): void {
   connection.withRollupRebuild(() => {
     connection.exec("DELETE FROM rollup_feature_requirements");
     connection.exec(
@@ -132,7 +132,7 @@ export function rebuildRequirementRollups(connection: ReadModelConnection): void
 }
 
 function replaceRequirementStatuses(
-  connection: ReadModelConnection,
+  connection: ReadModelDatabase,
   catalog: QueryCatalog,
   updatedRev: number,
 ): void {
@@ -150,7 +150,7 @@ function replaceRequirementStatuses(
   });
 }
 
-function rebuildTaskRollups(connection: ReadModelConnection): void {
+function rebuildTaskRollups(connection: ReadModelDatabase): void {
   connection.withRollupRebuild(() => {
     connection.exec("DELETE FROM rollup_feature_tasks");
     connection.exec(
@@ -163,7 +163,7 @@ function rebuildTaskRollups(connection: ReadModelConnection): void {
 }
 
 function diffRequirementStatus(
-  connection: ReadModelConnection,
+  connection: ReadModelDatabase,
   catalog: QueryCatalog,
 ): RequirementStatusDriftRow[] {
   const recomputed = new Map(loadRecomputed(catalog).map((row) => [row.requirement, row]));
@@ -221,7 +221,7 @@ function driftMessage(snapshot: DriftSnapshot): string {
   ].join("; ");
 }
 
-export function storedRevision(connection: ReadModelConnection): number {
+export function storedRevision(connection: ReadModelDatabase): number {
   const row = connection.prepare("SELECT value FROM meta WHERE key = 'last_rev'").get();
   if (!row) return 0;
   const raw = text(row.value, "last_rev");

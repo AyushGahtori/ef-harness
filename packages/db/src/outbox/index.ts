@@ -34,6 +34,7 @@ export {
 } from "./replay-rules.js";
 export { OutboxRepo } from "./repo.js";
 export type { OutboxRepoOptions } from "./repo.js";
+export { bindOutbox } from "./project-bind.js";
 export { OutboxDispatcher } from "./dispatcher.js";
 export type { OutboxDispatcherOptions } from "./dispatcher.js";
 export { PENDING_FOR_CONSUMER_SQL } from "./statements.js";

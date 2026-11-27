@@ -1,5 +1,5 @@
 import { ReadModelQueryError } from "./errors.js";
-import type { ReadModelConnection, ReadModelStatement } from "./sql.js";
+import type { ReadModelDatabase, ReadModelStatement } from "./sql.js";
 import type { SqlRow, SqlValue } from "./values.js";
 
 export interface QueryCatalog {
@@ -14,7 +14,7 @@ interface ParsedQuery {
   readonly params: readonly string[];
 }
 
-export function loadQueryCatalog(connection: ReadModelConnection, queriesSql: string): QueryCatalog {
+export function loadQueryCatalog(connection: ReadModelDatabase, queriesSql: string): QueryCatalog {
   const queries = parseQueryCatalog(queriesSql);
   const prepared = new Map<string, ReadModelStatement>();
 

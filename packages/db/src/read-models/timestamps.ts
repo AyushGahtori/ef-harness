@@ -1,4 +1,4 @@
-import type { ReadModelConnection } from "./sql.js";
+import type { ReadModelDatabase } from "./sql.js";
 import { integer, text } from "./values.js";
 
 /**
@@ -7,7 +7,7 @@ import { integer, text } from "./values.js";
  * increasing within a check. Ties break by attempt id, then check_version,
  * and the last row in that order becomes the newest result.
  */
-export function ensureMonotonicCheckTimestamps(connection: ReadModelConnection): number {
+export function ensureMonotonicCheckTimestamps(connection: ReadModelDatabase): number {
   const rows = connection
     .prepare(
       `SELECT check_id, attempt, check_version, recorded_at

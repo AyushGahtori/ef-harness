@@ -1,4 +1,4 @@
-import type { ReadModelConnection, ReadModelStatement } from "./sql.js";
+import type { ReadModelDatabase, ReadModelStatement } from "./sql.js";
 import type { FeatureProgress, RequirementStatusName } from "./types.js";
 import {
   compareText,
@@ -33,7 +33,7 @@ export class BoardReader {
   private readonly oneTasks: ReadModelStatement;
   private readonly oneRequirements: ReadModelStatement;
 
-  constructor(connection: ReadModelConnection) {
+  constructor(connection: ReadModelDatabase) {
     this.allTasks = connection.prepare(TASK_JOIN);
     this.allRequirements = connection.prepare(
       "SELECT feature, status, n FROM rollup_feature_requirements",

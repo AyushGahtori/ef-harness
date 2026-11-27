@@ -20,6 +20,15 @@ export interface ReadModelStatement {
   run(params?: Record<string, SqlValue> | readonly SqlValue[]): { changes: number };
 }
 
+/** Connection surface shared by a private database and an adopted `ProjectStateDb` writer. */
+export interface ReadModelDatabase {
+  readonly isTransaction: boolean;
+  exec(sql: string): void;
+  prepare(sql: string): ReadModelStatement;
+  close(): void;
+  withRollupRebuild<T>(work: () => T): T;
+}
+
 export interface OpenReadModelDatabaseOptions {
   readonly location?: string;
   readonly initialize?: boolean;

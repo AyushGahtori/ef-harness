@@ -11,9 +11,11 @@ export { createMemoryLogger, createReadModelLogger } from "./logger.js";
 export type { ReadModelLogger } from "./logger.js";
 export { createReadModelRepo, openReadModelRepo, ReadModelRepo } from "./repo.js";
 export type { OpenReadModelOptions, ReadModelOptions } from "./repo.js";
+export { bindReadModels } from "./project-bind.js";
 export { openReadModelDatabase, ReadModelConnection } from "./sql.js";
-export type { OpenReadModelDatabaseOptions, ReadModelStatement } from "./sql.js";
+export type { OpenReadModelDatabaseOptions, ReadModelDatabase, ReadModelStatement } from "./sql.js";
 export type {
+  BoardSnapshotPage,
   BoardSummary,
   CanonicalReadModelQuery,
   DriftBugAlert,

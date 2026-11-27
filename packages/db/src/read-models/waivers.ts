@@ -1,6 +1,6 @@
 import { WaiverApprovalRequiredError } from "./errors.js";
 import type { QueryCatalog } from "./query-catalog.js";
-import type { ReadModelConnection } from "./sql.js";
+import type { ReadModelDatabase } from "./sql.js";
 import type { RecomputedRequirement, WaiverExposure } from "./types.js";
 import { nullableText, requirementStatus, text } from "./values.js";
 
@@ -16,7 +16,7 @@ interface WaiverDecision {
   readonly detail: string;
 }
 
-export function listWaiverExposure(connection: ReadModelConnection): WaiverExposure[] {
+export function listWaiverExposure(connection: ReadModelDatabase): WaiverExposure[] {
   const rows = connection
     .prepare(
       `SELECT w.id, w.requirement_id, w.reason, w.approved_by, w.risk_max, r.risk AS requirement_risk
@@ -44,7 +44,7 @@ export function listWaiverExposure(connection: ReadModelConnection): WaiverExpos
 }
 
 export function assertWaiversPermit(
-  connection: ReadModelConnection,
+  connection: ReadModelDatabase,
   rows: readonly RecomputedRequirement[],
 ): void {
   const waived = rows.filter((row) => row.status === "waived");
