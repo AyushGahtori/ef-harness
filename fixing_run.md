@@ -518,3 +518,27 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/git-engine test`: exit `0` — `Test Files 17 passed (17)`, `Tests 121 passed (121)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+## [C16] — Job Object export and Tier B slot ACL revoke on dispose
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-high
+- **Commit on `harness/integration`:** `c9d1ab3039dc85c0a5293e3aee12887044c7dd29` (`integrate: C16 revoke idle slot ACLs on dispose`)
+- **Findings Fixed:** `F-022`, `F-060`, `F-070` (sandbox supervisor export and Tier B slot ACL revoke only). `test-env` stays for C19/C20. `runtime-adapters` stays for C17/C55. `apps/daemon` preview stays for C66. `F-018` was not implemented.
+
+### What Changed
+- Re-verified on `1a94f8cae069f799c6ef1e5bd3def1aee1e1ec70`. Did not re-merge `origin/task/040-windows-job-objects` (`ddcffc7`), `origin/task/041-sandbox-tier-a-mxc` (`bca08dd`), or `origin/task/042-sandbox-tier-b-users` (`1b8a413`). `git merge-base --is-ancestor` exited `0` for all three. No dirty patch for C16. Did not start C17. Did not merge `main`. Did not open a pull request. Did not add `@ef-harness/db` to sandbox. Did not edit `git-engine`, `schema/**`, harness-run, research-engine, runtime-adapters, or apps/daemon. `path_leases.mode` stays `'intent' | 'granted'`. Live directories stay `tier-a-mxc/` and `tier-b-users/`. Live class stays `WindowsJobManager` (exported alias `WindowsJobObjectManager`). Providers stay `TierAMxcProvider` and `TierBSandboxUsersProvider`. The Win32 job helper and `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` check stay in production; `WindowsJobManager.helper()` still throws `unsupported_platform` when `process.platform !== "win32"`. icacls stays a command plan on `AclPort` and is not spawned.
+- `EmptySlotAclManager.revokeSlotGrant` records `icacls <slot> /remove:g *<sid>` for the sandbox-user SID and the per-slot capability SID, with no `/T`. `TierBSandboxUsersProvider.disposeInstance` calls it. `run()`'s `finally` still only closes the nested command job and wipes temp. `acquireWarmInstance` calls `regrantSlot` before `requireSlotGrant`, including when the slot directory already contains files. `packages/sandbox/tests/tier-b-users/provider.test.ts` still acquires again after dispose without a new `onEmptySlotCreated`.
+- `@ef-harness/sandbox` re-exports `WindowsJobManager as WindowsJobObjectManager`. `JobHandle` was already exported from `job-objects`.
+
+### What It Fixed
+- **F-022, F-060, F-070:** `@ef-harness/sandbox` now exports one `WindowsJobObjectManager` name (the live `WindowsJobManager`) and `JobHandle` for later `test-env`, `runtime-adapters`, and preview wiring. Those packages were not edited.
+- **Tier B slot recycle:** disposing an instance removes the idle slot's granted ACEs. The next acquire puts the same capability SID back before `requireSlotGrant`. A command that returns, including a timeout, does not revoke the slot while the instance is still held.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `ddcffc7`, `bca08dd`, and `1b8a413`: exit `0` (all ancestors of `1a94f8cae069f799c6ef1e5bd3def1aee1e1ec70`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/sandbox test`: exit `1` — `Test Files 5 failed | 25 passed | 2 skipped (32)`, `Tests 9 failed | 150 passed | 20 skipped (179)`. The same 9 failures are present at `1a94f8c` (`148` passed there; the 2 new Tier B tests passed). Failed: `tests/harness-run/engine.test.ts` (job host compile; suite load), `tests/harness-run/policy.test.ts` (`del /f` rule), `tests/tier-a-mxc/policy.test.ts` (6 tests, `C:\` paths are not absolute on Linux), `tests/tier-a-mxc/probe.test.ts` (live `osBuild` is `linux`), `tests/tier-b-users/provider.test.ts` (desktop `lpDesktop` is null off win32). Harness-run was not edited.
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
