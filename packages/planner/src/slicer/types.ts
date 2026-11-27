@@ -1,17 +1,33 @@
-export const WORKER_LEVELS = ["junior", "senior"] as const;
+import { normalizeWorkerTier } from "@ef-harness/shared-contracts";
+import type { WorkerTier } from "@ef-harness/shared-contracts";
+
+export const WORKER_LEVELS = ["junior", "mid", "senior", "principal"] as const;
 export type WorkerLevel = (typeof WORKER_LEVELS)[number];
+
+export const BAND_NAMES = ["MUST", "SHOULD", "COULD"] as const;
+export type BandName = (typeof BAND_NAMES)[number];
+
+/** Optional brownfield convention header, in the same word-token counter as the brief. */
+export const BROWNFIELD_CONVENTION_TOKEN_CAP = 600;
+/** Optional recent-sweep symbol map header. */
+export const SWEEP_SYMBOL_MAP_TOKEN_CAP = 300;
 
 export const LEVEL_BUDGETS = {
   junior: { targetMin: 2000, targetMax: 3000, hardCeiling: 3200, mustRefusal: 3000 },
+  mid: { targetMin: 3000, targetMax: 4500, hardCeiling: 4800, mustRefusal: 4500 },
   senior: { targetMin: 4000, targetMax: 6000, hardCeiling: 6400, mustRefusal: 6000 },
+  principal: { targetMin: 6000, targetMax: 8000, hardCeiling: 8400, mustRefusal: 8000 },
 } as const;
 
-export const ATTEMPT_COST_USD = { junior: 0.05, senior: 0.4 } as const;
+export const ATTEMPT_COST_USD = { junior: 0.05, mid: 0.15, senior: 0.4, principal: 0.8 } as const;
 export const SKILL_COUNT_CAP = 2;
 export const SKILL_COMBINED_TOKEN_CAP = 3500;
 
 export const KB_PULL_TOOL_IDS = [
   "kb.search",
+  "kb.get_node",
+  "kb.list_rules",
+  "kb.get_contract",
   "kb.get",
   "kb.neighbors",
   "kb.contract",
@@ -219,13 +235,75 @@ export interface SliceRequest {
   readonly skills?: readonly SkillRecord[];
   readonly attemptId?: string | null;
   readonly role?: string;
+  readonly brownfieldConventions?: string;
+  readonly recentSweepSymbolMap?: string;
+}
+
+export interface SliceBriefRequest {
+  readonly graph: SliceGraph;
+  readonly project: ProjectPrefix;
+  readonly tier?: WorkerTier | string;
+  readonly level?: WorkerLevel | string;
+  readonly skills?: readonly SkillRecord[];
+  readonly attemptId?: string | null;
+  readonly role?: string;
+  readonly brownfieldConventions?: string;
+  readonly recentSweepSymbolMap?: string;
+}
+
+export interface BandedItem extends Omit<SliceItem, "band"> {
+  readonly band: BandName;
+}
+
+export interface CompiledTaskBrief {
+  readonly tier: WorkerTier;
+  readonly level: WorkerLevel;
+  readonly text: string;
+  readonly bands: {
+    readonly MUST: readonly BandedItem[];
+    readonly SHOULD: readonly BandedItem[];
+    readonly COULD: readonly BandedItem[];
+  };
+  readonly brief: CompiledBrief;
+}
+
+export interface MustBandOversizeRefusal {
+  readonly code: "MustBandOversizeRefusal";
+  readonly taskId: string;
+  readonly tier: WorkerTier;
+  readonly level: WorkerLevel;
+  readonly mustTokens: number;
+  readonly ceiling: number;
+  readonly attribution: readonly TokenAttribution[];
+  readonly recommendations: readonly SplitRecommendation[];
+  readonly summary: string;
 }
 
 export function normalizeLevel(value: string): WorkerLevel {
-  const lowered = value.trim().toLowerCase();
-  if (lowered === "senior") return "senior";
-  if (lowered === "junior" || lowered === "cheap") return "junior";
+  const tier = normalizeWorkerTier(value);
+  if (tier === "Junior") return "junior";
+  if (tier === "Mid") return "mid";
+  if (tier === "Senior") return "senior";
+  if (tier === "Principal") return "principal";
+  if (value.trim().toLowerCase() === "cheap") return "junior";
   throw new Error(`unsupported worker level: ${value}`);
+}
+
+export function tierForLevel(level: WorkerLevel): WorkerTier {
+  if (level === "junior") return "Junior";
+  if (level === "mid") return "Mid";
+  if (level === "senior") return "Senior";
+  return "Principal";
+}
+
+export function includesFailureModes(level: WorkerLevel): boolean {
+  return level === "senior" || level === "principal";
+}
+
+export function toBandName(band: SliceBand): BandName {
+  if (band === "must") return "MUST";
+  if (band === "should") return "SHOULD";
+  return "COULD";
 }
 
 export function fieldString(fields: Readonly<Record<string, Json>>, key: string): string | null {

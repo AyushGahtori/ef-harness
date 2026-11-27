@@ -145,6 +145,30 @@ export interface KnowledgeSearchService {
   listRulesForTags?(input: { tags: readonly string[] }): Promise<readonly { id: string; title: string }[]>;
 }
 
+/**
+ * Planner `KbPullToolHandlers` call shape.
+ * Present on the kernel path that serves `kb.search`, `kb.get_node`,
+ * `kb.list_rules`, and `kb.get_contract` from `ProjectStateDb`.
+ */
+export interface KbPullPort {
+  call(
+    name: "kb.search" | "kb.get_node" | "kb.list_rules" | "kb.get_contract",
+    args: Readonly<Record<string, unknown>>,
+    ctx: {
+      attemptId: string;
+      taskId: string;
+      projectId: string;
+      waveId: string;
+      waveIndex: number;
+      turnId: string;
+      taskTags: readonly string[];
+      workerLevel: "junior" | "senior";
+      leaseEpoch?: number;
+      currentMustTokens?: number;
+    },
+  ): unknown;
+}
+
 export interface CandidateWiringNeed {
   kind: string;
   path: string;
@@ -430,6 +454,7 @@ export interface AttemptMcpDependencies {
   security: SecurityAnomalyLog;
   snippet?: SnippetBuilder;
   changedPaths?: ChangedPathReader;
+  kbPull?: KbPullPort;
 }
 
 export type ShutdownReason = "accepted" | "pause" | "fenced";

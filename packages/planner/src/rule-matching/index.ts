@@ -42,6 +42,7 @@ export {
   SENIOR_MUST_CEILING,
   SENIOR_MUST_HARD_CEILING,
 } from "./ports/token-budget.js";
+export { ProjectStateFtsSearchRepo, projectStateFtsRepo } from "./project-state-fts.js";
 export { PullTurnBudget, turnBudgetKey } from "./pull-budget.js";
 export { PullReadAnalyticsRecorder, recordFromContext } from "./pull-read-analytics-recorder.js";
 export type {

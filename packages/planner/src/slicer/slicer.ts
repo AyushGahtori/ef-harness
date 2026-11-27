@@ -1,22 +1,33 @@
+import { LocalSlicerPromotionStore } from "../rule-matching/ports/knowledge-packet-slicer.js";
+import type { BandOverride, SlicerPromotionHook } from "../rule-matching/ports/knowledge-packet-slicer.js";
 import { hashCanonical } from "./canonical.js";
 import { BandTokenBudgeter, shouldPointer, type BudgetItem } from "./budget.js";
 import { collectSlice } from "./collect.js";
-import { OversizedMustAutoSplitGuard } from "./guard.js";
+import { OversizedMustTaskError, OversizedMustAutoSplitGuard } from "./guard.js";
 import { BriefLayoutCompiler, type LayoutModel } from "./layout.js";
 import { assertWorkerBriefPacket, buildWorkerBriefPacket } from "./packet.js";
 import { RULE_CATALOG, type RuleSpec } from "./rules.js";
 import { LocalSkillSelector } from "./skills.js";
-import { compareText, countTokens } from "./tokens.js";
+import { compareText, countTokens, takeTokens } from "./tokens.js";
 import {
+  BROWNFIELD_CONVENTION_TOKEN_CAP,
   fieldString,
+  includesFailureModes,
   KB_PULL_TOOL_IDS,
   LEVEL_BUDGETS,
   normalizeLevel,
+  SWEEP_SYMBOL_MAP_TOKEN_CAP,
+  tierForLevel,
+  type BandedItem,
+  type BandName,
   type BriefManifest,
   type CompiledBrief,
+  type CompiledTaskBrief,
+  type MustBandOversizeRefusal,
   type PinnedItem,
   type ProjectPrefix,
   type SkillRecord,
+  type SliceBriefRequest,
   type SliceGraph,
   type SliceItem,
   type SliceNode,
@@ -29,18 +40,72 @@ export interface NodeVersionReader {
   getNodeAsOf(id: string, version: number): SliceNode | null;
 }
 
-export class KnowledgePacketSlicer {
+export class KnowledgePacketSlicer implements SlicerPromotionHook {
   private readonly budgeter = new BandTokenBudgeter();
   private readonly guard = new OversizedMustAutoSplitGuard();
   private readonly layout = new BriefLayoutCompiler();
   private readonly skills = new LocalSkillSelector();
+  private readonly promotions = new LocalSlicerPromotionStore();
 
   constructor(private readonly catalog: readonly RuleSpec[] = RULE_CATALOG) {}
+
+  upsertBand(override: BandOverride): void {
+    this.promotions.upsertBand(override);
+  }
+
+  compileTaskBrief(req: SliceBriefRequest): CompiledTaskBrief | MustBandOversizeRefusal {
+    const level = normalizeLevel(req.tier ?? req.level ?? req.graph.level);
+    const tier = tierForLevel(level);
+    const request: SliceRequest = {
+      level,
+      project: req.project,
+      ...(req.skills ? { skills: req.skills } : {}),
+      ...(req.attemptId !== undefined ? { attemptId: req.attemptId } : {}),
+      ...(req.role !== undefined ? { role: req.role } : {}),
+      ...headerFields(req),
+    };
+    try {
+      const brief = this.compile(req.graph, request);
+      return {
+        tier,
+        level,
+        text: brief.text,
+        bands: {
+          MUST: banded(brief.must, "MUST"),
+          SHOULD: banded(brief.should, "SHOULD"),
+          COULD: banded(brief.could, "COULD"),
+        },
+        brief,
+      };
+    } catch (error) {
+      if (error instanceof OversizedMustTaskError) {
+        const refusal: MustBandOversizeRefusal = {
+          code: "MustBandOversizeRefusal",
+          taskId: error.taskId,
+          tier,
+          level: error.level,
+          mustTokens: error.mustTokens,
+          ceiling: error.ceiling,
+          attribution: error.attribution,
+          recommendations: error.recommendations,
+          summary: error.summary,
+        };
+        return refusal;
+      }
+      throw error;
+    }
+  }
 
   compile(graph: SliceGraph, request: SliceRequest): CompiledBrief {
     const level = normalizeLevel(request.level ?? graph.level);
     const collected = collectSlice(graph, this.catalog);
-    const must = collected.items.filter((item) => item.band === "must");
+    const promoted = this.applyPromotions(
+      collected.items,
+      request.project.projectId,
+      collected.effectiveTags,
+      graph.epoch,
+    );
+    const must = promoted.filter((item) => item.band === "must");
     const refusal = this.guard.inspect({
       taskId: graph.taskId,
       level,
@@ -55,13 +120,14 @@ export class KnowledgePacketSlicer {
       skills: request.skills ?? [],
     });
     const shouldPool = [
-      ...collected.items.filter((item) => item.band === "should"),
+      ...promoted.filter((item) => item.band === "should"),
       ...selected.selected.map((skill) => skillItem(skill)),
-      ...(level === "senior" ? failureItems(graph, must) : []),
+      ...(includesFailureModes(level) ? failureItems(graph, must) : []),
     ];
-    const featureCould = collected.items.filter((item) => item.band === "could");
+    const featureCould = promoted.filter((item) => item.band === "could");
     const baseCould = [...toolItems(), ...featureCould];
-    const baseTokens = countTokens(this.render(level, request.project, collected, must, [], baseCould));
+    const headers = headerFields(request);
+    const baseTokens = countTokens(this.render(level, request.project, collected, must, [], baseCould, headers));
     const budget = this.budgeter.remainingShouldBudget(level, baseTokens);
     const ranked = shouldPool.map((item) => ({ item, budget: budgetOf(item) }));
     const trimmed = this.budgeter.trimShould(
@@ -78,14 +144,14 @@ export class KnowledgePacketSlicer {
       return source ? [source.item] : [];
     });
     let could = mergeCould(baseCould, dropped);
-    let text = this.render(level, request.project, collected, must, kept, could);
+    let text = this.render(level, request.project, collected, must, kept, could, headers);
     while (countTokens(text) > LEVEL_BUDGETS[level].targetMax && kept.length > 0) {
       const removed = kept[kept.length - 1];
       if (!removed) break;
       kept = kept.slice(0, -1);
       dropped = [...dropped, removed];
       could = mergeCould(baseCould, dropped);
-      text = this.render(level, request.project, collected, must, kept, could);
+      text = this.render(level, request.project, collected, must, kept, could, headers);
     }
     const total = countTokens(text);
     if (total > LEVEL_BUDGETS[level].hardCeiling) {
@@ -175,6 +241,21 @@ export class KnowledgePacketSlicer {
     });
   }
 
+  private applyPromotions(
+    items: readonly SliceItem[],
+    projectId: string,
+    tags: readonly string[],
+    waveIndex: number,
+  ): readonly SliceItem[] {
+    return items.map((item) => {
+      const override = this.promotions.overrideFor(projectId, item.id, tags, waveIndex);
+      if (!override || item.sealed) return item;
+      const band = override.band === "MUST" ? "must" : "should";
+      if (band === item.band) return item;
+      return { ...item, band };
+    });
+  }
+
   private render(
     level: WorkerLevel,
     project: ProjectPrefix,
@@ -182,6 +263,7 @@ export class KnowledgePacketSlicer {
     must: readonly SliceItem[],
     should: readonly SliceItem[],
     could: readonly SliceItem[],
+    headers: HeaderFields,
   ): string {
     const model: LayoutModel = {
       level,
@@ -192,6 +274,7 @@ export class KnowledgePacketSlicer {
       must,
       should,
       could,
+      ...headers,
     };
     return this.layout.compile(model);
   }
@@ -373,6 +456,32 @@ function toolItems(): SliceItem[] {
     excerpt: false,
     sealed: false,
   }));
+}
+
+interface HeaderFields {
+  readonly brownfieldConventions?: string;
+  readonly recentSweepSymbolMap?: string;
+}
+
+function headerFields(source: {
+  readonly brownfieldConventions?: string;
+  readonly recentSweepSymbolMap?: string;
+}): HeaderFields {
+  const brownfield = cappedHeader(source.brownfieldConventions, BROWNFIELD_CONVENTION_TOKEN_CAP);
+  const sweep = cappedHeader(source.recentSweepSymbolMap, SWEEP_SYMBOL_MAP_TOKEN_CAP);
+  return {
+    ...(brownfield ? { brownfieldConventions: brownfield } : {}),
+    ...(sweep ? { recentSweepSymbolMap: sweep } : {}),
+  };
+}
+
+function cappedHeader(value: string | undefined, max: number): string {
+  if (value === undefined) return "";
+  return takeTokens(value, max);
+}
+
+function banded(items: readonly SliceItem[], band: BandName): BandedItem[] {
+  return items.map((item) => ({ ...item, band }));
 }
 
 function mergeCould(base: readonly SliceItem[], trimmed: readonly SliceItem[]): SliceItem[] {

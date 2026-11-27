@@ -53,6 +53,7 @@ export interface KernelAttemptPorts {
   readonly isolation?: SandboxTierSelector;
   readonly osJobs?: OsCommandSupervisor;
   readonly snippet?: SnippetBuilder;
+  readonly kbPull?: AttemptMcpDependencies["kbPull"];
 }
 
 export function ruleMatchesTags(fields: unknown, tags: readonly string[]): boolean {
@@ -298,6 +299,7 @@ export function createKernelAttemptMcpDeps(input: KernelAttemptPorts): AttemptMc
     security: input.security,
     changedPaths: (worktreePath, baseCommit) => readGitChangedPaths(worktreePath, baseCommit),
     ...(input.snippet ? { snippet: input.snippet } : {}),
+    ...(input.kbPull ? { kbPull: input.kbPull } : {}),
   };
   return deps;
 }
@@ -498,8 +500,16 @@ function asStatus(value: string): KnowledgeNode["status"] {
 }
 
 function concealed(fields: Record<string, unknown>): boolean {
-  if (fields.visibility === "held_back" || fields.visibility === "hidden") return true;
-  return fields.held_back === true || fields.sealed_oracle === true || fields.hidden_check === true;
+  if (
+    fields.visibility === "held_back" ||
+    fields.visibility === "hidden" ||
+    fields.visibility === "sealed" ||
+    fields.visibility === "oracle_only" ||
+    fields.visibility === "sealed_oracle"
+  ) {
+    return true;
+  }
+  return fields.held_back === true || fields.sealed === true || fields.sealed_oracle === true || fields.hidden_check === true;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

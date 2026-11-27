@@ -17,6 +17,7 @@ import { outsideWriteScope, pathInWriteScope, readGitChangedPaths } from "./scop
 import type {
   CallToolResult,
   CandidateV1,
+  KbPullPort,
   KnowledgeNode,
   KnowledgeSearchFilters,
   TaskPacketV1,
@@ -154,6 +155,46 @@ async function readContract(
   const lookup = version === undefined ? { id: parsed.id, latest } : { id: parsed.id, version, latest };
   const node = await ctx.deps.knowledge.contract(lookup);
   return pullNode(ctx, tool, node, node ? `kb.contract:${node.id}@${node.version}` : `kb.contract:${parsed.id}`);
+}
+
+type CanonicalPullName = "kb.search" | "kb.get_node" | "kb.list_rules" | "kb.get_contract";
+
+function pullContext(ctx: ToolContext): Parameters<KbPullPort["call"]>[2] {
+  return {
+    attemptId: ctx.lease.attemptId,
+    taskId: ctx.lease.taskId,
+    projectId: ctx.lease.projectId,
+    waveId: ctx.lease.projectId,
+    waveIndex: 0,
+    turnId: ctx.lease.attemptId,
+    taskTags: [],
+    workerLevel: "junior",
+    leaseEpoch: ctx.lease.epoch,
+  };
+}
+
+function argumentRecord(value: object): Readonly<Record<string, unknown>> {
+  const args: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry !== undefined) args[key] = entry;
+  }
+  return args;
+}
+
+function delegateKbPull(ctx: ToolContext, tool: CanonicalPullName, args: object): CallToolResult | undefined {
+  const pull = ctx.deps.kbPull;
+  if (!pull) return undefined;
+  const body = pull.call(tool, argumentRecord(args), pullContext(ctx));
+  const text = JSON.stringify(body);
+  const tokens = estimateTokens(text);
+  if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+    ctx.logPull(tool, "quota", 0);
+    ctx.commit(tool, 0);
+    return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+  }
+  ctx.logPull(tool, "ok", tokens);
+  ctx.commit(tool, tokens);
+  return ctx.data(tool, "kb", body);
 }
 
 async function listRules(ctx: ToolContext, tool: McpToolName, tags: readonly string[]): Promise<CallToolResult> {
@@ -513,9 +554,13 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
       .object({
         query: z.string().min(1),
         filters: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+        types: z.array(z.string()).optional(),
+        limit: z.number().int().positive().optional(),
       })
       .strict(),
     call: async (ctx, args) => {
+      const delegated = delegateKbPull(ctx, "kb.search", args);
+      if (delegated) return delegated;
       return guarded(ctx, "kb.search", async () => {
         const filters = args.filters as KnowledgeSearchFilters | undefined;
         const searchInput = filters === undefined ? { query: args.query } : { query: args.query, filters };
@@ -741,6 +786,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         }
       }),
     call: async (ctx, args) => {
+      const delegated = delegateKbPull(ctx, "kb.get_node", args);
+      if (delegated) return delegated;
       const id = args.id ?? args.node_id;
       if (!id) return ctx.notFound();
       return guarded(ctx, "kb.get_node", async () => readNode(ctx, "kb.get_node", id, args.latest === true));
@@ -762,6 +809,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         }
       }),
     call: async (ctx, args) => {
+      const delegated = delegateKbPull(ctx, "kb.get_contract", args);
+      if (delegated) return delegated;
       const idAtVersion = args.idAtVersion ?? args.contract_id;
       if (!idAtVersion) return ctx.notFound();
       return guarded(ctx, "kb.get_contract", async () => readContract(ctx, "kb.get_contract", idAtVersion, args.latest === true));
@@ -771,14 +820,21 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
     name: "kb.list_rules",
     description: "Alias of kb.list_rules_for_tags. Active rules whose scope matches the given tags.",
     schema: z.object({ tags: z.array(z.string()) }).strict(),
-    call: async (ctx, args) => guarded(ctx, "kb.list_rules", async () => listRules(ctx, "kb.list_rules", args.tags)),
+    call: async (ctx, args) => {
+      const delegated = delegateKbPull(ctx, "kb.list_rules", args);
+      if (delegated) return delegated;
+      return guarded(ctx, "kb.list_rules", async () => listRules(ctx, "kb.list_rules", args.tags));
+    },
   }),
   defineTool({
     name: "kb.list_rules_for_tags",
     description: "Active cross-cutting rules whose scope matches the given tags.",
     schema: z.object({ tags: z.array(z.string()) }).strict(),
-    call: async (ctx, args) =>
-      guarded(ctx, "kb.list_rules_for_tags", async () => listRules(ctx, "kb.list_rules_for_tags", args.tags)),
+    call: async (ctx, args) => {
+      const delegated = delegateKbPull(ctx, "kb.list_rules", args);
+      if (delegated) return delegated;
+      return guarded(ctx, "kb.list_rules_for_tags", async () => listRules(ctx, "kb.list_rules_for_tags", args.tags));
+    },
   }),
 ];
 

@@ -1,4 +1,4 @@
-import { KB_PULL_TOOL_IDS, type ProjectPrefix, type SliceItem, type WorkerLevel } from "./types.js";
+import { includesFailureModes, KB_PULL_TOOL_IDS, type ProjectPrefix, type SliceItem, type WorkerLevel } from "./types.js";
 import { OracleLeakError } from "./oracle.js";
 import { compareText, countTokens } from "./tokens.js";
 
@@ -11,6 +11,8 @@ export interface LayoutModel {
   readonly must: readonly SliceItem[];
   readonly should: readonly SliceItem[];
   readonly could: readonly SliceItem[];
+  readonly brownfieldConventions?: string;
+  readonly recentSweepSymbolMap?: string;
 }
 
 export interface LayoutRegions {
@@ -32,7 +34,7 @@ export class BriefLayoutCompiler {
     rejectSealed(model.must);
     rejectSealed(model.should);
     rejectSealed(model.could);
-    const prefix = renderPrefix(model.project);
+    const prefix = renderPrefix(model);
     const start = renderStart(model);
     const middle = renderMiddle(model);
     const end = renderEnd(model.must);
@@ -64,7 +66,8 @@ function rejectSealed(items: readonly SliceItem[]): void {
   }
 }
 
-function renderPrefix(project: ProjectPrefix): string {
+function renderPrefix(model: LayoutModel): string {
+  const project: ProjectPrefix = model.project;
   const rules = [...project.universalRules].sort(compareText);
   const lines = [
     `project: ${project.projectId}`,
@@ -72,6 +75,14 @@ function renderPrefix(project: ProjectPrefix): string {
     "universal:",
     ...rules.map((rule) => `- ${rule}`),
   ];
+  if (model.brownfieldConventions) {
+    lines.push("brownfield conventions:");
+    lines.push(model.brownfieldConventions);
+  }
+  if (model.recentSweepSymbolMap) {
+    lines.push("[RECENT SWEEP SYMBOL MAP]");
+    lines.push(model.recentSweepSymbolMap);
+  }
   return lines.join("\n");
 }
 
@@ -99,7 +110,7 @@ function renderMiddle(model: LayoutModel): string {
   pushBlock(lines, "requirements", requirements, (item) => item.text);
   pushBlock(lines, "contracts", contracts, (item) => item.text);
   pushBlock(lines, "screens", screens, (item) => item.text);
-  if (model.level === "senior") {
+  if (includesFailureModes(model.level)) {
     const failures = model.should.filter((item) => item.kind === "failure_mode");
     pushBlock(lines, "failure-modes", failures, (item) => item.text);
   }

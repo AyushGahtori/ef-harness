@@ -244,6 +244,35 @@ describe("KbPullToolHandlers", () => {
     expect(hiddenSearch).toMatchObject({ ok: true, hits: [] });
     expect(JSON.stringify(hiddenSearch)).not.toContain("ORACLE");
     expect(JSON.stringify(hiddenSearch)).not.toContain("CHK-HIDDEN");
+    const { handlers: oracleHandlers } = harness([
+      knowledgeNode({
+        id: "CHK-ORACLE-ONLY",
+        kind: "check",
+        title: "Held acceptance",
+        prose: "ORACLEONLYMARKER must stay out of the pull",
+        hidden: false,
+        visibility: "oracle_only",
+      }),
+      knowledgeNode({ id: "N-Visible", title: "Visible note", prose: "ORACLEONLYMARKER is not here" }),
+    ]);
+    const oracleOnly = oracleHandlers.call(
+      "kb.get_node",
+      { node_id: "CHK-ORACLE-ONLY" },
+      pullContext({ attemptId: "oracle-only" }),
+    );
+    const absent = oracleHandlers.call(
+      "kb.get_node",
+      { node_id: "NO-SUCH" },
+      pullContext({ attemptId: "oracle-only-miss" }),
+    );
+    expect(oracleOnly).toEqual(absent);
+    const oracleSearch = oracleHandlers.call(
+      "kb.search",
+      { query: "ORACLEONLYMARKER" },
+      pullContext({ attemptId: "oracle-only-search" }),
+    ) as { hits: { nodeId: string }[] };
+    expect(oracleSearch.hits.map((hit) => hit.nodeId)).toEqual(["N-Visible"]);
+    expect(JSON.stringify(oracleOnly)).not.toContain("ORACLEONLYMARKER");
     expect(recorder.anomalies.map((row) => row.queriedNodeId).sort()).toEqual([
       "CHK-HIDDEN-01",
       "ORACLE-007",
@@ -364,8 +393,15 @@ describe("KbPullToolHandlers", () => {
       "kb.search",
       "kb.get_node",
       "kb.get_contract",
+      "kb.list_rules",
       "kb.list_rules_for_tags",
     ]);
+    const listed = server.call(
+      "kb.list_rules",
+      { tags: ["money"] },
+      pullContext({ attemptId: "rules-alias" }),
+    ) as { rules: { id: string }[] };
+    expect(listed.rules.map((rule) => rule.id)).toContain("X-04");
     expect(server.definitions().every((tool) => tool.readOnly)).toBe(true);
     const fenced = server.call(
       "kb.get_node",

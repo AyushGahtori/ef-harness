@@ -44,6 +44,7 @@ export interface WorldOptions {
   taskId?: string;
   attemptId?: string;
   epoch?: number;
+  kbPull?: AttemptMcpDependencies["kbPull"];
 }
 
 export interface World {
@@ -465,6 +466,7 @@ export function createWorld(options: WorldOptions = {}): World {
       if (at < 0) return text.slice(0, 80);
       return text.slice(Math.max(0, at - 10), at + query.length + 10);
     },
+    ...(options.kbPull ? { kbPull: options.kbPull } : {}),
   };
 
   const server = new AttemptMcpServer({

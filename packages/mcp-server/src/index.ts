@@ -25,7 +25,7 @@ export {
 export type { KernelAttemptPorts } from "./kernel-deps.js";
 export { generateSearchSnippet, parseIdAtVersion, pinnedVersion } from "./redaction.js";
 export { parseDataEnvelope, wrapDataEnvelope } from "./provenance.js";
-export type { AttemptMcpDependencies } from "./types.js";
+export type { AttemptMcpDependencies, KbPullPort } from "./types.js";
 export type {
   ArtifactManager,
   AskOwner,

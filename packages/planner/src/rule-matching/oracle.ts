@@ -1,7 +1,13 @@
 import type { KnowledgeNode } from "./types.js";
 
 const SEALED_KINDS = new Set(["hidden_check", "sealed_oracle"]);
-const SEALED_VISIBILITY = new Set(["hidden_check", "held_back", "sealed", "sealed_oracle"]);
+const SEALED_VISIBILITY = new Set([
+  "hidden_check",
+  "held_back",
+  "sealed",
+  "sealed_oracle",
+  "oracle_only",
+]);
 
 export function isSealedOracle(
   node: Pick<KnowledgeNode, "hidden" | "kind" | "visibility">,

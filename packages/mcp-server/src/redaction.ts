@@ -5,9 +5,23 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isConcealed(record: Concealable): boolean {
-  if (record.visibility === "held_back" || record.visibility === "sealed") return true;
+  if (
+    record.visibility === "held_back" ||
+    record.visibility === "sealed" ||
+    record.visibility === "oracle_only" ||
+    record.visibility === "sealed_oracle"
+  ) {
+    return true;
+  }
   if (record.status === "sealed") return true;
-  if (record.kind === "checks-sealed" || record.kind === "check_sealed") return true;
+  if (
+    record.kind === "checks-sealed" ||
+    record.kind === "check_sealed" ||
+    record.kind === "hidden_check" ||
+    record.kind === "sealed_oracle"
+  ) {
+    return true;
+  }
   if (typeof record.id === "string" && (record.id.startsWith("checks-sealed/") || record.id.startsWith("checks-sealed"))) {
     return record.kind === "checks-sealed" || record.id.startsWith("checks-sealed/");
   }

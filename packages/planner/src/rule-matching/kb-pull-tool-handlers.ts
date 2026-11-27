@@ -60,6 +60,7 @@ export class KbPullToolHandlers {
           properties: {
             query: { type: "string" },
             types: { type: "array", items: { type: "string" } },
+            filters: { type: "object" },
             limit: { type: "integer", minimum: 1, maximum: MAX_SEARCH_LIMIT },
           },
         },
@@ -70,8 +71,10 @@ export class KbPullToolHandlers {
         readOnly: true,
         inputSchema: {
           type: "object",
-          required: ["node_id"],
-          properties: { node_id: { type: "string" } },
+          properties: {
+            node_id: { type: "string" },
+            id: { type: "string" },
+          },
         },
       },
       {
@@ -81,7 +84,21 @@ export class KbPullToolHandlers {
         inputSchema: {
           type: "object",
           required: ["contract_id"],
-          properties: { contract_id: { type: "string" } },
+          properties: {
+            contract_id: { type: "string" },
+            id: { type: "string" },
+            idAtVersion: { type: "string" },
+          },
+        },
+      },
+      {
+        name: "kb.list_rules",
+        description: "Active cross-cutting rules whose any/all scope matches the given tags.",
+        readOnly: true,
+        inputSchema: {
+          type: "object",
+          required: ["tags"],
+          properties: { tags: { type: "array", items: { type: "string" } } },
         },
       },
       {
@@ -143,7 +160,7 @@ export class KbPullToolHandlers {
     if (name === "kb.search") return this.search(args, ctx, started);
     if (name === "kb.get_node") return this.getNode(args, ctx, started);
     if (name === "kb.get_contract") return this.getContract(args, ctx, started);
-    return this.listRules(args, ctx, started);
+    return this.listRules(name, args, ctx, started);
   }
 
   private search(
@@ -156,10 +173,15 @@ export class KbPullToolHandlers {
     if (query === null || query.trim() === "") {
       return this.invalid(ctx, tool, "query must be a non-empty string", started);
     }
-    const types = readStringArray(args, "types");
-    if (types === null) {
+    const explicitTypes = readStringArray(args, "types");
+    if (explicitTypes === null) {
       return this.invalid(ctx, tool, "types must be an array of strings", started);
     }
+    const filterTypes = typesFromFilters(args.filters);
+    if (filterTypes === null) {
+      return this.invalid(ctx, tool, "filters.kind must be a string", started);
+    }
+    const types = explicitTypes.length > 0 ? explicitTypes : filterTypes;
     const limit = clampLimit(args.limit);
     if (limit === null) {
       return this.invalid(ctx, tool, "limit must be a positive number", started);
@@ -214,7 +236,7 @@ export class KbPullToolHandlers {
     started: number,
   ): ProducedCall {
     const tool: KbToolName = "kb.get_node";
-    const nodeId = readString(args, "node_id");
+    const nodeId = readString(args, "node_id") ?? readString(args, "id");
     if (nodeId === null || nodeId.trim() === "") {
       return this.invalid(ctx, tool, "node_id must be a non-empty string", started);
     }
@@ -252,7 +274,8 @@ export class KbPullToolHandlers {
     started: number,
   ): ProducedCall {
     const tool: KbToolName = "kb.get_contract";
-    const contractId = readString(args, "contract_id");
+    const contractRaw = readString(args, "contract_id") ?? readString(args, "id") ?? readString(args, "idAtVersion");
+    const contractId = contractRaw === null ? null : contractIdentity(contractRaw);
     if (contractId === null || contractId.trim() === "") {
       return this.invalid(ctx, tool, "contract_id must be a non-empty string", started);
     }
@@ -304,11 +327,11 @@ export class KbPullToolHandlers {
   }
 
   private listRules(
+    tool: KbToolName,
     args: Readonly<Record<string, unknown>>,
     ctx: PullCallContext,
     started: number,
   ): ProducedCall {
-    const tool: KbToolName = "kb.list_rules_for_tags";
     const tags = readStringArray(args, "tags");
     if (tags === null) {
       return this.invalid(ctx, tool, "tags must be an array of strings", started);
@@ -487,6 +510,23 @@ function readStringArray(
     out.push(item);
   }
   return out;
+}
+
+function typesFromFilters(value: unknown): readonly string[] | null {
+  if (value === undefined) return [];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (!("kind" in value)) return [];
+  const kind = value.kind;
+  if (kind === undefined) return [];
+  return typeof kind === "string" ? [kind] : null;
+}
+
+function contractIdentity(value: string): string {
+  const at = value.lastIndexOf("@");
+  if (at <= 0) return value;
+  const versionText = value.slice(at + 1);
+  if (!/^\d+$/.test(versionText)) return value;
+  return value.slice(0, at);
 }
 
 function clampLimit(value: unknown): number | null {

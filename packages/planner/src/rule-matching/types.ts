@@ -13,6 +13,7 @@ export type KbToolName =
   | "kb.search"
   | "kb.get_node"
   | "kb.get_contract"
+  | "kb.list_rules"
   | "kb.list_rules_for_tags";
 
 /**
@@ -105,6 +106,7 @@ export const KB_TOOLS: readonly KbToolName[] = [
   "kb.search",
   "kb.get_node",
   "kb.get_contract",
+  "kb.list_rules",
   "kb.list_rules_for_tags",
 ];
 
