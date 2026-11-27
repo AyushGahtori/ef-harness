@@ -894,3 +894,40 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
 - `git status --short`: exit `0` — clean (empty output)
 
+---
+
+## [C27] — Discovery decisions, async entailment, and bounded delegation
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `f73ec3739638700b6114c41d0b9c2af8d96970c7` (`integrate: C27 unify discovery decisions, async entailment, and bounded delegation`)
+- **Findings Fixed:** `F-029` (one decision payload for opening, prompts, and entailment, async `check` / `checkAll` / `sendAsync`, and node writes through `@ef-harness/db` `KnowledgeGraphRepo`), `F-030` (`valueSatisfiesLimits` accepts non-SQLite options whose tags match), and `F-031` (prompt assets no longer walk for `pnpm-workspace.yaml`; public prompt schemas and `entailment-checker@1` come from `@ef-harness/shared-contracts`; `ef_search_text` uses `splitSearchText` / `registerEfSearchText`). `F-035` is only the decision-field half: settled decisions now keep `criterionId`, `groupId`, and `selectedOptionId`. `task-079.patch`, `listCells`, `listMaterializedRequirements`, and `z3-solver` stay for C31. Did not re-merge `task/069`, `task/070`, or `task/071`. Did not apply a dirty patch. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C28.
+
+### What Changed
+- Re-verified on `40201d11ab38446c014f0065a3e4565f1a76e6cf`. `task/069-discovery-core-opening-rubrics` (`0df0a18`), `task/070-discovery-prompts-quote-verifier` (`326728d`), and `task/071-entailment-derivations-reopening` (`2c91b46`) are ancestors. C27 has no dirty patch. No task branch was merged.
+- `DecisionFields` keeps the landed `criterion` / `status` / `value` shape and also round-trips `criterionId`, `groupId`, `selectedOptionId`, `must_ask`, delegation limits, and evidence that cites `turn` without `rubricId`. `decisionFieldsJson` writes `criterionId` and, for a settled string value, `selectedOptionId`. `toDecisionNodeFields` is the frozen read shape.
+- `valueSatisfiesLimits` still accepts `sqlite` for `free` + `local`. It also accepts `postgres` / `postgres_relational` for `relational_acid`, and the declared tags `local_only`, `zero_paid_saas`, `serverless_compatible`, and `relational_acid`. An unknown option such as `paid-hosted-oracle` still fails.
+- `SemanticEntailmentGate.check` and `checkAll` are async and await `EntailmentModelPort.complete`. `parseEntailmentCheckerV1` uses `EntailmentCheckerV1Schema`. Persisted entailment fields also store `must_ask`, `criterionId`, `selectedOptionId`, and `groupId` when the claim has them. `DiscoverySessionManager.send` stays synchronous. `sendAsync` validates optional `resolveBatch` / `checkEntailment` results with `BatchResolveV1Schema` and `EntailmentCheckerV1Schema`.
+- Prompt text and `skills/infer-or-ask/SKILL.md` resolve from `EF_HARNESS_RESOURCES_DIR`, `EF_HARNESS_RESOURCES`, `process.resourcesPath` when that directory contains `opening-prompts.md`, or `canonicalAssetAbsolute("inferOrAskSkill")`. There is no parent walk for `pnpm-workspace.yaml`. The exported `BatchResolveV1Schema`, `OpeningReviewV1Schema`, and `ClarifyV1Schema` are the shared-contracts schemas. The orchestrator still parses its multi-proposal document locally because that payload is not the single-criterion schema.
+- `LocalSqliteKnowledgeGraph` opens `schema/state.sql`, registers `ef_search_text` through `@ef-harness/db`, seeds `meta.last_rev`, and commits a node through `KnowledgeGraphRepo.commitChangeSet` when it is not already inside a discovery transaction. Content hashes use `computeNodeContentHash` (`sha256:` prefix). `core`, `depth`, and `readiness` no longer ship their own `splitSearchText` bodies.
+- `validatedDiscoveryModel` binds a worker-loop `ModelProtocolAdapter` to `resolveBatch` / `checkEntailment` and rejects JSON the shared schemas refuse. `@ef-harness/discovery` depends on `@ef-harness/db` and `@ef-harness/worker-loop`.
+
+### What It Fixed
+- **F-029:** A decision written with `criterionId`, `groupId`, `must_ask`, and evidence `{ turn, start, end, quote }` parses without `BasisStatusSeparationError` and still exposes `criterion` plus `turnId`. Entailment checks await the model port. A direct `insertNode` of a settled email channel goes through `KnowledgeGraphRepo` and stores `criterionId`, `groupId`, and `selectedOptionId` with a `sha256:` content hash.
+- **F-030:** `valueSatisfiesLimits("postgres", ["relational_acid"])` is true. `valueSatisfiesLimits("sqlite", ["free", "local"])` stays true. `valueSatisfiesLimits("paid-hosted-oracle", ["free", "local"])` stays false.
+- **F-031:** Loading `opening-review@1`, `batch-resolve@1`, `clarify@1`, and the infer-or-ask skill does not search for `pnpm-workspace.yaml`. `ef_search_text` is the shared splitter, including the acronym split.
+- **F-035 (decision fields only):** Settled discovery decisions persist `selectedOptionId` and `groupId` for later spec checks. Collapse, `listCells`, and the Z3 solver are unchanged.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor 0df0a18 HEAD`: exit `0`
+- `git merge-base --is-ancestor 326728d HEAD`: exit `0`
+- `git merge-base --is-ancestor 2c91b46 HEAD`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/discovery exec vitest run --config vitest.config.ts core prompts entailment`: exit `0` — `Test Files 10 passed (10)`, `Tests 67 passed (67)` (`0` skipped)
+- `pnpm --filter @ef-harness/discovery test -- core prompts entailment`: exit `1` — vitest is invoked as `vitest run --config vitest.config.ts -- core prompts entailment`, which loads every discovery suite. `Test Files 2 failed | 24 passed (26)`, `Tests 150 passed (150)`. The two failures are import-time and were not introduced here: `tests/corpus-loader/corpus-loader.test.ts` (`YamlParseError` on `corpus/packs/web-api-cli/api.yaml`) and `tests/corpus-web-api-cli/corpus-web-api-cli.test.ts` (`corpus/packs/core-data-auth/auth.yaml: missing string pack`). That is `F-032`, which stays on C29.
+- `pnpm --filter @ef-harness/discovery exec vitest run --config vitest.config.ts tests/depth tests/readiness tests/selector`: exit `0` — `Test Files 10 passed (10)`, `Tests 67 passed (67)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
