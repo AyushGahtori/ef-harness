@@ -103,6 +103,59 @@ describe("verifyFeatureDoneConditions", () => {
     expect(handle.repo.verifyFeatureDoneConditions(passingEvidence()).ok).toBe(true);
   });
 
+  it("refuses DONE when an audited path is only a child or a sibling prefix of the task scope", () => {
+    handle = openLifecycle();
+    const ids = seedGreenFeature(handle.db);
+    const evidence = passingEvidence(ids.feature);
+    refuse(
+      { ...evidence, staticAudit: { ...evidence.staticAudit, paths: [`${ids.scope}one.ts`] } },
+      "3",
+    );
+    handle.db.prepare(`UPDATE task_scopes SET path_prefix = ? WHERE task = ?`).run("src/app/F", ids.leaf);
+    const sibling = handle.repo.verifyFeatureDoneConditions({
+      ...evidence,
+      staticAudit: { ...evidence.staticAudit, paths: ["src/app/F2/kitchen.ts"] },
+    });
+    expect(sibling.failedConditions).toContain("3");
+    const covered = handle.repo.verifyFeatureDoneConditions({
+      ...evidence,
+      staticAudit: { ...evidence.staticAudit, paths: ["src/app/"] },
+    });
+    expect(covered.failedConditions).not.toContain("3");
+  });
+
+  it("ignores contract reads from a rejected attempt or a different brief", () => {
+    handle = openLifecycle();
+    const ids = seedGreenFeature(handle.db, { feature: "FU" });
+    insertNode(handle.db, "FU2", "contract", { feature: "FU" });
+    insertEdge(handle.db, ids.leaf, "consumes_contract", "FU2", null);
+    handle.db
+      .prepare(
+        `INSERT INTO attempts(
+           id, task, n, epoch, brief_version, runtime, model, connection, base_commit, state, started_at
+         ) VALUES ('FU-OLD', ?, 2, 1, 1, 'own', 'm', 'c', 'abc', 'rejected', 1)`,
+      )
+      .run(ids.leaf);
+    handle.db
+      .prepare(
+        `INSERT INTO attempts(
+           id, task, n, epoch, brief_version, runtime, model, connection, base_commit, state, started_at
+         ) VALUES ('FU-STALE', ?, 3, 1, 0, 'own', 'm', 'c', 'abc', 'accepted', 1)`,
+      )
+      .run(ids.leaf);
+    handle.db
+      .prepare(`INSERT INTO read_sets(attempt, node, version, hash, how) VALUES ('FU-OLD', 'FU2', 1, 'h', 'pulled')`)
+      .run();
+    handle.db
+      .prepare(`INSERT INTO read_sets(attempt, node, version, hash, how) VALUES ('FU-STALE', 'FU2', 1, 'h', 'pulled')`)
+      .run();
+    refuse(passingEvidence("FU"), "1");
+    handle.db
+      .prepare(`INSERT INTO read_sets(attempt, node, version, hash, how) VALUES (?, 'FU2', 1, 'h', 'pulled')`)
+      .run(ids.attempt);
+    expect(handle.repo.verifyFeatureDoneConditions(passingEvidence("FU")).failedConditions).not.toContain("1");
+  });
+
   it("refuses DONE when the static audit is not clean", () => {
     handle = openLifecycle();
     const ids = seedGreenFeature(handle.db);

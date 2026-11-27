@@ -42,6 +42,7 @@ export {
   repositoryRootFromModule,
 } from "./queries.js";
 export type { CanonicalQueryName } from "./queries.js";
+export { bindLifecycles } from "./project-bind.js";
 export { LifecycleRepo, createLifecycleRepo } from "./repo.js";
 export {
   DONE_GATE_CONDITIONS,

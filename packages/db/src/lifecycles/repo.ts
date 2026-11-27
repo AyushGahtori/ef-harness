@@ -36,7 +36,7 @@ import type {
   TransitionProjectInput,
 } from "./models.js";
 import { loadCanonicalQueries } from "./queries.js";
-import { asInt, asNullableInt, asNullableText, asText, parseJsonObject, requireInt, rowChanges } from "./rows.js";
+import { asInt, asNullableInt, asNullableText, asText, requireInt, rowChanges } from "./rows.js";
 import {
   FOUNDATION_GATE_META_KEY,
   FOUNDATION_GATE_PASSED_VALUE,
@@ -214,6 +214,32 @@ export class LifecycleRepo {
           reason: "edge is not in FEATURE_STATE_TRANSITIONS",
         });
       }
+      if (row.state === "BLOCKED" && input.to !== "DEFERRED" && input.to !== "ABANDONED") {
+        const preBlock = this.readPreBlockState(feature);
+        if (preBlock !== null) {
+          if (input.to !== preBlock) {
+            throw new IllegalFeatureTransitionError({
+              feature,
+              from: row.state,
+              to: input.to,
+              reason: `BLOCKED feature must resume to its pre-block state ${preBlock}`,
+            });
+          }
+        } else if (
+          input.to === "LEAVES_MERGED" ||
+          input.to === "WIRED" ||
+          input.to === "JOURNEY_PASSED" ||
+          input.to === "QUEUED_FOR_MERGE" ||
+          input.to === "MERGED"
+        ) {
+          throw new IllegalFeatureTransitionError({
+            feature,
+            from: row.state,
+            to: input.to,
+            reason: `cannot advance directly from BLOCKED to ${input.to} without recorded pre-block state`,
+          });
+        }
+      }
       if (input.to === "DONE") {
         if (!input.evidence || input.evidence.feature !== feature) {
           throw new InvalidLifecycleInputError("DONE requires FeatureDoneEvidenceInput for this feature");
@@ -249,6 +275,16 @@ export class LifecycleRepo {
       });
       if (rowChanges(updated) !== 1) {
         throw new StaleEpochError({ feature, expectedEpoch: input.expectedEpoch, actualEpoch: row.epoch });
+      }
+      if (input.to === "BLOCKED") {
+        this.writePreBlockState(feature, row.state);
+      } else if (row.state === "BLOCKED") {
+        this.clearPreBlockState(feature);
+      }
+      if (input.to === "DEFERRED" || input.to === "ABANDONED") {
+        this.writeApprovedExit(feature, input.to);
+      } else if (row.state === "DEFERRED") {
+        this.clearApprovedExit(feature);
       }
       const heldDownstream = input.to === "REOPENED" && changeSetId
         ? this.holdDownstream(feature, changeSetId, input.rev, input.now)
@@ -522,6 +558,9 @@ export class LifecycleRepo {
         expected: next.epoch,
       });
       if (rowChanges(updated) !== 1) continue;
+      if (to === "BLOCKED") {
+        this.writePreBlockState(next.feature, next.state);
+      }
       const after = this.requireFeature(next.feature);
       this.emit("FeatureStateChanged", next.feature, rev, now, {
         feature: next.feature,
@@ -585,18 +624,41 @@ export class LifecycleRepo {
   }
 
   private approvedExit(feature: string, state: string): boolean {
-    const rows = this.sql(
-      `SELECT payload
-         FROM outbox
-        WHERE type = 'FeatureStateChanged' AND subject = :feature
-        ORDER BY seq DESC`,
-    ).all({ feature });
-    for (const row of rows) {
-      const payload = parseJsonObject(asText(row, "payload"));
-      if (!payload) continue;
-      if (payload.to === state && payload.approved === true) return true;
-    }
-    return false;
+    const row = this.sql(`SELECT value FROM meta WHERE key = :key`).get({
+      key: approvedExitMetaKey(feature),
+    });
+    return row !== undefined && asText(row, "value") === state;
+  }
+
+  private writeApprovedExit(feature: string, state: "DEFERRED" | "ABANDONED"): void {
+    this.sql(
+      `INSERT INTO meta(key, value) VALUES (:key, :value)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run({ key: approvedExitMetaKey(feature), value: state });
+  }
+
+  private clearApprovedExit(feature: string): void {
+    this.sql(`DELETE FROM meta WHERE key = :key`).run({ key: approvedExitMetaKey(feature) });
+  }
+
+  private readPreBlockState(feature: string): FeatureState | null {
+    const row = this.sql(`SELECT value FROM meta WHERE key = :key`).get({
+      key: preBlockMetaKey(feature),
+    });
+    if (!row) return null;
+    const value = asText(row, "value");
+    return isFeatureState(value) ? value : null;
+  }
+
+  private writePreBlockState(feature: string, from: FeatureState): void {
+    this.sql(
+      `INSERT INTO meta(key, value) VALUES (:key, :value)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run({ key: preBlockMetaKey(feature), value: from });
+  }
+
+  private clearPreBlockState(feature: string): void {
+    this.sql(`DELETE FROM meta WHERE key = :key`).run({ key: preBlockMetaKey(feature) });
   }
 
   private coupledFeatures(feature: string): CoupledFeatureRef[] {
@@ -762,6 +824,14 @@ export class LifecycleRepo {
       throw error;
     }
   }
+}
+
+function approvedExitMetaKey(feature: string): string {
+  return `feature_exit_approved:${feature}`;
+}
+
+function preBlockMetaKey(feature: string): string {
+  return `feature_pre_block_state:${feature}`;
 }
 
 function requireId(value: string, label: string): string {

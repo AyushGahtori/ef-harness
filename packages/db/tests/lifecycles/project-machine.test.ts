@@ -163,6 +163,29 @@ describe("project lifecycle", () => {
     }
     expect(readProject(handle.db)).toMatchObject({ state: "WAVES", currentWave: 1 });
   });
+
+  it("keeps an approved DEFERRED exit after outbox rows are pruned", () => {
+    handle = openLifecycle();
+    for (const to of ["SPEC_COMPLETE", "UPFRONT_DOCS", "PREVIEW", "PHASE0"] as const) {
+      handle.repo.transitionProjectState({ to, rev: 1, now: 1 });
+    }
+    handle.repo.transitionProjectState({ to: "WAVES", rev: 1, now: 1, currentWave: 1 });
+    insertNode(handle.db, "FEX", "feature", { feature: "FEX" });
+    handle.repo.initFeature({ feature: "FEX", planAuthor: "planner", rev: 2, now: 2 });
+    handle.repo.transitionFeatureState({
+      feature: "FEX",
+      to: "DEFERRED",
+      expectedEpoch: 0,
+      rev: 3,
+      now: 3,
+      approved: true,
+    });
+    handle.db.prepare(`DELETE FROM outbox`).run();
+    const approved = handle.db.prepare(`SELECT value FROM meta WHERE key = ?`).get("feature_exit_approved:FEX");
+    expect(approved).toEqual({ value: "DEFERRED" });
+    const done = handle.repo.transitionProjectState({ to: "COMPLETION", rev: 4, now: 4 });
+    expect(done).toMatchObject({ from: "WAVES", to: "COMPLETION" });
+  });
 });
 
 describe("reopen holds downstream features", () => {

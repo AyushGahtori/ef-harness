@@ -19,7 +19,7 @@ interface FailedBag {
 
 function coversScope(scopePrefix: string, auditedPaths: readonly string[]): boolean {
   return auditedPaths.some(
-    (audited) => audited === scopePrefix || audited.startsWith(scopePrefix) || scopePrefix.startsWith(audited),
+    (audited) => audited === scopePrefix || scopePrefix.startsWith(audited),
   );
 }
 
@@ -94,12 +94,12 @@ function conditionTasks(db: StateConnection, feature: string): boolean {
       )
       .get({ task: taskId, brief: briefVersion });
     if (!accepted) return false;
-    if (!contractsCurrent(db, taskId)) return false;
+    if (!contractsCurrent(db, taskId, briefVersion)) return false;
   }
   return true;
 }
 
-function contractsCurrent(db: StateConnection, task: string): boolean {
+function contractsCurrent(db: StateConnection, task: string, briefVersion: number): boolean {
   const edges = db
     .prepare(
       `SELECT e.dst AS contract_id, e.dst_version_pin AS pin, c.version AS current_version
@@ -123,10 +123,14 @@ function contractsCurrent(db: StateConnection, task: string): boolean {
         `SELECT 1 AS ok
            FROM read_sets rs
            JOIN attempts a ON a.id = rs.attempt
-          WHERE a.task = :task AND rs.node = :contract AND rs.version = :version
+          WHERE a.task = :task
+            AND a.state = 'accepted'
+            AND a.brief_version = :brief
+            AND rs.node = :contract
+            AND rs.version = :version
           LIMIT 1`,
       )
-      .get({ task, contract: contractId, version: current });
+      .get({ task, brief: briefVersion, contract: contractId, version: current });
     if (!read) return false;
   }
   return true;

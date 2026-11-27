@@ -203,6 +203,47 @@ describe("feature state machine", () => {
     expect(FEATURE_STATE_TRANSITIONS.ABANDONED).toEqual([]);
     expect(FEATURE_STATE_TRANSITIONS.DONE).toEqual(["REOPENED"]);
   });
+
+  it("resumes a BLOCKED feature only to its recorded pre-block state", () => {
+    handle = openLifecycle();
+    const ids = seedGreenFeature(handle.db, { insertRuntime: false });
+    handle.repo.initFeature({ feature: ids.feature, planAuthor: "planner", rev: 2, now: 2 });
+    handle.repo.transitionFeatureState({
+      feature: ids.feature,
+      to: "JIT_READY",
+      expectedEpoch: 0,
+      rev: 3,
+      now: 3,
+    });
+    handle.repo.transitionFeatureState({
+      feature: ids.feature,
+      to: "BLOCKED",
+      expectedEpoch: 0,
+      rev: 4,
+      now: 4,
+    });
+    expect(() =>
+      handle.repo.transitionFeatureState({
+        feature: ids.feature,
+        to: "IN_WAVE",
+        expectedEpoch: 0,
+        rev: 5,
+        now: 5,
+      }),
+    ).toThrow(IllegalFeatureTransitionError);
+    const resumed = handle.repo.transitionFeatureState({
+      feature: ids.feature,
+      to: "JIT_READY",
+      expectedEpoch: 0,
+      rev: 5,
+      now: 5,
+    });
+    expect(resumed).toMatchObject({ from: "BLOCKED", to: "JIT_READY" });
+    const stored = handle.db
+      .prepare(`SELECT value FROM meta WHERE key = ?`)
+      .get(`feature_pre_block_state:${ids.feature}`);
+    expect(stored).toBeUndefined();
+  });
 });
 
 function insertBody(sql: string, table: string): string {

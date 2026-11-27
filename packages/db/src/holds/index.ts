@@ -44,6 +44,7 @@ export {
   repositoryRootFromModule,
 } from "./queries.js";
 export type { CanonicalQueryName } from "./queries.js";
+export { bindTaskHolds } from "./project-bind.js";
 export { TaskHoldAndSubmissionRepo, createTaskHoldAndSubmissionRepo } from "./repo.js";
 export {
   FINISH_SUBMISSION_STATES,
