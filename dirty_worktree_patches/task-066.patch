@@ -1,0 +1,174 @@
+diff --git a/packages/verifier/src/acceptance/coordinator.ts b/packages/verifier/src/acceptance/coordinator.ts
+index 7e63998..033b952 100644
+--- a/packages/verifier/src/acceptance/coordinator.ts
++++ b/packages/verifier/src/acceptance/coordinator.ts
+@@ -17,6 +17,7 @@ import { syncRequirementStatusInTx } from "./requirement-status.js";
+ import { currentRevision, readRevisionToken } from "./revision.js";
+ import { LocalRecordedSearchVerifier } from "./search-verifier.js";
+ import {
++  asRecord,
+   changesOf,
+   parseJsonOrNull,
+   readRowNumber,
+@@ -663,27 +664,77 @@ function repositoryRoot(): string {
+   throw new Error("schema/queries.sql was not found from the acceptance module");
+ }
+ 
++function collectReceiptRefs(db: SqlDatabase, attempt: string): {
++  readonly receiptIds: ReadonlySet<string>;
++  readonly artifactRefs: ReadonlySet<string>;
++} {
++  const receiptIds = new Set<string>();
++  const artifactRefs = new Set<string>();
++  const receiptRows = db
++    .prepare(
++      `SELECT receipt FROM check_results
++        WHERE attempt = :attempt AND receipt IS NOT NULL`,
++    )
++    .all({ attempt });
++  for (const row of receiptRows) {
++    const raw = readRowString(row, "receipt");
++    receiptIds.add(raw);
++    const parsed = asRecord(parseJsonOrNull(raw));
++    if (!parsed) continue;
++    const runs = Array.isArray(parsed.runs) ? parsed.runs : [];
++    for (const item of runs) {
++      const run = asRecord(item);
++      if (!run) continue;
++      for (const key of [
++        "traceDigest",
++        "logDigest",
++        "observationsDigest",
++        "traceId",
++        "logId",
++        "observationsId",
++        "artifactId",
++      ]) {
++        const value = run[key];
++        if (typeof value === "string" && value.length > 0) artifactRefs.add(value);
++      }
++    }
++    if (Array.isArray(parsed.artifacts)) {
++      for (const value of parsed.artifacts) {
++        if (typeof value === "string" && value.length > 0) artifactRefs.add(value);
++      }
++    }
++  }
++  const linkedRows = db
++    .prepare(`SELECT artifact FROM artifact_refs WHERE owner_id = :attempt`)
++    .all({ attempt });
++  for (const row of linkedRows) {
++    artifactRefs.add(readRowString(row, "artifact"));
++  }
++  return { receiptIds, artifactRefs };
++}
++
+ function promoteReceiptArtifacts(db: SqlDatabase, attempt: string, digest: string): string[] {
++  const { receiptIds, artifactRefs } = collectReceiptRefs(db, attempt);
+   const rows = db
+     .prepare(
+-      `SELECT id FROM artifacts
++      `SELECT id, hash FROM artifacts
+         WHERE retention = 'diagnostic'
+-          AND (
+-            hash = :digest
+-            OR id IN (
+-              SELECT receipt FROM check_results
+-               WHERE attempt = :attempt AND receipt IS NOT NULL
+-            )
+-          )
+         ORDER BY id`,
+     )
+-    .all({ digest, attempt });
++    .all();
+   const update = db.prepare(
+     `UPDATE artifacts SET retention = 'evidence' WHERE id = :id AND retention = 'diagnostic'`,
+   );
+   const ids: string[] = [];
+   for (const row of rows) {
+     const id = readRowString(row, "id");
++    const hash = readRowString(row, "hash");
++    const matches =
++      hash === digest ||
++      receiptIds.has(id) ||
++      artifactRefs.has(id) ||
++      artifactRefs.has(hash);
++    if (!matches) continue;
+     update.run({ id });
+     ids.push(id);
+   }
+diff --git a/packages/verifier/src/acceptance/rule-scope.ts b/packages/verifier/src/acceptance/rule-scope.ts
+index bc4c407..da49d8a 100644
+--- a/packages/verifier/src/acceptance/rule-scope.ts
++++ b/packages/verifier/src/acceptance/rule-scope.ts
+@@ -31,7 +31,7 @@ export interface RuleScope {
+  * A rule node's `fields.scope` overrides this table.
+  */
+ export const BUILTIN_CROSS_CUTTING_SCOPES: Readonly<Record<CrossCuttingRuleId, RuleScope>> = {
+-  "X-01": { any: [], all: ["authz", "route"] },
++  "X-01": { any: ["authz"], all: [] },
+   "X-02": { any: ["form_input", "inbound_webhook", "external_api"], all: [] },
+   "X-03": { any: ["scheduling", "time_display"], all: [] },
+   "X-04": { any: ["money"], all: [] },
+diff --git a/packages/verifier/tests/acceptance/acceptance.test.ts b/packages/verifier/tests/acceptance/acceptance.test.ts
+index f2a971b..9e09c5d 100644
+--- a/packages/verifier/tests/acceptance/acceptance.test.ts
++++ b/packages/verifier/tests/acceptance/acceptance.test.ts
+@@ -532,6 +532,57 @@ describe("candidate acceptance transaction", () => {
+     expect(calls).toBe(2);
+     expect(raced.searchRevalidations).toBe(2);
+   });
++
++  it("triggers X-01 on authz-only touches and promotes JSON-referenced and artifact_refs blobs", () => {
++    fx = seedReadyCandidate();
++    addNode(fx, "X-01", "rule", "Caller role check");
++    addNode(fx, "AC-X01", "check", "Negative role check");
++    addEdge(fx, "AC-X01", "verifies", "X-01");
++    replacePayload(fx.db, candidatePayload({ detected_touches: ["authz"] }));
++    const blocked = new CandidateAcceptanceCoordinator({ db: fx.db }).finalizeCandidateAcceptance({
++      task: TASK,
++      attempt: ATTEMPT,
++      epoch: EPOCH,
++      artifactDigest: DIGEST,
++    });
++    expectRefused(blocked, "diff_detected_rule", "repair_checks");
++    expect(blocked.queuedRules).toEqual([
++      expect.objectContaining({ ruleId: "X-01", checkIds: ["AC-X01"] }),
++    ]);
++
++    fx.db
++      .prepare(
++        `INSERT INTO artifacts(id, hash, kind, bytes, retention, created_at) VALUES
++          ('ART-TRACE-JSON', 'trace-digest-060', 'trace', 10, 'diagnostic', 1),
++          ('ART-REF-LINKED', 'ref-hash-060', 'log', 12, 'diagnostic', 1)`,
++      )
++      .run();
++    fx.db
++      .prepare(`INSERT INTO artifact_refs(artifact, owner_kind, owner_id) VALUES ('ART-REF-LINKED', 'attempt', ?)`)
++      .run(ATTEMPT);
++    fx.db
++      .prepare(
++        `INSERT INTO check_results(check_id, attempt, check_version, artifact_digest, status, receipt, recorded_at)
++         VALUES ('AC-X01', ?, 1, ?, 'pass', ?, 12)`,
++      )
++      .run(
++        ATTEMPT,
++        DIGEST,
++        JSON.stringify({
++          checkId: "AC-X01",
++          runs: [{ traceDigest: "trace-digest-060", logDigest: "other", observationsDigest: "other" }],
++        }),
++      );
++    const accepted = new CandidateAcceptanceCoordinator({ db: fx.db }).finalizeCandidateAcceptance({
++      task: TASK,
++      attempt: ATTEMPT,
++      epoch: EPOCH,
++      artifactDigest: DIGEST,
++    });
++    expect(accepted.accepted).toBe(true);
++    expect(accepted.evidencePromoted).toContain("ART-TRACE-JSON");
++    expect(accepted.evidencePromoted).toContain("ART-REF-LINKED");
++  });
+ });
+ 
+ function expectRefused(decision: AcceptanceDecision, reason: string, route: string): void {

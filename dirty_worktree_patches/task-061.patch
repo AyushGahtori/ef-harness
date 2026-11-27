@@ -1,0 +1,177 @@
+diff --git a/packages/verifier/src/binder/adapter-audit.ts b/packages/verifier/src/binder/adapter-audit.ts
+index ce6ee78..a4b12ef 100644
+--- a/packages/verifier/src/binder/adapter-audit.ts
++++ b/packages/verifier/src/binder/adapter-audit.ts
+@@ -75,7 +75,7 @@ export function auditBinderAdapter(source: string, fileName: string, check: Acce
+     }
+   }
+ 
+-  const requireVerdict = auditRequireCalls(parsed, fileName, protectedSpecs);
++  const requireVerdict = auditRequireCalls(parsed, fileName, allowed, protectedSpecs);
+   if (requireVerdict) return requireVerdict;
+ 
+   const callVerdict = auditFreeCalls(parsed, entryNames, new Set(allowed.map((symbol) => symbol.name)));
+@@ -160,27 +160,52 @@ function auditImport(
+ function auditRequireCalls(
+   source: ts.SourceFile,
+   fileName: string,
++  allowed: readonly AllowedSymbol[],
+   protectedSpecs: readonly string[],
+ ): AdapterAudit | undefined {
+   let verdict: AdapterAudit | undefined;
+   const visit = (node: ts.Node): void => {
+     if (verdict) return;
+-    if (
+-      ts.isCallExpression(node) &&
+-      ts.isIdentifier(node.expression) &&
+-      node.expression.text === "require"
+-    ) {
++    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+       const arg = node.arguments[0];
+       if (arg && ts.isStringLiteral(arg)) {
+         if (FILE_MUTATORS.has(arg.text)) {
+-          verdict = fail("product_mutation", `Adapter requires ${arg.text}`);
++          verdict = fail("product_mutation", `Adapter dynamically imports ${arg.text}`);
+           return;
+         }
+         if (isProtectedModule(arg.text, fileName, protectedSpecs)) {
+-          verdict = fail("expectation_import", `Adapter requires protected module ${arg.text}`);
++          verdict = fail("expectation_import", `Adapter dynamically imports protected module ${arg.text}`);
+           return;
+         }
+       }
++      verdict = fail("undeclared_helper", "Dynamic import() is not allowed in binder adapters");
++      return;
++    }
++    if (
++      ts.isCallExpression(node) &&
++      ts.isIdentifier(node.expression) &&
++      node.expression.text === "require"
++    ) {
++      const arg = node.arguments[0];
++      if (!arg || !ts.isStringLiteral(arg)) {
++        verdict = fail("undeclared_helper", "Dynamic require() is not allowed in binder adapters");
++        return;
++      }
++      if (FILE_MUTATORS.has(arg.text)) {
++        verdict = fail("product_mutation", `Adapter requires ${arg.text}`);
++        return;
++      }
++      if (isProtectedModule(arg.text, fileName, protectedSpecs)) {
++        verdict = fail("expectation_import", `Adapter requires protected module ${arg.text}`);
++        return;
++      }
++      if (!moduleAllowed(arg.text, fileName, allowed)) {
++        verdict = fail(
++          "undeclared_helper",
++          `require("${arg.text}") is not a declared contract entry or Phase 0 / base setup helper`,
++        );
++        return;
++      }
+     }
+     ts.forEachChild(node, visit);
+   };
+diff --git a/packages/verifier/src/binder/containment.ts b/packages/verifier/src/binder/containment.ts
+index 3b72c12..21b98e0 100644
+--- a/packages/verifier/src/binder/containment.ts
++++ b/packages/verifier/src/binder/containment.ts
+@@ -4,6 +4,22 @@ import type { BinderWrite } from "./types.js";
+ 
+ const CHECK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+ 
++export function hasUnsafePath(file: string): boolean {
++  const slash = file.replaceAll("\\", "/").trim();
++  if (slash.startsWith("/") || /^[A-Za-z]:/.test(slash)) return true;
++  let depth = 0;
++  for (const part of slash.split("/")) {
++    if (part === "" || part === ".") continue;
++    if (part === "..") {
++      depth -= 1;
++      if (depth < 0) return true;
++    } else {
++      depth += 1;
++    }
++  }
++  return false;
++}
++
+ export function normalizeRel(file: string): string {
+   const slash = file.replaceAll("\\", "/").trim();
+   const noDot = slash.replace(/^\.\//, "");
+@@ -34,6 +50,7 @@ export function adapterPath(checkId: string): string {
+ }
+ 
+ export function isBinderPath(file: string): boolean {
++  if (hasUnsafePath(file)) return false;
+   const rel = normalizeRel(file);
+   return rel === HARNESS_BINDER_DIR || rel.startsWith(`${HARNESS_BINDER_DIR}/`);
+ }
+@@ -80,8 +97,15 @@ export function applyBinderWrites(
+ ): Record<string, string> {
+   const next = cloneFiles(files);
+   for (const write of writes) {
++    if (hasUnsafePath(write.path) || !isBinderPath(write.path)) {
++      throw new BindingDefectError(
++        "product_mutation",
++        `Binder modified ${write.path} outside ${HARNESS_BINDER_DIR}/**`,
++        "non_behavioral",
++      );
++    }
+     const rel = normalizeRel(write.path);
+-    if (!isBinderPath(rel) || rel === HARNESS_BINDER_DIR) {
++    if (rel === HARNESS_BINDER_DIR) {
+       throw new BindingDefectError(
+         "product_mutation",
+         `Binder modified ${write.path} outside ${HARNESS_BINDER_DIR}/**`,
+diff --git a/packages/verifier/tests/binder/blindness-and-audit.test.ts b/packages/verifier/tests/binder/blindness-and-audit.test.ts
+index 37c6bc3..f8003ee 100644
+--- a/packages/verifier/tests/binder/blindness-and-audit.test.ts
++++ b/packages/verifier/tests/binder/blindness-and-audit.test.ts
+@@ -1,7 +1,10 @@
+ import { describe, expect, it } from "vitest";
+ import {
++  applyBinderWrites,
+   auditBinderAdapter,
++  BindingDefectError,
+   forbiddenFieldPaths,
++  isBinderPath,
+   parseBlindBinderV1,
+   sanitizeBinderInput,
+   assembleBlindBinderPrompt,
+@@ -97,6 +100,36 @@ describe("blindness firewall and adapter audit", () => {
+         check,
+       ).code,
+     ).toBe("schema_mismatch");
++
++    expect(
++      auditBinderAdapter(
++        `const helper = require("../src/kitchen/internal-helper");\nimport { toPrintRows } from "../src/kitchen/to-print-rows";\nexport function observe(input: unknown) {\n  void helper;\n  const orderedRows = toPrintRows(input as never);\n  return { orderedRows };\n}\n`,
++        file,
++        check,
++      ).code,
++    ).toBe("undeclared_helper");
++
++    expect(
++      auditBinderAdapter(
++        `import { toPrintRows } from "../src/kitchen/to-print-rows";\nexport async function observe(input: unknown) {\n  await import("../src/kitchen/internal-helper");\n  const orderedRows = toPrintRows(input as never);\n  return { orderedRows };\n}\n`,
++        file,
++        check,
++      ).code,
++    ).toBe("undeclared_helper");
++  });
++
++  it("rejects leading slashes, drive letters, and parent traversal in binder write paths", () => {
++    for (const badPath of [
++      "../../.harness-binder/AC-31.adapter.ts",
++      "/.harness-binder/AC-31.adapter.ts",
++      "C:\\.harness-binder\\AC-31.adapter.ts",
++      ".harness-binder/../../src/evil.ts",
++    ]) {
++      expect(isBinderPath(badPath), badPath).toBe(false);
++      expect(() =>
++        applyBinderWrites({}, [{ path: badPath, contents: "// evil" }]),
++      ).toThrow(BindingDefectError);
++    }
+   });
+ 
+   it("rejects binder output that carries expected values", () => {

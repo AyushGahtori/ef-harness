@@ -1,0 +1,115 @@
+diff --git a/packages/mcp-server/src/scope.ts b/packages/mcp-server/src/scope.ts
+index 759a6d2..0aa583a 100644
+--- a/packages/mcp-server/src/scope.ts
++++ b/packages/mcp-server/src/scope.ts
+@@ -9,13 +9,27 @@ export function normalizeRepoPath(file: string): string {
+ 
+ /**
+  * Match a task-packet write-scope glob.
+- * `**` crosses path segments, `*` and `?` stay inside one segment.
++ * `**` crosses path segments (including zero segments for `/**\/` and leading `**\/`),
++ * while `*` and `?` stay inside one segment.
+  */
+ export function globMatch(pattern: string, value: string): boolean {
+   const normalizedPattern = normalizeRepoPath(pattern);
+   const normalizedValue = normalizeRepoPath(value);
+   let expression = "";
+   for (let index = 0; index < normalizedPattern.length; index += 1) {
++    if (index === 0 && normalizedPattern.startsWith("**/")) {
++      expression += "(?:.*/)?";
++      index += 2;
++      continue;
++    }
++    if (normalizedPattern.startsWith("/**/", index)) {
++      while (normalizedPattern.startsWith("/**/**/", index)) {
++        index += 3;
++      }
++      expression += "(?:/|/.*/)";
++      index += 3;
++      continue;
++    }
+     const char = normalizedPattern[index];
+     const next = normalizedPattern[index + 1];
+     if (char === "*" && next === "*") {
+@@ -69,8 +83,8 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
+  * Untracked files are included so a new out-of-scope file cannot hide.
+  */
+ export async function readGitChangedPaths(worktreePath: string, baseCommit: string): Promise<string[]> {
+-  const tracked = await git(worktreePath, ["diff", "--name-only", "--relative", baseCommit]);
+-  const untracked = await git(worktreePath, ["ls-files", "--others", "--exclude-standard"]);
++  const tracked = await git(worktreePath, ["-c", "core.quotepath=false", "diff", "--name-only", "--relative", baseCommit]);
++  const untracked = await git(worktreePath, ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"]);
+   const seen = new Set<string>();
+   const paths: string[] = [];
+   for (const line of `${tracked}\n${untracked}`.split(/\r?\n/)) {
+diff --git a/packages/mcp-server/src/server.ts b/packages/mcp-server/src/server.ts
+index 5ec10fd..1d10716 100644
+--- a/packages/mcp-server/src/server.ts
++++ b/packages/mcp-server/src/server.ts
+@@ -338,6 +338,7 @@ export class AttemptMcpServer {
+   }
+ 
+   private scheduleStop(reason: ShutdownReason): void {
++    if (!this.shutdownReason) this.shutdownReason = reason;
+     if (this.stopping || this.stopTimer) return;
+     this.stopTimer = setTimeout(() => {
+       void this.stop(reason);
+diff --git a/packages/mcp-server/src/tools.ts b/packages/mcp-server/src/tools.ts
+index 4cd7ac0..a0119b0 100644
+--- a/packages/mcp-server/src/tools.ts
++++ b/packages/mcp-server/src/tools.ts
+@@ -108,8 +108,8 @@ async function pullNode(
+   const tokens = estimateTokens(text);
+   if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+     ctx.logPull(tool, "quota", 0);
+-    ctx.commit(tool, Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
+-    return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
++    ctx.commit(tool, 0);
++    return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+   }
+   await ctx.recordNodes([node]);
+   ctx.logPull(tool, "ok", tokens);
+@@ -476,8 +476,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
+         const tokens = estimateTokens(text);
+         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+           ctx.logPull("kb.search", "quota", 0, args.query);
+-          ctx.commit("kb.search", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
+-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
++          ctx.commit("kb.search", 0);
++          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+         }
+         const revision = await ctx.deps.knowledge.currentRevision();
+         await ctx.recordSearch({
+@@ -548,8 +548,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
+         const tokens = estimateTokens(text);
+         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+           ctx.logPull("kb.neighbors", "quota", 0);
+-          ctx.commit("kb.neighbors", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
+-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
++          ctx.commit("kb.neighbors", 0);
++          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+         }
+         await ctx.recordEdges(
+           found.sets.map((set) => ({
+@@ -607,8 +607,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
+         const tokens = estimateTokens(text);
+         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+           ctx.logPull("kb.why", "quota", 0);
+-          ctx.commit("kb.why", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
+-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
++          ctx.commit("kb.why", 0);
++          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+         }
+         await ctx.recordNodes(visible);
+         ctx.logPull("kb.why", "ok", tokens);
+@@ -641,8 +641,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
+         const tokens = estimateTokens(text);
+         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+           ctx.logPull("kb.code", "quota", 0);
+-          ctx.commit("kb.code", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
+-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
++          ctx.commit("kb.code", 0);
++          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+         }
+         if (card.nodeId !== undefined && card.version !== undefined && card.contentHash !== undefined) {
+           await ctx.recordNodes([

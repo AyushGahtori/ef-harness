@@ -1,0 +1,94 @@
+diff --git a/packages/verifier/src/advanced/boundary-mutation-prober.ts b/packages/verifier/src/advanced/boundary-mutation-prober.ts
+index ca41cc4..fb6eb66 100644
+--- a/packages/verifier/src/advanced/boundary-mutation-prober.ts
++++ b/packages/verifier/src/advanced/boundary-mutation-prober.ts
+@@ -254,11 +254,14 @@ function collectSites(source: string, fileName: string, operators: ReadonlySet<M
+         });
+       }
+       if (operators.has("drop_role_guard")) {
++        const replacement = isEarlyExitRoleGuard(node)
++          ? "{}"
++          : node.thenStatement.getText(sourceFile);
+         sites.push({
+           operator: "drop_role_guard",
+           start: node.getStart(sourceFile),
+           end: node.getEnd(),
+-          replacement: node.thenStatement.getText(sourceFile),
++          replacement,
+           description: `drop role guard in ${fileName}`,
+         });
+       }
+@@ -322,6 +325,37 @@ function isRoleCheck(expression: ts.Expression, sourceFile: ts.SourceFile): bool
+   return /\b(role|hasRole|requireRole|checkRole)\b/.test(expression.getText(sourceFile));
+ }
+ 
++function isEarlyExitRoleGuard(node: ts.IfStatement): boolean {
++  if (node.elseStatement) return false;
++  const statements = ts.isBlock(node.thenStatement) ? node.thenStatement.statements : [node.thenStatement];
++  if (statements.length === 0) return false;
++  const last = statements[statements.length - 1];
++  if (!last) return false;
++  if (ts.isThrowStatement(last)) return true;
++  if (!ts.isReturnStatement(last)) return false;
++  return hasNegatedCondition(node.expression);
++}
++
++function hasNegatedCondition(expression: ts.Expression): boolean {
++  if (ts.isParenthesizedExpression(expression)) return hasNegatedCondition(expression.expression);
++  if (ts.isPrefixUnaryExpression(expression) && expression.operator === ts.SyntaxKind.ExclamationToken) {
++    return true;
++  }
++  if (ts.isBinaryExpression(expression)) {
++    const op = expression.operatorToken.kind;
++    if (
++      op === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
++      op === ts.SyntaxKind.ExclamationEqualsToken
++    ) {
++      return true;
++    }
++    if (op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken) {
++      return hasNegatedCondition(expression.left) || hasNegatedCondition(expression.right);
++    }
++  }
++  return false;
++}
++
+ function isAlreadyEmpty(expression: ts.Expression): boolean {
+   if (ts.isArrayLiteralExpression(expression) && expression.elements.length === 0) return true;
+   if (ts.isStringLiteral(expression) && expression.text === "") return true;
+diff --git a/packages/verifier/tests/advanced/boundary-mutation-prober.test.ts b/packages/verifier/tests/advanced/boundary-mutation-prober.test.ts
+index 0d3b261..b2c3d09 100644
+--- a/packages/verifier/tests/advanced/boundary-mutation-prober.test.ts
++++ b/packages/verifier/tests/advanced/boundary-mutation-prober.test.ts
+@@ -151,6 +151,31 @@ describe("TargetedBoundaryMutationProber", () => {
+     expect(inverted?.killed).toBe(true);
+     expect(dropped?.killed).toBe(true);
+     expect(report.checkoutUntouched).toBe(true);
++
++    const guardSource = `export function readSecretsGuarded(user: { role: string }): string[] {
++  if (user.role !== "admin") {
++    return [];
++  }
++  return ["secret"];
++}
++`;
++    const guardCheck = `import { readSecretsGuarded } from "./guard.mjs";
++const guest = readSecretsGuarded({ role: "guest" });
++const admin = readSecretsGuarded({ role: "admin" });
++if (guest.length !== 0) process.exit(1);
++if (admin.length !== 1) process.exit(1);
++process.exit(0);
++`;
++    const guardReport = await probeCheckout(
++      { "guard.ts": guardSource, "check.mjs": guardCheck },
++      "guard.ts",
++      "check.mjs",
++    );
++    const guardDropped = guardReport.mutants.find((mutant) => mutant.operator === "drop_role_guard");
++    expect(guardDropped?.mutatedSource).toContain("{}");
++    expect(guardDropped?.mutatedSource).toContain('return ["secret"]');
++    expect(guardDropped?.mutatedSource).not.toContain("return []");
++    expect(guardDropped?.killed).toBe(true);
+   }, 20_000);
+ 
+   it("returns empty on a boundary branch and still flips the cutoff comparison", async () => {

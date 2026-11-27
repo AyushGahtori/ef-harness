@@ -1,0 +1,178 @@
+diff --git a/packages/db/src/lifecycles/done.ts b/packages/db/src/lifecycles/done.ts
+index 0ab536c..ce2a6eb 100644
+--- a/packages/db/src/lifecycles/done.ts
++++ b/packages/db/src/lifecycles/done.ts
+@@ -19,7 +19,7 @@ interface FailedBag {
+ 
+ function coversScope(scopePrefix: string, auditedPaths: readonly string[]): boolean {
+   return auditedPaths.some(
+-    (audited) => audited === scopePrefix || audited.startsWith(scopePrefix) || scopePrefix.startsWith(audited),
++    (audited) => audited === scopePrefix || scopePrefix.startsWith(audited),
+   );
+ }
+ 
+@@ -94,12 +94,12 @@ function conditionTasks(db: StateConnection, feature: string): boolean {
+       )
+       .get({ task: taskId, brief: briefVersion });
+     if (!accepted) return false;
+-    if (!contractsCurrent(db, taskId)) return false;
++    if (!contractsCurrent(db, taskId, briefVersion)) return false;
+   }
+   return true;
+ }
+ 
+-function contractsCurrent(db: StateConnection, task: string): boolean {
++function contractsCurrent(db: StateConnection, task: string, briefVersion: number): boolean {
+   const edges = db
+     .prepare(
+       `SELECT e.dst AS contract_id, e.dst_version_pin AS pin, c.version AS current_version
+@@ -123,10 +123,14 @@ function contractsCurrent(db: StateConnection, task: string): boolean {
+         `SELECT 1 AS ok
+            FROM read_sets rs
+            JOIN attempts a ON a.id = rs.attempt
+-          WHERE a.task = :task AND rs.node = :contract AND rs.version = :version
++          WHERE a.task = :task
++            AND a.state = 'accepted'
++            AND a.brief_version = :brief
++            AND rs.node = :contract
++            AND rs.version = :version
+           LIMIT 1`,
+       )
+-      .get({ task, contract: contractId, version: current });
++      .get({ task, brief: briefVersion, contract: contractId, version: current });
+     if (!read) return false;
+   }
+   return true;
+diff --git a/packages/db/src/lifecycles/repo.ts b/packages/db/src/lifecycles/repo.ts
+index cbff4f0..c2e293f 100644
+--- a/packages/db/src/lifecycles/repo.ts
++++ b/packages/db/src/lifecycles/repo.ts
+@@ -214,6 +214,32 @@ export class LifecycleRepo {
+           reason: "edge is not in FEATURE_STATE_TRANSITIONS",
+         });
+       }
++      if (row.state === "BLOCKED" && input.to !== "DEFERRED" && input.to !== "ABANDONED") {
++        const preBlock = this.readPreBlockState(feature);
++        if (preBlock !== null) {
++          if (input.to !== preBlock) {
++            throw new IllegalFeatureTransitionError({
++              feature,
++              from: row.state,
++              to: input.to,
++              reason: `BLOCKED feature must resume to its pre-block state ${preBlock}`,
++            });
++          }
++        } else if (
++          input.to === "LEAVES_MERGED" ||
++          input.to === "WIRED" ||
++          input.to === "JOURNEY_PASSED" ||
++          input.to === "QUEUED_FOR_MERGE" ||
++          input.to === "MERGED"
++        ) {
++          throw new IllegalFeatureTransitionError({
++            feature,
++            from: row.state,
++            to: input.to,
++            reason: `cannot advance directly from BLOCKED to ${input.to} without recorded pre-block state`,
++          });
++        }
++      }
+       if (input.to === "DONE") {
+         if (!input.evidence || input.evidence.feature !== feature) {
+           throw new InvalidLifecycleInputError("DONE requires FeatureDoneEvidenceInput for this feature");
+@@ -250,6 +276,16 @@ export class LifecycleRepo {
+       if (rowChanges(updated) !== 1) {
+         throw new StaleEpochError({ feature, expectedEpoch: input.expectedEpoch, actualEpoch: row.epoch });
+       }
++      if (input.to === "BLOCKED") {
++        this.writePreBlockState(feature, row.state);
++      } else if (row.state === "BLOCKED") {
++        this.clearPreBlockState(feature);
++      }
++      if (input.to === "DEFERRED" || input.to === "ABANDONED") {
++        this.writeApprovedExit(feature, input.to);
++      } else if (row.state === "DEFERRED") {
++        this.clearApprovedExit(feature);
++      }
+       const heldDownstream = input.to === "REOPENED" && changeSetId
+         ? this.holdDownstream(feature, changeSetId, input.rev, input.now)
+         : [];
+@@ -522,6 +558,9 @@ export class LifecycleRepo {
+         expected: next.epoch,
+       });
+       if (rowChanges(updated) !== 1) continue;
++      if (to === "BLOCKED") {
++        this.writePreBlockState(next.feature, next.state);
++      }
+       const after = this.requireFeature(next.feature);
+       this.emit("FeatureStateChanged", next.feature, rev, now, {
+         feature: next.feature,
+@@ -585,18 +624,41 @@ export class LifecycleRepo {
+   }
+ 
+   private approvedExit(feature: string, state: string): boolean {
+-    const rows = this.sql(
+-      `SELECT payload
+-         FROM outbox
+-        WHERE type = 'FeatureStateChanged' AND subject = :feature
+-        ORDER BY seq DESC`,
+-    ).all({ feature });
+-    for (const row of rows) {
+-      const payload = parseJsonObject(asText(row, "payload"));
+-      if (!payload) continue;
+-      if (payload.to === state && payload.approved === true) return true;
+-    }
+-    return false;
++    const row = this.sql(`SELECT value FROM meta WHERE key = :key`).get({
++      key: approvedExitMetaKey(feature),
++    });
++    return row !== undefined && asText(row, "value") === state;
++  }
++
++  private writeApprovedExit(feature: string, state: "DEFERRED" | "ABANDONED"): void {
++    this.sql(
++      `INSERT INTO meta(key, value) VALUES (:key, :value)
++       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
++    ).run({ key: approvedExitMetaKey(feature), value: state });
++  }
++
++  private clearApprovedExit(feature: string): void {
++    this.sql(`DELETE FROM meta WHERE key = :key`).run({ key: approvedExitMetaKey(feature) });
++  }
++
++  private readPreBlockState(feature: string): FeatureState | null {
++    const row = this.sql(`SELECT value FROM meta WHERE key = :key`).get({
++      key: preBlockMetaKey(feature),
++    });
++    if (!row) return null;
++    const value = asText(row, "value");
++    return isFeatureState(value) ? value : null;
++  }
++
++  private writePreBlockState(feature: string, from: FeatureState): void {
++    this.sql(
++      `INSERT INTO meta(key, value) VALUES (:key, :value)
++       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
++    ).run({ key: preBlockMetaKey(feature), value: from });
++  }
++
++  private clearPreBlockState(feature: string): void {
++    this.sql(`DELETE FROM meta WHERE key = :key`).run({ key: preBlockMetaKey(feature) });
+   }
+ 
+   private coupledFeatures(feature: string): CoupledFeatureRef[] {
+@@ -764,6 +826,14 @@ export class LifecycleRepo {
+   }
+ }
+ 
++function approvedExitMetaKey(feature: string): string {
++  return `feature_exit_approved:${feature}`;
++}
++
++function preBlockMetaKey(feature: string): string {
++  return `feature_pre_block_state:${feature}`;
++}
++
+ function requireId(value: string, label: string): string {
+   if (value.trim().length === 0) {
+     throw new InvalidLifecycleInputError(`${label} must be non-empty`);

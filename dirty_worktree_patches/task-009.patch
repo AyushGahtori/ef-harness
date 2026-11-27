@@ -1,0 +1,209 @@
+diff --git a/packages/shared-contracts/src/prompts/common.ts b/packages/shared-contracts/src/prompts/common.ts
+index d9e0639..0229b19 100644
+--- a/packages/shared-contracts/src/prompts/common.ts
++++ b/packages/shared-contracts/src/prompts/common.ts
+@@ -144,7 +144,14 @@ export const ScopePredicateSchema = z
+     }
+   });
+ 
+-export const LocatorSchema = z.discriminatedUnion("kind", [
++export const ImageRegionSchema = z.tuple([
++  z.number().nonnegative(),
++  z.number().nonnegative(),
++  z.number().positive(),
++  z.number().positive(),
++]);
++
++export const LocatorSchema = z.union([
+   z
+     .object({
+       kind: z.literal("turn"),
+@@ -178,6 +185,13 @@ export const LocatorSchema = z.discriminatedUnion("kind", [
+       char_end: PositiveIntSchema,
+     })
+     .strict(),
++  z
++    .object({
++      kind: z.literal("image"),
++      region: ImageRegionSchema,
++      ocr_text: z.string().nullable().optional(),
++    })
++    .strict(),
+   z
+     .object({
+       kind: z.literal("image"),
+diff --git a/packages/shared-contracts/src/prompts/schemas/execution.ts b/packages/shared-contracts/src/prompts/schemas/execution.ts
+index 26fc4cd..e89b469 100644
+--- a/packages/shared-contracts/src/prompts/schemas/execution.ts
++++ b/packages/shared-contracts/src/prompts/schemas/execution.ts
+@@ -4,21 +4,84 @@ import { IdSchema, NonNegativeIntSchema, TextSchema, addIssue } from "../common.
+ 
+ export const CANDIDATE_NOTE_MAX_CHARS = 2000;
+ 
+-const DependencyIntentSchema = z
+-  .object({
+-    name: TextSchema,
+-    range: z.string().nullable(),
+-    reason: TextSchema,
+-  })
+-  .strict();
++const DependencyIntentSchema = z.union([
++  z
++    .object({
++      package: TextSchema,
++      version: TextSchema,
++      reason: TextSchema,
++    })
++    .strict(),
++  z
++    .object({
++      name: TextSchema,
++      range: z.string().nullable(),
++      reason: TextSchema,
++    })
++    .strict(),
++]);
+ 
+-const WiringNeedSchema = z
+-  .object({
+-    kind: z.enum(["route", "page", "export", "migration", "env", "component"]),
+-    path: TextSchema,
+-    component: z.string().nullable(),
+-  })
+-  .strict();
++const MigrationIntentSchema = z.union([
++  z
++    .object({
++      table: IdSchema,
++      change: z
++        .object({
++          add_column: z
++            .object({
++              name: IdSchema,
++              type: TextSchema,
++              nullable: z.boolean(),
++            })
++            .strict(),
++        })
++        .strict(),
++      reason: TextSchema,
++    })
++    .strict(),
++  z
++    .object({
++      id: IdSchema,
++      text: TextSchema,
++    })
++    .strict(),
++]);
++
++const WiringNeedSchema = z.union([
++  z
++    .object({
++      kind: z.literal("route"),
++      path: TextSchema,
++      component: IdSchema,
++    })
++    .strict(),
++  z
++    .object({
++      kind: z.literal("barrel"),
++      module: TextSchema,
++      export_name: IdSchema,
++    })
++    .strict(),
++  z
++    .object({
++      kind: z.literal("lockfile"),
++      package: TextSchema,
++    })
++    .strict(),
++  z
++    .object({
++      kind: z.literal("schema_index"),
++      name: IdSchema,
++    })
++    .strict(),
++  z
++    .object({
++      kind: z.enum(["route", "page", "export", "migration", "env", "component"]),
++      path: TextSchema,
++      component: z.string().nullable(),
++    })
++    .strict(),
++]);
+ 
+ const LeafWorkerSuccessSchema = z
+   .object({
+@@ -29,16 +92,7 @@ const LeafWorkerSuccessSchema = z
+     commit: TextSchema,
+     changed_paths: z.array(TextSchema),
+     dependency_intents: z.array(DependencyIntentSchema),
+-    migration_intents: z
+-      .array(
+-        z
+-          .object({
+-            id: IdSchema,
+-            text: TextSchema,
+-          })
+-          .strict(),
+-      )
+-      .default([]),
++    migration_intents: z.array(MigrationIntentSchema).default([]),
+     wiring_needs: z.array(WiringNeedSchema),
+     local_checks: z.array(
+       z
+diff --git a/packages/shared-contracts/tests/prompts/schemas.test.ts b/packages/shared-contracts/tests/prompts/schemas.test.ts
+index 75c0ea0..51a4805 100644
+--- a/packages/shared-contracts/tests/prompts/schemas.test.ts
++++ b/packages/shared-contracts/tests/prompts/schemas.test.ts
+@@ -10,6 +10,7 @@ import {
+   FeaturePlannerV1Schema,
+   FeatureResearcherV1Schema,
+   FinalProjectAuditorV1Schema,
++  IntakeExtractorV1Schema,
+   InvestigatorV1Schema,
+   LeafWorkerV1Schema,
+   PROMPT_CONTRACTS,
+@@ -388,4 +389,41 @@ describe("prompt output schemas", () => {
+       }),
+     ).not.toBe("ok");
+   });
++
++  it("accepts Task 008 candidate@1 intent shapes and external-intake region image locators", () => {
++    const worker = VALID_OUTPUTS["leaf-worker@1"] as Record<string, unknown>;
++    expect(
++      explain(LeafWorkerV1Schema, {
++        ...worker,
++        dependency_intents: [{ package: "zod", version: "^3.25.0", reason: "schemas" }],
++        migration_intents: [
++          {
++            table: "orders",
++            change: { add_column: { name: "pickup_slot", type: "text", nullable: true } },
++            reason: "SI-401",
++          },
++        ],
++        wiring_needs: [
++          { kind: "route", path: "/kitchen", component: "KitchenPage" },
++          { kind: "barrel", module: "src/index.ts", export_name: "KitchenPage" },
++          { kind: "lockfile", package: "zod" },
++          { kind: "schema_index", name: "orders" },
++        ],
++      }),
++    ).toBe("ok");
++    expect(
++      explain(IntakeExtractorV1Schema, {
++        statements: [
++          {
++            text: "Cutoff banner",
++            locator: { kind: "image", region: [0, 0, 120, 40], ocr_text: "Cutoff 10:45" },
++            kind: "rule",
++            criterion_id: null,
++            value: null,
++          },
++        ],
++        suspicious_instructions: [],
++      }),
++    ).toBe("ok");
++  });
+ });

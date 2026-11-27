@@ -1,0 +1,166 @@
+diff --git a/packages/completeness-gate/src/ast-scanners/dead-controls.ts b/packages/completeness-gate/src/ast-scanners/dead-controls.ts
+index 99b85de..433a89b 100644
+--- a/packages/completeness-gate/src/ast-scanners/dead-controls.ts
++++ b/packages/completeness-gate/src/ast-scanners/dead-controls.ts
+@@ -113,16 +113,29 @@ function inspectOpening(
+       ),
+     );
+   }
+-  if (name === "button" && insideForm(element) && !hasSpreadAttribute(element) && !buttonIsLive(element)) {
+-    findings.push(
+-      jsxFinding(
+-        file,
+-        sourceFile,
+-        element,
+-        'Button inside a form has neither onClick nor type="submit".',
+-        'Set type="submit" or a real onClick handler.',
+-      ),
+-    );
++  if (name === "button" && !hasSpreadAttribute(element)) {
++    const inForm = insideForm(element);
++    if (inForm && !buttonIsLive(element)) {
++      findings.push(
++        jsxFinding(
++          file,
++          sourceFile,
++          element,
++          'Button inside a form has neither onClick nor type="submit".',
++          'Set type="submit" or a real onClick handler.',
++        ),
++      );
++    } else if (!inForm && !attributeByName(element, "onClick") && !standaloneButtonIsLive(element)) {
++      findings.push(
++        jsxFinding(
++          file,
++          sourceFile,
++          element,
++          "Button outside a form has no onClick handler.",
++          "Add an onClick handler or associate it with a form.",
++        ),
++      );
++    }
+   }
+   return findings;
+ }
+@@ -146,6 +159,15 @@ function buttonIsLive(element: ts.JsxOpeningLikeElement): boolean {
+   return typeValue === "submit";
+ }
+ 
++function standaloneButtonIsLive(element: ts.JsxOpeningLikeElement): boolean {
++  const onClick = attributeByName(element, "onClick");
++  if (onClick && !isEmptyHandlerAttribute(onClick)) return true;
++  const type = attributeByName(element, "type");
++  const typeValue = type ? jsxAttributeString(type)?.toLowerCase() : undefined;
++  const formAttr = attributeByName(element, "form");
++  return typeValue === "submit" && formAttr !== undefined;
++}
++
+ function insideForm(node: ts.Node): boolean {
+   let current: ts.Node | undefined = node.parent;
+   while (current) {
+diff --git a/packages/completeness-gate/src/ast-scanners/stubs.ts b/packages/completeness-gate/src/ast-scanners/stubs.ts
+index 698cc69..f69285f 100644
+--- a/packages/completeness-gate/src/ast-scanners/stubs.ts
++++ b/packages/completeness-gate/src/ast-scanners/stubs.ts
+@@ -31,7 +31,6 @@ export function scanStubBodies(
+     if ((kind === "constant" && symbol.allowsConstantReturn) || (kind === "empty" && symbol.allowsEmptyReturn)) {
+       continue;
+     }
+-    if (kind === "constant" && symbol.allowsEmptyReturn && symbol.allowsConstantReturn) continue;
+     const position = sourceFile.getLineAndCharacterOfPosition(candidate.node.getStart(sourceFile));
+     const line = position.line + 1;
+     const snippet = sourceFile.getFullText().split(/\r?\n/)[position.line] ?? candidate.name;
+@@ -60,7 +59,7 @@ function classifyBody(body: ts.ConciseBody): "empty" | "constant" | "throw" | "r
+     const only = statements[0];
+     if (!only) return "empty";
+     if (ts.isReturnStatement(only)) {
+-      if (!only.expression) return "real";
++      if (!only.expression) return "empty";
+       return isTrivialConstant(only.expression) ? "constant" : "real";
+     }
+     if (ts.isThrowStatement(only) && only.expression && isUnimplementedThrow(only.expression)) return "throw";
+@@ -73,7 +72,8 @@ function classifyBody(body: ts.ConciseBody): "empty" | "constant" | "throw" | "r
+ function isTrivialConstant(expression: ts.Expression): boolean {
+   const node = unwrapExpression(expression);
+   if (node.kind === ts.SyntaxKind.NullKeyword) return true;
+-  if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
++  if (node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword) return true;
++  if (ts.isIdentifier(node) && node.text === "undefined") return true;
+   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text === "";
+   if (ts.isNumericLiteral(node)) return Number(node.text) === 0;
+   if (
+diff --git a/packages/completeness-gate/tests/ast-scanners/engine.test.ts b/packages/completeness-gate/tests/ast-scanners/engine.test.ts
+index 5f70f3e..7bb9cc3 100644
+--- a/packages/completeness-gate/tests/ast-scanners/engine.test.ts
++++ b/packages/completeness-gate/tests/ast-scanners/engine.test.ts
+@@ -170,6 +170,34 @@ describe("ast-scanners", () => {
+     expect(stubbed.some((message) => message.includes("emptyBody"))).toBe(true);
+     expect(stubbed.some((message) => message.includes("nullBody"))).toBe(true);
+     expect(stubbed.some((message) => message.includes("thrown"))).toBe(true);
++
++    const extraStubs = await audit(
++      [
++        {
++          path: "src/extra-stubs.ts",
++          status: "A",
++          content: [
++            "export function bareReturn(): void { return; }",
++            "export function falseBody(): boolean { return false; }",
++            "export const undefBody = () => undefined;",
++            "",
++          ].join("\n"),
++        },
++      ],
++      {
++        produces: [
++          { name: "bareReturn", kind: "function" },
++          { name: "falseBody", kind: "function" },
++          { name: "undefBody", kind: "function" },
++        ],
++      },
++    );
++    const extraMessages = extraStubs.hardFindings
++      .filter((finding) => finding.ruleId === "stub-body")
++      .map((finding) => finding.message);
++    expect(extraMessages.some((message) => message.includes("bareReturn"))).toBe(true);
++    expect(extraMessages.some((message) => message.includes("falseBody"))).toBe(true);
++    expect(extraMessages.some((message) => message.includes("undefBody"))).toBe(true);
+   });
+ 
+   it("allows a contract that declares a constant or empty return", async () => {
+@@ -321,6 +349,35 @@ describe("ast-scanners", () => {
+     expect(button.hardFindings.some((finding) => finding.message.includes("neither onClick"))).toBe(true);
+     expect(button.hardFindings.some((finding) => finding.message.includes("no onSubmit"))).toBe(false);
+ 
++    const standaloneDead = await audit([
++      {
++        path: "src/Toolbar.tsx",
++        status: "A",
++        content: "export function Toolbar() {\n  return <button type=\"button\">Save</button>;\n}\n",
++      },
++    ]);
++    expect(standaloneDead.hardFindings.some((finding) => finding.message.includes("outside a form"))).toBe(true);
++
++    const standaloneLive = await audit([
++      {
++        path: "src/Toolbar.tsx",
++        status: "A",
++        content: [
++          "export function Toolbar(props: { onSave: () => void; extra?: Record<string, unknown> }) {",
++          "  return (",
++          "    <div>",
++          "      <button type=\"button\" onClick={props.onSave}>Save</button>",
++          "      <button type=\"submit\" form=\"dish-form\">Submit</button>",
++          "      <button {...props.extra}>Spread</button>",
++          "    </div>",
++          "  );",
++          "}",
++          "",
++        ].join("\n"),
++      },
++    ]);
++    expect(standaloneLive.hardFindings).toEqual([]);
++
+     const clean = await audit([{ path: "src/DishForm.tsx", status: "A", content: cleanForm }]);
+     expect(clean.hardFindings).toEqual([]);
+   });

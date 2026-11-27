@@ -1,0 +1,476 @@
+diff --git a/packages/worker-loop/src/executor/guards.ts b/packages/worker-loop/src/executor/guards.ts
+index 175db04..22838ae 100644
+--- a/packages/worker-loop/src/executor/guards.ts
++++ b/packages/worker-loop/src/executor/guards.ts
+@@ -50,13 +50,21 @@ export function nextProgress(
+   cursor: ProgressCursor,
+   tree: string,
+   fingerprint: string | null,
++  hasCheckRun = fingerprint !== null,
+ ): ProgressCursor & { stuck: boolean } {
+-  if (fingerprint === null) {
+-    return { streak: 0, tree, fingerprint: null, stuck: false };
++  if (hasCheckRun) {
++    if (fingerprint === null) {
++      return { streak: 0, tree, fingerprint: null, stuck: false };
++    }
++    if (cursor.tree === tree && cursor.fingerprint === fingerprint) {
++      const streak = cursor.streak + 1;
++      return { streak, tree, fingerprint, stuck: streak >= NO_PROGRESS_STEP_LIMIT };
++    }
++    return { streak: 1, tree, fingerprint, stuck: false };
+   }
+-  if (cursor.tree === tree && cursor.fingerprint === fingerprint) {
++  if (cursor.tree === tree && cursor.fingerprint !== null) {
+     const streak = cursor.streak + 1;
+-    return { streak, tree, fingerprint, stuck: streak >= NO_PROGRESS_STEP_LIMIT };
++    return { streak, tree, fingerprint: cursor.fingerprint, stuck: streak >= NO_PROGRESS_STEP_LIMIT };
+   }
+-  return { streak: 1, tree, fingerprint, stuck: false };
++  return { streak: 0, tree, fingerprint: null, stuck: false };
+ }
+diff --git a/packages/worker-loop/src/executor/index.ts b/packages/worker-loop/src/executor/index.ts
+index 682f07b..92f23a5 100644
+--- a/packages/worker-loop/src/executor/index.ts
++++ b/packages/worker-loop/src/executor/index.ts
+@@ -17,6 +17,7 @@ export {
+   SENIOR_MAX_STEPS,
+   STREAM_STALL_MS,
+   SUBAGENT_TOOL_NAMES,
++  UnknownOutcomeReconciliationError,
+   emptyWorkingMemory,
+ } from "./types.js";
+ export type {
+diff --git a/packages/worker-loop/src/executor/native-worker-loop.ts b/packages/worker-loop/src/executor/native-worker-loop.ts
+index 70b178d..7139d81 100644
+--- a/packages/worker-loop/src/executor/native-worker-loop.ts
++++ b/packages/worker-loop/src/executor/native-worker-loop.ts
+@@ -28,6 +28,7 @@ import {
+   CrashInjectedError,
+   MODEL_CALL_RESERVE_UNITS,
+   STREAM_STALL_MS,
++  UnknownOutcomeReconciliationError,
+   toolBody,
+   type AttemptExecutionResult,
+   type AttemptRecord,
+@@ -210,7 +211,7 @@ export class NativeWorkerLoop {
+         if (!failure) throw error;
+         if (failure.kind === "unknown_timeout") {
+           await this.deps.budget.markReservationUnknown(reservation.reservationId);
+-          throw new CrashInjectedError("during_model_call", site.nextStep, null);
++          throw new UnknownOutcomeReconciliationError(failure.clientRequestId, site.nextStep);
+         }
+         await this.settlePartial(reservation.reservationId, failure);
+         this.writeCursor(this.deps.coordinator.getAttempt(attempt.id), []);
+@@ -310,8 +311,13 @@ export class NativeWorkerLoop {
+       const name = canonicalToolName(original.name, current.profile.editFormat);
+       const call: ToolCall = { ...original, name };
+       const allowed = allowedTools(current.packet.tools, current.profile.editFormat);
+-      if (call.malformed || !allowed.includes(name)) {
+-        return this.rejectTool(current, response, call, allowed);
++      const targetPath = stringField(call.arguments, "path") ?? stringField(call.arguments, "file");
++      const unlockedReplaceLines =
++        name === "replace_lines" &&
++        targetPath !== null &&
++        this.deps.edits.availableTools(targetPath).includes("replace_lines");
++      if (call.malformed || (!allowed.includes(name) && !unlockedReplaceLines)) {
++        return this.rejectTool(current, response, call, allowed, index);
+       }
+       if (isEditTool(name) && current.additiveSteer && !current.additiveSteer.acknowledged) {
+         if (acknowledgesSteer(response.text, current.additiveSteer.id)) {
+@@ -377,20 +383,31 @@ export class NativeWorkerLoop {
+           );
+         }
+       } catch (error) {
+-        if (!isEditStuckError(error)) throw error;
+-        await this.commitStep(
+-          current,
+-          response,
+-          call,
+-          toolBody({
++        if (error instanceof CrashInjectedError) throw error;
++        if (isEditStuckError(error)) {
++          await this.commitStep(
++            current,
++            response,
++            call,
++            toolBody({
++              ok: false,
++              summary: "edit_stuck: edit recovery ladder exhausted",
++              output: error.message,
++            }),
++            index,
++            null,
++          );
++          return { type: "terminal", result: await this.finish(current.id, "stuck", "edit_recovery", true) };
++        }
++        if (error instanceof Error) {
++          body = toolBody({
+             ok: false,
+-            summary: "edit_stuck: edit recovery ladder exhausted",
++            summary: `error: ${error.name}`,
+             output: error.message,
+-          }),
+-          index,
+-          null,
+-        );
+-        return { type: "terminal", result: await this.finish(current.id, "stuck", "edit_recovery", true) };
++          });
++        } else {
++          throw error;
++        }
+       }
+       this.writeCursor(current, [this.toolCursor("tool_done_unlogged", response, index, site.nextStep)]);
+       if (this.shouldCrash("after_tool_before_log", site)) {
+@@ -458,6 +475,7 @@ export class NativeWorkerLoop {
+     response: RecordedResponse,
+     call: ToolCall,
+     allowed: readonly string[],
++    index: number,
+   ): Promise<Signal> {
+     const prior = countPrefixed(this.deps.coordinator.turns(attempt.id), "malformed:");
+     const reason = call.malformed
+@@ -469,8 +487,9 @@ export class NativeWorkerLoop {
+         response,
+         call,
+         toolBody({ ok: false, summary: `malformed: repeated ${reason}`, output: reason }),
+-        0,
++        index,
+         null,
++        true,
+       );
+       return { type: "terminal", result: await this.finish(attempt.id, "stuck", "malformed_tool", true) };
+     }
+@@ -480,8 +499,9 @@ export class NativeWorkerLoop {
+       response,
+       call,
+       toolBody({ ok: false, summary: `malformed: ${message}`, output: message }),
+-      0,
++      index,
+       null,
++      true,
+     );
+     return { type: "continue" };
+   }
+@@ -508,6 +528,7 @@ export class NativeWorkerLoop {
+     body: ToolBody,
+     index: number,
+     preset: CheckpointCommit | null,
++    clearPending = false,
+   ): Promise<string | null> {
+     const current = this.deps.coordinator.getAttempt(attempt.id);
+     const step = this.deps.coordinator.turns(current.id).length + 1;
+@@ -521,6 +542,7 @@ export class NativeWorkerLoop {
+       }));
+     const tree = await this.deps.snapshots.treeSha();
+     const changed = await this.deps.snapshots.changedPathsSinceBase();
++    const hasCheckRun = body.checkResults.length > 0 || body.failingCheckFingerprint !== null;
+     const progress = nextProgress(
+       {
+         streak: current.progressStreak,
+@@ -529,6 +551,7 @@ export class NativeWorkerLoop {
+       },
+       tree,
+       body.failingCheckFingerprint,
++      hasCheckRun,
+     );
+     const memory = body.memory ?? current.workingMemory;
+     const checks = body.checkResults.length > 0 ? body.checkResults : current.lastCheckResults;
+@@ -547,7 +570,7 @@ export class NativeWorkerLoop {
+       changedFiles: changed,
+       lastCheckResults: checks,
+     });
+-    const more = index + 1 < response.toolCalls.length;
++    const more = !clearPending && index + 1 < response.toolCalls.length;
+     const pending: PendingEffect[] = more ? [this.responseCursor(response, index + 1)] : [];
+     this.deps.coordinator.transaction(() => {
+       this.deps.coordinator.appendTurn({
+@@ -728,8 +751,8 @@ export class NativeWorkerLoop {
+       step: existing?.step ?? 0,
+       wipRef: existing?.wipRef ?? null,
+       handoffArtifact: note,
+-      countsAsFailedAttempt: false,
+-      countsAsWorkerFailure: false,
++      countsAsFailedAttempt: outcome === "stuck",
++      countsAsWorkerFailure: outcome === "stuck",
+       settledUnits: await this.deps.budget.getSpentUnits(attemptId),
+       changedFiles: [...attempt.changedFiles],
+       routedTo: attempt.routedTo,
+diff --git a/packages/worker-loop/src/executor/types.ts b/packages/worker-loop/src/executor/types.ts
+index a006775..828a1e5 100644
+--- a/packages/worker-loop/src/executor/types.ts
++++ b/packages/worker-loop/src/executor/types.ts
+@@ -330,6 +330,18 @@ export class CrashInjectedError extends Error {
+   }
+ }
+ 
++export class UnknownOutcomeReconciliationError extends Error {
++  readonly clientRequestId: string;
++  readonly step: number;
++
++  constructor(clientRequestId: string, step: number) {
++    super(`Timeout after request transmitted (${clientRequestId}); hold reservation for reconciliation`);
++    this.name = "UnknownOutcomeReconciliationError";
++    this.clientRequestId = clientRequestId;
++    this.step = step;
++  }
++}
++
+ export class LocalTurnFailure extends Error {
+   readonly kind: ModelFailureKind;
+   readonly retryAfterMs: number | null;
+diff --git a/packages/worker-loop/tests/executor/crash-recovery.test.ts b/packages/worker-loop/tests/executor/crash-recovery.test.ts
+index 211582c..2932b58 100644
+--- a/packages/worker-loop/tests/executor/crash-recovery.test.ts
++++ b/packages/worker-loop/tests/executor/crash-recovery.test.ts
+@@ -1,6 +1,11 @@
+ import { describe, expect, it } from "vitest";
+ import type { CrashInjectorPort } from "../../src/executor/ports.js";
+-import { CrashInjectedError, type CrashPoint } from "../../src/executor/types.js";
++import {
++  CrashInjectedError,
++  LocalTurnFailure,
++  UnknownOutcomeReconciliationError,
++  type CrashPoint,
++} from "../../src/executor/types.js";
+ import {
+   createFixture,
+   editThenSubmit,
+@@ -91,6 +96,30 @@ describe("checkpoint crash recovery", () => {
+     expect(crashed.coordinator.turns(crashed.id).map((turn) => turn.step)).toEqual([1, 2, 3, 4]);
+     expect(crashed.events.filter((event) => event === "run")).toHaveLength(1);
+   });
++
++  it("throws UnknownOutcomeReconciliationError on unknown_timeout and reconciles on resume", async () => {
++    let timedOut = false;
++    const fixture = createFixture({
++      reconcile: { action: "settle", actualUnits: 25 },
++      script: (call) => {
++        if (call === 0 && !timedOut) {
++          timedOut = true;
++          return {
++            error: new LocalTurnFailure("unknown_timeout", "request timed out after transmit"),
++          };
++        }
++        return editThenSubmit(call - 1);
++      },
++    });
++    await expect(fixture.loop.runAttempt(fixture.id)).rejects.toBeInstanceOf(
++      UnknownOutcomeReconciliationError,
++    );
++    expect(fixture.coordinator.checkpoint(fixture.id)?.pendingEffects[0]?.kind).toBe("model_in_flight");
++    const resumed = await fixture.loop.resumeAttemptFromCheckpoint(fixture.id);
++    expect(resumed.outcome).toBe("submitted");
++    expect(fixture.events).toContain("reconcile");
++    expect(fixture.budget.spent).toBe(55);
++  });
+ });
+ 
+ function oneShot(
+diff --git a/packages/worker-loop/tests/executor/spiral-guards.test.ts b/packages/worker-loop/tests/executor/spiral-guards.test.ts
+index e3d5946..8f91a07 100644
+--- a/packages/worker-loop/tests/executor/spiral-guards.test.ts
++++ b/packages/worker-loop/tests/executor/spiral-guards.test.ts
+@@ -206,4 +206,148 @@ describe("spiral and stall guards", () => {
+     expect(JSON.parse(result.handoffArtifact).llmTokens).toBe(0);
+     assertReserveBeforeStream(fixture.events);
+   });
++
++  it("sticks on no_progress when alternating read_file and failing checks without tree edits", async () => {
++    const fixture = createFixture({
++      script: (call): ScriptedTurn => {
++        if (call % 2 === 0) {
++          return {
++            tools: [
++              {
++                name: "harness.run",
++                arguments: { command: `npm test ${call} fingerprint=ac-31 fail=AC-31` },
++              },
++            ],
++          };
++        }
++        return {
++          tools: [{ name: "read_file", arguments: { path: `src/f-${call}.ts` } }],
++        };
++      },
++    });
++    const result = await fixture.loop.runAttempt(fixture.id);
++    expect(result.outcome).toBe("stuck");
++    expect(result.reason).toBe("no_progress");
++    expect(result.countsAsFailedAttempt).toBe(true);
++    expect(result.countsAsWorkerFailure).toBe(true);
++    expect(fixture.coordinator.turns(fixture.id)).toHaveLength(8);
++  });
++
++  it("resets the no-progress streak when a check run passes", async () => {
++    const fixture = createFixture({
++      script: (call): ScriptedTurn => {
++        if (call < 6) {
++          return {
++            tools: [
++              {
++                name: "harness.run",
++                arguments: { command: `npm test ${call} fingerprint=ac-31 fail=AC-31` },
++              },
++            ],
++          };
++        }
++        if (call === 6) {
++          return { tools: [{ name: "harness.run", arguments: { command: "npm test pass" } }] };
++        }
++        if (call < 10) {
++          return {
++            tools: [
++              {
++                name: "harness.run",
++                arguments: { command: `npm test ${call} fingerprint=ac-31 fail=AC-31` },
++              },
++            ],
++          };
++        }
++        return { tools: [{ name: "harness.submit_candidate", arguments: {} }] };
++      },
++    });
++    const result = await fixture.loop.runAttempt(fixture.id);
++    expect(result.outcome).toBe("submitted");
++    expect(result.countsAsFailedAttempt).toBe(false);
++  });
++
++  it("clears pendingEffects when rejecting a malformed tool in a multi-tool response", async () => {
++    const executed: string[] = [];
++    const fixture = createFixture({
++      tools: ["read_file", "harness.submit_candidate"],
++      onTool: (name) => executed.push(name),
++      script: (call): ScriptedTurn => {
++        if (call === 0) {
++          return {
++            tools: [
++              { name: "bash", arguments: { cmd: "ls" } },
++              { name: "read_file", arguments: { path: "src/app.ts" } },
++            ],
++          };
++        }
++        if (call === 1) {
++          return { tools: [{ name: "read_file", arguments: { path: "src/app.ts" } }] };
++        }
++        return { tools: [{ name: "harness.submit_candidate", arguments: {} }] };
++      },
++    });
++    const result = await fixture.loop.runAttempt(fixture.id);
++    expect(result.outcome).toBe("submitted");
++    expect(executed).toEqual(["read_file"]);
++    expect(fixture.model.calls).toHaveLength(3);
++    const turns = fixture.coordinator.turns(fixture.id);
++    expect(turns[0]?.resultSummary).toContain("Available tools:");
++    expect(fixture.coordinator.checkpoint(fixture.id)?.pendingEffects).toEqual([]);
++  });
++
++  it("recovers across edit errors 1-3 via tool results and escalates to stuck on failure 4", async () => {
++    const recovered = createFixture({
++      tools: ["read_file", "str_replace", "harness.submit_candidate"],
++      files: { "src/recover.ts": "export const value = 1;\n" },
++      script: (call): ScriptedTurn => {
++        if (call < 3) {
++          return {
++            tools: [
++              {
++                name: "str_replace",
++                arguments: { path: "src/recover.ts", oldText: "miss", newText: "x" },
++              },
++            ],
++          };
++        }
++        if (call === 3) {
++          return {
++            tools: [
++              {
++                name: "replace_lines",
++                arguments: { path: "src/recover.ts", start: 1, end: 1, content: "export const value = 2;\n", rangeHash: "abc123" },
++              },
++            ],
++          };
++        }
++        return { tools: [{ name: "harness.submit_candidate", arguments: {} }] };
++      },
++    });
++    const okResult = await recovered.loop.runAttempt(recovered.id);
++    expect(okResult.outcome).toBe("submitted");
++    const recoverTurns = recovered.coordinator.turns(recovered.id);
++    expect(recoverTurns[0]?.resultSummary).toBe("error: NearestCandidateError");
++    expect(recoverTurns[1]?.resultSummary).toBe("error: FreshRegionViewError");
++    expect(recoverTurns[2]?.resultSummary).toBe("error: ReplaceLinesUnlockedError");
++    expect(recovered.files.read("src/recover.ts")).toBe("export const value = 2;\n");
++
++    const escalated = createFixture({
++      files: { "src/recover.ts": "export const value = 1;\n" },
++      script: (): ScriptedTurn => ({
++        tools: [
++          {
++            name: "str_replace",
++            arguments: { path: "src/recover.ts", oldText: "miss", newText: "x" },
++          },
++        ],
++      }),
++    });
++    const stuckResult = await escalated.loop.runAttempt(escalated.id);
++    expect(stuckResult.outcome).toBe("stuck");
++    expect(stuckResult.reason).toBe("edit_recovery");
++    expect(stuckResult.countsAsFailedAttempt).toBe(true);
++    expect(stuckResult.countsAsWorkerFailure).toBe(true);
++    expect(escalated.coordinator.turns(escalated.id)).toHaveLength(4);
++  });
+ });
+diff --git a/packages/worker-loop/tests/executor/support.ts b/packages/worker-loop/tests/executor/support.ts
+index 023266b..0ddd287 100644
+--- a/packages/worker-loop/tests/executor/support.ts
++++ b/packages/worker-loop/tests/executor/support.ts
+@@ -81,6 +81,8 @@ export function createFixture(options: FixtureOptions): LoopFixture {
+   const budget = new FakeBudget(options.maxReserves ?? 100, events, options.reconcile);
+   const model = new ScriptedModel(options.script, events, options.onStreamStart);
+   const onTool = options.onTool ?? (() => undefined);
++  let editMisses = 0;
++  let replaceLinesUnlocked = false;
+   const packet = packetFor(options.tools ?? [...NATIVE_TOOL_CATALOG], options.must);
+   const attempt = attemptFor(id, options.level ?? "junior", options.maxSteps ?? null, packet, options.memory, options.contextWindow);
+   coordinator.registerAttempt(attempt);
+@@ -105,7 +107,10 @@ export function createFixture(options: FixtureOptions): LoopFixture {
+       },
+     },
+     edits: {
+-      availableTools: () => ["str_replace", "write_new_file"],
++      availableTools: (relativePath) =>
++        replaceLinesUnlocked && relativePath === "src/recover.ts"
++          ? ["str_replace", "write_new_file", "replace_lines"]
++          : ["str_replace", "write_new_file"],
+       async applyPatch(patch) {
+         onTool("apply_patch");
+         events.push("edit");
+@@ -119,6 +124,28 @@ export function createFixture(options: FixtureOptions): LoopFixture {
+           error.name = "EditStuckEscalation";
+           throw error;
+         }
++        if (path === "src/recover.ts" && _oldText === "miss") {
++          editMisses += 1;
++          if (editMisses === 1) {
++            const error = new Error("Your search text wasn't found. Closest match at lines 1–2");
++            error.name = "NearestCandidateError";
++            throw error;
++          }
++          if (editMisses === 2) {
++            const error = new Error("L0001: export const value = 1;\nUse a smaller hunk.");
++            error.name = "FreshRegionViewError";
++            throw error;
++          }
++          if (editMisses === 3) {
++            replaceLinesUnlocked = true;
++            const error = new Error("replace_lines unlocked; range_hash=abc123");
++            error.name = "ReplaceLinesUnlockedError";
++            throw error;
++          }
++          const error = new Error("ladder exhausted");
++          error.name = "EditStuckEscalation";
++          throw error;
++        }
+         events.push("edit");
+         files.write(path, newText);
+         return { filesWritten: [path] };

@@ -1,0 +1,87 @@
+diff --git a/packages/verifier/src/surfaces/migration-preservation-verifier.ts b/packages/verifier/src/surfaces/migration-preservation-verifier.ts
+index b876ea5..8db7fac 100644
+--- a/packages/verifier/src/surfaces/migration-preservation-verifier.ts
++++ b/packages/verifier/src/surfaces/migration-preservation-verifier.ts
+@@ -90,7 +90,7 @@ export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
+         columns: check.unchangedColumns,
+         rows: postRows,
+       });
+-      const idempotence = this.idempotence(check, context, second, pre, post, upAnalysis);
++      const idempotence = this.idempotence(check, context, session, second, pre, post, upAnalysis);
+       const results = [preservation, idempotence];
+       if (check.downSql && downAnalysis && preservation.status === "pass" && idempotence.status === "pass") {
+         results.push(await this.down(session, check, context, pre, downAnalysis));
+@@ -176,6 +176,7 @@ export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
+   private idempotence(
+     check: MigrationPreservationCheck,
+     context: SurfaceVerifierContext,
++    session: MigrationSession,
+     second: { ok: boolean; timedOut: boolean; message?: string; statements: readonly string[] },
+     pre: TableChecksum,
+     post: TableChecksum,
+@@ -191,6 +192,18 @@ export class MigrationPreservationVerifier implements SurfaceVerifierAdapter {
+       });
+     }
+     if (!second.ok) {
++      if (check.allowCleanRefusalOnRerun && drift.length === 0) {
++        const integrity = session.validateIntegrity();
++        if (integrity.integrityOk && integrity.foreignKeyViolations === 0) {
++          return passing(checkId, context, `re-run refused cleanly without altering preserved data: ${second.message ?? ""}`, {
++            ...analysis,
++            dialect: check.dialect,
++            statements: second.statements,
++            cleanRefusal: true,
++            statementTimeoutMs: check.statementTimeoutMs,
++          });
++        }
++      }
+       return implementationFailure(
+         checkId,
+         context,
+diff --git a/packages/verifier/src/surfaces/schemas.ts b/packages/verifier/src/surfaces/schemas.ts
+index 1b6539b..262cb0a 100644
+--- a/packages/verifier/src/surfaces/schemas.ts
++++ b/packages/verifier/src/surfaces/schemas.ts
+@@ -178,6 +178,7 @@ export const MigrationPreservationCheckSchema = z.object({
+   upSql: z.string().min(1),
+   downSql: z.string().min(1).optional(),
+   statementTimeoutMs: z.number().int().positive(),
++  allowCleanRefusalOnRerun: z.boolean().optional(),
+   transformations: z.array(
+     z.object({
+       description: z.string().min(1),
+diff --git a/packages/verifier/tests/surfaces/migration-preservation-verifier.test.ts b/packages/verifier/tests/surfaces/migration-preservation-verifier.test.ts
+index 01ee3a0..9121b84 100644
+--- a/packages/verifier/tests/surfaces/migration-preservation-verifier.test.ts
++++ b/packages/verifier/tests/surfaces/migration-preservation-verifier.test.ts
+@@ -162,6 +162,30 @@ describe("MigrationPreservationVerifier", () => {
+     expect(idempotence?.status).toBe("fail");
+   });
+ 
++  it("passes re-run idempotence on an explicit clean guard refusal when data and integrity are preserved", async () => {
++    const guardedSql = `
++CREATE TABLE dishes_next (
++  id INTEGER PRIMARY KEY,
++  name TEXT NOT NULL,
++  note TEXT,
++  owner_id INTEGER,
++  created_at TEXT NOT NULL,
++  sku TEXT
++);
++INSERT INTO dishes_next (id, name, note, owner_id, created_at, sku)
++SELECT id, name, note, owner_id, created_at, 'SKU-' || id FROM dishes;
++CREATE INDEX dishes_next_owner_idx ON dishes_next(owner_id);`;
++    const results = await new MigrationPreservationVerifier().verify(
++      baseSpec(guardedSql, { allowCleanRefusalOnRerun: true }),
++      verifierContext("http://127.0.0.1"),
++    );
++    const preservation = results.find((result) => result.check_id.endsWith(":preservation"));
++    const idempotence = results.find((result) => result.check_id.endsWith(":idempotence"));
++    expect(preservation?.status).toBe("pass");
++    expect(idempotence?.status).toBe("pass");
++    expect(idempotence?.receipt.cleanRefusal).toBe(true);
++  });
++
+   it("aborts a hanging migration at statement_timeout", async () => {
+     const results = await new MigrationPreservationVerifier().verify(
+       baseSpec("SELECT ef_sleep_ms(5000);", { statementTimeoutMs: 400, downSql: undefined }),

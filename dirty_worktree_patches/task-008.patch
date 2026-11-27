@@ -1,0 +1,44 @@
+diff --git a/packages/shared-contracts/src/packets/receipt.ts b/packages/shared-contracts/src/packets/receipt.ts
+index 2b6077e..8eee3cd 100644
+--- a/packages/shared-contracts/src/packets/receipt.ts
++++ b/packages/shared-contracts/src/packets/receipt.ts
+@@ -50,7 +50,11 @@ export const CheckOutcomeSchema = z
+     status: z.enum(CHECK_STATUSES),
+     collected_count: nonNegativeIntSchema,
+   })
+-  .strict();
++  .strict()
++  .refine((check) => !(check.status === "pass" && check.collected_count === 0), {
++    message: "a passing check must collect at least one case (missing or zero collected tests never pass)",
++    path: ["collected_count"],
++  });
+ 
+ export const CheckCountsSchema = z
+   .object({
+diff --git a/packages/shared-contracts/tests/packets/checkpoint.test.ts b/packages/shared-contracts/tests/packets/checkpoint.test.ts
+index fb84034..f7ff85f 100644
+--- a/packages/shared-contracts/tests/packets/checkpoint.test.ts
++++ b/packages/shared-contracts/tests/packets/checkpoint.test.ts
+@@ -149,6 +149,22 @@ describe("receipts and worker events", () => {
+         counts: { pass: 2, fail: 0, skip: 0, missing: 0, error: 0 },
+       }).success,
+     ).toBe(false);
++    expect(
++      VerificationReceiptSchema.safeParse({
++        ...receipt,
++        checks: [
++          {
++            check_id: "AC-31",
++            check_version: 2,
++            artifact_digest: "sha256:abc",
++            status: "pass",
++            collected_count: 0,
++          },
++        ],
++        counts: { pass: 1, fail: 0, skip: 0, missing: 0, error: 0 },
++        static_audit: undefined,
++      }).success,
++    ).toBe(false);
+   });
+ 
+   it("accepts a normalized worker event and rejects a fractional usage cost", () => {

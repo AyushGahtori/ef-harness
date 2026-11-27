@@ -1,0 +1,81 @@
+diff --git a/packages/verifier/src/ui-contract/verifier.ts b/packages/verifier/src/ui-contract/verifier.ts
+index c7eb360..220deca 100644
+--- a/packages/verifier/src/ui-contract/verifier.ts
++++ b/packages/verifier/src/ui-contract/verifier.ts
+@@ -459,7 +459,9 @@ async function inspect(
+     keyboardActivated.push(item.spec.name?.text ?? item.spec.testid ?? item.spec.role);
+     await activateByPointer(item.spec, item.locator);
+   }
+-  return assertHidden(page, contract, request, secrets, keyboardActivated);
++  const postActionCrash = crashDraft(contract, pageErrors, consoleErrors, secrets, keyboardActivated);
++  if (postActionCrash) return postActionCrash;
++  return assertHidden(page, contract, request, pageErrors, consoleErrors, secrets, keyboardActivated);
+ }
+ 
+ async function assertState(
+@@ -496,11 +498,15 @@ async function assertHidden(
+   page: PwPage,
+   contract: UiInteractionContract,
+   request: UiVerificationRequest,
++  pageErrors: readonly string[],
++  consoleErrors: readonly string[],
+   secrets: readonly string[],
+   keyboardActivated: readonly string[],
+ ): Promise<Draft> {
+   const hidden = request.hidden;
+   if (!hidden) {
++    const crash = crashDraft(contract, pageErrors, consoleErrors, secrets, keyboardActivated);
++    if (crash) return crash;
+     return {
+       passed: true,
+       attribution: "pass",
+@@ -546,6 +552,8 @@ async function assertHidden(
+       );
+     }
+   }
++  const crash = crashDraft(contract, pageErrors, consoleErrors, secrets, keyboardActivated);
++  if (crash) return crash;
+   return {
+     passed: true,
+     attribution: "pass",
+diff --git a/packages/verifier/tests/ui-contract/fixture-server.ts b/packages/verifier/tests/ui-contract/fixture-server.ts
+index 7a1eb3b..dd81012 100644
+--- a/packages/verifier/tests/ui-contract/fixture-server.ts
++++ b/packages/verifier/tests/ui-contract/fixture-server.ts
+@@ -96,6 +96,11 @@ function htmlFor(pathname: string): string {
+   if (pathname === "/kitchen-throw") {
+     return page('<main><button type="button">Print</button><script>throw new Error("boom-unhandled");</script></main>');
+   }
++  if (pathname === "/kitchen-post-action-throw") {
++    return page(
++      '<main><button type="button" id="print">Print</button></main><script>document.getElementById("print").addEventListener("click", () => { throw new Error("boom-after-click"); });</script>',
++    );
++  }
+   if (pathname === "/kitchen-console") {
+     return page('<main><button type="button">Print</button><script>console.error("severe-failure");</script></main>');
+   }
+diff --git a/packages/verifier/tests/ui-contract/verifier.test.ts b/packages/verifier/tests/ui-contract/verifier.test.ts
+index 08e7cb4..d8a1f10 100644
+--- a/packages/verifier/tests/ui-contract/verifier.test.ts
++++ b/packages/verifier/tests/ui-contract/verifier.test.ts
+@@ -327,6 +327,20 @@ describe("UiInteractionContractVerifier", () => {
+     expect(consoleFailure.message).toBe("Severe console error on /kitchen-console");
+     expect(consoleFailure.consoleErrors.join(" ")).toContain("severe-failure");
+     expect(ladder.calls).toHaveLength(0);
++
++    const postAction = await verifier().verify({
++      env: env(),
++      contract: {
++        contract: "kitchen-list/ui@1",
++        route: "/kitchen-post-action-throw",
++        as: { role: "kitchen_staff" },
++        actions: [{ button: "Print" }],
++      },
++    });
++    expect(postAction.passed).toBe(false);
++    expect(postAction.attribution).toBe("implementation");
++    expect(postAction.message).toBe("Unhandled page error on /kitchen-post-action-throw");
++    expect(postAction.pageErrors.join(" ")).toContain("boom-after-click");
+   }, 40_000);
+ 
+   it("treats a hidden Print button and a strict-mode duplicate as contract mismatches", async () => {

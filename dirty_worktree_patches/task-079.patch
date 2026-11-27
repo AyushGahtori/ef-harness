@@ -1,0 +1,415 @@
+diff --git a/packages/spec-expansion/src/generators/collapse.ts b/packages/spec-expansion/src/generators/collapse.ts
+index 2ee3a38..61693a6 100644
+--- a/packages/spec-expansion/src/generators/collapse.ts
++++ b/packages/spec-expansion/src/generators/collapse.ts
+@@ -66,13 +66,16 @@ function collectDomains(cells: readonly RawMatrixCell[]): readonly string[] {
+   return [...domains].sort(compareText);
+ }
+ 
++interface ScopeBucket {
++  readonly firstSig: string;
++  readonly firstCells: RawMatrixCell[];
++  others: Map<string, RawMatrixCell[]> | null;
++}
++
+ export class ScopedRuleCollapser {
+   collapse(run: GenerationRun): CollapsedMatrices {
+     const exceptions: RawMatrixCell[] = [];
+-    const groups = new Map<
+-      string,
+-      Map<string, { total: number; mismatches: number; signature: string; first: RawMatrixCell; rest: RawMatrixCell[] }>
+-    >();
++    const groups = new Map<string, Map<string, ScopeBucket>>();
+     for (const cell of run.rawCells) {
+       if (cell.forceException) {
+         exceptions.push(cell);
+@@ -86,33 +89,67 @@ export class ScopedRuleCollapser {
+       const bucket = byScope.get(cell.scopeKey);
+       if (!bucket) {
+         byScope.set(cell.scopeKey, {
+-          total: 1,
+-          mismatches: 0,
+-          signature: cell.signature,
+-          first: cell,
+-          rest: [],
++          firstSig: cell.signature,
++          firstCells: [cell],
++          others: null,
+         });
+         continue;
+       }
+-      bucket.total += 1;
+-      if (cell.signature !== bucket.signature) {
+-        bucket.mismatches += 1;
+-        exceptions.push(cell);
++      if (cell.signature === bucket.firstSig) {
++        bucket.firstCells.push(cell);
+         continue;
+       }
+-      if (bucket.rest.length < 47) bucket.rest.push(cell);
++      let others = bucket.others;
++      if (!others) {
++        others = new Map();
++        bucket.others = others;
++      }
++      let list = others.get(cell.signature);
++      if (!list) {
++        list = [cell];
++        others.set(cell.signature, list);
++      } else {
++        list.push(cell);
++      }
+     }
+     const rules: UniversalRule[] = [];
+     for (const byScope of groups.values()) {
+-    for (const bucket of byScope.values()) {
+-      const covered = bucket.total - bucket.mismatches;
+-      if (covered >= 2) {
+-        rules.push(toRule([bucket.first, ...bucket.rest], covered, run.domains));
+-      } else {
+-        exceptions.push(bucket.first, ...bucket.rest);
++      for (const bucket of byScope.values()) {
++        let bestSig = bucket.firstSig;
++        let bestCells = bucket.firstCells;
++        if (bucket.others) {
++          for (const [sig, cells] of bucket.others) {
++            if (
++              cells.length > bestCells.length ||
++              (cells.length === bestCells.length && compareText(sig, bestSig) < 0)
++            ) {
++              bestSig = sig;
++              bestCells = cells;
++            }
++          }
++        }
++        if (bestCells.length >= 2) {
++          rules.push(toRule(bestCells, bestCells.length, run.domains));
++          if (bestSig !== bucket.firstSig) {
++            for (const cell of bucket.firstCells) exceptions.push(cell);
++          }
++          if (bucket.others) {
++            for (const [sig, cells] of bucket.others) {
++              if (sig !== bestSig) {
++                for (const cell of cells) exceptions.push(cell);
++              }
++            }
++          }
++        } else {
++          for (const cell of bucket.firstCells) exceptions.push(cell);
++          if (bucket.others) {
++            for (const cells of bucket.others.values()) {
++              for (const cell of cells) exceptions.push(cell);
++            }
++          }
++        }
+       }
+     }
+-    }
+     rules.sort((left, right) => compareText(left.id, right.id));
+     exceptions.sort((left, right) => compareText(left.id, right.id));
+     return { rules, exceptions };
+diff --git a/packages/spec-expansion/src/generators/enumerate.ts b/packages/spec-expansion/src/generators/enumerate.ts
+index b328547..6795173 100644
+--- a/packages/spec-expansion/src/generators/enumerate.ts
++++ b/packages/spec-expansion/src/generators/enumerate.ts
+@@ -5,7 +5,6 @@ import {
+   attrFlag,
+   attrString,
+   type AxisNode,
+-  type CellDraft,
+   entityActionAxis,
+   entityClass,
+   entityEndpointAxis,
+@@ -86,14 +85,6 @@ export function createDomainIndex(): DomainIndex {
+   return new DomainIndex();
+ }
+ 
+-function finish(cells: CellDraft[]): RawMatrixCell[] {
+-  for (let index = 0; index < cells.length; index += 1) {
+-    const draft = cells[index];
+-    if (draft) sealCell(draft);
+-  }
+-  return cells as RawMatrixCell[];
+-}
+-
+ function open(outcome: string): {
+   outcome: string;
+   reason: null;
+@@ -150,11 +141,14 @@ function m01ActionOutcome(role: AxisNode, entity: AxisNode, action: M01Action) {
+   return open("allow");
+ }
+ 
+-function generateM01(settled: readonly AxisNode[], domains: DomainIndex): CellDraft[] {
++function generateM01(settled: readonly AxisNode[], domains: DomainIndex): RawMatrixCell[] {
+   const roles = nodes(settled, "role");
+   const entities = nodes(settled, "entity");
+   const endpoints = nodes(settled, "endpoint");
+-  const cells: CellDraft[] = [];
++  const actionCount = roles.length * entities.length * M01_ACTIONS.length;
++  const epCount = roles.length * entities.length * endpoints.length;
++  const cells: RawMatrixCell[] = new Array(actionCount + epCount);
++  let cursor = 0;
+   const seenActors = new Set<string>();
+   for (const role of roles) {
+     const actor = permissionClass(role);
+@@ -163,14 +157,22 @@ function generateM01(settled: readonly AxisNode[], domains: DomainIndex): CellDr
+       const subject = entityClass(entity);
+       for (const action of M01_ACTIONS) {
+         const decision = m01ActionOutcome(role, entity, action);
+-        cells.push({
++        const axisB = entityActionAxis(entity.nodeId, action);
++        cells[cursor] = {
++          id: `cell:M01:${role.nodeId}:${axisB}`,
+           matrixId: "M01",
+           axisA: role.nodeId,
+-          axisB: entityActionAxis(entity.nodeId, action),
++          axisB,
+           domainNodeIds: [role.nodeId, entity.nodeId],
++          outcome: decision.outcome,
++          reason: decision.reason,
++          notApplicable: decision.notApplicable,
+           scopeKey: `ea|${actor}|${subject}|${action}`,
+-          ...decision,
+-        });
++          forceException: decision.forceException,
++          ruleText: decision.ruleText,
++          signature: decision.reason === null ? `${decision.outcome}|` : `${decision.outcome}|${decision.reason}`,
++        };
++        cursor += 1;
+       }
+     }
+   }
+@@ -183,47 +185,47 @@ function generateM01(settled: readonly AxisNode[], domains: DomainIndex): CellDr
+     for (const entity of entities) domains.add("M01", scopeKey, entity.nodeId);
+     for (const endpoint of endpoints) domains.add("M01", scopeKey, endpoint.nodeId);
+   }
+-  const epAxis = new Map<string, Map<string, string>>();
++  const epAxis = new Map<string, readonly string[]>();
+   for (const entity of entities) {
+-    const byEndpoint = new Map<string, string>();
+-    for (const endpoint of endpoints) {
+-      byEndpoint.set(endpoint.nodeId, entityEndpointAxis(entity.nodeId, endpoint.nodeId));
++    const axes: string[] = new Array(endpoints.length);
++    for (let i = 0; i < endpoints.length; i += 1) {
++      const endpoint = endpoints[i];
++      if (endpoint) axes[i] = entityEndpointAxis(entity.nodeId, endpoint.nodeId);
+     }
+-    epAxis.set(entity.nodeId, byEndpoint);
++    epAxis.set(entity.nodeId, axes);
+   }
+   const deny = actorOutcome("unauthenticated");
+   const allow = actorOutcome("authenticated");
+-  const total = roles.length * entities.length * endpoints.length;
+-  const batch: CellDraft[] = new Array(total);
+-  let cursor = 0;
+   for (const role of roles) {
+     const actor = permissionClass(role);
+     const outcome = actor === "unauthenticated" ? deny : allow;
+     const scopeKey = `ep|${actor}`;
++    const rolePrefix = `cell:M01:${role.nodeId}:`;
+     for (const entity of entities) {
+-      const byEndpoint = epAxis.get(entity.nodeId);
+-      for (const endpoint of endpoints) {
+-        const axisB = byEndpoint?.get(endpoint.nodeId) ?? entityEndpointAxis(entity.nodeId, endpoint.nodeId);
+-        batch[cursor] = {
++      const axes = epAxis.get(entity.nodeId);
++      if (!axes) continue;
++      for (let i = 0; i < axes.length; i += 1) {
++        const axisB = axes[i];
++        if (!axisB) continue;
++        cells[cursor] = {
++          id: `${rolePrefix}${axisB}`,
+           matrixId: "M01",
+           axisA: role.nodeId,
+           axisB,
+           domainNodeIds: NO_DOMAINS,
+-          scopeKey,
+           outcome: outcome.outcome,
+           reason: null,
+           notApplicable: false,
++          scopeKey,
+           forceException: false,
+           ruleText: null,
++          signature: outcome.signature,
+         };
+         cursor += 1;
+       }
+     }
+   }
+-  for (let index = 0; index < cursor; index += 1) {
+-    const draft = batch[index];
+-    if (draft) cells.push(draft);
+-  }
++  cells.length = cursor;
+   return cells;
+ }
+ 
+@@ -241,40 +243,40 @@ function m02Outcome(entity: AxisNode, op: M02Op) {
+   return open("allow_read");
+ }
+ 
+-function generateM02(settled: readonly AxisNode[]): CellDraft[] {
+-  const cells: CellDraft[] = [];
++function generateM02(settled: readonly AxisNode[]): RawMatrixCell[] {
++  const cells: RawMatrixCell[] = [];
+   for (const entity of nodes(settled, "entity")) {
+     const subject = entityClass(entity);
+     for (const op of M02_OPS) {
+-      cells.push({
++      cells.push(sealCell({
+         matrixId: "M02",
+         axisA: entity.nodeId,
+         axisB: op,
+         domainNodeIds: [entity.nodeId],
+         scopeKey: `life|${subject}|${op}`,
+         ...m02Outcome(entity, op),
+-      });
++      }));
+     }
+   }
+   return cells;
+ }
+ 
+-function generateM03(settled: readonly AxisNode[]): CellDraft[] {
+-  const cells: CellDraft[] = [];
++function generateM03(settled: readonly AxisNode[]): RawMatrixCell[] {
++  const cells: RawMatrixCell[] = [];
+   const screens = nodes(settled, "screen");
+   for (const role of nodes(settled, "role")) {
+     for (const screen of screens) {
+       const states: string[] = [...M03_UI_STATES];
+       if (attrFlag(screen, "print")) states.push(M03_PRINT_STATE);
+       for (const uiState of states) {
+-        cells.push({
++        cells.push(sealCell({
+           matrixId: "M03",
+           axisA: role.nodeId,
+           axisB: screenStateAxis(screen.nodeId, uiState),
+           domainNodeIds: [role.nodeId, screen.nodeId],
+           scopeKey: `ui|${uiState}|${attrFlag(screen, "print") ? "print" : "noprint"}`,
+           ...open("open_ui_state"),
+-        });
++        }));
+       }
+     }
+   }
+diff --git a/packages/spec-expansion/src/generators/persistence.ts b/packages/spec-expansion/src/generators/persistence.ts
+index 077567b..ea63fde 100644
+--- a/packages/spec-expansion/src/generators/persistence.ts
++++ b/packages/spec-expansion/src/generators/persistence.ts
+@@ -11,6 +11,7 @@ import { type GenerationRun, type RawMatrixCell, type SettledProjectGraph } from
+ export interface PersistedRecord {
+   readonly id: string;
+   readonly kind: string;
++  readonly status: string;
+   readonly version: number;
+   readonly title: string;
+   readonly text: string;
+@@ -57,13 +58,11 @@ function contentHash(input: {
+   readonly title: string;
+   readonly text: string;
+   readonly fields: string;
+-  readonly status: string;
+ }): string {
+   return sha256(
+     jcs({
+-      fields: input.fields,
++      fields: JSON.parse(input.fields) as unknown,
+       kind: input.kind,
+-      status: input.status,
+       text: input.text,
+       title: input.title,
+     }),
+@@ -175,6 +174,7 @@ export class MatrixCellPersistenceRepo {
+     return {
+       id: row.id,
+       kind: row.kind,
++      status: row.status,
+       version: row.version,
+       title: row.title,
+       text: row.text,
+@@ -183,6 +183,11 @@ export class MatrixCellPersistenceRepo {
+     };
+   }
+ 
++  listRequirementViewIds(): readonly string[] {
++    const rows = this.db.prepare("SELECT id FROM requirements ORDER BY id").all() as { id: string }[];
++    return rows.map((row) => row.id);
++  }
++
+   expandEdges(src: string): readonly { readonly type: string; readonly dst: string }[] {
+     return this.db
+       .prepare(
+@@ -201,12 +206,11 @@ export class MatrixCellPersistenceRepo {
+ 
+   private writeManifest(cellIds: readonly string[], changeSetId: string, rev: number, exists: boolean): void {
+     const fields = JSON.stringify({
+-      basis: "derived",
+       record_type: "matrix_manifest",
+       cellIds,
+     });
+     const payload = {
+-      kind: "rule",
++      kind: "source",
+       title: "Matrix cell manifest",
+       text: `${cellIds.length} canonical cell ids`,
+       fields,
+@@ -255,11 +259,10 @@ export class MatrixCellPersistenceRepo {
+       this.insertNode(
+         id,
+         {
+-          kind: "rule",
++          kind: "source",
+           title: decision.matrixId,
+           text: decision.skippedReason ?? decision.narrowed ?? "active",
+           fields: JSON.stringify({
+-            basis: "derived",
+             record_type: "matrix_group",
+             matrixId: decision.matrixId,
+             active: decision.active,
+@@ -321,7 +324,6 @@ export class MatrixCellPersistenceRepo {
+         title: `${cell.matrixId} ${cell.outcome}`,
+         text: cell.reason ?? cell.outcome,
+         fields: JSON.stringify({
+-          basis: "derived",
+           record_type: "matrix_cell",
+           matrixId: cell.matrixId,
+           axisA: cell.axisA,
+@@ -331,7 +333,7 @@ export class MatrixCellPersistenceRepo {
+           notApplicable: cell.notApplicable,
+           signature: cell.signature,
+         }),
+-        status: "active",
++        status: "draft",
+       },
+       changeSetId,
+       rev,
+diff --git a/packages/spec-expansion/src/generators/types.ts b/packages/spec-expansion/src/generators/types.ts
+index 4012f1b..d317f03 100644
+--- a/packages/spec-expansion/src/generators/types.ts
++++ b/packages/spec-expansion/src/generators/types.ts
+@@ -298,10 +298,20 @@ export function signatureOf(outcome: string, reason: string | null): string {
+ }
+ 
+ export function sealCell(draft: CellDraft): RawMatrixCell {
+-  const cell = draft as CellDraft & { id: string; signature: string };
+-  cell.id = `cell:${draft.matrixId}:${draft.axisA}:${draft.axisB}`;
+-  cell.signature = draft.reason === null ? `${draft.outcome}|` : `${draft.outcome}|${draft.reason}`;
+-  return cell;
++  return {
++    id: `cell:${draft.matrixId}:${draft.axisA}:${draft.axisB}`,
++    matrixId: draft.matrixId,
++    axisA: draft.axisA,
++    axisB: draft.axisB,
++    domainNodeIds: draft.domainNodeIds,
++    outcome: draft.outcome,
++    reason: draft.reason,
++    notApplicable: draft.notApplicable,
++    scopeKey: draft.scopeKey,
++    forceException: draft.forceException,
++    ruleText: draft.ruleText,
++    signature: draft.reason === null ? `${draft.outcome}|` : `${draft.outcome}|${draft.reason}`,
++  };
+ }
+ 
+ export interface ApplicabilityDecision {
