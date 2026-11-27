@@ -2,7 +2,7 @@
 
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
-- **Current Verified `harness/integration` `HEAD`:** `13e9b60e538f655232161debd626f3014f541152` (`integrate: C38 wire phase0, design system, and sequential runner`)
+- **Current Verified `harness/integration` `HEAD`:** `4457ba97f5ee527a1aece4acfdbaad2ba7f265fd` (`integrate: C39 wire feature integrator, completion wave, and ask-owner`)
 - **Ledger sync 2026-11-28 00:35 Europe/Berlin:** `git fetch --all --tags`. `harness/integration` tracks `origin/harness/integration` at `13e9b60`. A handoff claimed C41 was already done. Git history does not: the last product task commit is C38, and `f69c07d` (096), `8660af4` (101), and `61496c7` (102) are not ancestors of HEAD. C01–C38 short SHAs match `git log`. C39 is the first task that is not committed. C39–C79 and Phase 9 stay pending. Did not cherry-pick `origin/harness/c05-wip` (`df255ed`). Did not merge into `main`.
 - **Wave 2 proof gate:** pass at `40201d11ab38446c014f0065a3e4565f1a76e6cf`. No product commit. Workspace build/typecheck/lint OK (lint needed `NODE_OPTIONS=--max-old-space-size=4096` after a default-heap OOM). git-engine 17 files 121/121; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17/17; test-env 87 passed, 3 skipped; worker-loop 25 files 146/146; completeness-gate 7 files 50/50; verifier 34 files 188/188 after `pnpm exec playwright install chromium` (first run exit 1, missing Chromium); daemon 3 files 18/18; desktop 2 files 2/2; e2e `-- m1` 2 files 3/3; schema 67/67; diagrams 31 merged, 1219 lines. `git status --short` clean.
 - **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
@@ -47,7 +47,7 @@
 | C36 | Wave 3 | done | b94ed45 | F-011, F-012, F-046, F-079 | build/typecheck/lint OK (lint heap 4096 after exit 134); intake 18 files 73/73 (prior 42 still pass); planner 30 files 151/151; mcp-server 2 files 17/17; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
 | C37 | Wave 3 | done | 3c1f290 | F-040, F-041, F-080 | build/typecheck/lint OK (lint heap 4096 after exit 134); planner 43 files 211/211 (prior 30 files 151 still pass); intake 18 files 73/73; mcp-server 2 files 17/17; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
 | C38 | Wave 3 | done | 13e9b60 | F-040, F-041, F-042, F-043 | build/typecheck/lint OK (lint heap 4096 after exit 134); planner 51 files 269/269 (prior 43 files 211 still pass); intake 18 files 73/73; mcp-server 2 files 17/17; research-engine 7 files 19/19; spec-expansion 11 files 51/51; discovery 30 files 196/196; corpus 2 files 7/7; schema 67/67 |
-| C39 | Wave 3 | pending | - | F-044, F-047, F-054 | - |
+| C39 | Wave 3 | done | 4457ba9 | F-044, F-047, F-054 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); integrator `-- feature-integrator completion-wave` 15 files 48/48; planner `-- specialists` 3 files 23/23; schema 67/67 |
 | C40 | Wave 3 | pending | - | F-039, F-040, F-045 | - |
 | C41 | Wave 3 | pending | - | F-040, F-045, F-048 | - |
 | C42 | Wave 4 | pending | - | F-049, F-050 | - |

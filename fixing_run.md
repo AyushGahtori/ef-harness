@@ -1333,3 +1333,36 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `git rev-parse HEAD` on `harness/integration`: `13e9b60e538f655232161debd626f3014f541152`
 - `git rev-parse origin/harness/integration`: same SHA
 - `git status -sb`: `## harness/integration...origin/harness/integration` clean
+
+## [C39] — feature integrator, completion wave, and ask-owner
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **When:** 2026-11-28 00:54 Europe/Berlin
+- **Commit on `harness/integration`:** `4457ba97f5ee527a1aece4acfdbaad2ba7f265fd` (`integrate: C39 wire feature integrator, completion wave, and ask-owner`)
+- **Branches merged:** `origin/task/096-feature-integrator-engine` (`f69c07dfe8132f5a38b542de06b8e5cb818bb68c`) as `a3134a1f663fc4f00c760f6f039d5d3f2fff9ff1`, then `origin/task/101-completion-wave-final-audit` (`8660af4883fed6f2e113c8f65ac2535cd8cd3d6f`) as `221c3789a7ef62c413f2d881b959e3193d011463`, then `origin/task/102-specialist-review-qa-prompts` (`61496c7e1e8dd970e75dc4a92690e3961125165d`) as `4522aa2b6062989246134f67102f9774228c93ca`, all `git merge --no-ff`. No dirty-worktree patch was assigned. Did not merge `task/162` or `task/164`. Did not edit `schema/**`. `path_leases.mode` stays `intent|granted`. Did not merge `main`. Did not open a pull request.
+- **Findings Fixed:** the C39 slice of `F-044` (async specialist model, real line sets, grounded ask-owner text, `ProjectStateDb` specialist store), `F-047` (integrator barrel, async feature integration, `ProjectStateDb` final-audit store, `BudgetLedgerRepo` snapshots), and `F-054` (async `answerQuestion` with real `llmCalls`).
+
+### What Changed
+- `@ef-harness/integrator` depends on `@ef-harness/db` and exports `FeatureIntegratorEngine`, `CompletionWaveController`, `FinalAuditStore`, `LandingSummaryGenerator`, `InMemoryBudgetLedger`, and `ProjectStateBudgetLedger`.
+- `FinalAuditStore` and `SpecialistStateDb` persist on `ProjectStateDb` comment nodes. Private `CREATE TABLE` stores for those two modules are gone.
+- `ProjectStateBudgetLedger` registers `usd`, creates the project scope plus `final-audit` and `audit-fix` feature children (2% and 10%), and reserves with purpose `effect`. `CompletionWaveController` reads `getScopeSnapshot` for the hard stop and remaining units. `InMemoryBudgetLedger` stays for the existing unit tests.
+- `FeatureIntegratorEngine.integrate`, `FeatureJourneyGate.evaluate`, and `runBoundedFixLoop` are async. `BlindBinderPort.bind` may return a `Promise`. The default path is still the in-memory journey gate, because the 096 tests drive `CodeSnapshot` callbacks. A real binder can be injected.
+- `AskOwnerResponderEngine.answerQuestion` accepts `string | OwnerQuestionRequest`, awaits the model, and sets `llmCalls`. A schema-valid answer is returned only when every content token is in the fact sheet. Hallucinated text still falls back to the grounded template and still counts one model call. Unknown questions do not call the model.
+- Taste and high-risk review await `SpecialistModel.complete`. Taste line sets come from `fileTexts` or a real file read. A missing file has zero lines, so a `1..400` citation fails.
+- `dispute-adjudicator@1` is not in the merged specialists package. `resolveDisputeChoice` remains the dispute path. `FourRouteSteeringDispatcher` is task 114 and is not merged; C44 can await `answerQuestion`. Final-audit `ProjectKind` stays the local `web | cli | openapi` union so the landed tests keep passing. Canonical `ProjectKind` is the C40/C41 slice of `F-040`. `USER_PAUSED_REASON` is left for C44/C45. Windows Job Objects, DPAPI, named pipes, and NSIS were not touched.
+
+### What It Fixed
+- **F-044:** Specialist review no longer treats a promise as a completed model payload, and citations are checked against the real file. Ask-owner keeps a grounded model answer and still discards a hallucination. Specialist rows live in `ProjectStateDb`.
+- **F-047:** The integrator barrel exports the feature engine and the completion-wave controller. Final-audit rows live in `ProjectStateDb`. The completion wave reads `BudgetLedgerRepo.getScopeSnapshot` instead of a missing `getBudgetRemaining` on the production ledger.
+- **F-054:** `answerQuestion` is async and reports the real `llmCalls` count so the later steering dispatcher can stop throwing on a synchronous call.
+
+### Verification Run & Results
+- No dirty-worktree patch was assigned to C39.
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/integrator test -- feature-integrator completion-wave`: exit `0` — `Test Files 15 passed (15)`, `Tests 48 passed (48)` (`0` skipped)
+- `pnpm --filter @ef-harness/planner test -- specialists`: exit `0` — `Test Files 3 passed (3)`, `Tests 23 passed (23)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Next product task is C40.
