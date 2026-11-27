@@ -1313,3 +1313,23 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1` pre-commit `verify-harmony.mjs`: exit `0` — `harmony ok`
 - Stopped before C39.
+
+## [ledger-sync] — confirm C01–C38 against origin/harness/integration
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **When:** 2026-11-28 00:35 Europe/Berlin
+- **Product HEAD:** `13e9b60e538f655232161debd626f3014f541152` (`integrate: C38 wire phase0, design system, and sequential runner`)
+- **Audit branch before this entry:** `ea21711` (`log: record C38 progress`)
+- **Branches merged:** none. No product commit. Did not cherry-pick `origin/harness/c05-wip`. Did not merge `main`.
+- **Patches applied:** none
+- **Findings fixed:** none (ledger only)
+
+### What Changed
+- Fetched all remotes and tags. `harness/integration` now tracks `origin/harness/integration`. Both tips are `13e9b60`.
+- A handoff said C41 was already done. Git history disagrees. `git log --grep='^integrate: C'` ends at C38. `git merge-base --is-ancestor` is false for `f69c07d` (task 096), `8660af4` (task 101), and `61496c7` (task 102).
+- Re-checked the ledger short SHAs for C01–C38 against `git log -1`. They match the subjects already recorded (`1d992c5` through `13e9b60`). Left C39–C79 and Phase 9 pending. The next product task is C39.
+
+### Verification
+- `git rev-parse HEAD` on `harness/integration`: `13e9b60e538f655232161debd626f3014f541152`
+- `git rev-parse origin/harness/integration`: same SHA
+- `git status -sb`: `## harness/integration...origin/harness/integration` clean
