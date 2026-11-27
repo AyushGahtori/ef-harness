@@ -325,6 +325,10 @@ export function createWorld(options: WorldOptions = {}): World {
       get: async (input) => versionOf(input.id, input.version, input.latest),
       neighbors: async (input) => neighborsOf(input.id),
       contract: async (input) => versionOf(input.id, input.version, input.latest),
+      listRulesForTags: async (input) => {
+        if (!input.tags.includes("ui")) return [];
+        return [{ id: "RULE-A11Y", title: "Accessible UI" }];
+      },
       why: async (input) => {
         if (!VERSIONS[input.id] && input.id !== "R17") return null;
         const root = versionOf(input.id, 1, false);

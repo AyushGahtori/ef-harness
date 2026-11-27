@@ -19,7 +19,6 @@ import { MemoryDenialLogger } from "./denial-log.js";
 import { buildScrubbedEnv, envEntries, markNodeModulesReadOnly } from "./env.js";
 import { CommandDeniedError, CommandLaunchError, CwdEscapeDeniedError, SandboxTierHoldError } from "./errors.js";
 import { computeFailureFingerprint } from "./fingerprint.js";
-import { NestedCommandJobManager } from "./job-host.js";
 import { PosixCommandJobManager } from "./posix-command.js";
 import { WarmExecutionPool } from "./pool.js";
 import { StreamingSecretRedactor } from "./redactor.js";
@@ -93,7 +92,7 @@ export class HarnessRunEngine {
   constructor(deps: HarnessRunEngineDeps = {}) {
     this.pool = deps.selector === undefined ? new WarmExecutionPool() : null;
     this.selector = deps.selector ?? this.pool ?? new WarmExecutionPool();
-    this.jobs = deps.jobs ?? (process.platform === "win32" ? new NestedCommandJobManager() : new PosixCommandJobManager());
+    this.jobs = deps.jobs ?? new PosixCommandJobManager();
     this.isolation = deps.isolation ?? null;
     this.osJobs = deps.osJobs ?? null;
     this.artifacts =
@@ -118,7 +117,7 @@ export class HarnessRunEngine {
       request.traceParentId !== undefined
         ? this.tracer.startSpan("harness.run", request.traceParentId)
         : this.tracer.startSpan("harness.run");
-    let tier: SandboxTier = "C";
+    let tier: SandboxTier = "UNSANDBOXED";
     let mode = "own_loop";
     try {
       const result = await this.run(request, (binding) => {
@@ -204,7 +203,7 @@ export class HarnessRunEngine {
       priority: request.priority ?? "worker",
       attemptId: request.attemptId,
     });
-    bind({ tier: slot.tier, mode: slot.mode });
+    bind({ tier: "UNSANDBOXED", mode: slot.mode });
     const limits: JobLimits = {
       memoryBytes: request.memoryBytes ?? DEFAULT_MEMORY_BYTES,
       activeProcessLimit: request.processLimit ?? DEFAULT_PROCESS_LIMIT,
@@ -213,7 +212,7 @@ export class HarnessRunEngine {
     };
     let job: CommandJob | null = null;
     let osHandle: JobHandle | null = null;
-    let reportedTier = slot.tier;
+    let reportedTier: SandboxTier = "UNSANDBOXED";
     let reportedMode = slot.mode;
     try {
       const isolated = await this.resolveIsolation(request, commandId, decision.segments);

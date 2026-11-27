@@ -1,7 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { GitRunner } from "@ef-harness/git-engine";
 
 export function normalizeRepoPath(file: string): string {
   return file.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "");
@@ -9,13 +6,27 @@ export function normalizeRepoPath(file: string): string {
 
 /**
  * Match a task-packet write-scope glob.
- * `**` crosses path segments, `*` and `?` stay inside one segment.
+ * `**` crosses path segments (including zero segments for `/**\/` and leading `**\/`),
+ * while `*` and `?` stay inside one segment.
  */
 export function globMatch(pattern: string, value: string): boolean {
   const normalizedPattern = normalizeRepoPath(pattern);
   const normalizedValue = normalizeRepoPath(value);
   let expression = "";
   for (let index = 0; index < normalizedPattern.length; index += 1) {
+    if (index === 0 && normalizedPattern.startsWith("**/")) {
+      expression += "(?:.*/)?";
+      index += 2;
+      continue;
+    }
+    if (normalizedPattern.startsWith("/**/", index)) {
+      while (normalizedPattern.startsWith("/**/**/", index)) {
+        index += 3;
+      }
+      expression += "(?:/|/.*/)";
+      index += 3;
+      continue;
+    }
     const char = normalizedPattern[index];
     const next = normalizedPattern[index + 1];
     if (char === "*" && next === "*") {
@@ -53,13 +64,33 @@ export function outsideWriteScope(files: readonly string[], globs: readonly stri
   return outside;
 }
 
-async function git(cwd: string, args: readonly string[]): Promise<string> {
-  const result = await execFileAsync("git", [...args], {
-    cwd,
-    windowsHide: true,
-    maxBuffer: 8 * 1024 * 1024,
-    env: process.env,
+function commitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") env[key] = value;
+  }
+  env.GIT_AUTHOR_NAME = "EF Harness";
+  env.GIT_AUTHOR_EMAIL = "harness@example.com";
+  env.GIT_COMMITTER_NAME = "EF Harness";
+  env.GIT_COMMITTER_EMAIL = "harness@example.com";
+  return env;
+}
+
+async function git(input: {
+  cwd: string;
+  args: readonly string[];
+  developerCheckout: boolean;
+  env?: NodeJS.ProcessEnv;
+}): Promise<string> {
+  const result = await GitRunner.execGit({
+    cwd: input.cwd,
+    args: [...input.args],
+    developerCheckout: input.developerCheckout,
+    ...(input.env ? { env: input.env } : {}),
   });
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.trim() || result.busyMessage || "git command failed");
+  }
   return result.stdout;
 }
 
@@ -69,8 +100,16 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
  * Untracked files are included so a new out-of-scope file cannot hide.
  */
 export async function readGitChangedPaths(worktreePath: string, baseCommit: string): Promise<string[]> {
-  const tracked = await git(worktreePath, ["diff", "--name-only", "--relative", baseCommit]);
-  const untracked = await git(worktreePath, ["ls-files", "--others", "--exclude-standard"]);
+  const tracked = await git({
+    cwd: worktreePath,
+    args: ["-c", "core.quotepath=false", "diff", "--name-only", "--relative", baseCommit],
+    developerCheckout: true,
+  });
+  const untracked = await git({
+    cwd: worktreePath,
+    args: ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard"],
+    developerCheckout: true,
+  });
   const seen = new Set<string>();
   const paths: string[] = [];
   for (const line of `${tracked}\n${untracked}`.split(/\r?\n/)) {
@@ -97,15 +136,17 @@ export interface SnapshotInput {
  */
 export async function snapshotWorktreeDiff(input: SnapshotInput): Promise<{ commitSha: string }> {
   if (input.changedPaths.length > 0) {
-    await execFileAsync("git", ["add", "--", ...input.changedPaths], {
+    await git({
       cwd: input.worktreePath,
-      windowsHide: true,
-      env: process.env,
+      args: ["add", "--", ...input.changedPaths],
+      developerCheckout: false,
     });
   }
-  await execFileAsync(
-    "git",
-    [
+  await git({
+    cwd: input.worktreePath,
+    developerCheckout: false,
+    env: commitEnv(),
+    args: [
       "-c",
       "user.name=EF Harness",
       "-c",
@@ -117,18 +158,13 @@ export async function snapshotWorktreeDiff(input: SnapshotInput): Promise<{ comm
       "-m",
       `harness snapshot ${input.attemptId}`,
     ],
-    {
+  });
+  const sha = (
+    await git({
       cwd: input.worktreePath,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        GIT_AUTHOR_NAME: "EF Harness",
-        GIT_AUTHOR_EMAIL: "harness@example.com",
-        GIT_COMMITTER_NAME: "EF Harness",
-        GIT_COMMITTER_EMAIL: "harness@example.com",
-      },
-    },
-  );
-  const sha = (await git(input.worktreePath, ["rev-parse", "HEAD"])).trim();
+      args: ["rev-parse", "HEAD"],
+      developerCheckout: true,
+    })
+  ).trim();
   return { commitSha: sha };
 }

@@ -108,13 +108,73 @@ async function pullNode(
   const tokens = estimateTokens(text);
   if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
     ctx.logPull(tool, "quota", 0);
-    ctx.commit(tool, Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
-    return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
+    ctx.commit(tool, 0);
+    return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
   }
   await ctx.recordNodes([node]);
   ctx.logPull(tool, "ok", tokens);
   ctx.commit(tool, tokens);
   return result;
+}
+
+async function finishPull(
+  ctx: ToolContext,
+  tool: McpToolName,
+  enveloped: CallToolResult,
+  onOk: () => Promise<void>,
+): Promise<CallToolResult> {
+  const text = enveloped.content?.[0]?.type === "text" ? enveloped.content[0].text : "";
+  const tokens = estimateTokens(text);
+  if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
+    ctx.logPull(tool, "quota", 0);
+    ctx.commit(tool, 0);
+    return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
+  }
+  await onOk();
+  ctx.logPull(tool, "ok", tokens);
+  ctx.commit(tool, tokens);
+  return enveloped;
+}
+
+async function readNode(ctx: ToolContext, tool: McpToolName, id: string, latest: boolean): Promise<CallToolResult> {
+  const version = versionFor(ctx.packet, id, undefined, latest);
+  const lookup = version === undefined ? { id, latest } : { id, version, latest };
+  const node = await ctx.deps.knowledge.get(lookup);
+  return pullNode(ctx, tool, node, node ? `kb:${node.id}@${node.version}` : `kb:${id}`);
+}
+
+async function readContract(
+  ctx: ToolContext,
+  tool: McpToolName,
+  idAtVersion: string,
+  latest: boolean,
+): Promise<CallToolResult> {
+  const parsed = parseIdAtVersion(idAtVersion);
+  const version = versionFor(ctx.packet, parsed.id, parsed.version, latest);
+  const lookup = version === undefined ? { id: parsed.id, latest } : { id: parsed.id, version, latest };
+  const node = await ctx.deps.knowledge.contract(lookup);
+  return pullNode(ctx, tool, node, node ? `kb.contract:${node.id}@${node.version}` : `kb.contract:${parsed.id}`);
+}
+
+async function listRules(ctx: ToolContext, tool: McpToolName, tags: readonly string[]): Promise<CallToolResult> {
+  const list = ctx.deps.knowledge.listRulesForTags;
+  const rules = list ? await list({ tags }) : [];
+  const enveloped = ctx.data(tool, "kb", { tags, rules });
+  return finishPull(ctx, tool, enveloped, async () => {
+    await ctx.recordNodes(
+      rules.map((rule) => ({
+        id: rule.id,
+        kind: "rule",
+        version: 1,
+        contentHash: rule.id,
+        title: rule.title,
+        text: rule.title,
+        fields: {},
+        status: "active",
+        visibility: "visible",
+      })),
+    );
+  });
 }
 
 export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
@@ -476,8 +536,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         const tokens = estimateTokens(text);
         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
           ctx.logPull("kb.search", "quota", 0, args.query);
-          ctx.commit("kb.search", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
+          ctx.commit("kb.search", 0);
+          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
         }
         const revision = await ctx.deps.knowledge.currentRevision();
         await ctx.recordSearch({
@@ -548,8 +608,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         const tokens = estimateTokens(text);
         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
           ctx.logPull("kb.neighbors", "quota", 0);
-          ctx.commit("kb.neighbors", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
+          ctx.commit("kb.neighbors", 0);
+          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
         }
         await ctx.recordEdges(
           found.sets.map((set) => ({
@@ -607,8 +667,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         const tokens = estimateTokens(text);
         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
           ctx.logPull("kb.why", "quota", 0);
-          ctx.commit("kb.why", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
+          ctx.commit("kb.why", 0);
+          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
         }
         await ctx.recordNodes(visible);
         ctx.logPull("kb.why", "ok", tokens);
@@ -641,8 +701,8 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         const tokens = estimateTokens(text);
         if (ctx.tokensUsed() + tokens > ctx.tokenBudget()) {
           ctx.logPull("kb.code", "quota", 0);
-          ctx.commit("kb.code", Math.max(0, ctx.tokenBudget() - ctx.tokensUsed()));
-          return ctx.quota("kb_returned_tokens", ctx.tokenBudget(), ctx.tokenBudget(), true);
+          ctx.commit("kb.code", 0);
+          return ctx.quota("kb_returned_tokens", ctx.tokensUsed(), ctx.tokenBudget(), true);
         }
         if (card.nodeId !== undefined && card.version !== undefined && card.contentHash !== undefined) {
           await ctx.recordNodes([
@@ -664,6 +724,61 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
         return enveloped;
       });
     },
+  }),
+  defineTool({
+    name: "kb.get_node",
+    description: "Alias of kb.get. Accepts the planner node_id field.",
+    schema: z
+      .object({
+        id: z.string().min(1).optional(),
+        node_id: z.string().min(1).optional(),
+        latest: z.boolean().optional(),
+      })
+      .strict()
+      .superRefine((value, issue) => {
+        if (!value.id && !value.node_id) {
+          issue.addIssue({ code: z.ZodIssueCode.custom, message: "id is required" });
+        }
+      }),
+    call: async (ctx, args) => {
+      const id = args.id ?? args.node_id;
+      if (!id) return ctx.notFound();
+      return guarded(ctx, "kb.get_node", async () => readNode(ctx, "kb.get_node", id, args.latest === true));
+    },
+  }),
+  defineTool({
+    name: "kb.get_contract",
+    description: "Alias of kb.contract. Accepts the planner contract_id field.",
+    schema: z
+      .object({
+        idAtVersion: z.string().min(1).optional(),
+        contract_id: z.string().min(1).optional(),
+        latest: z.boolean().optional(),
+      })
+      .strict()
+      .superRefine((value, issue) => {
+        if (!value.idAtVersion && !value.contract_id) {
+          issue.addIssue({ code: z.ZodIssueCode.custom, message: "idAtVersion is required" });
+        }
+      }),
+    call: async (ctx, args) => {
+      const idAtVersion = args.idAtVersion ?? args.contract_id;
+      if (!idAtVersion) return ctx.notFound();
+      return guarded(ctx, "kb.get_contract", async () => readContract(ctx, "kb.get_contract", idAtVersion, args.latest === true));
+    },
+  }),
+  defineTool({
+    name: "kb.list_rules",
+    description: "Alias of kb.list_rules_for_tags. Active rules whose scope matches the given tags.",
+    schema: z.object({ tags: z.array(z.string()) }).strict(),
+    call: async (ctx, args) => guarded(ctx, "kb.list_rules", async () => listRules(ctx, "kb.list_rules", args.tags)),
+  }),
+  defineTool({
+    name: "kb.list_rules_for_tags",
+    description: "Active cross-cutting rules whose scope matches the given tags.",
+    schema: z.object({ tags: z.array(z.string()) }).strict(),
+    call: async (ctx, args) =>
+      guarded(ctx, "kb.list_rules_for_tags", async () => listRules(ctx, "kb.list_rules_for_tags", args.tags)),
   }),
 ];
 

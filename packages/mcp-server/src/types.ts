@@ -142,6 +142,7 @@ export interface KnowledgeSearchService {
   neighbors(input: { id: string; edgeTypes?: readonly string[] }): Promise<NeighborQueryResult | null>;
   contract(input: { id: string; version?: number; latest: boolean }): Promise<KnowledgeNode | null>;
   why(input: { id: string }): Promise<{ nodes: KnowledgeNode[] } | null>;
+  listRulesForTags?(input: { tags: readonly string[] }): Promise<readonly { id: string; title: string }[]>;
 }
 
 export interface CandidateWiringNeed {

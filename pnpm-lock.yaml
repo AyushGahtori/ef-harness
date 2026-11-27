@@ -459,6 +459,15 @@ importers:
 
   packages/mcp-server:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts

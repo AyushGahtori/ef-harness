@@ -15,6 +15,14 @@ export { CandidateV1Schema } from "./candidate.js";
 export { LeaseFencedError, MCP_ERROR_LEASE_FENCED, NOT_FOUND, PULL_QUOTA_MESSAGE } from "./errors.js";
 export { MemoryReadSetStore, SqliteReadSetStore, openReadSetDatabase, canonicalSearchQuery, hashSearchResults } from "./read-sets.js";
 export { readGitChangedPaths, snapshotWorktreeDiff, pathInWriteScope, globMatch } from "./scope.js";
+export {
+  bindCommandArtifactPort,
+  bindKnowledgeService,
+  bindReadResultArtifacts,
+  createKernelAttemptMcpDeps,
+  ruleMatchesTags,
+} from "./kernel-deps.js";
+export type { KernelAttemptPorts } from "./kernel-deps.js";
 export { generateSearchSnippet, parseIdAtVersion, pinnedVersion } from "./redaction.js";
 export { parseDataEnvelope, wrapDataEnvelope } from "./provenance.js";
 export type { AttemptMcpDependencies } from "./types.js";

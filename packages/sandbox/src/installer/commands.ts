@@ -6,6 +6,20 @@ export interface InstallCommand {
   readonly args: readonly string[];
 }
 
+/** Lockfile resolution only. Never combined with `--frozen-lockfile`. */
+export function packageResolveCommand(manager: PackageManager): InstallCommand {
+  if (manager === "pnpm") {
+    return {
+      file: "pnpm",
+      args: ["install", "--lockfile-only", "--ignore-scripts", "--config.strict-dep-builds=true"],
+    };
+  }
+  if (manager === "npm") {
+    return { file: "npm", args: ["install", "--package-lock-only", "--ignore-scripts"] };
+  }
+  return { file: "yarn", args: ["install", "--mode", "update-lockfile", "--ignore-scripts"] };
+}
+
 export function packageInstallCommand(input: {
   readonly manager: PackageManager;
   readonly storeDir: string;

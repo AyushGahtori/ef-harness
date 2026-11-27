@@ -388,7 +388,20 @@ describe("dependency intent reconciliation", () => {
       writePnpm(lockfile, "");
       const beforeJson = fs.readFileSync(packageJson, "utf8");
       const beforeLock = fs.readFileSync(lockfile, "utf8");
-      const runner = recordingRunner();
+      const runner = recordingRunner(async (request) => {
+        if (request.args.includes("--lockfile-only")) {
+          const manifest = JSON.parse(fs.readFileSync(packageJson, "utf8")) as { dependencies?: Record<string, string> };
+          if (manifest.dependencies?.zod !== "^3.23.0") {
+            return { exitCode: 1, stdout: "", stderr: "package.json was not updated before lockfile resolution" };
+          }
+          const before = fs.readFileSync(lockfile, "utf8");
+          if (before.includes("zod@3.23.4")) {
+            return { exitCode: 1, stdout: "", stderr: "lockfile was spliced before resolution" };
+          }
+          fs.appendFileSync(lockfile, pnpmPackage("zod", "3.23.4", zod.integrity));
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
       const installer = new KernelPackageInstaller(installerOptions(root, [zod], runner));
       const conflicted = await installer.applyReconciledIntents({
         packageJsonPath: packageJson,
@@ -415,8 +428,12 @@ describe("dependency intent reconciliation", () => {
       expect(json.dependencies.zod).toBe("^3.23.0");
       const lockText = fs.readFileSync(lockfile, "utf8");
       expect(lockText.match(/zod@3\.23\.4/g)).toHaveLength(1);
-      expect(runner.calls).toHaveLength(1);
-      expect(runner.calls[0]?.args).toContain("--frozen-lockfile");
+      expect(runner.calls).toHaveLength(2);
+      expect(runner.calls[0]?.args).toContain("--lockfile-only");
+      expect(runner.calls[0]?.args).toContain("--ignore-scripts");
+      expect(runner.calls[0]?.args).not.toContain("--frozen-lockfile");
+      expect(runner.calls[1]?.args).toContain("--frozen-lockfile");
+      expect(runner.calls[1]?.args).toContain("--ignore-scripts");
     } finally {
       removeTemp(root);
     }

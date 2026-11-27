@@ -72,11 +72,14 @@ describe("write scope globs", () => {
     expect(globMatch("tests/kitchen/print.*", "tests/kitchen/print.ts")).toBe(true);
     expect(globMatch("src/**", "src/ok.ts")).toBe(true);
     expect(globMatch("src/**", "secrets/note.ts")).toBe(false);
+    expect(globMatch("src/**/index.ts", "src/index.ts")).toBe(true);
+    expect(globMatch("src/**/index.ts", "src/a/index.ts")).toBe(true);
+    expect(globMatch("**/foo.ts", "foo.ts")).toBe(true);
   });
 });
 
 describe("AttemptMcpServer tools", () => {
-  it("exposes all 12 harness tools and all 6 kb tools to a real SDK client", async () => {
+  it("exposes every harness tool and kb tool, including planner aliases, to a real SDK client", async () => {
     const world = createWorld();
     const client = await connect(world.server);
     try {
@@ -161,6 +164,8 @@ describe("AttemptMcpServer tools", () => {
 
       const pinned = parseDataEnvelope(responseText(await call(client, "kb.get", { id: "R17" })));
       expect(JSON.stringify(pinned?.body)).toContain("h-r17-1");
+      const aliased = parseDataEnvelope(responseText(await call(client, "kb.get_node", { node_id: "R17" })));
+      expect(JSON.stringify(aliased?.body)).toContain("h-r17-1");
       expect(JSON.stringify(pinned?.body)).not.toContain("11:00");
       const newest = parseDataEnvelope(responseText(await call(client, "kb.get", { id: "R17", latest: true })));
       expect(JSON.stringify(newest?.body)).toContain("h-r17-2");
@@ -173,6 +178,12 @@ describe("AttemptMcpServer tools", () => {
 
       const contract = parseDataEnvelope(responseText(await call(client, "kb.contract", { idAtVersion: "C-014@2" })));
       expect(JSON.stringify(contract?.body)).toContain("h-c-1");
+      const contractAlias = parseDataEnvelope(responseText(await call(client, "kb.get_contract", { contract_id: "C-014@2" })));
+      expect(JSON.stringify(contractAlias?.body)).toContain("h-c-1");
+      const rules = parseDataEnvelope(responseText(await call(client, "kb.list_rules", { tags: ["ui"] })));
+      const liveRules = parseDataEnvelope(responseText(await call(client, "kb.list_rules_for_tags", { tags: ["ui"] })));
+      expect(JSON.stringify(rules?.body)).toContain("RULE-A11Y");
+      expect(JSON.stringify(liveRules?.body)).toContain("RULE-A11Y");
       const latestContract = parseDataEnvelope(responseText(await call(client, "kb.contract", { idAtVersion: "C-014@2", latest: true })));
       expect(JSON.stringify(latestContract?.body)).toContain("h-c-2");
 
@@ -490,7 +501,7 @@ describe("transports", () => {
     try {
       await streamClient.connect(streamable);
       const streamTools = await streamClient.listTools();
-      expect(streamTools.tools).toHaveLength(18);
+      expect(streamTools.tools).toHaveLength(MCP_TOOL_NAMES.length);
       const brief = JSON.parse(responseText((await streamClient.callTool({ name: "harness.get_brief", arguments: {} })) as CallToolResult)) as {
         brief_version: number;
       };
@@ -498,7 +509,7 @@ describe("transports", () => {
 
       await sseClient.connect(sse);
       const sseTools = await sseClient.listTools();
-      expect(sseTools.tools).toHaveLength(18);
+      expect(sseTools.tools).toHaveLength(MCP_TOOL_NAMES.length);
     } finally {
       await streamClient.close().catch(() => undefined);
       await sseClient.close().catch(() => undefined);

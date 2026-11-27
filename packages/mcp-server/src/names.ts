@@ -16,8 +16,12 @@ export const HARNESS_TOOL_NAMES = [
 export const KB_TOOL_NAMES = [
   "kb.search",
   "kb.get",
+  "kb.get_node",
   "kb.neighbors",
   "kb.contract",
+  "kb.get_contract",
+  "kb.list_rules",
+  "kb.list_rules_for_tags",
   "kb.why",
   "kb.code",
 ] as const;

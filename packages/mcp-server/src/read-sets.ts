@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 import type { EdgeReadRow, PulledReadRow, ReadSetStore, SearchReadRow } from "./types.js";
 
 export function sha256(text: string): string {
@@ -28,83 +31,91 @@ export function hashSearchResults(hits: readonly { id: string; version: number }
   return sha256(JSON.stringify(sorted.map((hit) => [hit.id, hit.version])));
 }
 
-const READ_SET_DDL = `
-CREATE TABLE IF NOT EXISTS read_sets (
-  attempt TEXT NOT NULL,
-  node    TEXT NOT NULL,
-  version INTEGER NOT NULL,
-  hash    TEXT NOT NULL,
-  how     TEXT NOT NULL CHECK (how IN ('pushed','pulled')),
-  PRIMARY KEY (attempt, node, version)
-) STRICT, WITHOUT ROWID;
+function stateSchemaSql(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    const candidate = path.join(dir, "schema", "state.sql");
+    if (fs.existsSync(candidate)) return fs.readFileSync(candidate, "utf8");
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error("schema/state.sql is not available to the read-set store");
+}
 
-CREATE TABLE IF NOT EXISTS search_reads (
-  attempt     TEXT NOT NULL,
-  query_hash  TEXT NOT NULL,
-  query       TEXT NOT NULL CHECK (json_valid(query)),
-  result_hash TEXT NOT NULL,
-  rev         INTEGER NOT NULL,
-  PRIMARY KEY (attempt, query_hash)
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS edge_read_sets (
-  attempt TEXT NOT NULL,
-  node    TEXT NOT NULL,
-  dir     TEXT NOT NULL CHECK (dir IN ('in','out')),
-  type    TEXT NOT NULL,
-  version INTEGER NOT NULL,
-  PRIMARY KEY (attempt, node, dir, type)
-) STRICT, WITHOUT ROWID;
-`;
-
-/** Opens a sqlite database and ensures the three read-set tables exist. */
+/**
+ * Opens a scratch sqlite file and applies canonical `schema/state.sql`.
+ * `ProjectStateDb` is what turns foreign keys on; this opener only materializes the tables.
+ */
 export function openReadSetDatabase(filename: string): DatabaseSync {
   const db = new DatabaseSync(filename);
-  db.exec(READ_SET_DDL);
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec(stateSchemaSql());
   return db;
 }
 
+export interface ReadSetSql {
+  run(sql: string, params: readonly (string | number)[]): void;
+  get(sql: string, params: readonly (string | number)[]): unknown;
+}
+
+function databaseSql(db: DatabaseSync): ReadSetSql {
+  return {
+    run(sql, params) {
+      db.prepare(sql).run(...params);
+    },
+    get(sql, params) {
+      return db.prepare(sql).get(...params);
+    },
+  };
+}
+
+function isDatabase(source: DatabaseSync | ReadSetSql): source is DatabaseSync {
+  return typeof source === "object" && source !== null && "prepare" in source;
+}
+
 export class SqliteReadSetStore implements ReadSetStore {
-  constructor(private readonly db: DatabaseSync) {}
+  private readonly sql: ReadSetSql;
+
+  constructor(source: DatabaseSync | ReadSetSql) {
+    this.sql = isDatabase(source) ? databaseSql(source) : source;
+  }
 
   async recordPulled(row: PulledReadRow): Promise<void> {
-    this.db
-      .prepare(
-        `INSERT INTO read_sets(attempt, node, version, hash, how)
-         VALUES (?, ?, ?, ?, 'pulled')
-         ON CONFLICT(attempt, node, version) DO UPDATE SET hash = excluded.hash`,
-      )
-      .run(row.attempt, row.node, row.version, row.hash);
+    this.sql.run(
+      `INSERT INTO read_sets(attempt, node, version, hash, how)
+       VALUES (?, ?, ?, ?, 'pulled')
+       ON CONFLICT(attempt, node, version) DO UPDATE SET hash = excluded.hash`,
+      [row.attempt, row.node, row.version, row.hash],
+    );
   }
 
   async recordSearch(row: SearchReadRow): Promise<void> {
-    this.db
-      .prepare(
-        `INSERT INTO search_reads(attempt, query_hash, query, result_hash, rev)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(attempt, query_hash) DO UPDATE SET
-           query = excluded.query,
-           result_hash = excluded.result_hash,
-           rev = excluded.rev`,
-      )
-      .run(row.attempt, row.queryHash, row.query, row.resultHash, row.rev);
+    this.sql.run(
+      `INSERT INTO search_reads(attempt, query_hash, query, result_hash, rev)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(attempt, query_hash) DO UPDATE SET
+         query = excluded.query,
+         result_hash = excluded.result_hash,
+         rev = excluded.rev`,
+      [row.attempt, row.queryHash, row.query, row.resultHash, row.rev],
+    );
   }
 
   async recordEdge(row: EdgeReadRow): Promise<void> {
-    this.db
-      .prepare(
-        `INSERT INTO edge_read_sets(attempt, node, dir, type, version)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(attempt, node, dir, type) DO UPDATE SET version = excluded.version`,
-      )
-      .run(row.attempt, row.node, row.dir, row.type, row.version);
+    this.sql.run(
+      `INSERT INTO edge_read_sets(attempt, node, dir, type, version)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(attempt, node, dir, type) DO UPDATE SET version = excluded.version`,
+      [row.attempt, row.node, row.dir, row.type, row.version],
+    );
   }
 
   async countSearchReads(attempt: string): Promise<number> {
-    const row = this.db.prepare("SELECT count(*) AS n FROM search_reads WHERE attempt = ?").get(attempt) as
-      | { n: number }
-      | undefined;
-    return row?.n ?? 0;
+    const row = this.sql.get("SELECT count(*) AS n FROM search_reads WHERE attempt = ?", [attempt]);
+    if (typeof row !== "object" || row === null || !("n" in row)) return 0;
+    const value = Reflect.get(row, "n");
+    return typeof value === "number" ? value : Number(value);
   }
 }
 

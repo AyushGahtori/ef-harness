@@ -10,7 +10,8 @@ import { CommandDeniedError, CwdEscapeDeniedError, SandboxTierHoldError } from "
 import { WarmExecutionPool } from "../../src/harness-run/pool.js";
 import type { JobHandle, JobSpec } from "../../src/job-objects/types.js";
 import { SandboxTierSelector } from "../../src/tier-c-d-selector/selector.js";
-import { ensureJobHostExe } from "../../src/harness-run/job-host.js";
+import { NestedCommandJobManager, ensureJobHostExe } from "../../src/harness-run/job-host.js";
+import type { WindowsJobManager } from "../../src/harness-run/types.js";
 import { InMemoryLocalTracer, TelemetryDb } from "../../src/harness-run/telemetry.js";
 
 const roots: string[] = [];
@@ -53,12 +54,18 @@ afterEach(() => {
   }
 });
 
-async function openEngine(root: string) {
+async function openEngine(root: string, jobs?: WindowsJobManager) {
   const artifacts = new LocalArtifactManager(path.join(root, "artifacts"));
   const tracer = new InMemoryLocalTracer();
   const denialLog = new MemoryDenialLogger();
   const telemetry = new TelemetryDb(path.join(root, "telemetry.db"));
-  const engine = new HarnessRunEngine({ artifacts, tracer, denialLog, telemetry });
+  const engine = new HarnessRunEngine({
+    artifacts,
+    tracer,
+    denialLog,
+    telemetry,
+    ...(jobs ? { jobs } : {}),
+  });
   closers.push(() => {
     telemetry.close();
     engine.close();
@@ -82,7 +89,7 @@ describe("harness.run execution", () => {
       command: [process.execPath, script],
     });
     expect(result.exitCode).toBe(0);
-    expect(result.tier).toBe("C");
+    expect(result.tier).toBe("UNSANDBOXED");
     expect(result.mode).toBe("own_loop");
     expect(result.timedOut).toBe(false);
     expect(result.oomKilled).toBe(false);
@@ -94,7 +101,7 @@ describe("harness.run execution", () => {
     const raw = await ctx.artifacts.readRaw(result.artifactId);
     expect(raw.toString("utf8")).toContain("hello-run");
     expect(ctx.tracer.spans.at(-1)?.attributes).toMatchObject({
-      tier: "C",
+      tier: "UNSANDBOXED",
       mode: "own_loop",
       exitCode: 0,
       truncated: false,
@@ -238,7 +245,7 @@ process.stdout.write(lines.join("\\n") + "\\n");
   }, 60_000);
 
   it.skipIf(process.platform !== "win32")("kills a detached grandchild and closes inherited pipes when the main process exits", async () => {
-    const ctx = await openEngine(makeRoot());
+    const ctx = await openEngine(makeRoot(), new NestedCommandJobManager());
     const sleeper = path.join(ctx.worktree, "sleeper.js");
     const spawner = path.join(ctx.worktree, "spawn-detached.js");
     const pidFile = path.join(ctx.worktree, "pid.txt");
@@ -374,7 +381,7 @@ setTimeout(() => process.exit(2), 5000);
   }, 40_000);
 
   it.skipIf(process.platform !== "win32")("hints when a Windows dev server times out", async () => {
-    const ctx = await openEngine(makeRoot());
+    const ctx = await openEngine(makeRoot(), new NestedCommandJobManager());
     const server = path.join(ctx.worktree, "vite.cmd");
     fs.writeFileSync(server, "@echo off\r\necho Local: http://localhost:5173/\r\nping 127.0.0.1 -n 30 >NUL\r\n");
     const dev = await ctx.engine.executeSandboxedCommand({

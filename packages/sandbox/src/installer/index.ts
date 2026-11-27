@@ -1,4 +1,4 @@
-export { packageInstallCommand, isWorkerPackageManagerInstall, renderCommand } from "./commands.js";
+export { packageInstallCommand, packageResolveCommand, isWorkerPackageManagerInstall, renderCommand } from "./commands.js";
 export {
   InstallerError,
   TierCInstallDenied,

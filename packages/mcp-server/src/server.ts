@@ -338,6 +338,7 @@ export class AttemptMcpServer {
   }
 
   private scheduleStop(reason: ShutdownReason): void {
+    if (!this.shutdownReason) this.shutdownReason = reason;
     if (this.stopping || this.stopTimer) return;
     this.stopTimer = setTimeout(() => {
       void this.stop(reason);

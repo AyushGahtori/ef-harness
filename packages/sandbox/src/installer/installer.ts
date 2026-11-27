@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { packageInstallCommand, renderCommand } from "./commands.js";
+import { packageInstallCommand, packageResolveCommand, renderCommand } from "./commands.js";
 import {
   InstallerError,
   LockfileMutationError,
@@ -12,7 +12,7 @@ import {
   WorkerDirectInstallDenied,
 } from "./errors.js";
 import { RED_TEAM_PROBE, isSecretPath, writeSecretGuard } from "./guard.js";
-import { verifyLockfileIntegrity } from "./lockfile.js";
+import { managerForLockfile, verifyLockfileIntegrity } from "./lockfile.js";
 import { reconcileDependencyIntents } from "./reconcile.js";
 import {
   alignStoreWithWorktree,
@@ -137,9 +137,10 @@ export class KernelPackageInstaller {
       this.assertKernelInstall();
       const prepared = this.prepareSingle(request.intent);
       if (prepared.status !== "ready") return prepared.outcome;
-      this.writeDependencyUpdate(request.packageJsonPath, request.lockfilePath, [prepared.metadata], [
+      this.writePackageDependencies(request.packageJsonPath, [
         { packageName: request.intent.packageName, range: request.intent.range },
       ]);
+      await this.resolveLockfile(request.lockfilePath);
       return this.installBody(request.lockfilePath, [prepared.metadata]);
     });
   }
@@ -166,12 +167,11 @@ export class KernelPackageInstaller {
       }
       const cards = this.approvalCards(manifests);
       if (cards.length > 0) return { status: "approval_required", cards };
-      this.writeDependencyUpdate(
+      this.writePackageDependencies(
         request.packageJsonPath,
-        request.lockfilePath,
-        manifests,
         reconciliation.updates.map((update) => ({ packageName: update.packageName, range: update.range })),
       );
+      await this.resolveLockfile(request.lockfilePath);
       return this.installBody(request.lockfilePath, manifests);
     });
   }
@@ -471,10 +471,8 @@ export class KernelPackageInstaller {
     };
   }
 
-  private writeDependencyUpdate(
+  private writePackageDependencies(
     packageJsonPath: string,
-    lockfilePath: string,
-    manifests: readonly PackageVersionMetadata[],
     ranges: readonly { readonly packageName: string; readonly range: string }[],
   ): void {
     const parsed = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
@@ -483,17 +481,30 @@ export class KernelPackageInstaller {
     const dependencies = { ...(parsed.dependencies ?? {}) };
     for (const update of ranges) dependencies[update.packageName] = update.range;
     fs.writeFileSync(packageJsonPath, `${JSON.stringify({ ...parsed, dependencies }, null, 2)}\n`);
-    const original = fs.readFileSync(lockfilePath, "utf8");
-    const manager = path.basename(lockfilePath).toLowerCase();
-    let next = original;
-    if (manager === "package-lock.json" || manager === "npm-shrinkwrap.json") {
-      next = insertNpmPackages(original, manifests);
-    } else if (manager === "yarn.lock") {
-      next = `${original.replace(/\s*$/, "\n")}${yarnBlocks(manifests, ranges)}`;
-    } else {
-      next = insertPnpmPackages(original, manifests);
+  }
+
+  private async resolveLockfile(lockfilePath: string): Promise<void> {
+    const command = packageResolveCommand(managerForLockfile(lockfilePath));
+    const attemptHome = this.attemptHome();
+    fs.mkdirSync(attemptHome, { recursive: true });
+    const tier = this.options.tier as InstallTier;
+    const result = await this.options.jobRunner.runCommand({
+      file: command.file,
+      args: command.args,
+      cwd: this.options.worktreePath,
+      env: this.sandboxEnv(probeTarget(this.secretRoots())),
+      tier,
+      timeoutMs: INSTALL_TIMEOUT_MS,
+      role: "kernel_installer",
+      limits: INSTALL_LIMITS,
+      environmentId: this.options.environmentId ?? "kernel-installer",
+    });
+    if (result.exitCode !== 0) {
+      throw new InstallerError(
+        "lockfile_resolve_failed",
+        result.stderr || result.stdout || "lockfile resolution failed",
+      );
     }
-    fs.writeFileSync(lockfilePath, next);
   }
 }
 
@@ -504,51 +515,6 @@ function scriptInvocation(script: string, guardPath: string): { file: string; ar
     return { file: process.execPath, args: ["--require", guardPath, relative] };
   }
   return { file: process.execPath, args: ["--require", guardPath, "-e", script] };
-}
-
-function pnpmBlock(manifest: PackageVersionMetadata): string {
-  const tarball = manifest.tarballUrl ? `, tarball: ${manifest.tarballUrl}` : "";
-  return `  '${manifest.name}@${manifest.version}':\n    resolution: {integrity: ${manifest.integrity}${tarball}}\n`;
-}
-
-function insertPnpmPackages(original: string, manifests: readonly PackageVersionMetadata[]): string {
-  const block = manifests.map((manifest) => pnpmBlock(manifest)).join("");
-  const lines = original.split(/\r?\n/);
-  const index = lines.findIndex((line) => line === "packages:");
-  if (index === -1) {
-    return `${original.replace(/\s*$/, "\n")}\npackages:\n${block}`;
-  }
-  lines.splice(index + 1, 0, block.replace(/\n$/, ""));
-  return lines.join("\n");
-}
-
-function insertNpmPackages(original: string, manifests: readonly PackageVersionMetadata[]): string {
-  const parsed = JSON.parse(original) as {
-    packages?: Record<string, Record<string, unknown>>;
-  };
-  const packages = { ...(parsed.packages ?? {}) };
-  for (const manifest of manifests) {
-    packages[`node_modules/${manifest.name}`] = {
-      version: manifest.version,
-      resolved: manifest.tarballUrl,
-      integrity: manifest.integrity,
-      license: manifest.license,
-    };
-  }
-  return `${JSON.stringify({ ...parsed, packages }, null, 2)}\n`;
-}
-
-function yarnBlocks(
-  manifests: readonly PackageVersionMetadata[],
-  ranges: readonly { readonly packageName: string; readonly range: string }[],
-): string {
-  return manifests
-    .map((manifest) => {
-      const range = ranges.find((item) => item.packageName === manifest.name)?.range ?? manifest.version;
-      const resolved = manifest.tarballUrl ? `\n  resolved "${manifest.tarballUrl}"` : "";
-      return `\n"${manifest.name}@${range}":\n  version "${manifest.version}"${resolved}\n  integrity ${manifest.integrity}\n`;
-    })
-    .join("");
 }
 
 export { reconcileDependencyIntents, verifyLockfileIntegrity, checkTyposquat, resolvePackageVersion };

@@ -488,6 +488,7 @@ export {
   isWorkerPackageManagerInstall,
   markNodeModulesReadOnly,
   packageInstallCommand,
+  packageResolveCommand,
   readLockfilePackages,
   reconcileDependencyIntents,
   renderCommand,
