@@ -2,7 +2,7 @@
 
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
-- **Current Verified `harness/integration` `HEAD`:** `fa4b5df4d13d2cc5d6be393aaf77376393e910a8` (`integrate: C24 unify surface verifiers and land 061-063 fixes`)
+- **Current Verified `harness/integration` `HEAD`:** `d1af8055d3e3ff1a80d53235d6cd12f8b6524c19` (`integrate: C25 wire boundary probes, hint ladder, and candidate acceptance`)
 - **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
 
 | Task | Wave | Status | Commit SHA | Findings Resolved | Proof Summary |
@@ -31,7 +31,7 @@
 | C22 | Wave 2 | done | 9aedea0 | F-023 | build/typecheck/lint OK; worker-loop 25 files 146 passed; schema 67/67 |
 | C23 | Wave 2 | done | 717ff83 | F-024 | build/typecheck/lint OK; completeness-gate 7 files 50 passed; verifier 31 files 178 passed; schema 67/67 |
 | C24 | Wave 2 | done | fa4b5df | F-025 | build/typecheck/lint OK; verifier 32 files 182 passed; schema 67/67 |
-| C25 | Wave 2 | pending | - | F-012, F-017, F-025 | - |
+| C25 | Wave 2 | done | d1af805 | F-012, F-017, F-025 | build/typecheck/lint OK; verifier 34 files 188 passed; schema 67/67 |
 | C26 | Wave 2 | pending | - | F-026, F-027, F-028 | - |
 | C27 | Wave 3 | pending | - | F-029, F-030, F-031, F-035 | - |
 | C28 | Wave 3 | pending | - | F-029, F-074 | - |

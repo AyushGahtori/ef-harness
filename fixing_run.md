@@ -786,3 +786,42 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/verifier test -- tests/binder tests/ui-contract tests/surfaces tests/integrated-surfaces.test.ts`: exit `0` — `Test Files 32 passed (32)`, `Tests 182 passed (182)` (`0` skipped)
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+---
+
+## [C25] — Boundary probes, hint ladder, and candidate acceptance
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `d1af8055d3e3ff1a80d53235d6cd12f8b6524c19` (`integrate: C25 wire boundary probes, hint ladder, and candidate acceptance`)
+- **Findings Fixed:** `F-025` task-064 and task-066 portion (role-guard mutants drop to `{}`, `X-01` fires on `authz` alone, receipt JSON and `artifact_refs` blobs promote to `evidence`), plus `F-012` and `F-017` wiring of `CandidateAcceptanceCoordinator` and `PersistentHintLadder` onto `ProjectStateDb`, `CoordinatorWriteQueue`, `TaskHoldAndSubmissionRepo`, `LifecycleRepo`, `OutboxRepo`, `CasBlobStore`, and `RefLeaseManager`. Did not re-merge `task/064`, `task/065`, or `task/066`. Did not apply patches after `task-066.patch`. Did not edit `schema/**` or `path_leases.mode`. Task `done` stays the schema flag on `ACCEPTED` (`task_states` has no `DONE` row). Did not merge `main`. Did not open a pull request. Did not start C26.
+
+### What Changed
+- Re-verified on `fa4b5df4d13d2cc5d6be393aaf77376393e910a8`. `task/064-ai-eval-property-mutation-probes` (`3a84cad`), `task/065-hint-ladder-dispute-routing` (`9f0c374`), and `task/066-candidate-acceptance-tx` (`f68afb3`) are ancestors. `git apply --stat` and `git apply --check` were clean for both patches, then `git apply` landed both deltas.
+- `task-064.patch` is 2 files (`+60/−1`). An early-exit negated role guard is replaced with `{}` so the body after the guard still runs. `task-066.patch` is 3 files (`+112/−10`). `X-01` is `{ any: ["authz"], all: [] }`. `promoteReceiptArtifacts` promotes diagnostic blobs referenced by receipt JSON (`traceDigest`, `logDigest`, `observationsDigest`, and sibling ids) and by `artifact_refs`.
+- `acceptVerifiedCandidate` previews the decision, calls `RefLeaseManager.advanceRefCas` only when that preview is `accepted` and no hard hold is active, then runs `CandidateAcceptanceCoordinator.finalizeCandidateAcceptance` inside `CoordinatorWriteQueue.submitOperation`. A failed compare-and-swap or a hard hold (`requirement_change`, `budget`, `ccr`, `governor`) rolls the accept back with `ref_cas_failed` or `blocking_hold` and leaves the task in `CLEAN_VERIFY`. A fencing-epoch mismatch still archives the attempt as `rejected` / `superseded` and does not write `TaskAccepted`.
+- `PersistentHintLadder` and `DisputeTestRouter` persist through the same queue on `ProjectStateDb.writer`. Hint and dispute text go through `SecretRedactor` before they are stored. Step 1 hints stay `ruleId`, `ruleText`, and `failureType`. Sealed example filenames and sealed expected tokens are not copied into that hint.
+- The seven verifier submodules (`runner`, `binder`, `ui-contract`, `surfaces`, `advanced`, `hint-ladder`, `acceptance`) stay exported from `packages/verifier/src/index.ts`. `@ef-harness/db` is a verifier dependency, with a matching `tsconfig.json` project reference. `pnpm-lock.yaml` adds that `link:` entry.
+
+### What It Fixed
+- **F-025 (task-064):** `if (user.role !== "admin") { return []; }` becomes `{}` followed by `return ["secret"]`. The guest probe kills that mutant.
+- **F-025 (task-066):** An `authz`-only touch queues `X-01`. A diagnostic blob named by `runs[].traceDigest` and a blob linked from `artifact_refs` both move to `evidence`.
+- **F-012 / F-017 (wiring):** On a real `ProjectStateDb`, a successful accept moves `refs/heads/harness/f/F12` to the candidate commit, sets `task_runtime.state` to `ACCEPTED` (`task_states.done = 1`), and inserts `TaskAccepted`. Epoch `2` against runtime epoch `3` quarantines the attempt and leaves the ref and the done flag unchanged. A `governor` hold and a compare-and-swap mismatch do the same. A step-1 hint stored in `operations.result` contains `[REDACTED:VAULT]` and not the registered vault value.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor 3a84cad HEAD`: exit `0`
+- `git merge-base --is-ancestor 9f0c374 HEAD`: exit `0`
+- `git merge-base --is-ancestor f68afb3 HEAD`: exit `0`
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-064.patch`: exit `0` — `2 files changed, 60 insertions(+), 1 deletion(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-064.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-064.patch`: exit `0` (clean)
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-066.patch`: exit `0` — `3 files changed, 112 insertions(+), 10 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-066.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-066.patch`: exit `0` (clean)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/verifier test` (before Playwright Chromium was installed): exit `1` — `Test Files 1 failed | 33 passed (34)`, `Tests 177 passed | 11 skipped (188)` (`HumanStepRequired('install_playwright_chromium')` in `tests/ui-contract/verifier.test.ts` beforeAll)
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm --filter @ef-harness/verifier test` (after that install): exit `0` — `Test Files 34 passed (34)`, `Tests 188 passed (188)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
