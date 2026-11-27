@@ -35,21 +35,22 @@ export function trailerLines(trailers: EfTrailers): readonly { key: string; valu
   ];
 }
 
-export function renderCommitMessage(
+export async function renderCommitMessage(
   repo: string,
   subject: string,
   body: string,
   trailers: EfTrailers,
-): string {
+): Promise<string> {
   const args = ["interpret-trailers"];
   for (const trailer of trailerLines(trailers)) {
     args.push("--trailer", `${trailer.key}: ${trailer.value}`);
   }
-  return gitOk({
+  const res = await gitOk({
     repo,
     args,
     input: `${subject.trim()}\n\n${body.trim()}\n`,
-  }).stdout;
+  });
+  return res.stdout;
 }
 
 export function parseEfTrailers(message: string): EfTrailers | null {

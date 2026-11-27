@@ -1,5 +1,7 @@
-import { spawnSync } from "node:child_process";
+import { createDirectGitRunner } from "@ef-harness/git-engine";
 import { GitCommandError } from "./errors.js";
+
+export type DirectGitRunner = ReturnType<typeof createDirectGitRunner>;
 
 export interface GitIdentity {
   readonly name: string;
@@ -18,19 +20,18 @@ export interface GitResult {
   readonly durationMs: number;
 }
 
-export function runGit(options: {
+const defaultGitRunner: DirectGitRunner = createDirectGitRunner();
+
+export async function runGit(options: {
   readonly repo: string;
   readonly args: readonly string[];
   readonly input?: string;
   readonly identity?: GitIdentity;
-}): GitResult {
+  readonly runner?: DirectGitRunner;
+}): Promise<GitResult> {
   const identity = options.identity ?? DEFAULT_GIT_IDENTITY;
-  const started = Date.now();
+  const runner = options.runner ?? defaultGitRunner;
   const args = [
-    "-C",
-    options.repo,
-    "-c",
-    "core.autocrlf=false",
     "-c",
     "core.longpaths=true",
     "-c",
@@ -39,58 +40,58 @@ export function runGit(options: {
     `user.email=${identity.email}`,
     ...options.args,
   ];
-  const result = spawnSync("git", args, {
-    encoding: "utf8",
-    windowsHide: true,
-    shell: false,
-    input: options.input,
-    env: {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_AUTHOR_NAME: identity.name,
-      GIT_AUTHOR_EMAIL: identity.email,
-      GIT_COMMITTER_NAME: identity.name,
-      GIT_COMMITTER_EMAIL: identity.email,
-    },
-  });
-  if (result.error) {
-    throw new GitCommandError(options.args[0] ?? "git", 127, result.error.message);
+  try {
+    const result = await runner.execGit({
+      cwd: options.repo,
+      args,
+      ...(options.input !== undefined ? { stdin: options.input } : {}),
+      env: {
+        GIT_AUTHOR_NAME: identity.name,
+        GIT_AUTHOR_EMAIL: identity.email,
+        GIT_COMMITTER_NAME: identity.name,
+        GIT_COMMITTER_EMAIL: identity.email,
+      },
+    });
+    return {
+      status: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      durationMs: result.durationMs,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new GitCommandError(options.args[0] ?? "git", 127, message);
   }
-  return {
-    status: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-    durationMs: Date.now() - started,
-  };
 }
 
-export function gitOk(options: {
+export async function gitOk(options: {
   readonly repo: string;
   readonly args: readonly string[];
   readonly input?: string;
   readonly identity?: GitIdentity;
-}): GitResult {
-  const result = runGit(options);
+  readonly runner?: DirectGitRunner;
+}): Promise<GitResult> {
+  const result = await runGit(options);
   if (result.status !== 0) {
     throw new GitCommandError(options.args[0] ?? "git", result.status, result.stderr || result.stdout);
   }
   return result;
 }
 
-export function revParse(repo: string, ref: string): string {
-  return gitOk({ repo, args: ["rev-parse", "--verify", ref] }).stdout.trim();
+export async function revParse(repo: string, ref: string): Promise<string> {
+  return (await gitOk({ repo, args: ["rev-parse", "--verify", ref] })).stdout.trim();
 }
 
-export function isAncestor(repo: string, ancestor: string, descendant: string): boolean {
-  return runGit({ repo, args: ["merge-base", "--is-ancestor", ancestor, descendant] }).status === 0;
+export async function isAncestor(repo: string, ancestor: string, descendant: string): Promise<boolean> {
+  return (await runGit({ repo, args: ["merge-base", "--is-ancestor", ancestor, descendant] })).status === 0;
 }
 
-export function commitMessage(repo: string, sha: string): string {
-  return gitOk({ repo, args: ["log", "-1", "--format=%B", sha] }).stdout;
+export async function commitMessage(repo: string, sha: string): Promise<string> {
+  return (await gitOk({ repo, args: ["log", "-1", "--format=%B", sha] })).stdout;
 }
 
-export function commitParents(repo: string, sha: string): string[] {
-  const raw = gitOk({ repo, args: ["rev-list", "--parents", "-n", "1", sha] }).stdout.trim();
+export async function commitParents(repo: string, sha: string): Promise<string[]> {
+  const raw = (await gitOk({ repo, args: ["rev-list", "--parents", "-n", "1", sha] })).stdout.trim();
   const parts = raw.split(/\s+/);
   return parts.slice(1);
 }

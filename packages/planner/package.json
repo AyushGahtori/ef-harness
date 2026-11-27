@@ -18,6 +18,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ef-harness/completeness-gate": "workspace:*",
     "@ef-harness/db": "workspace:*",
     "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",

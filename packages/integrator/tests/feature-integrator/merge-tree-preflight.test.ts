@@ -1,6 +1,6 @@
 import { describe, expect, it as vitestIt } from "vitest";
 
-const it = (name: string, fn: () => void): void => {
+const it = (name: string, fn: () => void | Promise<void>): void => {
   vitestIt(name, fn, 120_000);
 };
 import {
@@ -24,18 +24,18 @@ function wideFile(value: string): string {
 }
 
 describe("MergeTreePreflightScanner", () => {
-  it("detects conflicting paths and hunk ranges from the object database without touching the checkout", () => {
-    const repo = initRepo();
+  it("detects conflicting paths and hunk ranges from the object database without touching the checkout", async () => {
+    const repo = await initRepo();
     try {
-      const base = commitAll(repo, "main", { "src/marker.ts": wideFile("base"), "README.md": "UNRELATED_SENTINEL\n" }, "base");
-      const menu = commitAll(repo, "menu", { "src/marker.ts": wideFile("menu") }, "menu", base);
-      const order = commitAll(repo, "order", { "src/marker.ts": wideFile("order") }, "order", base);
+      const base = await commitAll(repo, "main", { "src/marker.ts": wideFile("base"), "README.md": "UNRELATED_SENTINEL\n" }, "base");
+      const menu = await commitAll(repo, "menu", { "src/marker.ts": wideFile("menu") }, "menu", base);
+      const order = await commitAll(repo, "order", { "src/marker.ts": wideFile("order") }, "order", base);
       expect(menu).not.toBe(base);
-      const head = revParse(repo, "HEAD");
-      const status = porcelain(repo);
+      const head = await revParse(repo, "HEAD");
+      const status = await porcelain(repo);
       const scanner = new MergeTreePreflightScanner();
-      scanner.scan({ repo, ours: menu, theirs: order });
-      const report = scanner.scan({ repo, ours: menu, theirs: order });
+      await scanner.scan({ repo, ours: menu, theirs: order });
+      const report = await scanner.scan({ repo, ours: menu, theirs: order });
       expect(report.command).toBe(MERGE_TREE_COMMAND);
       expect(report.clean).toBe(false);
       expect(report.treeOid).toMatch(/^[0-9a-f]{40}$/);
@@ -61,8 +61,8 @@ describe("MergeTreePreflightScanner", () => {
       expect(prompt).toContain("NEAR_BEFORE");
       expect(prompt).not.toContain("FAR_SENTINEL");
       expect(prompt).not.toContain("UNRELATED_SENTINEL");
-      expect(revParse(repo, "HEAD")).toBe(head);
-      expect(porcelain(repo)).toBe(status);
+      expect(await revParse(repo, "HEAD")).toBe(head);
+      expect(await porcelain(repo)).toBe(status);
     } finally {
       removeRepo(repo);
     }

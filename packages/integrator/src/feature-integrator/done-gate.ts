@@ -1,11 +1,13 @@
+import { INTEGRATION_REF as DB_INTEGRATION_REF, type FeatureDoneEvidenceInput as DbFeatureDoneEvidenceInput } from "@ef-harness/db";
 import type { DoneConditionId } from "./constants.js";
 import type { FeatureDoneCheckResult, FeatureDoneEvidenceInput } from "./types.js";
 
 const SETTLED = new Set(["MERGED_TO_FEATURE", "CANCELLED", "SUPERSEDED"]);
 
 /**
- * Local port of Task 022 `verifyFeatureDoneConditions`.
- * All seven conditions from the feature state machine must hold together.
+ * Evaluates all seven DONE conditions on an in-memory evidence bundle.
+ * When persisted to `ProjectStateDb`, `bindLifecycleRepo` converts this bundle to `DbFeatureDoneEvidenceInput`
+ * and runs canonical `LifecycleRepo` (`evaluateFeatureDoneConditions`) against `state.db`.
  */
 export function verifyFeatureDoneConditions(evidence: FeatureDoneEvidenceInput): FeatureDoneCheckResult {
   const failed: DoneConditionId[] = [];
@@ -31,4 +33,40 @@ export function verifyFeatureDoneConditions(evidence: FeatureDoneEvidenceInput):
   if (evidence.openContractChangeRequestIds.length > 0) failed.push("7");
 
   return { ok: failed.length === 0, failedConditions: failed };
+}
+
+/** Converts integrator DONE evidence to the canonical `@ef-harness/db` `FeatureDoneEvidenceInput`. */
+export function toDbFeatureDoneEvidence(
+  featureId: string,
+  evidence: FeatureDoneEvidenceInput,
+): DbFeatureDoneEvidenceInput {
+  const seriousFindingIds = [
+    ...(evidence.seriousAccessibilityFindingIds ?? []),
+    ...(!evidence.accessibilityClean && (evidence.seriousAccessibilityFindingIds?.length ?? 0) === 0
+      ? ["a11y-violation"]
+      : []),
+    ...(!evidence.layoutClean ? ["layout-violation"] : []),
+  ];
+  return {
+    feature: featureId,
+    staticAudit: {
+      clean: evidence.staticAuditClean,
+      integratorCommitsIncluded: evidence.staticAuditClean,
+      paths: evidence.auditedPaths ?? [],
+    },
+    journey: {
+      passed: evidence.journeyPassedInCleanEnv,
+      entryPoint: evidence.journeyEntryPoint ?? "/",
+      cleanEnvironment: evidence.journeyPassedInCleanEnv,
+    },
+    integrationMerge: {
+      ref: DB_INTEGRATION_REF,
+      mergeCommit: evidence.integrationMergeCommit ?? "",
+      earlierDoneRegressionGreen: evidence.earlierDoneRegressionsPassed,
+      regressedFeatureIds: evidence.regressedFeatureIds ?? [],
+    },
+    accessibility: {
+      seriousFindingIds,
+    },
+  };
 }

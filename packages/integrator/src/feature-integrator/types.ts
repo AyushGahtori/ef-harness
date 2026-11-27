@@ -1,3 +1,9 @@
+import type { NameRegistryService, RegistrySnapshot } from "@ef-harness/completeness-gate";
+import type {
+  AcceptanceCheck,
+  VerificationOutcome,
+  VerifyCandidateRequest,
+} from "@ef-harness/verifier";
 import type { DoneConditionId, FeatureState, SeamId } from "./constants.js";
 
 export type { SeamId };
@@ -118,6 +124,11 @@ export interface FeatureDoneEvidenceInput {
   readonly accessibilityClean: boolean;
   readonly layoutClean: boolean;
   readonly openContractChangeRequestIds: readonly string[];
+  readonly auditedPaths?: readonly string[];
+  readonly journeyEntryPoint?: string;
+  readonly integrationMergeCommit?: string;
+  readonly regressedFeatureIds?: readonly string[];
+  readonly seriousAccessibilityFindingIds?: readonly string[];
 }
 
 export interface FeatureDoneCheckResult {
@@ -163,7 +174,8 @@ export interface CheckObservation {
 
 export interface SealedCheck {
   readonly id: string;
-  readonly run: (snapshot: CodeSnapshot) => CheckObservation;
+  readonly acceptanceCheck?: AcceptanceCheck;
+  readonly run: (snapshot: CodeSnapshot) => CheckObservation | Promise<CheckObservation>;
 }
 
 export interface RedBeforeGreenProof {
@@ -229,7 +241,7 @@ export interface ViewportRender {
 export interface ViewportCheck {
   readonly id: string;
   readonly width: 375 | 1440;
-  readonly render: (width: number) => ViewportRender;
+  readonly render: (width: number) => ViewportRender | Promise<ViewportRender>;
 }
 
 export interface WiringRepair {
@@ -239,7 +251,7 @@ export interface WiringRepair {
 
 export interface IntegrationFixHint {
   readonly round: number;
-  readonly target: "seam" | "wiring" | "viewport" | "audit" | "sealed";
+  readonly target: "seam" | "wiring" | "viewport" | "audit" | "sealed" | "clean_verifier";
   readonly detail: string;
   readonly repair: WiringRepair | null;
 }
@@ -288,30 +300,60 @@ export type CasAdvanceResult =
   | { readonly ok: true; readonly sha: string }
   | { readonly ok: false; readonly reason: "cas_mismatch"; readonly actualSha: string };
 
-/** Local port of Task 039 `RefLeaseManager.advanceRefCas`. */
+/** Async port of Task 039 `RefLeaseManager.advanceRefCas`. */
 export interface RefCasPort {
-  advance(input: CasAdvanceInput): CasAdvanceResult;
+  advance(input: CasAdvanceInput): Promise<CasAdvanceResult>;
 }
 
-/** Local port of Task 022 `LifecycleRepo`. */
+/** Async port of Task 022 `LifecycleRepo`. */
 export interface FeatureLifecyclePort {
-  read(featureId: string): { readonly state: FeatureState; readonly epoch: number };
+  read(featureId: string): Promise<{ readonly state: FeatureState; readonly epoch: number }>;
   transition(input: {
     readonly featureId: string;
     readonly to: FeatureState;
     readonly expectedEpoch: number;
     readonly evidence: FeatureDoneEvidenceInput | null;
-  }): { readonly state: FeatureState; readonly epoch: number };
+  }): Promise<{ readonly state: FeatureState; readonly epoch: number }>;
 }
 
-/** Local port of the clean verifier checkout reader (Task 055 in the task text, Task 060 on the sibling branch). */
+/** Async port of the clean verifier checkout reader (`CleanVerifierRunner` / `WorktreeSlotManagerPort`). */
 export interface CleanSnapshotPort {
-  read(repo: string, commit: string, label: "base" | "feature"): CodeSnapshot;
+  read(repo: string, commit: string, label: "base" | "feature"): Promise<CodeSnapshot>;
 }
 
-/** Local port of blind-binder / red-before-green (Task 056 in the task text, Task 061 on the sibling branch). */
+/** Async port of Task 056 / C23 `CleanVerifierRunner` for full sandboxed feature verification. */
+export interface CleanVerifierHarnessPort {
+  verifyCandidate(request: VerifyCandidateRequest): Promise<VerificationOutcome>;
+}
+
+/** Async port of Task 061 / C24 `RedBeforeGreenBlindBinder` (`RedBeforeGreenGate` + `BlindBinderOrchestrator`). */
 export interface BlindBinderPort {
-  bind(check: SealedCheck): SealedCheck;
+  bind(
+    check: SealedCheck,
+    context?: { readonly base?: CodeSnapshot; readonly feature?: CodeSnapshot },
+  ): Promise<SealedCheck>;
+}
+
+/** Async port of Task 059 / C23 `CompletenessGateRunner`. */
+export interface StaticAuditPort {
+  audit(input: {
+    readonly featureId: string;
+    readonly taskId: string;
+    readonly baseRef: string;
+    readonly candidateRef: string;
+    readonly files: readonly FileText[];
+    readonly entryPoints?: readonly string[];
+    readonly declaredSharedFiles?: readonly string[];
+    readonly writeScope?: readonly string[];
+    readonly conflictHunks?: readonly ConflictHunk[];
+    readonly registry?: RegistrySnapshot;
+    readonly nameRegistry?: NameRegistryService;
+  }): Promise<readonly string[]>;
+}
+
+/** Async port for `feature-integrator@1` model invocations. */
+export interface FeatureIntegratorModelPort {
+  complete(packet: ScopedConflictPacket): Promise<unknown>;
 }
 
 export interface RegressionResult {
@@ -340,7 +382,12 @@ export interface FeatureIntegrationRequest {
   readonly lifecycle: FeatureLifecyclePort;
   readonly resolutionOverrides?: readonly FileText[];
   readonly modelOutput?: unknown;
+  readonly model?: FeatureIntegratorModelPort;
   readonly cas?: RefCasPort;
+  readonly cleanVerification?: VerifyCandidateRequest;
+  readonly entryPoints?: readonly string[];
+  readonly registry?: RegistrySnapshot;
+  readonly nameRegistry?: NameRegistryService;
 }
 
 export interface QueueHandoff {

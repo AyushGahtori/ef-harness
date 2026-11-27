@@ -1,10 +1,13 @@
 import { UnscriptedModelError } from "./fake-model.js";
 import type { ModelCall, SpecialistModel } from "./types.js";
 
-export function consultModel(model: SpecialistModel | null, call: ModelCall): unknown | null {
+export async function consultModel(
+  model: SpecialistModel | null,
+  call: ModelCall,
+): Promise<unknown | null> {
   if (!model) return null;
   try {
-    return model.complete(call);
+    return await model.complete(call);
   } catch (error) {
     if (error instanceof UnscriptedModelError) return null;
     throw error;

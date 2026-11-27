@@ -1,5 +1,15 @@
+import {
+  bindLifecycles,
+  FeatureDoneRefusedError as DbFeatureDoneRefusedError,
+  FeatureNotFoundError as DbFeatureNotFoundError,
+  IllegalFeatureTransitionError as DbIllegalFeatureTransitionError,
+  LifecyclesStaleEpochError as DbStaleEpochError,
+  isFeatureState,
+  type LifecycleRepo,
+  type ProjectStateDb,
+} from "@ef-harness/db";
 import type { FeatureState } from "./constants.js";
-import { verifyFeatureDoneConditions } from "./done-gate.js";
+import { toDbFeatureDoneEvidence, verifyFeatureDoneConditions } from "./done-gate.js";
 import {
   FeatureDoneRefusedError,
   FeatureNotReadyError,
@@ -40,7 +50,7 @@ interface Row {
   epoch: number;
 }
 
-/** In-memory stand-in for `LifecycleRepo` until Task 022 is on the integration branch. */
+/** Async in-memory `FeatureLifecyclePort` test stand-in. Production callers use `bindLifecycleRepo` / `bindProjectLifecycle`. */
 export class InMemoryFeatureLifecycle implements FeatureLifecyclePort {
   private readonly rows = new Map<string, Row>();
 
@@ -48,18 +58,18 @@ export class InMemoryFeatureLifecycle implements FeatureLifecyclePort {
     this.rows.set(featureId, { state, epoch });
   }
 
-  read(featureId: string): { readonly state: FeatureState; readonly epoch: number } {
+  async read(featureId: string): Promise<{ readonly state: FeatureState; readonly epoch: number }> {
     const row = this.rows.get(featureId);
     if (!row) throw new FeatureNotReadyError(featureId, "PLANNED");
     return { state: row.state, epoch: row.epoch };
   }
 
-  transition(input: {
+  async transition(input: {
     readonly featureId: string;
     readonly to: FeatureState;
     readonly expectedEpoch: number;
     readonly evidence: FeatureDoneEvidenceInput | null;
-  }): { readonly state: FeatureState; readonly epoch: number } {
+  }): Promise<{ readonly state: FeatureState; readonly epoch: number }> {
     const row = this.rows.get(input.featureId);
     if (!row) throw new FeatureNotReadyError(input.featureId, "PLANNED");
     if (row.epoch !== input.expectedEpoch) {
@@ -78,4 +88,92 @@ export class InMemoryFeatureLifecycle implements FeatureLifecyclePort {
     row.state = input.to;
     return { state: row.state, epoch: row.epoch };
   }
+}
+
+export interface LifecycleBindingOptions {
+  readonly nextRev?: () => number;
+  readonly now?: () => number;
+}
+
+/** Binds a canonical `ProjectStateDb` + `LifecycleRepo` directly into the integrator `FeatureLifecyclePort`. */
+export function bindLifecycleRepo(
+  repo: LifecycleRepo,
+  stateDb: ProjectStateDb,
+  options: LifecycleBindingOptions = {},
+): FeatureLifecyclePort {
+  let revCounter = 1;
+  const nextRev = options.nextRev ?? (() => {
+    const row = stateDb.writer.get("SELECT COALESCE(MAX(updated_rev), 0) AS max_rev FROM feature_runtime", []) as
+      | Readonly<Record<string, unknown>>
+      | undefined;
+    const raw = row?.max_rev;
+    const stored = typeof raw === "number" ? raw : Number(raw ?? 0);
+    revCounter = Math.max(revCounter, Number.isFinite(stored) ? stored + 1 : 1);
+    const rev = revCounter;
+    revCounter += 1;
+    return rev;
+  });
+  const now = options.now ?? (() => Date.now());
+
+  return {
+    async read(featureId) {
+      const row = stateDb.writer.get(
+        "SELECT state, epoch FROM feature_runtime WHERE feature = ?",
+        [featureId],
+      ) as Readonly<Record<string, unknown>> | undefined;
+      if (!row) throw new FeatureNotReadyError(featureId, "PLANNED");
+      const rawState = String(row.state);
+      if (!isFeatureState(rawState)) {
+        throw new FeatureNotReadyError(featureId, "PLANNED");
+      }
+      return { state: rawState, epoch: Number(row.epoch) };
+    },
+    async transition(input) {
+      try {
+        const dbEvidence = input.evidence
+          ? toDbFeatureDoneEvidence(input.featureId, input.evidence)
+          : undefined;
+        const result = repo.transitionFeatureState({
+          feature: input.featureId,
+          to: input.to,
+          expectedEpoch: input.expectedEpoch,
+          rev: nextRev(),
+          now: now(),
+          ...(dbEvidence !== undefined ? { evidence: dbEvidence } : {}),
+        });
+        return { state: result.to, epoch: result.epoch };
+      } catch (error) {
+        if (error instanceof DbStaleEpochError) {
+          throw new StaleEpochError(
+            error.details.feature,
+            error.details.expectedEpoch,
+            error.details.actualEpoch ?? 0,
+          );
+        }
+        if (error instanceof DbFeatureDoneRefusedError) {
+          throw new FeatureDoneRefusedError({
+            ok: error.result.ok,
+            failedConditions: [...error.result.failedConditions],
+          });
+        }
+        if (error instanceof DbIllegalFeatureTransitionError) {
+          const from = error.details.from && isFeatureState(error.details.from) ? error.details.from : "PLANNED";
+          const to = isFeatureState(error.details.to) ? error.details.to : input.to;
+          throw new IllegalFeatureTransitionError(from, to);
+        }
+        if (error instanceof DbFeatureNotFoundError) {
+          throw new FeatureNotReadyError(input.featureId, "PLANNED");
+        }
+        throw error;
+      }
+    },
+  };
+}
+
+/** Convenience wrapper that opens `LifecycleRepo` on `ProjectStateDb` via `@ef-harness/db`'s `bindLifecycles`. */
+export function bindProjectLifecycle(
+  stateDb: ProjectStateDb,
+  options: LifecycleBindingOptions = {},
+): FeatureLifecyclePort {
+  return bindLifecycleRepo(bindLifecycles(stateDb), stateDb, options);
 }

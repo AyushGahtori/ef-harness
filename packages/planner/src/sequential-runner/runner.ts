@@ -15,6 +15,7 @@ import {
 import { ExplicitFirstReadyQueue } from "./ready-queue.js";
 import { PostMergeSmokeChecker } from "./smoke.js";
 import { StateDb } from "./state-db.js";
+import type { HighRiskDiffReviewer } from "../specialists/high-risk-diff-reviewer.js";
 import {
   BudgetReservationError,
   SANDBOX_PROFILE,
@@ -68,6 +69,7 @@ export interface SequentialRunnerDependencies {
   wave?: WaveAdvancementPort;
   completion?: CompletionWavePort;
   repair?: PlannerRepairPort;
+  reviewer?: HighRiskDiffReviewer;
   now?: () => number;
   leaseMs?: number;
   reserveMicroUsd?: number;
@@ -94,6 +96,7 @@ export class SequentialBuildRunner {
   private readonly wave: WaveAdvancementPort;
   private readonly completion: CompletionWavePort;
   private readonly repair: PlannerRepairPort;
+  private readonly reviewer: HighRiskDiffReviewer | null;
   private readonly now: () => number;
   private readonly leaseMs: number;
   private readonly reserveMicroUsd: number;
@@ -136,6 +139,7 @@ export class SequentialBuildRunner {
     this.wave = deps.wave ?? new FinalWaveAdvancement();
     this.completion = deps.completion ?? { launch: () => ({ launched: true, name: "Task-101" }) };
     this.repair = deps.repair ?? { repair: () => ({ invoked: true, bounded: true }) };
+    this.reviewer = deps.reviewer ?? null;
     this.now = deps.now ?? (() => Date.now());
     this.leaseMs = deps.leaseMs ?? 30 * 60 * 1000;
     this.reserveMicroUsd = deps.reserveMicroUsd ?? 1_000;
@@ -387,6 +391,38 @@ export class SequentialBuildRunner {
         return { close: "settle", cost: result.costMicroUsd };
       }
       receipt.staticAudit = "pass";
+      if (this.reviewer !== null) {
+        const taskTags = task.fields.tags ?? [];
+        const review = await this.reviewer.review({
+          taskId: task.id,
+          attemptId: open.attemptId,
+          touches: taskTags,
+          hintRetryLevel: hint?.step ?? 0,
+          tagDrift: detected.tags.some((tag) => !taskTags.includes(tag)),
+          diff,
+          must: [{ id: task.id, text: task.text || task.title }],
+          rules: [],
+          staticAudit: {
+            taskId: task.id,
+            passed: audit.pass,
+            fingerprint: audit.fingerprint,
+            hardFindingCount: 0,
+            softFindingCount: 0,
+          },
+          workerFamily: "native",
+        });
+        if (review.status === "blocked_merge") {
+          this.failCode(open, receipt, review.hint);
+          return { close: "settle", cost: result.costMicroUsd };
+        }
+        if (review.status === "escalated_to_user") {
+          this.infraStreak = null;
+          this.db.escalate(task.id, open.attemptId, open.epoch, this.now(), "reviewer_escalation");
+          this.persist(receipt, "ESCALATED", review.concern);
+          this.emit(task.id, "ESCALATED", open.attemptId, task.branch, review.concern);
+          return { close: "settle", cost: result.costMicroUsd };
+        }
+      }
       this.db.markCleanVerify(task.id, open.epoch);
       this.persist(receipt, "VERIFYING");
       this.emit(task.id, "VERIFYING", open.attemptId, task.branch, candidate);

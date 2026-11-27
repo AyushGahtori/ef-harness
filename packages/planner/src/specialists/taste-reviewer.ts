@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { checkCitation } from "./citations.js";
 import { consultModel, estimateTokens, selectFamily } from "./model-select.js";
 import { budgetPressure } from "./ports.js";
@@ -78,20 +80,62 @@ function missingCaptures(shots: readonly TasteScreenshot[]): string[] {
   return missing;
 }
 
-function sourceLines(): Set<number> {
+function lineRangeSet(lineCount: number): Set<number> {
   const lines = new Set<number>();
-  for (let line = 1; line <= 400; line += 1) lines.add(line);
+  const bounded = Math.max(0, Math.floor(lineCount));
+  for (let line = 1; line <= bounded; line += 1) lines.add(line);
   return lines;
 }
 
-function groundFor(request: TasteReviewRequest, shots: readonly TasteScreenshot[]): CitationGround {
+function isMapSource<V>(
+  source: ReadonlyMap<string, V> | Readonly<Record<string, V>>,
+): source is ReadonlyMap<string, V> {
+  return typeof (source as ReadonlyMap<string, V>).get === "function";
+}
+
+function lookupEntry<V>(
+  source: ReadonlyMap<string, V> | Readonly<Record<string, V>> | undefined,
+  key: string,
+): V | undefined {
+  if (!source) return undefined;
+  if (isMapSource(source)) return source.get(key);
+  if (Object.prototype.hasOwnProperty.call(source, key)) return source[key];
+  return undefined;
+}
+
+function countTextLines(text: string): number {
+  if (text.length === 0) return 0;
+  return text.split(/\r?\n/).length;
+}
+
+async function resolveFileLines(filePath: string, request: TasteReviewRequest): Promise<Set<number>> {
+  const explicitCount = lookupEntry(request.fileLineCounts, filePath);
+  if (explicitCount !== undefined) return lineRangeSet(explicitCount);
+  const content = lookupEntry(request.fileContents, filePath);
+  if (content !== undefined) return lineRangeSet(countTextLines(content));
+  if (request.repoRoot) {
+    const rootResolved = path.resolve(request.repoRoot);
+    const full = path.resolve(rootResolved, filePath);
+    if (full === rootResolved || full.startsWith(`${rootResolved}${path.sep}`)) {
+      try {
+        const text = await readFile(full, "utf8");
+        return lineRangeSet(countTextLines(text));
+      } catch {
+        return new Set<number>();
+      }
+    }
+  }
+  return new Set<number>();
+}
+
+async function groundFor(request: TasteReviewRequest, shots: readonly TasteScreenshot[]): Promise<CitationGround> {
   const files = new Map<string, Set<number>>();
-  const remember = (path: string): void => {
-    if (!files.has(path)) files.set(path, sourceLines());
+  const remember = async (filePath: string): Promise<void> => {
+    if (!files.has(filePath)) files.set(filePath, await resolveFileLines(filePath, request));
   };
-  for (const path of request.knownFiles) remember(path);
+  for (const filePath of request.knownFiles) await remember(filePath);
   for (const shot of shots) {
-    for (const path of shot.sourceFiles) remember(path);
+    for (const filePath of shot.sourceFiles) await remember(filePath);
   }
   return {
     files,
@@ -155,7 +199,7 @@ export class AdvisoryTasteVisionReviewer {
     this.verifier = options.verifier ?? null;
   }
 
-  review(request: TasteReviewRequest): TasteReviewResult {
+  async review(request: TasteReviewRequest): Promise<TasteReviewResult> {
     if (request.stage === "Prototype") {
       return emptyResult(request, "skipped_prototype", "Prototype stage skips advisory taste review");
     }
@@ -173,14 +217,14 @@ export class AdvisoryTasteVisionReviewer {
     const screenshots =
       request.screenshots.length > 0
         ? request.screenshots
-        : (this.verifier?.captureScreens([request.taskId]) ?? []);
+        : ((await this.verifier?.captureScreens([request.taskId])) ?? []);
     for (const shot of screenshots) {
       const problem = screenshotRedactionProblem(shot);
       if (problem) return emptyResult(request, "rejected_non_synthetic", problem);
     }
     const prompt = buildTastePrompt(screenshots);
     const imageBytes = screenshots.reduce((sum, shot) => sum + shot.bytes.byteLength, 0);
-    const raw = consultModel(this.model, {
+    const raw = await consultModel(this.model, {
       role: "taste-reviewer@1",
       family: family.family,
       vision: true,
@@ -188,7 +232,7 @@ export class AdvisoryTasteVisionReviewer {
       imageBytes,
     });
     const tokensSpent = this.model === null && raw === null ? 0 : estimateTokens(prompt);
-    const ground = groundFor(request, screenshots);
+    const ground = await groundFor(request, screenshots);
     const parsed = raw === null ? null : parseTasteReviewerV1(raw);
     const findings: TasteFinding[] = [];
     if (parsed?.ok && !isBlockedExit(parsed.value)) {

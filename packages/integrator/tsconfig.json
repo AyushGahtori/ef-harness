@@ -10,7 +10,22 @@
   ],
   "references": [
     {
+      "path": "../completeness-gate"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../git-engine"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../verifier"
+    },
+    {
+      "path": "../worker-loop"
     }
   ]
 }

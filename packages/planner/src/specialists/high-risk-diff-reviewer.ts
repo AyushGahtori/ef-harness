@@ -1,8 +1,8 @@
 import { checkCitation } from "./citations.js";
 import { parseLocation, parseUnifiedDiff } from "./diff.js";
 import { consultModel, estimateTokens, selectFamily } from "./model-select.js";
-import { MemoryHintLadder, MemoryReviewEnvelope, MemoryReviewRejectionStore } from "./ports.js";
-import type { StaticAuditGate, VerificationHintLadder } from "./ports.js";
+import { MemoryHintLadder, MemoryReviewRejectionStore } from "./ports.js";
+import type { ReviewEnvelopePort, StaticAuditGate, VerificationHintLadder } from "./ports.js";
 import { buildReviewerPrompt } from "./prompts.js";
 import { isBlockedExit, parseReviewerV1 } from "./schemas.js";
 import type { ReviewerFindingV1 } from "./schemas.js";
@@ -26,7 +26,7 @@ export interface HighRiskDiffReviewerOptions {
   readonly roster: readonly ModelRosterEntry[];
   readonly rejections?: MemoryReviewRejectionStore;
   readonly hintLadder?: VerificationHintLadder;
-  readonly envelope?: MemoryReviewEnvelope;
+  readonly envelope?: ReviewEnvelopePort;
   readonly staticAuditGate?: StaticAuditGate | null;
 }
 
@@ -85,7 +85,7 @@ export class HighRiskDiffReviewer {
   private readonly roster: readonly ModelRosterEntry[];
   private readonly rejections: MemoryReviewRejectionStore;
   private readonly hintLadder: VerificationHintLadder;
-  private readonly envelope: MemoryReviewEnvelope | null;
+  private readonly envelope: ReviewEnvelopePort | null;
   private readonly staticAuditGate: StaticAuditGate | null;
 
   constructor(options: HighRiskDiffReviewerOptions) {
@@ -97,7 +97,7 @@ export class HighRiskDiffReviewer {
     this.staticAuditGate = options.staticAuditGate ?? null;
   }
 
-  review(request: HighRiskReviewRequest): HighRiskReviewResult {
+  async review(request: HighRiskReviewRequest): Promise<HighRiskReviewResult> {
     const risk = decideReviewerRisk(request);
     if (!risk.run) {
       return {
@@ -108,7 +108,7 @@ export class HighRiskDiffReviewer {
         modelInvoked: false,
       };
     }
-    const staticAudit = request.staticAudit ?? this.staticAuditGate?.readReceipt(request.taskId) ?? null;
+    const staticAudit = request.staticAudit ?? (await this.staticAuditGate?.readReceipt(request.taskId)) ?? null;
     const prepared: HighRiskReviewRequest = staticAudit === request.staticAudit ? request : { ...request, staticAudit };
     const family = selectFamily(this.roster, request.workerFamily, false);
     if (!family) {
@@ -123,7 +123,7 @@ export class HighRiskDiffReviewer {
       };
     }
     const prompt = buildReviewerPrompt(prepared);
-    const raw = consultModel(this.model, {
+    const raw = await consultModel(this.model, {
       role: "reviewer@1",
       family: family.family,
       vision: false,
@@ -131,7 +131,7 @@ export class HighRiskDiffReviewer {
       imageBytes: 0,
     });
     const tokensSpent = raw === null && this.model === null ? 0 : estimateTokens(prompt);
-    if (tokensSpent > 0) this.envelope?.charge(tokensSpent);
+    if (tokensSpent > 0) await this.envelope?.charge(tokensSpent);
     if (raw === null) {
       return {
         status: "model_unavailable",
@@ -223,7 +223,7 @@ export class HighRiskDiffReviewer {
       };
     }
     const hint = surgicalHint(primary);
-    this.hintLadder.pushReviewerDefect({
+    await this.hintLadder.pushReviewerDefect({
       taskId: request.taskId,
       attemptId: request.attemptId,
       filePath: primary.filePath,

@@ -10,6 +10,9 @@
   ],
   "references": [
     {
+      "path": "../completeness-gate"
+    },
+    {
       "path": "../db"
     },
     {

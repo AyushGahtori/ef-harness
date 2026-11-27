@@ -1,4 +1,7 @@
+import { isUiProjectKind, normalizeProjectKind, type ProjectKind } from "@ef-harness/shared-contracts";
+import type { UiInteractionContractVerifier, UiVerificationRequest } from "@ef-harness/verifier";
 import { VIEWPORTS, type ViewportWidth } from "./constants.js";
+import { FinalAuditError } from "./errors.js";
 import { makeFinding } from "./text.js";
 import type {
   AuditCheck,
@@ -12,13 +15,47 @@ import type {
   PageMetrics,
   PlaywrightSession,
   PlaywrightSessionFactory,
-  ProjectKind,
+  ProjectKindInput,
   RouteObservation,
   UiPlaywrightContractVerifierPort,
   WebRoute,
 } from "./types.js";
 
 const AXE_IMPACT = new Set(["serious", "critical", "moderate", "minor"]);
+
+export function canonicalProjectKind(kind: ProjectKindInput): ProjectKind {
+  const normalized = normalizeProjectKind(kind);
+  if (!normalized) {
+    throw new FinalAuditError("invalid_project_kind", `Unknown project kind: ${kind}`);
+  }
+  return normalized;
+}
+
+/** Binds `@ef-harness/verifier` `UiInteractionContractVerifier` (`C24`) into Layer B browser inspection. */
+export function bindUiInteractionContractBrowser(
+  verifier: UiInteractionContractVerifier,
+  requestFor: (input: {
+    readonly url: string;
+    readonly viewport: { readonly width: ViewportWidth; readonly height: number };
+  }) => UiVerificationRequest,
+): UiPlaywrightContractVerifierPort {
+  return {
+    async inspect(input) {
+      const result = await verifier.verify(requestFor(input));
+      return {
+        url: input.url,
+        status: result.passed ? 200 : 500,
+        viewport: input.viewport.width,
+        httpErrors: result.passed ? [] : [{ url: input.url, status: 500 }],
+        consoleErrors: result.passed ? [] : [result.message],
+        unhandledRejections: [],
+        brokenImages: [],
+        horizontalOverflow: false,
+        axeViolations: [],
+      };
+    },
+  };
+}
 
 function decode(value: string): string {
   return value
@@ -283,7 +320,7 @@ function stdoutIsPureJson(stdout: string): boolean {
 }
 
 export interface CrawlRequest {
-  readonly kind: ProjectKind;
+  readonly kind: ProjectKindInput;
   readonly routes: readonly WebRoute[];
   readonly commands: readonly CliCommandSpec[];
   readonly operations: readonly OpenApiOperation[];
@@ -291,7 +328,7 @@ export interface CrawlRequest {
   readonly browser: UiPlaywrightContractVerifierPort;
   readonly commandsExec: CommandExecutor;
   readonly fixCostUnits: bigint;
-  readonly onCheck?: (check: AuditCheck) => void;
+  readonly onCheck?: (check: AuditCheck) => void | Promise<void>;
   readonly skipCheckIds?: ReadonlySet<string>;
 }
 
@@ -301,13 +338,14 @@ function checkOf(id: string, findings: readonly ConfirmedFinding[]): AuditCheck 
 
 export class LiveRouteCrawler {
   async crawl(request: CrawlRequest): Promise<LayerBReport> {
+    const kind = canonicalProjectKind(request.kind);
     const app = await request.boot.boot();
     const findings: ConfirmedFinding[] = [];
     const checks: AuditCheck[] = [];
     const routes: RouteObservation[] = [];
     const commands: CommandObservation[] = [];
     try {
-      if (request.kind === "web") {
+      if (isUiProjectKind(kind)) {
         for (const route of request.routes) {
           for (const viewport of VIEWPORTS) {
             const checkId = `B:route:${route.path}@${viewport}`;
@@ -323,10 +361,10 @@ export class LiveRouteCrawler {
             findings.push(...routeFindings);
             const routeCheck = checkOf(checkId, routeFindings);
             checks.push(routeCheck);
-            request.onCheck?.(routeCheck);
+            await request.onCheck?.(routeCheck);
           }
         }
-      } else if (request.kind === "cli") {
+      } else if (kind === "cli_tool") {
         for (const command of request.commands) {
           const checkId = `B:cli:${command.argv.join(" ")}`;
           if (request.skipCheckIds?.has(checkId)) continue;
@@ -351,7 +389,7 @@ export class LiveRouteCrawler {
           findings.push(...commandFindings);
           const commandCheck = checkOf(checkId, commandFindings);
           checks.push(commandCheck);
-          request.onCheck?.(commandCheck);
+          await request.onCheck?.(commandCheck);
         }
       } else {
         for (const operation of request.operations) {
@@ -375,7 +413,7 @@ export class LiveRouteCrawler {
           findings.push(...operationFindings);
           const operationCheck = checkOf(checkId, operationFindings);
           checks.push(operationCheck);
-          request.onCheck?.(operationCheck);
+          await request.onCheck?.(operationCheck);
         }
       }
     } finally {
@@ -394,11 +432,11 @@ export class LiveRouteCrawler {
     findings.push(...leakFindings);
     const teardown = checkOf("B:teardown", leakFindings);
     checks.push(teardown);
-    request.onCheck?.(teardown);
+    await request.onCheck?.(teardown);
     return {
       llmTokens: 0,
       passed: findings.length === 0,
-      kind: request.kind,
+      kind,
       checks,
       findings,
       routes,

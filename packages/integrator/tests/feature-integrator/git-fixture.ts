@@ -4,9 +4,9 @@ import path from "node:path";
 import { gitOk, revParse } from "../../src/feature-integrator/git.js";
 import type { HttpMethod, IntegratorWiringNeed, SeamId, WiringKind } from "../../src/feature-integrator/types.js";
 
-export function initRepo(): string {
+export async function initRepo(): Promise<string> {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ef-fi-"));
-  gitOk({ repo, args: ["init", "-b", "main"] });
+  await gitOk({ repo, args: ["init", "-b", "main"] });
   return repo;
 }
 
@@ -14,14 +14,14 @@ export function removeRepo(repo: string): void {
   fs.rmSync(repo, { recursive: true, force: true });
 }
 
-export function commitAll(
+export async function commitAll(
   repo: string,
   branch: string,
   files: Readonly<Record<string, string>>,
   message: string,
   startAt?: string,
-): string {
-  gitOk({
+): Promise<string> {
+  await gitOk({
     repo,
     args: startAt ? ["checkout", "-B", branch, startAt] : ["checkout", "-B", branch],
   });
@@ -30,17 +30,17 @@ export function commitAll(
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, text.endsWith("\n") ? text : `${text}\n`, "utf8");
   }
-  gitOk({ repo, args: ["add", "--", ...Object.keys(files)] });
-  gitOk({ repo, args: ["commit", "-m", message] });
+  await gitOk({ repo, args: ["add", "--", ...Object.keys(files)] });
+  await gitOk({ repo, args: ["commit", "-m", message] });
   return revParse(repo, "HEAD");
 }
 
-export function pointRef(repo: string, ref: string, sha: string): void {
-  gitOk({ repo, args: ["update-ref", ref, sha] });
+export async function pointRef(repo: string, ref: string, sha: string): Promise<void> {
+  await gitOk({ repo, args: ["update-ref", ref, sha] });
 }
 
-export function porcelain(repo: string): string {
-  return gitOk({ repo, args: ["status", "--porcelain"] }).stdout;
+export async function porcelain(repo: string): Promise<string> {
+  return (await gitOk({ repo, args: ["status", "--porcelain"] })).stdout;
 }
 
 export function wiringNeed(input: {

@@ -32,8 +32,8 @@ export function parseMergeTreeOutput(stdout: string): ParsedMergeTree {
     if (!line.includes("\t")) paths.push(line.trim());
   }
   const unique: string[] = [];
-  for (const path of paths) {
-    if (!unique.includes(path)) unique.push(path);
+  for (const filePath of paths) {
+    if (!unique.includes(filePath)) unique.push(filePath);
   }
   return { treeOid, paths: unique, messages };
 }
@@ -43,8 +43,12 @@ export function parseMergeTreeOutput(stdout: string): ParsedMergeTree {
  * and reads conflict hunks from the result tree in the object database.
  */
 export class MergeTreePreflightScanner {
-  scan(input: { readonly repo: string; readonly ours: string; readonly theirs: string }): PreflightReport {
-    const gitResult = runGit({
+  async scan(input: {
+    readonly repo: string;
+    readonly ours: string;
+    readonly theirs: string;
+  }): Promise<PreflightReport> {
+    const gitResult = await runGit({
       repo: input.repo,
       args: ["merge-tree", "--write-tree", "--name-only", "--messages", input.ours, input.theirs],
     });
@@ -56,11 +60,11 @@ export class MergeTreePreflightScanner {
       throw new GitCommandError("merge-tree", gitResult.status, "missing result tree oid");
     }
     const conflicts: PreflightConflict[] = [];
-    for (const path of parsed.paths) {
-      const conflicted = tryReadPath(input.repo, parsed.treeOid, path) ?? "";
-      const hunks = parseConflictHunks(path, conflicted);
+    for (const conflictPath of parsed.paths) {
+      const conflicted = (await tryReadPath(input.repo, parsed.treeOid, conflictPath)) ?? "";
+      const hunks = parseConflictHunks(conflictPath, conflicted);
       conflicts.push({
-        path,
+        path: conflictPath,
         hunks,
         oursText: reconstructSide(conflicted, "ours"),
         theirsText: reconstructSide(conflicted, "theirs"),

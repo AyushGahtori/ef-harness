@@ -13,7 +13,7 @@ interface ScriptedTurn {
 }
 
 /**
- * Deterministic in-memory model. Tests enqueue outputs. Nothing is sent over the network.
+ * Async deterministic in-memory model. Tests enqueue outputs. Nothing is sent over the network.
  */
 export class FakeModelAdapter implements SpecialistModel {
   readonly calls: ModelCall[] = [];
@@ -24,7 +24,7 @@ export class FakeModelAdapter implements SpecialistModel {
     return this;
   }
 
-  complete(call: ModelCall): unknown {
+  async complete(call: ModelCall): Promise<unknown> {
     this.calls.push(call);
     const index = this.queue.findIndex((turn) => turn.role === call.role);
     if (index < 0) throw new UnscriptedModelError(call.role);

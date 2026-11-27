@@ -1,7 +1,10 @@
+import type { ProjectKind as CanonicalProjectKind } from "@ef-harness/shared-contracts";
 import type { ResidualChoice, ViewportWidth } from "./constants.js";
 
 export type FeatureState = "DONE" | "MERGED" | "WIRED" | "IN_PROGRESS" | "QUEUED";
-export type ProjectKind = "web" | "cli" | "openapi";
+export type ProjectKind = CanonicalProjectKind;
+export type LegacyProjectKindAlias = "web" | "cli" | "openapi";
+export type ProjectKindInput = CanonicalProjectKind | LegacyProjectKindAlias;
 export type FindingSeverity = "critical" | "high" | "medium" | "low";
 export type SuiteCaseKind = "leaf" | "feature_journey" | "sealed_hidden";
 export type ShardKind = "feature" | "seam" | "rule";
@@ -166,7 +169,7 @@ export interface CommandObservation {
 export interface LayerBReport {
   readonly llmTokens: 0;
   readonly passed: boolean;
-  readonly kind: ProjectKind;
+  readonly kind: ProjectKindInput;
   readonly checks: readonly AuditCheck[];
   readonly findings: readonly ConfirmedFinding[];
   readonly routes: readonly RouteObservation[];
@@ -294,7 +297,7 @@ export interface PlaywrightSessionFactory {
   open(): Promise<PlaywrightSession>;
 }
 
-/** Local port for Task 057 / sibling Task 062 `UiInteractionContractVerifier`. */
+/** Async port for Task 057 / sibling Task 062 `UiInteractionContractVerifier`. */
 export interface UiPlaywrightContractVerifierPort {
   inspect(input: { readonly url: string; readonly viewport: { readonly width: ViewportWidth; readonly height: number } }): Promise<PageInspection>;
 }
@@ -304,12 +307,12 @@ export interface CheckRunResult {
   readonly detail: string;
 }
 
-/** Local port for production build, typecheck, and lint commands. */
+/** Async port for production build, typecheck, and lint commands. */
 export interface CheckRunnerPort {
   run(check: "production_build" | "typecheck" | "lint", ref: typeof import("./constants.js").INTEGRATION_REF): Promise<CheckRunResult>;
 }
 
-/** Local port for Task 055 / sibling Task 060 `CleanVerifierRunner`. */
+/** Async port for Task 055 / sibling Task 060 `CleanVerifierRunner`. */
 export interface CleanVerifierHarnessPort {
   runCombined(input: { readonly ref: typeof import("./constants.js").INTEGRATION_REF; readonly label: string }): Promise<{
     readonly passed: boolean;
@@ -331,12 +334,17 @@ export interface CommandExecutor {
 }
 
 export interface StaticAuditGatePort {
-  auditFeature(snapshot: RepoSnapshot): {
-    readonly passed: boolean;
-    readonly findings: readonly ConfirmedFinding[];
-  };
+  auditFeature(snapshot: RepoSnapshot):
+    | {
+        readonly passed: boolean;
+        readonly findings: readonly ConfirmedFinding[];
+      }
+    | Promise<{
+        readonly passed: boolean;
+        readonly findings: readonly ConfirmedFinding[];
+      }>;
 }
 
 export interface SecretScannerPort {
-  scan(files: readonly RepoFile[]): readonly ConfirmedFinding[];
+  scan(files: readonly RepoFile[]): readonly ConfirmedFinding[] | Promise<readonly ConfirmedFinding[]>;
 }

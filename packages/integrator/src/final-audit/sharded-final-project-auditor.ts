@@ -1,3 +1,9 @@
+import type {
+  AdapterCallOptions,
+  ModelProfile,
+  ModelProtocolAdapter,
+  ModelRoute,
+} from "@ef-harness/worker-loop";
 import { DEFAULT_SHARD_CONCURRENCY, MAX_SHARD_TOKENS, isCrossCuttingRuleId } from "./constants.js";
 import { gateAuditorFindings } from "./evidence-gate.js";
 import { ShardContextError } from "./errors.js";
@@ -29,7 +35,58 @@ export interface ShardAuditRequest {
   readonly fixCostUnits: bigint;
   readonly concurrency?: number;
   readonly forceShardIds?: readonly string[];
-  readonly onShard?: (run: ShardRun) => void;
+  readonly onShard?: (run: ShardRun) => void | Promise<void>;
+}
+
+/** Adapts `@ef-harness/worker-loop` `ModelProtocolAdapter` to `FinalProjectAuditorModel`. */
+export function adaptFinalProjectAuditorModel(
+  adapter: ModelProtocolAdapter,
+  config: {
+    readonly model: string;
+    readonly profile: ModelProfile;
+    readonly route: ModelRoute;
+    readonly callOptions: AdapterCallOptions;
+    readonly systemPrompt?: string;
+    readonly reservedOutputTokens?: number;
+  },
+): FinalProjectAuditorModel {
+  let seq = 0;
+  return {
+    async audit(input) {
+      seq += 1;
+      const stream = adapter.stream(
+        {
+          model: config.model,
+          profile: config.profile,
+          route: config.route,
+          prefix: {
+            zone1: config.systemPrompt ?? "You are final-project-auditor@1 reviewing one bounded shard.",
+            zone2: "Return strict FinalProjectAuditorV1 JSON.",
+          },
+          messages: [{ role: "user", text: input.prompt }],
+          tools: [],
+          replayItems: [],
+          reservedOutputTokens: config.reservedOutputTokens ?? 1024,
+          clientRequestId: `final-audit-${input.shardId}-${seq}`,
+          idempotencyKey: `final-audit-${input.shardId}-${seq}`,
+        },
+        config.callOptions,
+      );
+      let structured: unknown;
+      let text = "";
+      for await (const event of stream) {
+        if (event.type === "structured_output") {
+          structured = event.parsed;
+        } else if (event.type === "text_delta") {
+          text += event.text;
+        } else if (event.type === "error") {
+          throw new Error(event.error.message);
+        }
+      }
+      if (structured !== undefined) return structured;
+      return JSON.parse(text) as unknown;
+    },
+  };
 }
 
 function mergeSlices(kind: ShardKind, slices: readonly ShardSlice[]): PlannedShard[] {
@@ -101,7 +158,10 @@ function renderPrompt(shard: PlannedShard, receiptSummary: string): string {
   ].join("\n");
 }
 
-export function boundShardPrompt(shard: PlannedShard, receiptSummary: string): { readonly prompt: string; readonly tokenEstimate: number } {
+export function boundShardPrompt(
+  shard: PlannedShard,
+  receiptSummary: string,
+): { readonly prompt: string; readonly tokenEstimate: number } {
   let files = shard.files.map((file) => ({ path: file.path, content: file.content }));
   let diff = shard.diff;
   const render = (): string =>
@@ -120,7 +180,10 @@ export function boundShardPrompt(shard: PlannedShard, receiptSummary: string): {
     const target = files[index];
     if (!target) break;
     const next = files.slice();
-    next[index] = { path: target.path, content: target.content.slice(0, Math.floor(target.content.length / 2)) };
+    next[index] = {
+      path: target.path,
+      content: target.content.slice(0, Math.floor(target.content.length / 2)),
+    };
     files = next;
     prompt = render();
   }
@@ -183,12 +246,12 @@ export class ShardedFinalProjectAuditor {
   }
 
   private async auditOne(request: ShardAuditRequest, shard: PlannedShard): Promise<ShardRun> {
-    const finish = (run: ShardRun): ShardRun => {
-      request.onShard?.(run);
+    const finish = async (run: ShardRun): Promise<ShardRun> => {
+      await request.onShard?.(run);
       return run;
     };
     const bounded = boundShardPrompt(shard, request.receiptSummary);
-    const reservation = request.ledger.reserveAcrossScopes({
+    const reservation = await request.ledger.reserveAcrossScopes({
       scopeId: request.auditScopeId,
       units: request.costPerShardUnits,
       purpose: "final_audit",
@@ -211,9 +274,9 @@ export class ShardedFinalProjectAuditor {
         prompt: bounded.prompt,
         tokenEstimate: bounded.tokenEstimate,
       });
-      request.ledger.settleReservation(reservation.reservationId);
+      await request.ledger.settleReservation(reservation.reservationId);
     } catch (error) {
-      request.ledger.releaseReservation(reservation.reservationId);
+      await request.ledger.releaseReservation(reservation.reservationId);
       throw error;
     }
     try {

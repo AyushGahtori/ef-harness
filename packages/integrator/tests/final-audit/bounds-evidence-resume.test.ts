@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { bindBudgetLedger, openProjectStateDb } from "@ef-harness/db";
 
-import { CompletionWaveController } from "../../src/final-audit/completion-wave-controller.js";
+import { CompletionWaveController, FeatureIntegratorEngine, LandingSummaryGenerator, bindBudgetLedgerRepo } from "../../src/index.js";
 import { GREEN_VERDICT, needsReviewVerdict, RESIDUAL_CHOICES } from "../../src/final-audit/constants.js";
 import { DeterministicRepoAuditor } from "../../src/final-audit/deterministic-repo-auditor.js";
 import { CompletionWaveNotReadyError } from "../../src/final-audit/errors.js";
@@ -318,5 +322,77 @@ describe("completion wave bounds, evidence, regression, and resume", () => {
     expect(resumed.summary.readyToLand).toBe(true);
     store.close();
     shardStore.close();
+  });
+
+  it("persists state in caller ProjectStateDb, enforces <= 2 rounds & <= 10% budget via BudgetLedgerRepo.getScopeSnapshot, and exports from root barrel", async () => {
+    expect(typeof FeatureIntegratorEngine).toBe("function");
+    expect(typeof CompletionWaveController).toBe("function");
+    expect(typeof LandingSummaryGenerator).toBe("function");
+
+    const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "ef-fa-db-"));
+    const stateDb = openProjectStateDb({ projectId: "kitchen-live", rootDir: dbDir });
+    try {
+      const ledger = bindBudgetLedgerRepo(bindBudgetLedger(stateDb));
+      const controller = new CompletionWaveController({ stateDb });
+      let auditCalls = 0;
+      const result = await controller.run(
+        waveRequest({
+          projectId: "kitchen-live",
+          kind: "cli_tool",
+          projectBudgetUnits: 1_000n,
+          defaultFixCostUnits: 50n,
+          ledger,
+          snapshot: appSnapshot(),
+          shardInputs: {
+            features: [
+              {
+                id: "F-Orders",
+                requirements: [{ id: "SI-1", text: "Staff can order lunch" }],
+                files: [{ path: "src/app.ts", content: "export const app = 1;\n" }],
+                diff: "diff app",
+              },
+            ],
+            seams: [],
+            rules: [],
+          },
+          model: {
+            async audit() {
+              auditCalls += 1;
+              return {
+                missing: [
+                  {
+                    requirement: "SI-1",
+                    location: "src/app.ts:1",
+                    detail: `missing tax calculation round ${auditCalls}`,
+                  },
+                ],
+                stubbed: [],
+                unhandled_edge_cases: [],
+                weak_checks: [],
+                verdict: "incomplete",
+              };
+            },
+          },
+          fixExecutor: {
+            async apply() {
+              return { changedFiles: ["src/app.ts"] };
+            },
+          },
+        }),
+      );
+      expect(result.fixRounds).toBeLessThanOrEqual(2);
+      expect(result.fixRounds).toBe(2);
+      expect(result.roundCapHit).toBe(true);
+      expect(result.summary.spend.auditFixCapUnits).toBe(100n);
+      expect(result.summary.spend.auditFixUnits).toBe(100n);
+      const fixSnap = await ledger.getScopeSnapshot("feature", "kitchen-live:audit-fix");
+      expect(fixSnap.hardStop).toBe(true);
+      expect(fixSnap.spentUnits).toBe(100n);
+      const reopened = FinalAuditStore.fromState(stateDb);
+      expect(reopened.readSummary(result.runId)?.readyToLand).toBe(false);
+    } finally {
+      stateDb.close();
+      fs.rmSync(dbDir, { recursive: true, force: true });
+    }
   });
 });

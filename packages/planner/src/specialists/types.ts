@@ -1,6 +1,5 @@
 /**
  * Specialist review and live Q&A types.
- * Sibling contracts that are not on this base are local ports. See the task handoff.
  */
 
 export const HIGH_RISK_TOUCHES = [
@@ -248,6 +247,9 @@ export interface TasteReviewRequest {
   readonly knownFiles: readonly string[];
   readonly knownNodeIds: readonly string[];
   readonly knownReceiptIds: readonly string[];
+  readonly repoRoot?: string;
+  readonly fileContents?: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
+  readonly fileLineCounts?: ReadonlyMap<string, number> | Readonly<Record<string, number>>;
 }
 
 export interface TasteFinding {
@@ -326,6 +328,7 @@ export interface AskOwnerSchemaPayload {
 export interface ClickableCitation {
   readonly kind: "node" | "file" | "receipt";
   readonly id: string;
+  readonly label: string;
   readonly href: string;
 }
 
@@ -352,6 +355,7 @@ export interface OwnerAnswer {
   readonly grounded: true;
   readonly guessed: false;
   readonly text: string;
+  readonly llmCalls: number;
 }
 
 export interface GraphNode {
@@ -399,5 +403,5 @@ export interface ModelCall {
 }
 
 export interface SpecialistModel {
-  complete(call: ModelCall): unknown;
+  complete(call: ModelCall): Promise<unknown>;
 }

@@ -1,7 +1,16 @@
-export { InMemoryBudgetLedger } from "./budget.js";
-export type { BudgetLedgerPort, Reservation } from "./budget.js";
+export { InMemoryBudgetLedger, bindBudgetLedgerRepo } from "./budget.js";
+export type {
+  BudgetLedgerPort,
+  BudgetLedgerRepoBindingOptions,
+  Reservation,
+  ScopeBudgetSnapshot,
+} from "./budget.js";
 export { CompletionWaveController } from "./completion-wave-controller.js";
-export type { CompletionWaveControllerDeps, CompletionWaveRequest, CompletionWaveResult } from "./completion-wave-controller.js";
+export type {
+  CompletionWaveControllerDeps,
+  CompletionWaveRequest,
+  CompletionWaveResult,
+} from "./completion-wave-controller.js";
 export {
   AUDIT_BUDGET_PERCENT,
   CROSS_CUTTING_RULE_IDS,
@@ -22,7 +31,14 @@ export {
   percentOf,
 } from "./constants.js";
 export type { CrossCuttingRuleId, ResidualChoice, ViewportWidth } from "./constants.js";
-export { DeterministicRepoAuditor, combineLayerA, regressionsAgainst } from "./deterministic-repo-auditor.js";
+export {
+  DeterministicRepoAuditor,
+  bindCleanVerifierCombinedHarness,
+  bindCompletenessGateStaticAudit,
+  bindGitSafetySecretScanner,
+  combineLayerA,
+  regressionsAgainst,
+} from "./deterministic-repo-auditor.js";
 export { gateAuditorFindings, parseLocation } from "./evidence-gate.js";
 export {
   CompletionWaveNotReadyError,
@@ -32,7 +48,14 @@ export {
 } from "./errors.js";
 export { LandingSummaryGenerator } from "./landing-summary.js";
 export type { LandingSummaryInput } from "./landing-summary.js";
-export { LiveRouteCrawler, createHttpPlaywrightSessionFactory, createHttpPlaywrightVerifier, probeDocument } from "./live-route-crawler.js";
+export {
+  LiveRouteCrawler,
+  bindUiInteractionContractBrowser,
+  canonicalProjectKind,
+  createHttpPlaywrightSessionFactory,
+  createHttpPlaywrightVerifier,
+  probeDocument,
+} from "./live-route-crawler.js";
 export type { CrawlRequest } from "./live-route-crawler.js";
 export {
   createLocalSecretScanner,
@@ -50,7 +73,12 @@ export type {
   LocatedFinding,
   WeakCheckFinding,
 } from "./schema.js";
-export { ShardedFinalProjectAuditor, boundShardPrompt, planShards } from "./sharded-final-project-auditor.js";
+export {
+  ShardedFinalProjectAuditor,
+  adaptFinalProjectAuditorModel,
+  boundShardPrompt,
+  planShards,
+} from "./sharded-final-project-auditor.js";
 export type { ShardAuditRequest } from "./sharded-final-project-auditor.js";
 export { FinalAuditStore } from "./state-db.js";
 export { estimateTokens, findingFingerprint, makeFinding, markerPattern, secretRules } from "./text.js";
@@ -69,6 +97,7 @@ export type {
   ConfirmedFinding,
   ConnectionSpend,
   CountTrio,
+  FeatureState,
   FinalProjectAuditorModel,
   FindingSeverity,
   FixExecutor,
@@ -77,6 +106,7 @@ export type {
   LayerBReport,
   LedgerNote,
   LedgerRecap,
+  LegacyProjectKindAlias,
   OpenApiOperation,
   PageInspection,
   PageMetrics,
@@ -86,6 +116,7 @@ export type {
   PlaywrightSession,
   PlaywrightSessionFactory,
   ProjectKind,
+  ProjectKindInput,
   Regression,
   RepoFile,
   RepoSnapshot,

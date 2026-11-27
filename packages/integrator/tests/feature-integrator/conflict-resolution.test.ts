@@ -1,6 +1,6 @@
 import { describe, expect, it as vitestIt } from "vitest";
 
-const it = (name: string, fn: () => void): void => {
+const it = (name: string, fn: () => void | Promise<void>): void => {
   vitestIt(name, fn, 120_000);
 };
 import {
@@ -27,32 +27,32 @@ const orderRoutes = [
 ].join("\n");
 
 describe("scoped conflict resolution", () => {
-  it("merges both route imports, keeps both paths, and passes typecheck plus route tests", () => {
-    const repo = initRepo();
+  it("merges both route imports, keeps both paths, and passes typecheck plus route tests", async () => {
+    const repo = await initRepo();
     try {
-      const base = commitAll(
+      const base = await commitAll(
         repo,
         "main",
         { "src/routes/index.ts": "export const routes = [] as { path: string; router: () => string }[];\n" },
         "base",
       );
-      const menu = commitAll(
+      const menu = await commitAll(
         repo,
         "menu",
         { "src/routes/index.ts": menuRoutes, "src/routes/menu.ts": menuModule },
         "menu",
         base,
       );
-      const order = commitAll(
+      const order = await commitAll(
         repo,
         "order",
         { "src/routes/index.ts": orderRoutes, "src/routes/orders.ts": orderModule },
         "order",
         base,
       );
-      const report = new MergeTreePreflightScanner().scan({ repo, ours: menu, theirs: order });
+      const report = await new MergeTreePreflightScanner().scan({ repo, ours: menu, theirs: order });
       expect(report.conflicts.map((conflict) => conflict.path)).toContain("src/routes/index.ts");
-      const resolved = resolvePreflight({
+      const resolved = await resolvePreflight({
         repo,
         report,
         objectives: [
@@ -73,55 +73,55 @@ describe("scoped conflict resolution", () => {
     }
   });
 
-  it("rejects a resolution that drops one side or edits an unrelated file", () => {
-    const repo = initRepo();
+  it("rejects a resolution that drops one side or edits an unrelated file", async () => {
+    const repo = await initRepo();
     try {
-      const base = commitAll(
+      const base = await commitAll(
         repo,
         "main",
         { "src/routes/index.ts": "export const routes = [] as { path: string; router: () => string }[];\n" },
         "base",
       );
-      const menu = commitAll(
+      const menu = await commitAll(
         repo,
         "menu",
         { "src/routes/index.ts": menuRoutes, "src/routes/menu.ts": menuModule },
         "menu",
         base,
       );
-      const order = commitAll(
+      const order = await commitAll(
         repo,
         "order",
         { "src/routes/index.ts": orderRoutes, "src/routes/orders.ts": orderModule },
         "order",
         base,
       );
-      const report = new MergeTreePreflightScanner().scan({ repo, ours: menu, theirs: order });
-      expect(() =>
+      const report = await new MergeTreePreflightScanner().scan({ repo, ours: menu, theirs: order });
+      await expect(
         resolvePreflight({
           repo,
           report,
           objectives: [],
           overrides: [{ path: "src/routes/index.ts", text: menuRoutes }],
         }),
-      ).toThrow(DroppedSideError);
-      expect(() =>
+      ).rejects.toThrow(DroppedSideError);
+      await expect(
         resolvePreflight({
           repo,
           report,
           objectives: [],
           overrides: [{ path: "src/unrelated.ts", text: "export const extra = 1;\n" }],
         }),
-      ).toThrow(UnrelatedEditError);
+      ).rejects.toThrow(UnrelatedEditError);
     } finally {
       removeRepo(repo);
     }
   });
 
-  it("rejects an integrator patch that skips a conflicted leaf test", () => {
-    const repo = initRepo();
+  it("rejects an integrator patch that skips a conflicted leaf test", async () => {
+    const repo = await initRepo();
     try {
-      const base = commitAll(
+      const base = await commitAll(
         repo,
         "main",
         {
@@ -129,7 +129,7 @@ describe("scoped conflict resolution", () => {
         },
         "base",
       );
-      const menu = commitAll(
+      const menu = await commitAll(
         repo,
         "menu",
         {
@@ -139,7 +139,7 @@ describe("scoped conflict resolution", () => {
         "menu",
         base,
       );
-      const order = commitAll(
+      const order = await commitAll(
         repo,
         "order",
         {
@@ -149,8 +149,8 @@ describe("scoped conflict resolution", () => {
         "order",
         base,
       );
-      const report = new MergeTreePreflightScanner().scan({ repo, ours: menu, theirs: order });
-      expect(() =>
+      const report = await new MergeTreePreflightScanner().scan({ repo, ours: menu, theirs: order });
+      await expect(
         resolvePreflight({
           repo,
           report,
@@ -170,7 +170,7 @@ describe("scoped conflict resolution", () => {
             },
           ],
         }),
-      ).toThrow(TestWeakeningError);
+      ).rejects.toThrow(TestWeakeningError);
     } finally {
       removeRepo(repo);
     }

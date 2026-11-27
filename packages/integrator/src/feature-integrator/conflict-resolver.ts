@@ -16,13 +16,13 @@ export interface ConflictResolution {
   readonly summaries: readonly { readonly path: string; readonly summary: string }[];
 }
 
-export function resolvePreflight(input: {
+export async function resolvePreflight(input: {
   readonly repo: string;
   readonly report: PreflightReport;
   readonly objectives: readonly { readonly taskId: string; readonly objective: string }[];
   readonly overrides?: readonly FileText[];
   readonly extraAllowed?: readonly string[];
-}): ConflictResolution {
+}): Promise<ConflictResolution> {
   const packet: ScopedConflictPacket = {
     hunks: input.report.conflicts.flatMap((conflict) => conflict.hunks),
     objectives: input.objectives,
@@ -33,10 +33,11 @@ export function resolvePreflight(input: {
     ...(input.extraAllowed ?? []),
   ]);
   const overrides = input.overrides ?? [];
+  const treeSnapshot = await snapshotFiles(input.repo, input.report.treeOid);
   for (const override of overrides) {
     if (!allowed.has(override.path)) {
       if (isTestPath(override.path)) {
-        const previous = snapshotFiles(input.repo, input.report.treeOid).get(override.path) ?? "";
+        const previous = treeSnapshot.get(override.path) ?? "";
         assertNoTestWeakening([{ path: override.path, text: previous }], [override]);
       }
       throw new UnrelatedEditError(override.path);
@@ -49,7 +50,7 @@ export function resolvePreflight(input: {
       ? override.text
       : resolveConflictText({
           path: conflict.path,
-          conflicted: snapshotText(input.repo, input.report.treeOid, conflict.path),
+          conflicted: treeSnapshot.get(conflict.path) ?? "",
           hunks: conflict.hunks,
           oursText: conflict.oursText,
           theirsText: conflict.theirsText,
@@ -58,14 +59,14 @@ export function resolvePreflight(input: {
     files.push({ path: conflict.path, text });
   }
   assertAllowedPaths(files.map((file) => file.path), allowed);
-  const before = testFiles(snapshotFiles(input.repo, input.report.treeOid));
-  const afterMap = snapshotFiles(input.repo, input.report.treeOid);
+  const before = testFiles(treeSnapshot);
+  const afterMap = new Map(treeSnapshot);
   for (const file of files) afterMap.set(file.path, file.text);
   assertNoTestWeakening(before, testFiles(afterMap));
   const support = [...afterMap.entries()]
     .filter(([filePath]) => filePath.endsWith(".ts") || filePath.endsWith(".tsx"))
     .map(([filePath, text]) => ({ path: filePath, text }));
-  verifyRouteResolution(support);
+  await verifyRouteResolution(support);
   return {
     files,
     prompt,
@@ -74,10 +75,6 @@ export function resolvePreflight(input: {
       summary: `Kept both sides of ${file.path}`,
     })),
   };
-}
-
-function snapshotText(repo: string, treeOid: string, path: string): string {
-  return snapshotFiles(repo, treeOid).get(path) ?? "";
 }
 
 function testFiles(files: ReadonlyMap<string, string>): { path: string; text: string }[] {

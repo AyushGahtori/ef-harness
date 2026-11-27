@@ -1,9 +1,11 @@
+import type { ProjectStateDb } from "@ef-harness/db";
+import { isUiProjectKind } from "@ef-harness/shared-contracts";
 import type { BudgetLedgerPort, Reservation } from "./budget.js";
 import { INTEGRATION_REF, MAX_FIX_ROUNDS, VIEWPORTS } from "./constants.js";
 import { combineLayerA, DeterministicRepoAuditor, regressionsAgainst } from "./deterministic-repo-auditor.js";
 import { CompletionWaveNotReadyError } from "./errors.js";
 import { LandingSummaryGenerator } from "./landing-summary.js";
-import { LiveRouteCrawler } from "./live-route-crawler.js";
+import { canonicalProjectKind, LiveRouteCrawler } from "./live-route-crawler.js";
 import { ShardedFinalProjectAuditor } from "./sharded-final-project-auditor.js";
 import { FinalAuditStore } from "./state-db.js";
 import type {
@@ -26,7 +28,7 @@ import type {
   PlannedFeature,
   PlannedShard,
   PlannedWave,
-  ProjectKind,
+  ProjectKindInput,
   Regression,
   RepoSnapshot,
   ShardInputs,
@@ -43,7 +45,7 @@ export interface CompletionWaveRequest {
   readonly snapshot: RepoSnapshot;
   readonly catalog: CanonicalCatalog;
   readonly shardInputs: ShardInputs;
-  readonly kind: ProjectKind;
+  readonly kind: ProjectKindInput;
   readonly routes: readonly WebRoute[];
   readonly commands: readonly CliCommandSpec[];
   readonly operations: readonly OpenApiOperation[];
@@ -78,6 +80,7 @@ export interface CompletionWaveResult {
 }
 
 export interface CompletionWaveControllerDeps {
+  readonly stateDb?: ProjectStateDb;
   readonly store?: FinalAuditStore;
   readonly auditor?: DeterministicRepoAuditor;
   readonly crawler?: LiveRouteCrawler;
@@ -120,10 +123,11 @@ function mergeShards(previous: readonly ShardRun[], next: readonly ShardRun[]): 
 }
 
 function layerBIds(request: CompletionWaveRequest): string[] {
-  if (request.kind === "web") {
+  const kind = canonicalProjectKind(request.kind);
+  if (isUiProjectKind(kind)) {
     return request.routes.flatMap((route) => VIEWPORTS.map((viewport) => `B:route:${route.path}@${viewport}`));
   }
-  if (request.kind === "cli") return request.commands.map((command) => `B:cli:${command.argv.join(" ")}`);
+  if (kind === "cli_tool") return request.commands.map((command) => `B:cli:${command.argv.join(" ")}`);
   return request.operations.map((operation) => `B:openapi:${operation.method} ${operation.path}`);
 }
 
@@ -139,8 +143,16 @@ export class CompletionWaveController {
   private readonly ownsStore: boolean;
 
   constructor(private readonly deps: CompletionWaveControllerDeps = {}) {
-    this.ownsStore = deps.store === undefined;
-    this.store = deps.store ?? FinalAuditStore.open();
+    if (deps.store !== undefined) {
+      this.ownsStore = false;
+      this.store = deps.store;
+    } else if (deps.stateDb !== undefined) {
+      this.ownsStore = false;
+      this.store = FinalAuditStore.fromState(deps.stateDb);
+    } else {
+      this.ownsStore = true;
+      this.store = FinalAuditStore.open();
+    }
     this.crawler = deps.crawler ?? new LiveRouteCrawler();
     this.sharded = deps.sharded ?? new ShardedFinalProjectAuditor();
     this.summaries = deps.summaries ?? new LandingSummaryGenerator();
@@ -153,7 +165,7 @@ export class CompletionWaveController {
   async run(request: CompletionWaveRequest): Promise<CompletionWaveResult> {
     this.assertReady(request);
     const auditor = this.auditorFor(request);
-    const scopes = request.ledger.ensureCompletionScopes({
+    const scopes = await request.ledger.ensureCompletionScopes({
       projectId: request.projectId,
       projectLimitUnits: request.projectBudgetUnits,
     });
@@ -179,10 +191,15 @@ export class CompletionWaveController {
         roundCapHit = true;
         break;
       }
+      const fixSnapshot = await request.ledger.getScopeSnapshot("feature", scopes.fixScopeId);
+      if (fixSnapshot.hardStop || fixSnapshot.remainingUnits <= 0n) {
+        budgetCapHit = true;
+        break;
+      }
       const batch: ConfirmedFinding[] = [];
       const reservations: Reservation[] = [];
       for (const finding of pending) {
-        const reservation = request.ledger.reserveAcrossScopes({
+        const reservation = await request.ledger.reserveAcrossScopes({
           scopeId: scopes.fixScopeId,
           units: finding.fixCostUnits,
           purpose: "audit_fix",
@@ -199,7 +216,9 @@ export class CompletionWaveController {
       const tasks = batch.map((finding) => this.toTask(finding, fixRounds));
       try {
         const applied = await request.fixExecutor.apply(tasks);
-        for (const reservation of reservations) request.ledger.settleReservation(reservation.reservationId);
+        for (const reservation of reservations) {
+          await request.ledger.settleReservation(reservation.reservationId);
+        }
         for (const finding of batch) attempted.add(finding.fingerprint);
         fixTasks.push(...tasks);
         this.store.saveFixRounds(runId, fixRounds);
@@ -222,17 +241,21 @@ export class CompletionWaveController {
         }
         latestFindings = collect(latestA, latestB, shards);
       } catch (error) {
-        for (const reservation of reservations) request.ledger.releaseReservation(reservation.reservationId);
+        for (const reservation of reservations) {
+          await request.ledger.releaseReservation(reservation.reservationId);
+        }
         throw error;
       }
     }
 
+    const fixScopeSnap = await request.ledger.getScopeSnapshot("feature", scopes.fixScopeId);
+    const auditScopeSnap = await request.ledger.getScopeSnapshot("wave_paperwork", scopes.auditScopeId);
     const unresolvedBlocking = latestFindings.some(
       (finding) => !finding.advisory && finding.severity !== "low" && !waived.has(finding.fingerprint),
     );
     if (
       !budgetCapHit &&
-      request.ledger.getBudgetRemaining(scopes.fixScopeId) === 0n &&
+      (fixScopeSnap.hardStop || fixScopeSnap.remainingUnits === 0n) &&
       (unresolvedBlocking || regressions.length > 0)
     ) {
       budgetCapHit = true;
@@ -251,9 +274,9 @@ export class CompletionWaveController {
       fixRounds,
       budgetCapHit,
       roundCapHit,
-      auditFixUnits: scopes.fixLimitUnits - request.ledger.getBudgetRemaining(scopes.fixScopeId),
+      auditFixUnits: scopes.fixLimitUnits - fixScopeSnap.remainingUnits,
       auditFixCapUnits: scopes.fixLimitUnits,
-      finalAuditUnits: scopes.auditLimitUnits - request.ledger.getBudgetRemaining(scopes.auditScopeId),
+      finalAuditUnits: scopes.auditLimitUnits - auditScopeSnap.remainingUnits,
       finalAuditCapUnits: scopes.auditLimitUnits,
     });
     this.store.saveSummary(runId, summary);

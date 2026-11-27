@@ -1,37 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
-
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  bindKnowledgeGraph,
+  openProjectStateDb,
+  type KnowledgeGraphRepo,
+  type ProjectStateDb,
+} from "@ef-harness/db";
 import { FinalAuditError } from "./errors.js";
 import type { AuditCheck, LandingSummary, ShardRun } from "./types.js";
-
-const MIGRATION = `
-CREATE TABLE IF NOT EXISTS final_audit_runs (
-  run_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('open', 'complete')),
-  fix_rounds INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS final_audit_checks (
-  run_id TEXT NOT NULL,
-  check_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  PRIMARY KEY (run_id, check_id)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS final_audit_shards (
-  run_id TEXT NOT NULL,
-  shard_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  PRIMARY KEY (run_id, shard_id)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS final_audit_summaries (
-  run_id TEXT PRIMARY KEY,
-  payload_json TEXT NOT NULL
-) STRICT;
-`;
 
 function encode(value: unknown): unknown {
   if (typeof value === "bigint") return { $u: value.toString() };
@@ -58,114 +36,245 @@ function decode(value: unknown): unknown {
   return value;
 }
 
-function toJson(value: unknown): string {
-  return JSON.stringify(encode(value));
-}
-
-function fromJson<T>(payload: string, label: string): T {
+function parseNodeFields<T>(fieldsText: unknown, label: string): T {
+  if (typeof fieldsText !== "string") {
+    throw new FinalAuditError("corrupt_checkpoint", `${label} checkpoint is missing JSON fields`);
+  }
   try {
-    return decode(JSON.parse(payload) as unknown) as T;
+    return decode(JSON.parse(fieldsText) as unknown) as T;
   } catch {
     throw new FinalAuditError("corrupt_checkpoint", `${label} checkpoint is not JSON`);
   }
 }
 
-/** Crash-resumable completion-wave checkpoint. Tables are additive until schema/ can adopt them. */
-export class FinalAuditStore {
-  private constructor(private readonly db: DatabaseSync) {}
+interface StoredRunFields {
+  readonly recordType: "final_audit_run";
+  readonly runId: string;
+  readonly projectId: string;
+  readonly status: "open" | "complete";
+  readonly fixRounds: number;
+  readonly createdAt: number;
+}
 
-  static open(path = ":memory:"): FinalAuditStore {
-    const db = new DatabaseSync(path);
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec(MIGRATION);
-    return new FinalAuditStore(db);
+interface StoredPayloadFields<T> {
+  readonly recordType: string;
+  readonly runId: string;
+  readonly payload: T;
+  readonly shardId?: string;
+  readonly checkId?: string;
+}
+
+/**
+ * Crash-resumable completion-wave checkpoint persisted in canonical `@ef-harness/db`
+ * `ProjectStateDb` (`nodes` + `change_sets` via `KnowledgeGraphRepo`), with zero private SQLite DDL.
+ */
+export class FinalAuditStore {
+  private readonly kg: KnowledgeGraphRepo;
+
+  private constructor(
+    readonly stateDb: ProjectStateDb,
+    private readonly ownsState: boolean,
+    private readonly cleanupDir: string | null,
+  ) {
+    this.kg = bindKnowledgeGraph(stateDb);
+  }
+
+  /** Binds to an already-open caller `ProjectStateDb` (`close()` does not close caller's handle). */
+  static fromState(stateDb: ProjectStateDb): FinalAuditStore {
+    return new FinalAuditStore(stateDb, false, null);
+  }
+
+  /** Opens a dedicated `ProjectStateDb` under `rootDir` (or an isolated temp dir for `:memory:` / omitted). */
+  static open(rootDirOrPath?: string, projectId?: string): FinalAuditStore {
+    let cleanupDir: string | null = null;
+    let rootDir: string;
+    if (rootDirOrPath === undefined || rootDirOrPath === ":memory:") {
+      cleanupDir = fs.mkdtempSync(path.join(os.tmpdir(), "ef-final-audit-"));
+      rootDir = cleanupDir;
+    } else {
+      rootDir = rootDirOrPath.endsWith(".db") ? path.dirname(rootDirOrPath) : rootDirOrPath;
+      fs.mkdirSync(rootDir, { recursive: true });
+    }
+    const id = projectId ?? `final-audit-${randomUUID()}`;
+    const stateDb = openProjectStateDb({ projectId: id, rootDir });
+    return new FinalAuditStore(stateDb, true, cleanupDir);
   }
 
   close(): void {
-    this.db.close();
+    if (this.ownsState) {
+      this.stateDb.close();
+    }
+    if (this.cleanupDir !== null) {
+      fs.rmSync(this.cleanupDir, { recursive: true, force: true });
+    }
   }
 
   beginRun(projectId: string): string {
-    const existing = this.db
-      .prepare(
-        "SELECT run_id FROM final_audit_runs WHERE project_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1",
-      )
-      .get(projectId) as { run_id: string } | undefined;
-    if (existing) return existing.run_id;
+    const existing = this.stateDb.writer.get(
+      `SELECT id, fields FROM nodes
+        WHERE kind = 'plan'
+          AND status = 'active'
+          AND json_extract(fields, '$.recordType') = 'final_audit_run'
+          AND json_extract(fields, '$.projectId') = ?
+          AND json_extract(fields, '$.status') = 'open'
+        ORDER BY json_extract(fields, '$.createdAt') DESC
+        LIMIT 1`,
+      [projectId],
+    ) as Readonly<Record<string, unknown>> | undefined;
+    if (existing) {
+      const parsed = parseNodeFields<StoredRunFields>(existing.fields, String(existing.id));
+      return parsed.runId;
+    }
     const runId = randomUUID();
-    this.db
-      .prepare("INSERT INTO final_audit_runs (run_id, project_id, status, fix_rounds, created_at) VALUES (?, ?, 'open', 0, ?)")
-      .run(runId, projectId, Date.now());
+    const fields: StoredRunFields = {
+      recordType: "final_audit_run",
+      runId,
+      projectId,
+      status: "open",
+      fixRounds: 0,
+      createdAt: Date.now(),
+    };
+    this.upsertNode(`final-audit:run:${runId}`, `Final Audit Run ${runId}`, fields);
     return runId;
   }
 
   completeRun(runId: string, fixRounds: number): void {
-    this.db.prepare("UPDATE final_audit_runs SET status = 'complete', fix_rounds = ? WHERE run_id = ?").run(fixRounds, runId);
+    const current = this.readRunNode(runId);
+    if (!current) return;
+    this.upsertNode(`final-audit:run:${runId}`, `Final Audit Run ${runId}`, {
+      ...current,
+      status: "complete",
+      fixRounds,
+    });
   }
 
   readFixRounds(runId: string): number {
-    const row = this.db.prepare("SELECT fix_rounds FROM final_audit_runs WHERE run_id = ?").get(runId) as
-      | { fix_rounds: number }
-      | undefined;
-    return row?.fix_rounds ?? 0;
+    return this.readRunNode(runId)?.fixRounds ?? 0;
   }
 
   saveFixRounds(runId: string, fixRounds: number): void {
-    this.db.prepare("UPDATE final_audit_runs SET fix_rounds = ? WHERE run_id = ?").run(fixRounds, runId);
+    const current = this.readRunNode(runId);
+    if (!current) return;
+    this.upsertNode(`final-audit:run:${runId}`, `Final Audit Run ${runId}`, {
+      ...current,
+      fixRounds,
+    });
   }
 
   readCheck(runId: string, checkId: string): AuditCheck | null {
-    const row = this.db
-      .prepare("SELECT payload_json FROM final_audit_checks WHERE run_id = ? AND check_id = ?")
-      .get(runId, checkId) as { payload_json: string } | undefined;
-    if (!row) return null;
-    return fromJson<AuditCheck>(row.payload_json, checkId);
+    const fields = this.readJsonNode<StoredPayloadFields<AuditCheck>>(
+      `final-audit:check:${runId}:${checkId}`,
+      checkId,
+    );
+    return fields?.payload ?? null;
   }
 
   saveCheck(runId: string, check: AuditCheck): void {
-    this.db
-      .prepare(
-        "INSERT INTO final_audit_checks (run_id, check_id, payload_json) VALUES (?, ?, ?) ON CONFLICT(run_id, check_id) DO UPDATE SET payload_json = excluded.payload_json",
-      )
-      .run(runId, check.id, toJson(check));
+    this.upsertNode(`final-audit:check:${runId}:${check.id}`, `Final Audit Check ${check.id}`, {
+      recordType: "final_audit_check",
+      runId,
+      checkId: check.id,
+      payload: encode(check),
+    });
   }
 
   readShard(runId: string, shardId: string): ShardRun | null {
-    const row = this.db
-      .prepare("SELECT payload_json FROM final_audit_shards WHERE run_id = ? AND shard_id = ?")
-      .get(runId, shardId) as { payload_json: string } | undefined;
-    if (!row) return null;
-    return fromJson<ShardRun>(row.payload_json, shardId);
+    const fields = this.readJsonNode<StoredPayloadFields<ShardRun>>(
+      `final-audit:shard:${runId}:${shardId}`,
+      shardId,
+    );
+    return fields?.payload ?? null;
   }
 
   saveShard(runId: string, run: ShardRun): void {
-    this.db
-      .prepare(
-        "INSERT INTO final_audit_shards (run_id, shard_id, payload_json) VALUES (?, ?, ?) ON CONFLICT(run_id, shard_id) DO UPDATE SET payload_json = excluded.payload_json",
-      )
-      .run(runId, run.shard.id, toJson(run));
+    this.upsertNode(`final-audit:shard:${runId}:${run.shard.id}`, `Final Audit Shard ${run.shard.id}`, {
+      recordType: "final_audit_shard",
+      runId,
+      shardId: run.shard.id,
+      payload: encode(run),
+    });
   }
 
   listShardIds(runId: string): string[] {
-    const rows = this.db.prepare("SELECT shard_id FROM final_audit_shards WHERE run_id = ? ORDER BY shard_id").all(runId) as {
-      shard_id: string;
-    }[];
-    return rows.map((row) => row.shard_id);
+    const rows = this.stateDb.writer.all(
+      `SELECT json_extract(fields, '$.shardId') AS shard_id
+         FROM nodes
+        WHERE kind = 'plan'
+          AND status = 'active'
+          AND json_extract(fields, '$.recordType') = 'final_audit_shard'
+          AND json_extract(fields, '$.runId') = ?
+        ORDER BY shard_id`,
+      [runId],
+    ) as Readonly<Record<string, unknown>>[];
+    return rows
+      .map((row) => row.shard_id)
+      .filter((value): value is string => typeof value === "string");
   }
 
   saveSummary(runId: string, summary: LandingSummary): void {
-    this.db
-      .prepare(
-        "INSERT INTO final_audit_summaries (run_id, payload_json) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET payload_json = excluded.payload_json",
-      )
-      .run(runId, toJson(summary));
+    this.upsertNode(`final-audit:summary:${runId}`, `Final Audit Summary ${runId}`, {
+      recordType: "final_audit_summary",
+      runId,
+      payload: encode(summary),
+    });
   }
 
   readSummary(runId: string): LandingSummary | null {
-    const row = this.db.prepare("SELECT payload_json FROM final_audit_summaries WHERE run_id = ?").get(runId) as
-      | { payload_json: string }
-      | undefined;
+    const fields = this.readJsonNode<StoredPayloadFields<LandingSummary>>(
+      `final-audit:summary:${runId}`,
+      "summary",
+    );
+    return fields?.payload ?? null;
+  }
+
+  private readRunNode(runId: string): StoredRunFields | null {
+    return this.readJsonNode<StoredRunFields>(`final-audit:run:${runId}`, runId);
+  }
+
+  private readJsonNode<T>(id: string, label: string): T | null {
+    const row = this.stateDb.writer.get(
+      `SELECT fields FROM nodes WHERE id = ? AND status = 'active'`,
+      [id],
+    ) as Readonly<Record<string, unknown>> | undefined;
     if (!row) return null;
-    return fromJson<LandingSummary>(row.payload_json, "summary");
+    return parseNodeFields<T>(row.fields, label);
+  }
+
+  private upsertNode(id: string, title: string, fields: unknown): void {
+    const encoded = encode(fields);
+    const existing = this.kg.getNode(id);
+    if (existing) {
+      this.kg.commitChangeSet({
+        origin: "kernel",
+        author: "final-audit",
+        summary: title,
+        reads: [{ target: id, version: existing.version }],
+        nodes: [
+          {
+            op: "update",
+            id,
+            class: "compatible",
+            title,
+            fields: encoded,
+          },
+        ],
+      });
+      return;
+    }
+    this.kg.commitChangeSet({
+      origin: "kernel",
+      author: "final-audit",
+      summary: title,
+      nodes: [
+        {
+          op: "create",
+          id,
+          kind: "plan",
+          title,
+          status: "active",
+          fields: encoded,
+        },
+      ],
+    });
   }
 }
