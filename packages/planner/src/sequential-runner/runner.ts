@@ -1,13 +1,15 @@
+import { NativeWorkerLoop } from "@ef-harness/worker-loop";
+
 import { AttemptBriefMaterializer, LocalKnowledgePacketSlicer } from "./brief.js";
 import { KernelEventBus } from "./event-bus.js";
 import { GitWorkspace } from "./git-workspace.js";
 import {
   FinalWaveAdvancement,
-  LocalCleanVerifier,
+  HarnessCleanVerifier,
+  HarnessStaticAudit,
   LocalDiffAutoTagDetector,
   LocalFeatureDoneGate,
   LocalFeatureIntegrator,
-  LocalStaticAudit,
   writeScopeViolation,
 } from "./ports.js";
 import { ExplicitFirstReadyQueue } from "./ready-queue.js";
@@ -123,10 +125,10 @@ export class SequentialBuildRunner {
   constructor(deps: SequentialRunnerDependencies) {
     this.db = deps.db;
     this.git = deps.git;
-    this.worker = deps.worker;
+    this.worker = deps.worker instanceof NativeWorkerLoop ? adaptNativeWorker(deps.worker) : deps.worker;
     this.bus = deps.bus ?? new KernelEventBus();
-    this.verifier = deps.verifier ?? new LocalCleanVerifier();
-    this.audit = deps.audit ?? new LocalStaticAudit();
+    this.verifier = deps.verifier ?? new HarnessCleanVerifier();
+    this.audit = deps.audit ?? new HarnessStaticAudit();
     this.tags = deps.tags ?? new LocalDiffAutoTagDetector();
     this.smoke = deps.smoke ?? new PostMergeSmokeChecker();
     this.integrator = deps.integrator ?? new LocalFeatureIntegrator(deps.db, deps.git);
@@ -370,7 +372,7 @@ export class SequentialBuildRunner {
     this.db.beginVerification(task.id, open.attemptId, open.epoch);
     const verifySlot = this.git.checkout(candidate, `verify-${open.attemptId}`);
     try {
-      const audit = this.audit.audit({ taskId: task.id, diff, worktree: verifySlot });
+      const audit = await this.audit.audit({ taskId: task.id, diff, worktree: verifySlot });
       if (!audit.pass) {
         const count = this.db.bumpStaticFailure(task.id, task.version, this.now());
         receipt.staticAudit = "fail";
@@ -685,6 +687,24 @@ export class SequentialBuildRunner {
       featureDone: [...this.featureDone],
     };
   }
+}
+
+function adaptNativeWorker(loop: NativeWorkerLoop): NativeWorkerLoopPort {
+  return {
+    async run(context) {
+      const result = await loop.runAttempt(context.attemptId);
+      if (result.countsAsWorkerFailure) {
+        return {
+          ok: false,
+          turns: result.step,
+          costMicroUsd: result.settledUnits,
+          errorClass: "code",
+          message: result.reason,
+        };
+      }
+      return { ok: true, turns: result.step, costMicroUsd: result.settledUnits };
+    },
+  };
 }
 
 function isInfra(result: WorkerResult): boolean {

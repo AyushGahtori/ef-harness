@@ -347,7 +347,7 @@ export interface OwnershipDecision {
 
 export interface ScaffoldInput {
   readonly projectRoot: string;
-  readonly projectKind: ProjectKind;
+  readonly projectKind: string;
   readonly decision?: LookAndFeelDecision;
   readonly tags?: readonly string[];
   readonly screenSpecs?: readonly ScreenSpecLike[];

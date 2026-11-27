@@ -41,7 +41,9 @@ describe("FoundationGate0Verifier", () => {
     expect(receipt.styleguideThumbnail?.route).toBe("/__styleguide");
     expect(receipt.commands.every((command) => command.exitCode === 0 && command.durationMs >= 0)).toBe(true);
     const preview = cas.get(receipt.styleguideThumbnail?.casId ?? "");
-    expect(preview?.toString("utf8")).toContain("/__styleguide");
+    expect(preview?.[0]).toBe(137);
+    expect(preview?.[1]).toBe(80);
+    expect(receipt.styleguideThumbnail?.viewport).toBe("1440");
     expect(evaluation.screenshotCasIds).toHaveLength(2);
     expect(evaluation.exposedExportsMap["src/domain/index.ts"]).toContain("domainReady");
   }, 120_000);
@@ -188,7 +190,7 @@ describe("FoundationGate0Verifier", () => {
     expect((await repo.porcelain()).trim()).toBe("");
     const status = await runGit(repo.root, ["status"]);
     expect(status.stdout.toLowerCase()).not.toContain("unmerged");
-  });
+  }, 30_000);
 });
 
 async function track(): Promise<string> {

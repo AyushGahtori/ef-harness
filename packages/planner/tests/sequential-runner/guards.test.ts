@@ -3,6 +3,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   KernelEventBus,
+  LocalCleanVerifier,
+  LocalStaticAudit,
   SequentialBuildRunner,
   type WaveCompileResult,
 } from "../../src/sequential-runner/index.js";
@@ -96,6 +98,7 @@ describe("sequential-runner scope, circuit breaker, and wave halt", { timeout: 6
       db: env.db,
       git: env.git,
       worker: writingWorker(() => "export const value = 'DISPUTE_TEST';\n"),
+      verifier: new LocalCleanVerifier(),
     });
     await runner.run();
     expect(env.db.taskState("T-dispute")).toBe("ESCALATED");
@@ -112,6 +115,7 @@ describe("sequential-runner scope, circuit breaker, and wave halt", { timeout: 6
       db: env.db,
       git: env.git,
       worker: writingWorker(() => "export const broken = 'STATIC_AUDIT_FAIL';\n"),
+      audit: new LocalStaticAudit(),
       verifier: {
         verify() {
           verifierCalls += 1;
@@ -135,6 +139,7 @@ describe("sequential-runner scope, circuit breaker, and wave halt", { timeout: 6
       db: env.db,
       git: env.git,
       worker: writingWorker(() => "export const broken = 'VERIFIER_FAIL';\n"),
+      verifier: new LocalCleanVerifier(),
     });
     await runner.run();
     expect(env.db.taskState("T-hint")).toBe("ESCALATED");

@@ -95,6 +95,22 @@ describe("sequential-runner lifecycle", { timeout: 60_000, hookTimeout: 30_000 }
     120_000,
   );
 
+  it("completes a UI feature with journeys and a CLI feature with none", async () => {
+    const env = open();
+    env.db.ensureProject({ wave: 1, gate0: "PASSED" });
+    feature(env, "menu", 1);
+    feature(env, "cli", 1);
+    task(env, { id: "T-menu", feature: "menu", title: "Menu", basis: "explicit", tags: ["ui"] });
+    task(env, { id: "T-cli", feature: "cli", title: "Cli", basis: "explicit", tags: ["api"] });
+    env.db.addJourney("menu", "J-menu");
+    const runner = new SequentialBuildRunner({ db: env.db, git: env.git, worker: writingWorker() });
+    const report = await runner.run();
+    expect(report.merged).toEqual(expect.arrayContaining(["T-menu", "T-cli"]));
+    expect(report.featureDone).toEqual(expect.arrayContaining(["menu", "cli"]));
+    expect(env.db.journeyCount("menu")).toBeGreaterThan(0);
+    expect(env.db.journeyCount("cli")).toBe(0);
+  }, 60_000);
+
   it("bounds post-merge smoke at 30 seconds", async () => {
     expect(SMOKE_TIMEOUT_MS).toBe(30_000);
     let seen = 0;

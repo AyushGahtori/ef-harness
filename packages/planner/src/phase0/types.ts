@@ -50,7 +50,7 @@ export interface Phase0Plan {
 }
 
 export interface Phase0SelectionInput {
-  readonly projectKind: ProjectKind;
+  readonly projectKind: string;
   readonly database?: boolean;
   readonly auth?: boolean;
 }
@@ -155,7 +155,7 @@ export interface Phase0RunResult {
 
 export interface Phase0RunRequest {
   readonly projectId: string;
-  readonly projectKind: ProjectKind;
+  readonly projectKind: string;
   readonly database?: boolean;
   readonly auth?: boolean;
   readonly plan?: Phase0Plan;

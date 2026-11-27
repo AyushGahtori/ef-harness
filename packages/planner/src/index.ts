@@ -577,3 +577,15 @@ export {
 export type { HeldBackCase, PlannerOracleModel, SealReceipt } from "./feature-plan/index.js";
 export { DeterministicGraphCompiler, persistCompiledGraph, TraceabilitySqlGate } from "./graph-compiler/index.js";
 export type { CompilationInput, CompilationResult } from "./graph-compiler/index.js";
+export {
+  FoundationGate0Verifier,
+  Phase0ExecutionController,
+  Phase0KernelInstaller,
+  createPhase0Stack,
+} from "./phase0/index.js";
+export {
+  DesignSystemScaffoldBuilder,
+  StyleguideRouteVerifier,
+  runPhase0DesignSystem,
+} from "./design-system/index.js";
+export { PostMergeSmokeChecker, SequentialBuildRunner, StateDb } from "./sequential-runner/index.js";

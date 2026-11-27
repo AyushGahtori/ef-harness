@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isUiProjectKind, normalizeProjectKind } from "@ef-harness/shared-contracts";
 import { detectBrownfield } from "./brownfield.js";
 import type { BrownfieldReport } from "./brownfield.js";
 import { LookAndFeelInterviewFlow } from "./interview.js";
@@ -34,7 +35,11 @@ export const PHASE0_P04_SLOT = {
 export const SCREEN_SPEC_SOURCE = LOCAL_PORTS.screenSpecGenerator;
 
 const BANNED_STYLE_KEYS = ["style", "className", "color", "css", "sx", "pixels"] as const;
-const HEADLESS = new Set(["cli", "api", "headless"]);
+function skipsDesignSystem(kind: string): boolean {
+  const canonical = normalizeProjectKind(kind);
+  if (canonical) return !isUiProjectKind(canonical);
+  return kind === "cli" || kind === "api" || kind === "headless";
+}
 
 const GREENFIELD_NAMES = [
   "Button",
@@ -110,9 +115,9 @@ export interface ScaffoldPlan {
 }
 
 export class DesignSystemScaffoldBuilder {
-  plan(input: ScaffoldInput): Omit<ScaffoldPlan, "written" | "packageJsonUntouched" | "preservedExisting"> {
+  async plan(input: ScaffoldInput): Promise<Omit<ScaffoldPlan, "written" | "packageJsonUntouched" | "preservedExisting">> {
     const brownfield = detectBrownfield(input.projectRoot);
-    if (HEADLESS.has(input.projectKind)) {
+    if (skipsDesignSystem(input.projectKind)) {
       return emptyPlan(brownfield, "pure CLI or headless REST API", true);
     }
     const specIssues = (input.screenSpecs ?? []).flatMap((spec) => {
@@ -161,7 +166,7 @@ export class DesignSystemScaffoldBuilder {
     const requiredNames = adopted
       ? ["Styleguide"]
       : [...GREENFIELD_NAMES, ...(includePrint ? ["PrintLayout"] : [])];
-    const verification = new StyleguideRouteVerifier().verify({
+    const verification = await new StyleguideRouteVerifier().verify({
       routeSource: route,
       css: compiled.css,
       productionBundle: productionBundle(files),
@@ -194,9 +199,9 @@ export class DesignSystemScaffoldBuilder {
     };
   }
 
-  build(input: ScaffoldInput): ScaffoldPlan {
+  async build(input: ScaffoldInput): Promise<ScaffoldPlan> {
     const before = readPackage(input.projectRoot);
-    const planned = this.plan(input);
+    const planned = await this.plan(input);
     const written: string[] = [];
     const preservedExisting: string[] = [];
     if (planned.ok && !planned.skipped) {
@@ -216,7 +221,7 @@ export class DesignSystemScaffoldBuilder {
   }
 }
 
-export function runPhase0DesignSystem(input: ScaffoldInput): ScaffoldPlan {
+export function runPhase0DesignSystem(input: ScaffoldInput): Promise<ScaffoldPlan> {
   return new DesignSystemScaffoldBuilder().build(input);
 }
 

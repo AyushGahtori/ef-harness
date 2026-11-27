@@ -47,7 +47,10 @@ describe("Phase0ExecutionController", () => {
     expect(receipt?.commands.find((command) => command.id === "unit_smoke")?.exitCode).toBe(0);
     expect(receipt?.styleguideThumbnail?.route).toBe("/__styleguide");
     const preview = openedStack.stack.cas.get(receipt?.styleguideThumbnail?.casId ?? "");
-    expect(preview?.toString("utf8")).toContain("viewport=1440");
+    expect(preview?.[0]).toBe(137);
+    expect(preview?.[1]).toBe(80);
+    expect(receipt?.styleguideThumbnail?.viewport).toBe("1440");
+    expect(openedStack.stack.harnessRuns.length).toBeGreaterThan(0);
     expect(result.manifest?.gate0CommitSha).toBe(result.integrationSha);
     const installed = openedStack.stack.installer.calls[0];
     expect(installed?.frozenLockfile).toBe(true);
@@ -224,6 +227,29 @@ describe("Phase0ExecutionController", () => {
     expect(await fs.readFile(path.join(openedStack.root, "src", "legacy.mjs"), "utf8")).toBe(legacy);
     await expect(fs.access(path.join(openedStack.root, "package.json"))).rejects.toThrow();
   }, 120_000);
+
+  it("skips UI steps for cli_tool and backend_api and runs web_fullstack inside the harness", async () => {
+    const cli = generator.generate({ projectKind: "cli_tool" });
+    expect(cli.projectKind).toBe("headless_cli");
+    expect(cli.recipes.map((recipe) => recipe.id)).toEqual(["P0.1", "P0.2", "P0.5", "P0.6", "P0.7"]);
+    expect(cli.omitted.map((item) => item.id)).toEqual(expect.arrayContaining(["P0.3", "P0.4", "P0.8"]));
+    const api = generator.generate({ projectKind: "backend_api" });
+    expect(api.recipes.map((recipe) => recipe.id)).not.toContain("P0.4");
+    expect(api.recipes.map((recipe) => recipe.id)).not.toContain("P0.8");
+    expect(api.recipes.map((recipe) => recipe.id)).toContain("P0.3");
+    const web = generator.generate({ projectKind: "web_fullstack" });
+    expect(web.projectKind).toBe("web_saas");
+    expect(web.recipes[0]?.id).toBe("P0.1");
+    expect(web.recipes.map((recipe) => recipe.id)).toEqual(["P0.1", "P0.2", "P0.3", "P0.4", "P0.5", "P0.6", "P0.7", "P0.8"]);
+    const openedStack = await use("fullstack");
+    const plan = subset(web, ["P0.1", "P0.5"]);
+    const result = await openedStack.stack.controller.run({ projectId: "fullstack", projectKind: "web_fullstack", plan });
+    expect(result.status).toBe("gate0_pass");
+    const mergedAt = result.schedule.findIndex((event) => event.taskId === "P0.1" && event.kind === "merged");
+    const later = result.schedule.findIndex((event) => event.taskId === "P0.5" && event.kind === "start");
+    expect(later).toBeGreaterThan(mergedAt);
+    expect(openedStack.stack.harnessRuns.length).toBeGreaterThan(0);
+  }, 60_000);
 
   it("refuses to run Phase 0 on main", async () => {
     const openedStack = await use("main");

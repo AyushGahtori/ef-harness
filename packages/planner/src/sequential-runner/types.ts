@@ -169,7 +169,7 @@ export interface AuditResult {
 }
 
 export interface StaticAuditPort {
-  audit(input: { taskId: string; diff: string; worktree: string }): AuditResult;
+  audit(input: { taskId: string; diff: string; worktree: string }): Promise<AuditResult> | AuditResult;
 }
 
 export interface TagReport {

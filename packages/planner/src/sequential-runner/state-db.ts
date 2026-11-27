@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import { DatabaseSync, type SQLInputValue, type StatementResultingChanges } from "node:sqlite";
-import { canonicalAssetAbsolute } from "@ef-harness/shared-contracts";
-import { sha256Hex } from "./canonical.js";
+import path from "node:path";
+import { computeNodeContentHash, type ProjectStateDb } from "@ef-harness/db";
+import { openPlannerState, tempPlannerRoot } from "../state/project-db.js";
 import {
   BudgetReservationError,
   CompiledPlanMissingError,
@@ -30,6 +29,8 @@ const NAMED_QUERIES = [
 ] as const;
 
 type NamedQuery = (typeof NAMED_QUERIES)[number];
+type Writer = ProjectStateDb["writer"];
+type SqlStatement = ReturnType<Writer["prepare"]>;
 
 export interface LeafDraft {
   id: string;
@@ -47,20 +48,36 @@ export interface LeafDraft {
 }
 
 export class StateDb {
-  readonly raw: DatabaseSync;
-  private readonly queries: Record<NamedQuery, ReturnType<DatabaseSync["prepare"]>>;
+  readonly state: ProjectStateDb;
+  readonly writer: Writer;
+  readonly raw: {
+    prepare(sql: string): {
+      all(...args: unknown[]): SqlRow[];
+      get(...args: unknown[]): SqlRow | undefined;
+    };
+  };
+  private readonly queries: Record<NamedQuery, SqlStatement>;
   private revCounter: number;
   private depth = 0;
 
-  constructor(raw: DatabaseSync) {
-    this.raw = raw;
-    this.ensureRunnerTables();
-    const loaded = loadNamedQueries();
-    const queries = {} as Record<NamedQuery, ReturnType<DatabaseSync["prepare"]>>;
+  constructor(state: ProjectStateDb) {
+    this.state = state;
+    this.writer = state.writer;
+    this.raw = {
+      prepare: (sql: string) => {
+        const statement = this.writer.prepare(sql);
+        return {
+          all: (...args: unknown[]) => statement.all(positional(args)).flatMap((row: unknown) => (isRow(row) ? [row] : [])),
+          get: (...args: unknown[]) => {
+            const row = statement.get(positional(args));
+            return isRow(row) ? row : undefined;
+          },
+        };
+      },
+    };
+    const queries = {} as Record<NamedQuery, SqlStatement>;
     for (const name of NAMED_QUERIES) {
-      const sql = loaded.get(name);
-      if (!sql) throw new Error(`missing canonical query ${name}`);
-      queries[name] = raw.prepare(sql);
+      queries[name] = this.writer.prepare(this.state.query(name));
     }
     this.queries = queries;
     const row = this.one("SELECT COALESCE(MAX(updated_rev), 0) AS n FROM task_runtime");
@@ -68,30 +85,23 @@ export class StateDb {
   }
 
   static open(filename = ":memory:"): StateDb {
-    const db = new DatabaseSync(filename);
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec("PRAGMA busy_timeout = 5000");
-    db.function("ef_search_text", { deterministic: true }, (value: SQLInputValue) => splitWords(value));
-    db.exec(fs.readFileSync(canonicalAssetAbsolute("stateSql"), "utf8"));
-    return new StateDb(db);
+    const root = filename === ":memory:" ? tempPlannerRoot("ef-seq-") : path.dirname(filename);
+    return new StateDb(openPlannerState(root));
   }
 
   close(): void {
-    this.raw.close();
+    this.state.close();
   }
 
   transaction<T>(fn: () => T): T {
     if (this.depth > 0) return fn();
     this.depth += 1;
-    this.raw.exec("BEGIN IMMEDIATE");
     try {
-      const value = fn();
-      this.raw.exec("COMMIT");
+      const value = this.writer.transaction(() => fn());
       this.depth -= 1;
       return value;
     } catch (error) {
       this.depth -= 1;
-      this.raw.exec("ROLLBACK");
       throw error;
     }
   }
@@ -107,6 +117,12 @@ export class StateDb {
       if (!existing) {
         this.run(
           "INSERT INTO project_runtime(id, state, current_wave, paused, updated_rev) VALUES (1, 'WAVES', ?, 0, ?)",
+          input.wave,
+          this.bumpRev(),
+        );
+      } else {
+        this.run(
+          "UPDATE project_runtime SET state = 'WAVES', current_wave = ?, updated_rev = ? WHERE id = 1",
           input.wave,
           this.bumpRev(),
         );
@@ -160,6 +176,26 @@ export class StateDb {
         input.state ?? "IN_WAVE",
         input.wave,
         input.branch,
+        rev,
+      );
+    });
+  }
+
+  addJourney(featureId: string, id: string): void {
+    this.transaction(() => {
+      const rev = this.changeSet(`journey ${id}`);
+      this.insertNode({
+        id,
+        kind: "journey",
+        title: id,
+        text: id,
+        fields: { feature: featureId },
+        rev,
+      });
+      this.run(
+        `INSERT INTO requirement_status(requirement, feature, status, updated_rev) VALUES (?, ?, 'passing', ?)`,
+        id,
+        featureId,
         rev,
       );
     });
@@ -677,49 +713,59 @@ export class StateDb {
   }
 
   saveReceipt(receipt: AttemptReceipt, now: number): void {
+    const id = `RCPT-${receipt.attemptId}`;
+    const fields = {
+      record: "attempt_receipt",
+      attemptId: receipt.attemptId,
+      task: receipt.taskId,
+      claimedAt: receipt.claimedAt,
+      briefTokens: receipt.briefTokens,
+      workerTurns: receipt.workerTurns,
+      costMicroUsd: receipt.costMicroUsd,
+      verifierVerdict: receipt.verifierVerdict,
+      mergedCommitSha: receipt.mergedCommitSha,
+      smokeMs: receipt.smokeMs,
+      phase: receipt.phase,
+      hintStep: receipt.hintStep,
+      staticAudit: receipt.staticAudit,
+      detail: receipt.detail,
+      updatedAt: now,
+    };
+    const existing = this.one("SELECT version FROM nodes WHERE id = ?", id);
+    if (!existing) {
+      const rev = this.changeSet(`receipt ${receipt.attemptId}`);
+      this.insertNode({ id, kind: "comment", title: receipt.attemptId, text: receipt.detail, fields, rev });
+      return;
+    }
+    const version = numberValue(existing.version) + 1;
+    const hash = computeNodeContentHash({ kind: "comment", title: receipt.attemptId, text: receipt.detail, fields });
+    const changeSet = this.changeSet(`receipt ${receipt.attemptId}`);
     this.run(
-      `INSERT INTO sequential_attempt_receipts(
-         attempt, task, claimed_at, brief_tokens, worker_turns, cost_micro_usd, verifier_verdict,
-         merged_commit_sha, smoke_ms, phase, hint_step, static_audit, detail, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(attempt) DO UPDATE SET
-         brief_tokens = excluded.brief_tokens,
-         worker_turns = excluded.worker_turns,
-         cost_micro_usd = excluded.cost_micro_usd,
-         verifier_verdict = excluded.verifier_verdict,
-         merged_commit_sha = excluded.merged_commit_sha,
-         smoke_ms = excluded.smoke_ms,
-         phase = excluded.phase,
-         hint_step = excluded.hint_step,
-         static_audit = excluded.static_audit,
-         detail = excluded.detail,
-         updated_at = excluded.updated_at`,
+      `UPDATE nodes
+          SET version = ?, content_hash = ?, title = ?, text = ?, fields = ?, change_set = ?, updated_rev = ?
+        WHERE id = ?`,
+      version,
+      hash,
       receipt.attemptId,
-      receipt.taskId,
-      receipt.claimedAt,
-      receipt.briefTokens,
-      receipt.workerTurns,
-      receipt.costMicroUsd,
-      receipt.verifierVerdict,
-      receipt.mergedCommitSha,
-      receipt.smokeMs,
-      receipt.phase,
-      receipt.hintStep,
-      receipt.staticAudit,
       receipt.detail,
-      now,
+      JSON.stringify(fields),
+      `CS-${changeSet}`,
+      changeSet,
+      id,
     );
   }
 
   receiptsFor(taskId: string): AttemptReceipt[] {
     return this.all(
-      `SELECT attempt, task, claimed_at, brief_tokens, worker_turns, cost_micro_usd, verifier_verdict,
-              merged_commit_sha, smoke_ms, phase, hint_step, static_audit, detail
-         FROM sequential_attempt_receipts
-        WHERE task = ?
-        ORDER BY claimed_at, attempt`,
+      `SELECT fields
+         FROM nodes
+        WHERE kind = 'comment'
+          AND status = 'active'
+          AND json_extract(fields, '$.record') = 'attempt_receipt'
+          AND json_extract(fields, '$.task') = ?
+        ORDER BY json_extract(fields, '$.claimedAt'), id`,
       taskId,
-    ).map(receiptFromRow);
+    ).map((row) => receiptFromFields(String(row.fields)));
   }
 
   pinnedNodes(taskId: string): Array<{ id: string; version: number; contentHash: string }> {
@@ -833,8 +879,13 @@ export class StateDb {
         WHERE t.feature = ?
           AND t.state = 'MERGED_TO_FEATURE'
           AND NOT EXISTS (
-            SELECT 1 FROM sequential_attempt_receipts r
-             WHERE r.task = t.task AND r.static_audit = 'pass' AND r.merged_commit_sha IS NOT NULL
+            SELECT 1 FROM nodes r
+             WHERE r.kind = 'comment'
+               AND r.status = 'active'
+               AND json_extract(r.fields, '$.record') = 'attempt_receipt'
+               AND json_extract(r.fields, '$.task') = t.task
+               AND json_extract(r.fields, '$.staticAudit') = 'pass'
+               AND json_extract(r.fields, '$.mergedCommitSha') IS NOT NULL
           )`,
       featureId,
     );
@@ -947,7 +998,12 @@ export class StateDb {
     rev: number;
   }): void {
     const fields = JSON.stringify(input.fields);
-    const hash = sha256Hex(`${input.kind}\n${input.title}\n${input.text}\n${fields}`);
+    const hash = computeNodeContentHash({
+      kind: input.kind,
+      title: input.title,
+      text: input.text,
+      fields: input.fields,
+    });
     this.run(
       `INSERT INTO nodes(id, kind, version, content_hash, title, text, fields, change_set, created_rev, updated_rev)
        VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
@@ -974,65 +1030,33 @@ export class StateDb {
     );
   }
 
-  private ensureRunnerTables(): void {
-    this.raw.exec(`
-      CREATE TABLE IF NOT EXISTS sequential_attempt_receipts (
-        attempt TEXT PRIMARY KEY,
-        task TEXT NOT NULL,
-        claimed_at INTEGER NOT NULL,
-        brief_tokens INTEGER NOT NULL,
-        worker_turns INTEGER NOT NULL,
-        cost_micro_usd INTEGER NOT NULL,
-        verifier_verdict TEXT NOT NULL,
-        merged_commit_sha TEXT,
-        smoke_ms INTEGER,
-        phase TEXT NOT NULL,
-        hint_step INTEGER NOT NULL,
-        static_audit TEXT NOT NULL,
-        detail TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      ) STRICT
-    `);
-  }
-
-  private run(sql: string, ...params: SqlValue[]): StatementResultingChanges {
-    return this.raw.prepare(sql).run(...params);
+  private run(sql: string, ...params: SqlValue[]): { changes: number } {
+    return this.writer.run(sql, params);
   }
 
   private one(sql: string, ...params: SqlValue[]): SqlRow | null {
-    const row = this.raw.prepare(sql).get(...params) as SqlRow | undefined;
-    return row ?? null;
+    const row = this.writer.get(sql, params);
+    if (!isRow(row)) return null;
+    return row;
   }
 
   private all(sql: string, ...params: SqlValue[]): SqlRow[] {
-    return this.raw.prepare(sql).all(...params) as SqlRow[];
+    return this.writer.all(sql, params).flatMap((row: unknown) => (isRow(row) ? [row] : []));
   }
 }
 
-function loadNamedQueries(): Map<string, string> {
-  const text = fs.readFileSync(canonicalAssetAbsolute("queriesSql"), "utf8");
-  const queries = new Map<string, string>();
-  for (const block of text.split(/^-- name: /m).slice(1)) {
-    const lines = block.split(/\r?\n/);
-    const name = (lines[0] ?? "").trim();
-    const sql = lines
-      .slice(1)
-      .filter((line) => !line.trim().startsWith("--"))
-      .join("\n")
-      .trim()
-      .replace(/;\s*$/, "");
-    if (name) queries.set(name, sql);
-  }
-  return queries;
+function positional(args: readonly unknown[]): SqlValue[] | Record<string, SqlValue> | undefined {
+  if (args.length === 0) return undefined;
+  const first = args[0];
+  if (args.length === 1 && isRow(first)) return first;
+  return args as SqlValue[];
 }
 
-function splitWords(value: SQLInputValue): string {
-  const source = value == null ? "" : String(value);
-  const extra = source.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_\-./:]+/g, " ");
-  return `${source} ${extra}`;
+function isRow(value: unknown): value is SqlRow {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function changed(result: StatementResultingChanges): number {
+function changed(result: { changes: number | bigint }): number {
   return Number(result.changes);
 }
 
@@ -1049,20 +1073,22 @@ function parseFields(raw: string): TaskFields {
   return value as TaskFields;
 }
 
-function receiptFromRow(row: SqlRow): AttemptReceipt {
+function receiptFromFields(raw: string): AttemptReceipt {
+  const value: unknown = JSON.parse(raw);
+  const row = isRow(value) ? value : {};
   return {
-    attemptId: String(row.attempt),
-    taskId: String(row.task),
-    claimedAt: numberValue(row.claimed_at),
-    briefTokens: numberValue(row.brief_tokens),
-    workerTurns: numberValue(row.worker_turns),
-    costMicroUsd: numberValue(row.cost_micro_usd),
-    verifierVerdict: String(row.verifier_verdict),
-    mergedCommitSha: row.merged_commit_sha === null ? null : String(row.merged_commit_sha),
-    smokeMs: row.smoke_ms === null ? null : numberValue(row.smoke_ms),
-    phase: String(row.phase),
-    hintStep: numberValue(row.hint_step),
-    staticAudit: String(row.static_audit),
-    detail: String(row.detail),
+    attemptId: String(row.attemptId ?? ""),
+    taskId: String(row.task ?? ""),
+    claimedAt: numberValue(row.claimedAt),
+    briefTokens: numberValue(row.briefTokens),
+    workerTurns: numberValue(row.workerTurns),
+    costMicroUsd: numberValue(row.costMicroUsd),
+    verifierVerdict: String(row.verifierVerdict ?? ""),
+    mergedCommitSha: row.mergedCommitSha === null || row.mergedCommitSha === undefined ? null : String(row.mergedCommitSha),
+    smokeMs: row.smokeMs === null || row.smokeMs === undefined ? null : numberValue(row.smokeMs),
+    phase: String(row.phase ?? ""),
+    hintStep: numberValue(row.hintStep),
+    staticAudit: String(row.staticAudit ?? ""),
+    detail: String(row.detail ?? ""),
   };
 }

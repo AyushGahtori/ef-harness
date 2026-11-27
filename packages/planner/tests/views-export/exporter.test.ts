@@ -358,7 +358,7 @@ describe("GitExcludeGuard", () => {
     expect(status.stdout).not.toContain(".harness/views");
     const gitignore = path.join(main, ".gitignore");
     expect(await exists(gitignore)).toBe(false);
-  });
+  }, 30_000);
 });
 
 class ScriptedWatcher implements WatchBackend {

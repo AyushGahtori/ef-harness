@@ -9,8 +9,8 @@ import { Phase0ExecutionController, type Phase0ControllerDeps } from "./controll
 import { LocalGitleaksScanner } from "./gitleaks.js";
 import { GitIntegrationRepo } from "./git-repo.js";
 import { LocalDeterministicGraphCompiler } from "./graph-port.js";
-import { LocalKernelPackageInstaller } from "./installer.js";
-import type { BaselineTestHealthPort, CommandRunner, Phase0TaskWorker } from "./ports.js";
+import { Phase0KernelInstaller } from "./installer.js";
+import type { BaselineTestHealthPort, Phase0TaskWorker } from "./ports.js";
 import { Phase0StateStore } from "./state-store.js";
 import { LocalTemplateDbSeeder } from "./template-db.js";
 import { LocalJobObjectAudit, LocalTestEnvOrchestrator } from "./test-env.js";
@@ -34,8 +34,9 @@ export interface Phase0Stack {
   readonly controller: Phase0ExecutionController;
   readonly repo: GitIntegrationRepo;
   readonly store: Phase0StateStore;
-  readonly installer: LocalKernelPackageInstaller;
+  readonly installer: Phase0KernelInstaller;
   readonly cas: MemoryContentStore;
+  readonly harnessRuns: readonly string[];
   readonly testEnv: LocalTestEnvOrchestrator;
   readonly worker: Phase0TaskWorker;
   dispose(): Promise<void>;
@@ -45,11 +46,11 @@ export interface Phase0Stack {
 export async function createPhase0Stack(options: Phase0StackOptions): Promise<Phase0Stack> {
   const repo = options.initRepo === false ? GitIntegrationRepo.open(options.root) : await GitIntegrationRepo.init(options.root);
   const store = Phase0StateStore.open(options.statePath);
-  const installer = new LocalKernelPackageInstaller();
+  const installer = new Phase0KernelInstaller();
   const cas = new MemoryContentStore();
   const testEnv = new LocalTestEnvOrchestrator(options.leakTeardowns ?? 0);
   const worker = options.worker ?? new DefaultPhase0Worker();
-  const inner: CommandRunner = new NodeCommandRunner();
+  const inner = new NodeCommandRunner();
   const commands = options.commandExits ? new OverridingCommandRunner(inner, options.commandExits) : inner;
   const baseline =
     options.baseline === undefined
@@ -99,9 +100,11 @@ export async function createPhase0Stack(options: Phase0StackOptions): Promise<Ph
     cas,
     testEnv,
     worker,
+    harnessRuns: inner.runs,
     async dispose(): Promise<void> {
       if (closed) return;
       closed = true;
+      inner.close();
       await testEnv.dispose();
       await repo.removeRegisteredWorktrees();
       store.close();

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { coercePhase0Kind } from "./catalog.js";
 import { Phase0Error, isPhase0Error } from "./errors.js";
 import { GitIntegrationRepo, writeTree } from "./git-repo.js";
 import { mergePackageDependencies } from "./lockfile.js";
@@ -177,7 +178,7 @@ export class Phase0ExecutionController {
       await this.deps.repo.addWorktree(branch, slot);
       const execution = await this.deps.worker.execute({
         task,
-        projectKind: request.projectKind,
+        projectKind: coercePhase0Kind(request.projectKind),
         repoPath: slot,
         mode: "initial",
         attempt,
@@ -262,7 +263,7 @@ export class Phase0ExecutionController {
           await this.deps.repo.addWorktree(branch, slot);
           const execution = await this.deps.worker.execute({
             task,
-            projectKind: request.projectKind,
+            projectKind: coercePhase0Kind(request.projectKind),
             repoPath: slot,
             mode: "initial",
             attempt,
@@ -403,7 +404,7 @@ export class Phase0ExecutionController {
       await this.deps.repo.addWorktree(branch, slot);
       const execution = await this.deps.worker.execute({
         task,
-        projectKind: request.projectKind,
+        projectKind: coercePhase0Kind(request.projectKind),
         repoPath: slot,
         mode: "repair",
         attempt,

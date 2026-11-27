@@ -551,9 +551,18 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../db
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/verifier':
+        specifier: workspace:*
+        version: link:../verifier
+      '@ef-harness/worker-loop':
+        specifier: workspace:*
+        version: link:../worker-loop
       '@parcel/watcher':
         specifier: ^2.5.1
         version: 2.6.0

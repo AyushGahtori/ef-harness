@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { openHarnessRunEngine } from "../harness-engine.js";
 import type { SmokeResult } from "./types.js";
 
 export const SMOKE_TIMEOUT_MS = 30_000;
@@ -14,7 +15,7 @@ export interface SmokeCommand {
 }
 
 export class PostMergeSmokeChecker {
-  constructor(private readonly commands: readonly SmokeCommand[] = [new BarrelTypecheck(), new FastUnitSmoke()]) {}
+  constructor(private readonly commands: readonly SmokeCommand[] = [new HarnessTypecheckSmoke(), new HarnessUnitSmoke()]) {}
 
   async run(cwd: string, timeoutMs: number = SMOKE_TIMEOUT_MS): Promise<SmokeResult> {
     const started = Date.now();
@@ -57,6 +58,83 @@ function bound(work: Promise<SmokeCommandResult> | SmokeCommandResult, timeoutMs
       },
     );
   });
+}
+
+export class HarnessTypecheckSmoke implements SmokeCommand {
+  async run(cwd: string, timeoutMs: number): Promise<SmokeCommandResult> {
+    return runInHarness(cwd, timeoutMs, "post-merge-typecheck", TYPECHECK_SCRIPT);
+  }
+}
+
+export class HarnessUnitSmoke implements SmokeCommand {
+  async run(cwd: string, timeoutMs: number): Promise<SmokeCommandResult> {
+    return runInHarness(cwd, timeoutMs, "post-merge-unit-smoke", UNIT_SMOKE_SCRIPT);
+  }
+}
+
+const TYPECHECK_SCRIPT = `
+const fs = require("node:fs");
+const path = require("node:path");
+const barrel = path.join(process.cwd(), "src", "index.ts");
+if (!fs.existsSync(barrel)) process.exit(0);
+const text = fs.readFileSync(barrel, "utf8");
+const missing = [];
+const named = /export\\s+(?:type\\s+)?\\{([^}]+)\\}\\s+from\\s+["']([^"']+)["']/g;
+const stars = /export\\s+\\*\\s+from\\s+["']([^"']+)["']/g;
+function resolveSpecifier(dir, specifier) {
+  const exact = path.resolve(dir, specifier);
+  if (fs.existsSync(exact) && fs.statSync(exact).isFile()) return true;
+  for (const extension of [".ts", ".tsx", ".js", ".mjs"]) {
+    const candidate = exact.replace(/\\.(js|mjs|ts|tsx)$/, extension);
+    if (candidate !== exact && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return true;
+  }
+  return false;
+}
+for (const match of text.matchAll(named)) {
+  if (match[2] && !resolveSpecifier(path.dirname(barrel), match[2])) missing.push(match[2]);
+}
+for (const match of text.matchAll(stars)) {
+  if (match[1] && !resolveSpecifier(path.dirname(barrel), match[1])) missing.push(match[1]);
+}
+if (missing.length === 0) process.exit(0);
+process.stderr.write("TS2307: Cannot find module '" + missing[0] + "' imported by src/index.ts");
+process.exit(1);
+`;
+
+const UNIT_SMOKE_SCRIPT = `
+const fs = require("node:fs");
+const path = require("node:path");
+const marker = path.join(process.cwd(), "smoke", "cases.json");
+if (!fs.existsSync(marker)) process.exit(0);
+const parsed = JSON.parse(fs.readFileSync(marker, "utf8"));
+if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) process.exit(0);
+if (parsed.fail === true) {
+  process.stderr.write(typeof parsed.error === "string" ? parsed.error : "unit smoke failed");
+  process.exit(1);
+}
+process.exit(0);
+`;
+
+async function runInHarness(cwd: string, timeoutMs: number, attemptId: string, script: string): Promise<SmokeCommandResult> {
+  const engine = openHarnessRunEngine();
+  const budget = Math.min(Math.max(1, timeoutMs), SMOKE_TIMEOUT_MS);
+  try {
+    const result = await engine.executeSandboxedCommand({
+      attemptId,
+      worktreePath: cwd,
+      cwd,
+      command: [process.execPath, "-e", script],
+      timeoutMs: budget,
+      priority: "verifier",
+    });
+    if (result.exitCode === 0) return { ok: true, error: "" };
+    const error = result.stderrSummary || result.stdoutSummary || "smoke command failed";
+    return { ok: false, error };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "smoke command failed" };
+  } finally {
+    engine.close();
+  }
 }
 
 export class BarrelTypecheck implements SmokeCommand {

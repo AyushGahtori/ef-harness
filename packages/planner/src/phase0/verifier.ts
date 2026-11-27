@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { TOKEN_ROLE_NAMES } from "./foundation-files.js";
 import { GitIntegrationRepo } from "./git-repo.js";
+import { captureStyleguidePair } from "./screenshot.js";
 import { sha256FileBytes } from "./hash.js";
 import { isCanonicalLockfile } from "./lockfile.js";
 import type {
@@ -290,8 +291,9 @@ export class FoundationGate0Verifier {
     });
     if (!htmlOk) this.fail(sink, active, "styleguide", "styleguide_failed", "/__styleguide rendered with console or page errors");
     else {
-      const mobile = this.deps.cas.put(Buffer.from(`viewport=375\n${html}`), "text/html");
-      const desktop = this.deps.cas.put(Buffer.from(`viewport=1440\n${html}`), "text/html");
+      const shots = await captureStyleguidePair(html);
+      const mobile = this.deps.cas.put(shots.mobile, "image/png");
+      const desktop = this.deps.cas.put(shots.desktop, "image/png");
       sink.screenshotCasIds.push(mobile.casId, desktop.casId);
       sink.thumbnail = { route: "/__styleguide", casId: desktop.casId, mime: desktop.mime, bytes: desktop.bytes, viewport: "1440" };
       this.pass(sink, active, "styleguide", "0 console/page errors");

@@ -274,12 +274,12 @@ describe("token lint rules", () => {
 describe("scaffold, styleguide, brownfield, and ownership", () => {
   const builder = new DesignSystemScaffoldBuilder();
 
-  it("writes a locked greenfield kit and strips the styleguide from production", () => {
+  it("writes a locked greenfield kit and strips the styleguide from production", async () => {
     const root = tempRoot();
     const packageJson = JSON.stringify({ name: "app", private: true, dependencies: { react: "19.0.0" } });
     fs.writeFileSync(path.join(root, "package.json"), packageJson);
     try {
-      const plan = builder.build({
+      const plan = await builder.build({
         projectRoot: root,
         projectKind: "web",
         tags: ["print"],
@@ -319,26 +319,26 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
       const bundled = productionBundle(plan.files);
       expect(bundled).not.toContain("data-ef-styleguide");
       const leaked = plan.files.map((file) => file.contents).join("\n");
-      expect(new StyleguideRouteVerifier().verify({
+      expect((await new StyleguideRouteVerifier().verify({
         routeSource: route,
         css,
         productionBundle: leaked,
         themes: ["light", "dark"],
         requiredNames: ["Button"],
         surfaceHex: { light: "#F8FAFC", dark: "#0F172A" },
-      }).productionExcluded).toBe(false);
+      })).productionExcluded).toBe(false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("skips a pure CLI or headless API without touching package.json", () => {
+  it("skips a pure CLI or headless API without touching package.json", async () => {
     const root = tempRoot();
     const packageJson = '{"name":"cli","bin":{"cli":"index.js"}}\n';
     fs.writeFileSync(path.join(root, "package.json"), packageJson);
     try {
       for (const projectKind of ["cli", "api", "headless"] as const) {
-        const plan = builder.build({ projectRoot: root, projectKind });
+        const plan = await builder.build({ projectRoot: root, projectKind });
         expect(plan.skipped).toBe(true);
         expect(plan.ok).toBe(true);
         expect(plan.files).toEqual([]);
@@ -353,7 +353,7 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
     }
   });
 
-  it("adopts a brownfield kit without overwriting css or primitives", () => {
+  it("adopts a brownfield kit without overwriting css or primitives", async () => {
     const root = tempRoot();
     const button = "export const EXISTING_BUTTON = true;\n";
     const css = ":root { --color-primary: #312E81; }\n";
@@ -367,7 +367,7 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
     );
     fs.writeFileSync(path.join(root, "tailwind.config.ts"), "export default { theme: { colors: { brand: '#312E81' } } };\n");
     try {
-      const plan = builder.build({ projectRoot: root, projectKind: "web" });
+      const plan = await builder.build({ projectRoot: root, projectKind: "web" });
       expect(plan.ok).toBe(true);
       expect(plan.brownfield.detected).toBe(true);
       expect(plan.kit).not.toBe("shadcn");
@@ -413,8 +413,8 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
     expect(styled.ok).toBe(false);
   });
 
-  it("fails closed when the styleguide clips, loads a remote font, or reports axe errors", () => {
-    const verifier = new StyleguideRouteVerifier();
+  it("fails closed when the styleguide clips, loads a remote font, or reports axe errors", async () => {
+    const verifier = new StyleguideRouteVerifier(new OfflineUiPlaywrightContractVerifier());
     const css = ":root { --tap-target: var(--spacing-24); } .ui-button:focus-visible { outline: 1px solid transparent; }";
     const base = {
       css,
@@ -429,26 +429,26 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
         return <main data-theme="light"><section data-theme="dark"><Button>Save</Button></section></main>;
       }
     `;
-    expect(verifier.verify({ ...base, routeSource: `${healthy} default hover focus disabled loading error` }).ok).toBe(true);
-    const clipped = verifier.verify({
+    expect((await verifier.verify({ ...base, routeSource: `${healthy} default hover focus disabled loading error` })).ok).toBe(true);
+    const clipped = await verifier.verify({
       ...base,
       routeSource: `${healthy} default hover focus disabled loading error <Button>${"Label".repeat(30)}</Button>`,
     });
     expect(clipped.ok).toBe(false);
     expect(clipped.clipped.some((issue) => issue.includes("375px"))).toBe(true);
-    const font = verifier.verify({
+    const font = await verifier.verify({
       ...base,
       routeSource: `${healthy} default hover focus disabled loading error`,
       css: `${css}\n@font-face { font-family: Remote; src: url(https://fonts.googleapis.com/css?family=Remote); }`,
     });
     expect(font.fontLoadingBroken).toBe(true);
-    const noisy = verifier.verify({
+    const noisy = await verifier.verify({
       ...base,
       routeSource: `${healthy} default hover focus disabled loading error\nconsole.error("boom");`,
     });
     expect(noisy.consoleErrors).toContain("console.error");
     const playwright = new OfflineUiPlaywrightContractVerifier();
-    const custom = verifier.verify({
+    const custom = await verifier.verify({
       ...base,
       routeSource: `${healthy} default hover focus disabled loading error`,
       playwright: {
@@ -469,7 +469,7 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
     expect(custom.axeSerious.join(" ")).toContain("color-contrast");
   });
 
-  it("stores styleguide screenshots in the local CAS port", () => {
+  it("stores styleguide screenshots in the local CAS port", async () => {
     const cas = new MemoryCasBlobStore();
     const css = ".ui-button:focus-visible { outline: 1px solid transparent; } :root { --tap-target: 24px; }";
     const route = [
@@ -477,7 +477,7 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
       "export function Page() { return <main data-theme=\"light\"><section data-theme=\"dark\"><Button>Save</Button></section></main>; }",
       "default hover focus disabled loading error",
     ].join("\n");
-    const result = new StyleguideRouteVerifier().verify({
+    const result = await new StyleguideRouteVerifier().verify({
       routeSource: route,
       css,
       productionBundle: "var app = true;",
@@ -496,10 +496,10 @@ describe("scaffold, styleguide, brownfield, and ownership", () => {
     expect(SCREEN_SPEC_SOURCE).toBe("local-port:task-084");
   });
 
-  it("exposes the phase 0 slot through the same builder", () => {
+  it("exposes the phase 0 slot through the same builder", async () => {
     const root = tempRoot();
     try {
-      const plan = runPhase0DesignSystem({ projectRoot: root, projectKind: "web" });
+      const plan = await runPhase0DesignSystem({ projectRoot: root, projectKind: "web" });
       expect(plan.slot).toBe("P0.4");
       expect(plan.ok).toBe(true);
       expect(plan.verification?.screenshotCasIds.length).toBeGreaterThan(0);

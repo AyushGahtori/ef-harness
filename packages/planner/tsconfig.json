@@ -13,7 +13,16 @@
       "path": "../db"
     },
     {
+      "path": "../sandbox"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../verifier"
+    },
+    {
+      "path": "../worker-loop"
     }
   ]
 }

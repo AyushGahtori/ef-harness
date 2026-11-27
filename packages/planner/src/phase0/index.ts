@@ -11,7 +11,7 @@ export type { GitResult, MergeOutcome } from "./git-repo.js";
 export { LocalGitleaksScanner } from "./gitleaks.js";
 export { LocalDeterministicGraphCompiler } from "./graph-port.js";
 export { sha256, sha256FileBytes } from "./hash.js";
-export { LocalKernelPackageInstaller } from "./installer.js";
+export { Phase0KernelInstaller } from "./installer.js";
 export { canonicalLockfile, isCanonicalLockfile, lockfileHash } from "./lockfile.js";
 export type {
   ActionCardSink,

@@ -1,3 +1,5 @@
+import { isUiProjectKind, normalizeProjectKind } from "@ef-harness/shared-contracts";
+
 import { filesForTask } from "./foundation-files.js";
 import { Phase0Error } from "./errors.js";
 import { scopesOverlap } from "./scope.js";
@@ -11,27 +13,51 @@ const GREENFIELD_IDS = ["P0.1", "P0.2", "P0.3", "P0.4", "P0.5", "P0.6", "P0.7", 
  * Headless CLI omits `P0.3`, `P0.4`, and `P0.8`. API projects omit `P0.4` and `P0.8`.
  * Brownfield emits only `P0.B1` and `P0.B2`.
  */
+export function coercePhase0Kind(value: string): ProjectKind {
+  if (value === "brownfield") return "brownfield";
+  const canonical = normalizeProjectKind(value);
+  if (canonical === "cli_tool") return "headless_cli";
+  if (canonical === "api_service") return "api";
+  if (
+    canonical === "web_saas" ||
+    canonical === "web_static" ||
+    canonical === "desktop_electron" ||
+    canonical === "mobile_web"
+  ) {
+    return "web_saas";
+  }
+  if (canonical && isUiProjectKind(canonical)) return "web_saas";
+  throw new Phase0Error("invalid_project_kind", `Unknown project kind ${value}`);
+}
+
 export class LocalPhase0RecipeGenerator {
   generate(input: Phase0SelectionInput): Phase0Plan {
-    const capabilities = resolveCapabilities(input);
-    const ids = expectedIds(input.projectKind, capabilities);
-    const recipes = ids.map((id) => recipeFor(id, input.projectKind));
-    assertOrder(input.projectKind, recipes);
+    const projectKind = coercePhase0Kind(input.projectKind);
+    const normalized: Phase0SelectionInput = {
+      projectKind,
+      ...(input.database !== undefined ? { database: input.database } : {}),
+      ...(input.auth !== undefined ? { auth: input.auth } : {}),
+    };
+    const capabilities = resolveCapabilities(normalized);
+    const ids = expectedIds(projectKind, capabilities);
+    const recipes = ids.map((id) => recipeFor(id, projectKind));
+    assertOrder(projectKind, recipes);
     assertDisjoint(recipes);
     const selected = new Set(ids);
-    const omitted = (input.projectKind === "brownfield" ? [...GREENFIELD_IDS] : GREENFIELD_IDS.filter((id) => !selected.has(id))).map(
-      (id) => ({ id, reason: omissionReason(id, input.projectKind, capabilities) }),
+    const omitted = (projectKind === "brownfield" ? [...GREENFIELD_IDS] : GREENFIELD_IDS.filter((id) => !selected.has(id))).map(
+      (id) => ({ id, reason: omissionReason(id, projectKind, capabilities) }),
     );
-    return { projectKind: input.projectKind, capabilities, recipes, omitted };
+    return { projectKind, capabilities, recipes, omitted };
   }
 }
 
 export function resolveCapabilities(input: Phase0SelectionInput): Phase0Capabilities {
-  if (input.projectKind === "brownfield") return { database: false, auth: false, ui: false };
+  const projectKind = coercePhase0Kind(input.projectKind);
+  if (projectKind === "brownfield") return { database: false, auth: false, ui: false };
   return {
     database: input.database !== false,
-    auth: input.projectKind !== "headless_cli" && input.auth !== false,
-    ui: input.projectKind === "web_saas",
+    auth: projectKind !== "headless_cli" && input.auth !== false,
+    ui: projectKind === "web_saas",
   };
 }
 

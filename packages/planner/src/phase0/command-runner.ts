@@ -1,13 +1,41 @@
-import { spawn } from "node:child_process";
-
+import { openHarnessRunEngine } from "../harness-engine.js";
 import type { CommandOutcome, CommandRequest, CommandRunner } from "./ports.js";
 
+/**
+ * Gate 0 commands run inside `HarnessRunEngine`. The engine owns the process
+ * tree, so Phase 0 does not spawn an unsandboxed host command.
+ */
 export class NodeCommandRunner implements CommandRunner {
+  readonly runs: string[] = [];
+  private readonly engine = openHarnessRunEngine();
+
   async run(request: CommandRequest, cwd: string): Promise<CommandOutcome> {
-    const started = Date.now();
+    this.runs.push(request.id);
     const argv = request.argv[0] === "node" ? [process.execPath, ...request.argv.slice(1)] : [...request.argv];
-    const outcome = await spawnCaptured(argv, cwd);
-    return { ...outcome, durationMs: Math.max(0, Date.now() - started) };
+    const started = Date.now();
+    try {
+      const result = await this.engine.executeSandboxedCommand({
+        attemptId: `phase0-${request.id}`,
+        worktreePath: cwd,
+        cwd,
+        command: argv,
+        timeoutMs: 15_000,
+        priority: "verifier",
+      });
+      return {
+        exitCode: result.exitCode,
+        stdout: result.stdoutSummary,
+        stderr: result.stderrSummary,
+        durationMs: Math.max(0, Math.round(result.durationMs)),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { exitCode: 127, stdout: "", stderr: message, durationMs: Math.max(0, Date.now() - started) };
+    }
+  }
+
+  close(): void {
+    this.engine.close();
   }
 }
 
@@ -27,31 +55,4 @@ export class OverridingCommandRunner implements CommandRunner {
       durationMs: 1,
     };
   }
-}
-
-function spawnCaptured(argv: readonly string[], cwd: string): Promise<Pick<CommandOutcome, "exitCode" | "stdout" | "stderr">> {
-  const executable = argv[0];
-  if (!executable) return Promise.resolve({ exitCode: 127, stdout: "", stderr: "missing command" });
-  return new Promise((resolve) => {
-    const child = spawn(executable, argv.slice(1), { cwd, windowsHide: true });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    const timer = setTimeout(() => {
-      child.kill();
-    }, 15000);
-    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      resolve({ exitCode: 127, stdout: "", stderr: error.message });
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({
-        exitCode: code ?? 1,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-      });
-    });
-  });
 }

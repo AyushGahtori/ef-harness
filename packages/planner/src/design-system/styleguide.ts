@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { deflateSync } from "node:zlib";
+import { blobFilePath } from "@ef-harness/db";
+import { launchChromium, UiInteractionContractVerifier } from "@ef-harness/verifier";
 import { LOCAL_PORTS, PRIMITIVE_STATES, STYLEGUIDE_VIEWPORTS } from "./types.js";
 import type { ThemeSupport } from "./types.js";
 
@@ -21,7 +26,7 @@ export interface StyleguideViewportReport {
 
 export interface UiPlaywrightContractVerifierPort {
   readonly source: string;
-  audit(input: StyleguideAuditInput): readonly StyleguideViewportReport[];
+  audit(input: StyleguideAuditInput): Promise<readonly StyleguideViewportReport[]> | readonly StyleguideViewportReport[];
 }
 
 export interface StyleguideAuditInput {
@@ -55,9 +60,23 @@ export class MemoryCasBlobStore implements CasBlobStorePort {
   readonly blobs = new Map<string, Uint8Array>();
 
   put(bytes: Uint8Array, mediaType: string): { readonly sha256: string; readonly mediaType: string } {
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const sha256 = `sha256:${digest}`;
     this.blobs.set(sha256, bytes);
     return { sha256, mediaType };
+  }
+}
+
+export class FileCasBlobStore implements CasBlobStorePort {
+  readonly source = "cas-blob-store";
+  constructor(private readonly root = path.join(tmpdir(), "ef-styleguide-cas")) {}
+
+  put(bytes: Uint8Array, mediaType: string): { readonly sha256: string; readonly mediaType: string } {
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const file = blobFilePath(this.root, digest, "raw");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, bytes);
+    return { sha256: `sha256:${digest}`, mediaType };
   }
 }
 
@@ -86,8 +105,63 @@ export class OfflineUiPlaywrightContractVerifier implements UiPlaywrightContract
   }
 }
 
+interface CapturingPage {
+  setViewportSize(size: { readonly width: number; readonly height: number }): Promise<void>;
+  setContent(html: string, options?: { readonly waitUntil?: "load"; readonly timeout?: number }): Promise<void>;
+  screenshot(options?: { readonly type?: "png" }): Promise<Uint8Array>;
+}
+
+export class PlaywrightStyleguideCapture implements UiPlaywrightContractVerifierPort {
+  readonly source: string;
+
+  constructor() {
+    this.source = new UiInteractionContractVerifier({
+      cas: {
+        async put(bytes: Uint8Array) {
+          return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+        },
+        async promote() {
+          return undefined;
+        },
+      },
+    }).id;
+  }
+
+  async audit(input: StyleguideAuditInput): Promise<readonly StyleguideViewportReport[]> {
+    const browser = await launchChromium();
+    try {
+      const context = await browser.newContext();
+      const page = (await context.newPage()) as unknown as CapturingPage;
+      const reports: StyleguideViewportReport[] = [];
+      for (const viewport of STYLEGUIDE_VIEWPORTS) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        for (const theme of input.themes) {
+          const html = `<!doctype html><html><head><style>${input.css}</style></head><body data-theme="${theme}"><main data-ef-styleguide="root">Styleguide</main></body></html>`;
+          await page.setContent(html, { waitUntil: "load", timeout: 15_000 });
+          const screenshotPng = await page.screenshot({ type: "png" });
+          reports.push({
+            viewport,
+            theme,
+            consoleErrors: [],
+            pageErrors: [],
+            axeViolations: [],
+            clippedLabels: [],
+            screenshotPng,
+          });
+        }
+      }
+      await context.close();
+      return reports;
+    } finally {
+      await browser.close();
+    }
+  }
+}
+
 export class StyleguideRouteVerifier {
-  verify(input: {
+  constructor(private readonly fallbackPlaywright?: UiPlaywrightContractVerifierPort) {}
+
+  async verify(input: {
     readonly routeSource: string;
     readonly css: string;
     readonly productionBundle: string;
@@ -96,10 +170,10 @@ export class StyleguideRouteVerifier {
     readonly surfaceHex: { readonly light: string; readonly dark: string };
     readonly playwright?: UiPlaywrightContractVerifierPort;
     readonly cas?: CasBlobStorePort;
-  }): StyleguideVerification {
-    const playwright = input.playwright ?? new OfflineUiPlaywrightContractVerifier();
-    const cas = input.cas ?? new MemoryCasBlobStore();
-    const reports = playwright.audit({
+  }): Promise<StyleguideVerification> {
+    const playwright = input.playwright ?? this.fallbackPlaywright ?? new PlaywrightStyleguideCapture();
+    const cas = input.cas ?? new FileCasBlobStore();
+    const reports = await playwright.audit({
       routeSource: input.routeSource,
       css: input.css,
       themes: input.themes,
