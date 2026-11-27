@@ -41,10 +41,8 @@ interface EncodedClause {
 type SolveCode = "sat" | "unsat" | "timeout";
 
 /**
- * In-process minimal-UNSAT-core solver with Z3's check / unsat-core contract:
- * deterministic seed, boolean and enum (exactly-one) clauses, and a hard 2,000 ms cap.
- * `z3-solver` WASM cannot be added while package.json is frozen; this backend is the
- * local port. Swap `solve` for the WASM Context when the dependency lands.
+ * Deterministic boolean UNSAT-core solver used when WASM init is disabled.
+ * Schedule and cutoff arithmetic goes through the `z3-solver` WASM session.
  */
 export class Z3UnsatCoreSolver {
   readonly timeoutMs: number;

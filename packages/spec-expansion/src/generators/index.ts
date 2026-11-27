@@ -12,7 +12,7 @@ export {
 } from "./fixtures.js";
 export { cellIdentityJcs, cellKey, jcs } from "./jcs.js";
 export { LocalKnowledgeGraphPort, type KnowledgeNodeRecord } from "./knowledge-graph-port.js";
-export { MatrixCellPersistenceRepo, type PersistStats, type PersistedRecord } from "./persistence.js";
+export { MatrixCellPersistenceRepo, type ListedMatrixCell, type PersistStats, type PersistedRecord } from "./persistence.js";
 export { LocalReadinessCalculator, readyReadiness, type ReadinessCounts, type ReadinessSnapshot } from "./readiness-port.js";
 export { MatrixGeneratorRegistry } from "./registry.js";
 export { TOUCHES_TAGS, isTouchesTag, type TouchesTag } from "./touches.js";

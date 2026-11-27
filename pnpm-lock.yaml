@@ -744,6 +744,12 @@ importers:
 
   packages/spec-expansion:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/discovery':
+        specifier: workspace:*
+        version: link:../discovery
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts

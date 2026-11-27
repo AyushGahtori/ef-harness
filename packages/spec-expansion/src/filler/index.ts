@@ -7,7 +7,12 @@ export { globMatch, cellMatches, scopeMatches } from "./match.js";
 export { MemoryMatrixCellStore, type MatrixCellPersistencePort } from "./matrix-store.js";
 export { buildFillMetrics } from "./metrics.js";
 export { LlmCellExpanderPass3, type Pass3CellResult, type Pass3Input, type Pass3Result } from "./pass3.js";
-export { OrderedCellFillerPipeline, type FillerRunInput, type FillerRunResult } from "./pipeline.js";
+export {
+  OrderedCellFillerPipeline,
+  type FillerRunInput,
+  type FillerRunResult,
+  type ListedMaterializedRequirement,
+} from "./pipeline.js";
 export { MemoryChosenForYou, RecordingContradictionRecheck } from "./ports.js";
 export { ProposedRequirementReviewQueue, ReviewValidationError } from "./review-queue.js";
 export type { ReviewEdit, ReviewGroup, ReviewProposal, ReviewSettleCommand, ReviewSettleResult } from "./review-queue.js";

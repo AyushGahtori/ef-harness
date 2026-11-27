@@ -429,12 +429,16 @@ export class FiveLayerContradictionEngine {
 }
 
 function asDecision(node: NodeRecord): SettledDecisionRef | null {
-  if (node.kind !== "decision" || node.status !== "active" || !isSettledBasis(node.basis)) return null;
+  if (node.kind !== "decision" || node.status !== "active" || !isReadableBasis(node.basis)) return null;
   const fields = readRecord(node.fields);
-  const optionId = readString(fields, "selectedOptionId");
-  const groupId = readString(fields, "groupId");
+  const optionId = readString(fields, "selectedOptionId") ?? readString(fields, "value");
+  const groupId = readString(fields, "groupId") ?? readString(fields, "criterionId") ?? readString(fields, "criterion");
   if (optionId === null || groupId === null) return null;
   return { id: node.id, title: node.title, optionId, groupId, basis: node.basis };
+}
+
+function isReadableBasis(basis: string | null): basis is string {
+  return isSettledBasis(basis) || basis === "observed";
 }
 
 function constraintsFromFields(fields: unknown): ArchitecturalConstraint[] {

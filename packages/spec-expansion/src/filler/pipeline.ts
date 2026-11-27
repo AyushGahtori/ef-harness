@@ -96,9 +96,27 @@ interface AskWork {
   readonly premises: readonly string[];
 }
 
+export interface ListedMaterializedRequirement {
+  readonly id: string;
+  readonly text: string;
+  readonly earsText: string;
+  readonly entities: readonly string[];
+  readonly touches: readonly string[];
+  readonly featureId: string;
+  readonly pass: 1 | 2 | 3;
+  readonly basis: string;
+  readonly status: string;
+}
+
 export class OrderedCellFillerPipeline {
   private readonly deterministic = new DeterministicPass1And2Filler();
   private readonly pass3 = new LlmCellExpanderPass3();
+  private materializedRequirements: ListedMaterializedRequirement[] = [];
+
+  listMaterializedRequirements(workItemId?: string): readonly ListedMaterializedRequirement[] {
+    if (workItemId === undefined) return this.materializedRequirements;
+    return this.materializedRequirements.filter((item) => item.featureId === workItemId);
+  }
 
   run(input: FillerRunInput): FillerRunResult {
     const store = input.store ?? new MemoryMatrixCellStore();
@@ -345,6 +363,7 @@ export class OrderedCellFillerPipeline {
       }
     }
 
+    this.materializedRequirements = materializedFrom(committed.requirements);
     const counted = outcomes.filter((outcome) => outcome.disposition !== "not_applicable");
     const metrics = buildFillMetrics(
       counted.length,
@@ -367,6 +386,28 @@ export class OrderedCellFillerPipeline {
       tokensSpent: expanded.tokensSpent,
     };
   }
+}
+
+function materializedFrom(items: readonly CommittedRequirement[]): ListedMaterializedRequirement[] {
+  const seen = new Set<string>();
+  const listed: ListedMaterializedRequirement[] = [];
+  for (const item of items) {
+    if (seen.has(item.requirementId)) continue;
+    seen.add(item.requirementId);
+    const entities = item.cell.subject.length > 0 ? [item.cell.subject] : [];
+    listed.push({
+      id: item.requirementId,
+      text: item.earsText,
+      earsText: item.earsText,
+      entities,
+      touches: [...item.cell.touches],
+      featureId: item.cell.featureId,
+      pass: item.pass,
+      basis: item.basis,
+      status: item.status,
+    });
+  }
+  return listed;
 }
 
 function workFromClaim(cell: OpenCell, claim: DeterministicClaim): RequirementWork {

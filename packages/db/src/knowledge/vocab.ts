@@ -40,6 +40,16 @@ export const EDGE_TYPES = [
   { type: "supersedes", invalidates: false },
 ] as const;
 
+/**
+ * Edge types inserted by the state v2 migration. They stay out of `EDGE_TYPES`
+ * so the v1 seed in schema/state.sql remains the 14-row lookup.
+ */
+export const ADDITIVE_EDGE_TYPES = [
+  { type: "expands", invalidates: true },
+  { type: "contradicts", invalidates: true },
+  { type: "informs", invalidates: true },
+] as const;
+
 export const SETTLED_BASES = [
   "explicit",
   "derived",
@@ -80,6 +90,7 @@ export const UPDATE_CLASSES = ["cosmetic", "clarifying", "compatible", "breaking
 
 export type NodeKindName = (typeof NODE_KINDS)[number]["kind"];
 export type EdgeTypeName = (typeof EDGE_TYPES)[number]["type"];
+export type AdditiveEdgeType = (typeof ADDITIVE_EDGE_TYPES)[number]["type"];
 export type SettledBasis = (typeof SETTLED_BASES)[number];
 export type ChangeClass = (typeof CHANGE_CLASSES)[number];
 export type ChangeSetOrigin = (typeof CHANGE_SET_ORIGINS)[number];
@@ -90,6 +101,7 @@ export type UpdateClass = (typeof UPDATE_CLASSES)[number];
 
 const nodeKindSet = new Set<string>(NODE_KINDS.map((row) => row.kind));
 const edgeTypeSet = new Set<string>(EDGE_TYPES.map((row) => row.type));
+const additiveEdgeTypeSet = new Set<string>(ADDITIVE_EDGE_TYPES.map((row) => row.type));
 const basisSet = new Set<string>(SETTLED_BASES);
 const originSet = new Set<string>(CHANGE_SET_ORIGINS);
 const statusSet = new Set<string>(NODE_STATUSES);
@@ -101,8 +113,8 @@ export function isNodeKind(value: string): value is NodeKindName {
   return nodeKindSet.has(value);
 }
 
-export function isEdgeType(value: string): value is EdgeTypeName {
-  return edgeTypeSet.has(value);
+export function isEdgeType(value: string): value is EdgeTypeName | AdditiveEdgeType {
+  return edgeTypeSet.has(value) || additiveEdgeTypeSet.has(value);
 }
 
 export function isSettledBasis(value: string): value is SettledBasis {

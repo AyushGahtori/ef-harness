@@ -125,6 +125,12 @@ describe("scoped collapse, scale, and incremental cell ids", () => {
     const again = repo.persist(nextGraph, next, collapser.collapse(next));
     expect(again.insertedCellIds).toEqual([]);
     expect(repo.readRecord(filledId)).toEqual(filledBefore);
+    const view = new Set(repo.listRequirementViewIds());
+    expect(view.has("matrix-manifest")).toBe(false);
+    expect([...view].some((id) => id.startsWith("matrix:"))).toBe(false);
+    expect(view.has(filledId)).toBe(true);
+    expect(repo.listCells().length).toBeGreaterThan(0);
+    expect(repo.listCells().every((cell) => cell.matrixId.length > 0)).toBe(true);
   });
 
   it("does not orphan cells when the renamed entity is persisted again", () => {

@@ -38,6 +38,21 @@ function canonicalizeNumber(value: number): string {
   return JSON.stringify(value);
 }
 
+export function asJsonValue(value: unknown): JsonValue {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("RFC 8785 rejects non-finite numbers");
+    return value;
+  }
+  if (Array.isArray(value)) return value.map((item) => asJsonValue(item));
+  if (typeof value === "object") {
+    const record: { [key: string]: JsonValue } = {};
+    for (const key of Object.keys(value)) record[key] = asJsonValue(Reflect.get(value, key));
+    return record;
+  }
+  throw new Error("matrix fields are not JSON");
+}
+
 export function jcs(value: JsonValue): string {
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";

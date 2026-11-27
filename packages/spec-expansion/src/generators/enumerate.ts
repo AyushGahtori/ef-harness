@@ -86,14 +86,6 @@ export function createDomainIndex(): DomainIndex {
   return new DomainIndex();
 }
 
-function finish(cells: CellDraft[]): RawMatrixCell[] {
-  for (let index = 0; index < cells.length; index += 1) {
-    const draft = cells[index];
-    if (draft) sealCell(draft);
-  }
-  return cells as RawMatrixCell[];
-}
-
 function open(outcome: string): {
   outcome: string;
   reason: null;
@@ -150,11 +142,14 @@ function m01ActionOutcome(role: AxisNode, entity: AxisNode, action: M01Action) {
   return open("allow");
 }
 
-function generateM01(settled: readonly AxisNode[], domains: DomainIndex): CellDraft[] {
+function generateM01(settled: readonly AxisNode[], domains: DomainIndex): RawMatrixCell[] {
   const roles = nodes(settled, "role");
   const entities = nodes(settled, "entity");
   const endpoints = nodes(settled, "endpoint");
-  const cells: CellDraft[] = [];
+  const actionCount = roles.length * entities.length * M01_ACTIONS.length;
+  const epCount = roles.length * entities.length * endpoints.length;
+  const cells: RawMatrixCell[] = new Array(actionCount + epCount);
+  let cursor = 0;
   const seenActors = new Set<string>();
   for (const role of roles) {
     const actor = permissionClass(role);
@@ -163,14 +158,22 @@ function generateM01(settled: readonly AxisNode[], domains: DomainIndex): CellDr
       const subject = entityClass(entity);
       for (const action of M01_ACTIONS) {
         const decision = m01ActionOutcome(role, entity, action);
-        cells.push({
+        const axisB = entityActionAxis(entity.nodeId, action);
+        cells[cursor] = {
+          id: `cell:M01:${role.nodeId}:${axisB}`,
           matrixId: "M01",
           axisA: role.nodeId,
-          axisB: entityActionAxis(entity.nodeId, action),
+          axisB,
           domainNodeIds: [role.nodeId, entity.nodeId],
+          outcome: decision.outcome,
+          reason: decision.reason,
+          notApplicable: decision.notApplicable,
           scopeKey: `ea|${actor}|${subject}|${action}`,
-          ...decision,
-        });
+          forceException: decision.forceException,
+          ruleText: decision.ruleText,
+          signature: decision.reason === null ? `${decision.outcome}|` : `${decision.outcome}|${decision.reason}`,
+        };
+        cursor += 1;
       }
     }
   }
@@ -183,47 +186,47 @@ function generateM01(settled: readonly AxisNode[], domains: DomainIndex): CellDr
     for (const entity of entities) domains.add("M01", scopeKey, entity.nodeId);
     for (const endpoint of endpoints) domains.add("M01", scopeKey, endpoint.nodeId);
   }
-  const epAxis = new Map<string, Map<string, string>>();
+  const epAxis = new Map<string, readonly string[]>();
   for (const entity of entities) {
-    const byEndpoint = new Map<string, string>();
-    for (const endpoint of endpoints) {
-      byEndpoint.set(endpoint.nodeId, entityEndpointAxis(entity.nodeId, endpoint.nodeId));
+    const axes: string[] = new Array(endpoints.length);
+    for (let i = 0; i < endpoints.length; i += 1) {
+      const endpoint = endpoints[i];
+      if (endpoint) axes[i] = entityEndpointAxis(entity.nodeId, endpoint.nodeId);
     }
-    epAxis.set(entity.nodeId, byEndpoint);
+    epAxis.set(entity.nodeId, axes);
   }
   const deny = actorOutcome("unauthenticated");
   const allow = actorOutcome("authenticated");
-  const total = roles.length * entities.length * endpoints.length;
-  const batch: CellDraft[] = new Array(total);
-  let cursor = 0;
   for (const role of roles) {
     const actor = permissionClass(role);
     const outcome = actor === "unauthenticated" ? deny : allow;
     const scopeKey = `ep|${actor}`;
+    const rolePrefix = `cell:M01:${role.nodeId}:`;
     for (const entity of entities) {
-      const byEndpoint = epAxis.get(entity.nodeId);
-      for (const endpoint of endpoints) {
-        const axisB = byEndpoint?.get(endpoint.nodeId) ?? entityEndpointAxis(entity.nodeId, endpoint.nodeId);
-        batch[cursor] = {
+      const axes = epAxis.get(entity.nodeId);
+      if (!axes) continue;
+      for (let i = 0; i < axes.length; i += 1) {
+        const axisB = axes[i];
+        if (!axisB) continue;
+        cells[cursor] = {
+          id: `${rolePrefix}${axisB}`,
           matrixId: "M01",
           axisA: role.nodeId,
           axisB,
           domainNodeIds: NO_DOMAINS,
-          scopeKey,
           outcome: outcome.outcome,
           reason: null,
           notApplicable: false,
+          scopeKey,
           forceException: false,
           ruleText: null,
+          signature: outcome.signature,
         };
         cursor += 1;
       }
     }
   }
-  for (let index = 0; index < cursor; index += 1) {
-    const draft = batch[index];
-    if (draft) cells.push(draft);
-  }
+  cells.length = cursor;
   return cells;
 }
 
@@ -241,40 +244,40 @@ function m02Outcome(entity: AxisNode, op: M02Op) {
   return open("allow_read");
 }
 
-function generateM02(settled: readonly AxisNode[]): CellDraft[] {
-  const cells: CellDraft[] = [];
+function generateM02(settled: readonly AxisNode[]): RawMatrixCell[] {
+  const cells: RawMatrixCell[] = [];
   for (const entity of nodes(settled, "entity")) {
     const subject = entityClass(entity);
     for (const op of M02_OPS) {
-      cells.push({
+      cells.push(sealCell({
         matrixId: "M02",
         axisA: entity.nodeId,
         axisB: op,
         domainNodeIds: [entity.nodeId],
         scopeKey: `life|${subject}|${op}`,
         ...m02Outcome(entity, op),
-      });
+      }));
     }
   }
   return cells;
 }
 
-function generateM03(settled: readonly AxisNode[]): CellDraft[] {
-  const cells: CellDraft[] = [];
+function generateM03(settled: readonly AxisNode[]): RawMatrixCell[] {
+  const cells: RawMatrixCell[] = [];
   const screens = nodes(settled, "screen");
   for (const role of nodes(settled, "role")) {
     for (const screen of screens) {
       const states: string[] = [...M03_UI_STATES];
       if (attrFlag(screen, "print")) states.push(M03_PRINT_STATE);
       for (const uiState of states) {
-        cells.push({
+        cells.push(sealCell({
           matrixId: "M03",
           axisA: role.nodeId,
           axisB: screenStateAxis(screen.nodeId, uiState),
           domainNodeIds: [role.nodeId, screen.nodeId],
           scopeKey: `ui|${uiState}|${attrFlag(screen, "print") ? "print" : "noprint"}`,
           ...open("open_ui_state"),
-        });
+        }));
       }
     }
   }
@@ -746,6 +749,10 @@ function generateM12(settled: readonly AxisNode[]): CellDraft[] {
     }
   }
   return cells;
+}
+
+function finish(cells: readonly CellDraft[]): RawMatrixCell[] {
+  return cells.map((draft) => sealCell(draft));
 }
 
 export function generateMatrix(

@@ -232,3 +232,15 @@ export type {
   Z3SolveStatus,
   Z3SolverOptions,
 } from "./contradictions/index.js";
+export {
+  FiveLayerContradictionChecker,
+  SpecCellFiller,
+  SpecMatrixGenerator,
+} from "./project-state.js";
+export type {
+  MaterializeStats,
+  MatrixGenerationStats,
+  SpecExpansionCheck,
+} from "./project-state.js";
+export { releaseSpecExpansionZ3, solveSchedule } from "./contradictions/z3-wasm.js";
+export type { ScheduleClaim, ScheduleSolveResult } from "./contradictions/z3-wasm.js";

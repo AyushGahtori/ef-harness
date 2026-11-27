@@ -66,13 +66,16 @@ function collectDomains(cells: readonly RawMatrixCell[]): readonly string[] {
   return [...domains].sort(compareText);
 }
 
+interface ScopeBucket {
+  readonly firstSig: string;
+  readonly firstCells: RawMatrixCell[];
+  others: Map<string, RawMatrixCell[]> | null;
+}
+
 export class ScopedRuleCollapser {
   collapse(run: GenerationRun): CollapsedMatrices {
     const exceptions: RawMatrixCell[] = [];
-    const groups = new Map<
-      string,
-      Map<string, { total: number; mismatches: number; signature: string; first: RawMatrixCell; rest: RawMatrixCell[] }>
-    >();
+    const groups = new Map<string, Map<string, ScopeBucket>>();
     for (const cell of run.rawCells) {
       if (cell.forceException) {
         exceptions.push(cell);
@@ -86,32 +89,66 @@ export class ScopedRuleCollapser {
       const bucket = byScope.get(cell.scopeKey);
       if (!bucket) {
         byScope.set(cell.scopeKey, {
-          total: 1,
-          mismatches: 0,
-          signature: cell.signature,
-          first: cell,
-          rest: [],
+          firstSig: cell.signature,
+          firstCells: [cell],
+          others: null,
         });
         continue;
       }
-      bucket.total += 1;
-      if (cell.signature !== bucket.signature) {
-        bucket.mismatches += 1;
-        exceptions.push(cell);
+      if (cell.signature === bucket.firstSig) {
+        bucket.firstCells.push(cell);
         continue;
       }
-      if (bucket.rest.length < 47) bucket.rest.push(cell);
+      let others = bucket.others;
+      if (!others) {
+        others = new Map();
+        bucket.others = others;
+      }
+      let list = others.get(cell.signature);
+      if (!list) {
+        list = [cell];
+        others.set(cell.signature, list);
+      } else {
+        list.push(cell);
+      }
     }
     const rules: UniversalRule[] = [];
     for (const byScope of groups.values()) {
-    for (const bucket of byScope.values()) {
-      const covered = bucket.total - bucket.mismatches;
-      if (covered >= 2) {
-        rules.push(toRule([bucket.first, ...bucket.rest], covered, run.domains));
-      } else {
-        exceptions.push(bucket.first, ...bucket.rest);
+      for (const bucket of byScope.values()) {
+        let bestSig = bucket.firstSig;
+        let bestCells = bucket.firstCells;
+        if (bucket.others) {
+          for (const [sig, cells] of bucket.others) {
+            if (
+              cells.length > bestCells.length ||
+              (cells.length === bestCells.length && compareText(sig, bestSig) < 0)
+            ) {
+              bestSig = sig;
+              bestCells = cells;
+            }
+          }
+        }
+        if (bestCells.length >= 2) {
+          rules.push(toRule(bestCells, bestCells.length, run.domains));
+          if (bestSig !== bucket.firstSig) {
+            for (const cell of bucket.firstCells) exceptions.push(cell);
+          }
+          if (bucket.others) {
+            for (const [sig, cells] of bucket.others) {
+              if (sig !== bestSig) {
+                for (const cell of cells) exceptions.push(cell);
+              }
+            }
+          }
+        } else {
+          for (const cell of bucket.firstCells) exceptions.push(cell);
+          if (bucket.others) {
+            for (const cells of bucket.others.values()) {
+              for (const cell of cells) exceptions.push(cell);
+            }
+          }
+        }
       }
-    }
     }
     rules.sort((left, right) => compareText(left.id, right.id));
     exceptions.sort((left, right) => compareText(left.id, right.id));

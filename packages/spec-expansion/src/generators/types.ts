@@ -298,10 +298,20 @@ export function signatureOf(outcome: string, reason: string | null): string {
 }
 
 export function sealCell(draft: CellDraft): RawMatrixCell {
-  const cell = draft as CellDraft & { id: string; signature: string };
-  cell.id = `cell:${draft.matrixId}:${draft.axisA}:${draft.axisB}`;
-  cell.signature = draft.reason === null ? `${draft.outcome}|` : `${draft.outcome}|${draft.reason}`;
-  return cell;
+  return {
+    id: `cell:${draft.matrixId}:${draft.axisA}:${draft.axisB}`,
+    matrixId: draft.matrixId,
+    axisA: draft.axisA,
+    axisB: draft.axisB,
+    domainNodeIds: draft.domainNodeIds,
+    outcome: draft.outcome,
+    reason: draft.reason,
+    notApplicable: draft.notApplicable,
+    scopeKey: draft.scopeKey,
+    forceException: draft.forceException,
+    ruleText: draft.ruleText,
+    signature: draft.reason === null ? `${draft.outcome}|` : `${draft.outcome}|${draft.reason}`,
+  };
 }
 
 export interface ApplicabilityDecision {

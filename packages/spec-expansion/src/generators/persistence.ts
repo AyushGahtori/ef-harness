@@ -5,12 +5,13 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 import { type CollapsedMatrices, type UniversalRule } from "./collapse.js";
-import { jcs } from "./jcs.js";
-import { type GenerationRun, type RawMatrixCell, type SettledProjectGraph } from "./types.js";
+import { asJsonValue, jcs } from "./jcs.js";
+import { MATRIX_IDS, type GenerationRun, type MatrixId, type RawMatrixCell, type SettledProjectGraph } from "./types.js";
 
 export interface PersistedRecord {
   readonly id: string;
   readonly kind: string;
+  readonly status: string;
   readonly version: number;
   readonly title: string;
   readonly text: string;
@@ -21,6 +22,15 @@ export interface PersistedRecord {
 export interface PersistStats {
   readonly insertedCellIds: readonly string[];
   readonly preservedCellIds: readonly string[];
+}
+
+export interface ListedMatrixCell {
+  readonly id: string;
+  readonly matrixId: MatrixId;
+  readonly axisA: string;
+  readonly axisB: string;
+  readonly status: "filled" | "open" | "not_applicable";
+  readonly text: string;
 }
 
 interface NodeRow {
@@ -35,6 +45,14 @@ interface NodeRow {
 }
 
 const MANIFEST_ID = "matrix-manifest";
+
+function isMatrixId(value: unknown): value is MatrixId {
+  return typeof value === "string" && (MATRIX_IDS as readonly string[]).includes(value);
+}
+
+function matchesWorkItem(fields: Record<string, unknown>, workItemId: string): boolean {
+  return fields.work_item === workItemId || fields.workItemId === workItemId;
+}
 
 function schemaPath(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -57,13 +75,11 @@ function contentHash(input: {
   readonly title: string;
   readonly text: string;
   readonly fields: string;
-  readonly status: string;
 }): string {
   return sha256(
     jcs({
-      fields: input.fields,
+      fields: asJsonValue(JSON.parse(input.fields)),
       kind: input.kind,
-      status: input.status,
       text: input.text,
       title: input.title,
     }),
@@ -175,12 +191,41 @@ export class MatrixCellPersistenceRepo {
     return {
       id: row.id,
       kind: row.kind,
+      status: row.status,
       version: row.version,
       title: row.title,
       text: row.text,
       contentHash: row.content_hash,
       fields: JSON.parse(row.fields) as Record<string, unknown>,
     };
+  }
+
+  listRequirementViewIds(): readonly string[] {
+    const rows = this.db.prepare("SELECT id FROM requirements ORDER BY id").all() as { id: string }[];
+    return rows.map((row) => row.id);
+  }
+
+  listCells(workItemId?: string): readonly ListedMatrixCell[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, text, status, fields FROM nodes
+          WHERE json_extract(fields, '$.record_type') = 'matrix_cell'
+          ORDER BY id`,
+      )
+      .all() as { id: string; text: string; status: string; fields: string }[];
+    const cells: ListedMatrixCell[] = [];
+    for (const row of rows) {
+      const fields = JSON.parse(row.fields) as Record<string, unknown>;
+      if (workItemId !== undefined && !matchesWorkItem(fields, workItemId)) continue;
+      const matrixId = fields.matrixId;
+      const axisA = fields.axisA;
+      const axisB = fields.axisB;
+      if (!isMatrixId(matrixId) || typeof axisA !== "string" || typeof axisB !== "string") continue;
+      const notApplicable = fields.notApplicable === true;
+      const status = notApplicable ? "not_applicable" : row.status === "active" ? "filled" : "open";
+      cells.push({ id: row.id, matrixId, axisA, axisB, status, text: row.text });
+    }
+    return cells;
   }
 
   expandEdges(src: string): readonly { readonly type: string; readonly dst: string }[] {
@@ -201,12 +246,11 @@ export class MatrixCellPersistenceRepo {
 
   private writeManifest(cellIds: readonly string[], changeSetId: string, rev: number, exists: boolean): void {
     const fields = JSON.stringify({
-      basis: "derived",
       record_type: "matrix_manifest",
       cellIds,
     });
     const payload = {
-      kind: "rule",
+      kind: "source",
       title: "Matrix cell manifest",
       text: `${cellIds.length} canonical cell ids`,
       fields,
@@ -255,11 +299,10 @@ export class MatrixCellPersistenceRepo {
       this.insertNode(
         id,
         {
-          kind: "rule",
+          kind: "source",
           title: decision.matrixId,
           text: decision.skippedReason ?? decision.narrowed ?? "active",
           fields: JSON.stringify({
-            basis: "derived",
             record_type: "matrix_group",
             matrixId: decision.matrixId,
             active: decision.active,
@@ -321,7 +364,6 @@ export class MatrixCellPersistenceRepo {
         title: `${cell.matrixId} ${cell.outcome}`,
         text: cell.reason ?? cell.outcome,
         fields: JSON.stringify({
-          basis: "derived",
           record_type: "matrix_cell",
           matrixId: cell.matrixId,
           axisA: cell.axisA,
@@ -331,7 +373,7 @@ export class MatrixCellPersistenceRepo {
           notApplicable: cell.notApplicable,
           signature: cell.signature,
         }),
-        status: "active",
+        status: "draft",
       },
       changeSetId,
       rev,
