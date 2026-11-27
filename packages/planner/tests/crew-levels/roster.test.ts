@@ -61,7 +61,7 @@ describe("VersionedModelRoster", () => {
     ]);
     const kept = revised.entries.find((entry) => entry.modelId === "local-pinned");
     expect(kept?.family).toBe("ollama");
-    expect(kept?.tier).toBe("junior");
+    expect(kept?.tier).toBe("Junior");
     expect(revised.isRevoked("api-senior")).toBe(true);
     const local = revised.entries.find((entry) => entry.modelId === "llama-14b");
     expect(local?.spendKind).toBe("local");

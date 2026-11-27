@@ -4,7 +4,8 @@ export type CrewLevelsErrorCode =
   | "bad-task"
   | "bad-model"
   | "unsigned-policy"
-  | "currency-mix";
+  | "currency-mix"
+  | "no-eligible-model";
 
 export class CrewLevelsError extends Error {
   readonly code: CrewLevelsErrorCode;

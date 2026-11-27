@@ -624,18 +624,14 @@ export class GlobalBrokerDb implements DbHandle {
   getConnection(id: string): ConnectionRecord | null {
     this.assertOpen();
     const row = this.conn.get("SELECT * FROM connections WHERE id = ?", id);
-    if (row === undefined) return null;
-    return {
-      id: requiredText(row, "id"),
-      provider: requiredText(row, "provider"),
-      route: requiredText(row, "route"),
-      plan: optionalText(row, "plan"),
-      vaultRef: optionalText(row, "vault_ref"),
-      currency: requiredText(row, "currency"),
-      scale: requiredInt(row, "scale"),
-      enabled: requiredFlag(row, "enabled"),
-      createdAt: requiredInt(row, "created_at"),
-    };
+    return row === undefined ? null : mapConnection(row);
+  }
+
+  listConnections(): readonly ConnectionRecord[] {
+    this.assertOpen();
+    return this.conn
+      .all("SELECT * FROM connections ORDER BY id")
+      .map((row) => mapConnection(row));
   }
 
   pinBlob(input: CasPinInput): void {
@@ -969,6 +965,20 @@ function mapResearch(row: Parameters<typeof requiredText>[0]): ResearchCacheEntr
     artifactHash: requiredText(row, "artifact_hash"),
     fetchedAt: requiredInt(row, "fetched_at"),
     expiresAt: requiredInt(row, "expires_at"),
+  };
+}
+
+function mapConnection(row: Parameters<typeof requiredText>[0]): ConnectionRecord {
+  return {
+    id: requiredText(row, "id"),
+    provider: requiredText(row, "provider"),
+    route: requiredText(row, "route"),
+    plan: optionalText(row, "plan"),
+    vaultRef: optionalText(row, "vault_ref"),
+    currency: requiredText(row, "currency"),
+    scale: requiredInt(row, "scale"),
+    enabled: requiredFlag(row, "enabled"),
+    createdAt: requiredInt(row, "created_at"),
   };
 }
 

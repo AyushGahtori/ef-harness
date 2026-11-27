@@ -3,20 +3,20 @@ import {
   type BlockReason,
   type CostCurrency,
   type RiskTag,
-  type WorkerLevel,
+  type WorkerTier,
   levelLabel,
 } from "./types.js";
 
 export interface RationaleInput {
   readonly status: "assigned" | "blocked";
-  readonly level: WorkerLevel | null;
+  readonly level: WorkerTier | null;
   readonly currency: CostCurrency;
   readonly expectedCost: bigint;
   readonly passProbability: number;
   readonly blockReason: BlockReason | null;
   readonly touches: readonly RiskTag[];
   readonly safetyFloor: boolean;
-  readonly retryRiskLevel: WorkerLevel | null;
+  readonly retryRiskLevel: WorkerTier | null;
   readonly criticalPathBoost: boolean;
   readonly escalated: boolean;
   readonly singleModelMode: boolean;

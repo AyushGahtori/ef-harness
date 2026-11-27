@@ -1,17 +1,81 @@
-export const CREW_LEVELS = ["junior", "mid", "senior", "principal"] as const;
-export type CrewLevel = (typeof CREW_LEVELS)[number];
+import {
+  CREW_PRESETS,
+  GOVERNOR_PRESSURES,
+  HOLD_REASONS,
+  TASK_HOLD_REASONS,
+  WORKER_TIERS,
+  isCrewPreset,
+  isGovernorPressure,
+  isHoldReason,
+  isTaskHoldReason,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+  type CrewPreset,
+  type GovernorPressure,
+  type HoldReason,
+  type TaskHoldReason,
+  type WorkerTier,
+} from "@ef-harness/shared-contracts";
+import type { DifficultyTier } from "../crew-levels/index.js";
+import { SchedulerError } from "./errors.js";
 
-export const CREW_PRESETS = ["Fastest", "Balanced", "Cheapest"] as const;
-export type CrewPreset = (typeof CREW_PRESETS)[number];
+export {
+  CREW_PRESETS,
+  GOVERNOR_PRESSURES,
+  HOLD_REASONS,
+  TASK_HOLD_REASONS,
+  WORKER_TIERS,
+  isCrewPreset,
+  isGovernorPressure,
+  isHoldReason,
+  isTaskHoldReason,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+};
+export type {
+  CrewPreset,
+  DifficultyTier,
+  GovernorPressure,
+  HoldReason,
+  TaskHoldReason,
+  WorkerTier,
+};
+
+export const CREW_LEVELS = WORKER_TIERS;
+export type CrewLevel = WorkerTier;
+
+export type CrewLevelInput =
+  | WorkerTier
+  | "junior"
+  | "mid"
+  | "senior"
+  | "principal"
+  | "jr"
+  | "sr"
+  | "manager";
+
+export type CrewPresetInput =
+  | CrewPreset
+  | "fastest"
+  | "balanced"
+  | "cheapest"
+  | "budget"
+  | "thorough";
+
+export type GovernorPressureInput =
+  | GovernorPressure
+  | "Green"
+  | "Yellow"
+  | "Orange"
+  | "Red"
+  | "green"
+  | "yellow"
+  | "orange"
+  | "red";
 
 export const DIFFICULTIES = ["trivial", "standard", "complex", "critical"] as const;
-export type DifficultyTier = (typeof DIFFICULTIES)[number];
-
-export const GOVERNOR_PRESSURES = ["Green", "Yellow", "Orange"] as const;
-export type GovernorPressure = (typeof GOVERNOR_PRESSURES)[number];
-
-export const HOLD_REASONS = ["user_pause", "requirement_change", "budget", "ccr", "governor"] as const;
-export type HoldReason = (typeof HOLD_REASONS)[number];
 
 export const CLAIM_REFUSAL_REASONS = [
   "not_ready",
@@ -38,6 +102,47 @@ export const SEQUENTIAL_CHAIN_REASON = "Sequential dependency chain — 1 worker
 export const WAITING_FOR_RESET_REASON = "Waiting for reset / Switch connection";
 
 export const MS_PER_MINUTE = 60_000;
+
+const PRESSURE_ALIASES: Readonly<Record<string, GovernorPressure>> = {
+  green: "GREEN",
+  yellow: "YELLOW",
+  orange: "ORANGE",
+  red: "RED",
+};
+
+export function normalizeGovernorPressure(value: string): GovernorPressure | undefined {
+  return PRESSURE_ALIASES[value.trim().toLowerCase()];
+}
+
+export function coerceCrewPreset(value: string): CrewPreset {
+  const canonical = normalizeCrewPreset(value);
+  if (canonical === undefined) {
+    throw new SchedulerError("invalid_graph", `Unknown crew preset: ${value}`);
+  }
+  return canonical;
+}
+
+export function coerceCrewLevel(value: string): WorkerTier {
+  const canonical = normalizeWorkerTier(value);
+  if (canonical === undefined) {
+    throw new SchedulerError("invalid_graph", `Unknown worker tier: ${value}`);
+  }
+  return canonical;
+}
+
+export function coerceGovernorPressure(value: string): GovernorPressure {
+  const canonical = normalizeGovernorPressure(value);
+  if (canonical === undefined) {
+    throw new SchedulerError("invalid_graph", `Unknown governor pressure: ${value}`);
+  }
+  return canonical;
+}
+
+export function coerceTaskHoldReason(value: string): TaskHoldReason {
+  const trimmed = value.trim();
+  if (isTaskHoldReason(trimmed)) return trimmed;
+  throw new SchedulerError("invalid_graph", `Unknown hold reason: ${value}`);
+}
 
 export interface ScheduleEdge {
   readonly to: string;
@@ -77,7 +182,7 @@ export interface RankTable {
 
 export interface TaskHoldRecord {
   readonly taskId: string;
-  readonly reason: HoldReason;
+  readonly reason: TaskHoldReason;
   readonly source: string;
   readonly createdAtMs: number;
 }
@@ -104,7 +209,8 @@ export interface InFlightTurn {
   readonly featureSlug: string;
   readonly attemptId: string;
   readonly connectionId: string;
-  readonly level: CrewLevel;
+  readonly level: WorkerTier;
+  readonly modelId?: string;
   readonly presetAtClaim: CrewPreset;
   readonly startedAtMs: number;
   readonly execTimeMs: number;
@@ -137,16 +243,24 @@ export interface LiveScheduleState {
 
 export interface LevelSelectionRequest {
   readonly task: ScheduleTask;
-  readonly preset: CrewPreset;
+  readonly preset: CrewPreset | CrewPresetInput;
   readonly onCriticalPath: boolean;
   readonly hintStep: number;
+  readonly connections?: readonly ProviderConnection[];
+  readonly paidFallbackApproved?: boolean;
+  readonly nowMs?: number;
 }
 
 export interface LevelSelection {
-  readonly level: CrewLevel;
+  readonly level: WorkerTier;
+  readonly modelId: string;
+  readonly modelTier: WorkerTier;
+  readonly family: string;
+  readonly provider: string;
+  readonly connectionId: string;
   readonly expectedCostMicroUsd: number;
   readonly passProbability: number;
-  readonly safetyFloor: CrewLevel;
+  readonly safetyFloor: WorkerTier;
   readonly rationale: string;
 }
 
@@ -174,10 +288,10 @@ export type BindingConstraint =
 export interface ParallelismInput {
   readonly graph: ScheduleGraph;
   readonly hardwarePoolCap: number;
-  readonly governorPressure: GovernorPressure;
+  readonly governorPressure: GovernorPressure | GovernorPressureInput;
   readonly providerPacingCap: number;
   readonly worktreeSlotCap: number;
-  readonly preset: CrewPreset;
+  readonly preset: CrewPreset | CrewPresetInput;
   readonly developerMax: number | null;
 }
 
@@ -199,7 +313,8 @@ export interface DispatchAssignment {
   readonly featureSlug: string;
   readonly featureBranch: string;
   readonly worktreeSlot: string;
-  readonly level: CrewLevel;
+  readonly level: WorkerTier;
+  readonly modelId: string;
   readonly connectionId: string;
   readonly rankUMs: number;
   readonly writeScope: readonly string[];
@@ -212,6 +327,8 @@ export interface DispatchAssignment {
   readonly onCriticalPath: boolean;
 }
 
+export type ScheduledDispatch = DispatchAssignment;
+
 export interface ActiveSlotSample {
   readonly timeMs: number;
   readonly activeSlots: number;
@@ -223,7 +340,8 @@ export interface TaskPlacement {
   readonly featureBranch: string;
   readonly startMs: number;
   readonly endMs: number;
-  readonly level: CrewLevel;
+  readonly level: WorkerTier;
+  readonly modelId: string;
   readonly connectionId: string;
   readonly writeScope: readonly string[];
   readonly onCriticalPath: boolean;
@@ -274,24 +392,32 @@ export type RebalanceEvent =
   | {
       readonly type: "task_hold";
       readonly taskId: string;
-      readonly reason: HoldReason;
+      readonly reason: TaskHoldReason;
       readonly source: string;
       readonly nowMs: number;
     }
   | {
       readonly type: "task_release";
       readonly taskId: string;
-      readonly reason: HoldReason;
+      readonly reason: TaskHoldReason;
       readonly source: string;
       readonly nowMs: number;
     }
-  | { readonly type: "governor"; readonly pressure: GovernorPressure; readonly nowMs: number }
+  | {
+      readonly type: "governor";
+      readonly pressure: GovernorPressure | GovernorPressureInput;
+      readonly nowMs: number;
+    }
   | {
       readonly type: "provider_pacing";
       readonly connections: readonly ProviderConnection[];
       readonly nowMs: number;
     }
-  | { readonly type: "preset_switch"; readonly preset: CrewPreset; readonly nowMs: number };
+  | {
+      readonly type: "preset_switch";
+      readonly preset: CrewPreset | CrewPresetInput;
+      readonly nowMs: number;
+    };
 
 export interface RebalanceResult {
   readonly state: LiveScheduleState;
@@ -304,16 +430,31 @@ export interface RebalanceResult {
   readonly elapsedMs: number;
 }
 
+export interface InFlightTurnInit {
+  readonly taskId: string;
+  readonly featureId: string;
+  readonly featureSlug: string;
+  readonly attemptId: string;
+  readonly connectionId: string;
+  readonly level: WorkerTier | CrewLevelInput;
+  readonly modelId?: string;
+  readonly presetAtClaim: CrewPreset | CrewPresetInput;
+  readonly startedAtMs: number;
+  readonly execTimeMs: number;
+  readonly writeScope: readonly string[];
+  readonly waveIndex: number;
+}
+
 export interface ScheduleStateInit {
   readonly graph: ScheduleGraph;
-  readonly preset?: CrewPreset;
+  readonly preset?: CrewPreset | CrewPresetInput;
   readonly completedTaskIds?: readonly string[];
   readonly holds?: readonly TaskHoldRecord[];
-  readonly inFlight?: readonly InFlightTurn[];
+  readonly inFlight?: readonly InFlightTurnInit[];
   readonly pathLeases?: readonly PathLeaseView[];
   readonly connections?: readonly ProviderConnection[];
   readonly paidFallbackApproved?: boolean;
-  readonly governorPressure?: GovernorPressure;
+  readonly governorPressure?: GovernorPressure | GovernorPressureInput;
   readonly hardwarePoolCap: number;
   readonly worktreeSlotCap: number;
   readonly developerMax?: number | null;
@@ -333,29 +474,48 @@ export function worktreeSlotFor(featureSlug: string): string {
   return `wt:${featureSlug}`;
 }
 
-export function isCrewPreset(value: string): value is CrewPreset {
-  return (CREW_PRESETS as readonly string[]).includes(value);
+export function isCrewLevel(value: string): value is WorkerTier {
+  return isWorkerTier(value);
 }
 
-export function isCrewLevel(value: string): value is CrewLevel {
-  return (CREW_LEVELS as readonly string[]).includes(value);
-}
-
-export function levelIndex(level: CrewLevel): number {
-  return CREW_LEVELS.indexOf(level);
+export function levelIndex(level: WorkerTier | CrewLevelInput): number {
+  return WORKER_TIERS.indexOf(coerceCrewLevel(level));
 }
 
 export function createScheduleState(init: ScheduleStateInit): LiveScheduleState {
+  const inFlight: InFlightTurn[] = (init.inFlight ?? []).map((turn) => ({
+    taskId: turn.taskId,
+    featureId: turn.featureId,
+    featureSlug: turn.featureSlug,
+    attemptId: turn.attemptId,
+    connectionId: turn.connectionId,
+    level: coerceCrewLevel(turn.level),
+    ...(turn.modelId === undefined ? {} : { modelId: turn.modelId }),
+    presetAtClaim: coerceCrewPreset(turn.presetAtClaim),
+    startedAtMs: turn.startedAtMs,
+    execTimeMs: turn.execTimeMs,
+    writeScope: turn.writeScope,
+    waveIndex: turn.waveIndex,
+  }));
+  const holds: TaskHoldRecord[] = (init.holds ?? []).map((hold) => ({
+    taskId: hold.taskId,
+    reason: coerceTaskHoldReason(hold.reason),
+    source: hold.source,
+    createdAtMs: hold.createdAtMs,
+  }));
   return {
     graph: init.graph,
-    preset: init.preset ?? "Balanced",
+    preset: init.preset === undefined ? "Balanced" : coerceCrewPreset(init.preset),
     completedTaskIds: init.completedTaskIds ?? [],
-    holds: init.holds ?? [],
-    inFlight: init.inFlight ?? [],
+    holds,
+    inFlight,
     pathLeases: init.pathLeases ?? [],
     connections: init.connections ?? [],
     paidFallbackApproved: init.paidFallbackApproved ?? false,
-    governorPressure: init.governorPressure ?? "Green",
+    governorPressure:
+      init.governorPressure === undefined
+        ? "GREEN"
+        : coerceGovernorPressure(init.governorPressure),
     hardwarePoolCap: init.hardwarePoolCap,
     worktreeSlotCap: init.worktreeSlotCap,
     developerMax: init.developerMax ?? null,

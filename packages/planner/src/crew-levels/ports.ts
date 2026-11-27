@@ -1,10 +1,12 @@
+import type {
+  BudgetLedgerRepo,
+  CodeIndexDb,
+  GlobalBrokerDb,
+  TelemetryDb,
+} from "@ef-harness/db";
+import type { PlanTask } from "../graph-compiler/index.js";
 import type { FileRankSignal, ScopeKind } from "./types.js";
 
-/**
- * Local port for Task 023 `BudgetLedgerRepo.getBudgetRemaining`.
- * Sibling branch `task/023-budget-reservation-ledger` is not merged into this base.
- * `currency` is `usd` or `allowance:<connectionId>`. Units are integers.
- */
 export interface BudgetRemainingView {
   readonly currency: string;
   readonly remainingUnits: number | bigint;
@@ -18,11 +20,6 @@ export interface BudgetLedgerPort {
   ): readonly BudgetRemainingView[];
 }
 
-/**
- * Local port for Task 014 `GlobalBrokerDb` connections.
- * The foundation broker exposes `getConnection(id)` and not a list method.
- * Integrators adapt a connection query onto `listConnections`.
- */
 export interface GlobalConnectionView {
   readonly id: string;
   readonly provider: string;
@@ -35,10 +32,6 @@ export interface GlobalDbRepoPort {
   listConnections(): readonly GlobalConnectionView[];
 }
 
-/**
- * Local port for Task 014 `TelemetryDb.readPage`.
- * Pass outcomes ride in `metric` rows. The calibrator does not parse other kinds.
- */
 export interface TelemetryRecordView {
   readonly kind: string;
   readonly data: unknown;
@@ -51,19 +44,10 @@ export interface TelemetryDbRepoPort {
   }): readonly TelemetryRecordView[];
 }
 
-/**
- * Local port for Task 167 `file_rank` (`code-index.db`: commit, path, score).
- * Task 014's `CodeIndexDb` stores the same row shape once that package is wired.
- */
 export interface CodeIndexRepoPort {
   fileRanksForCommit(commitSha: string): readonly FileRankSignal[];
 }
 
-/**
- * Local port for a compiled task produced by Task 092 `DeterministicGraphCompiler`.
- * Field names follow that task's `PlanTask` so the adapter can be swapped for the
- * real compiler output without a package dependency on this base.
- */
 export interface GraphCompilerTaskPort {
   readonly id: string;
   readonly title?: string;
@@ -82,4 +66,68 @@ export interface GraphCompilerTaskPort {
 export interface BudgetScopeRef {
   readonly scopeKind: ScopeKind;
   readonly scopeId: string;
+}
+
+export function bindGlobalDbRepo(broker: GlobalBrokerDb): GlobalDbRepoPort {
+  return {
+    listConnections(): readonly GlobalConnectionView[] {
+      return broker.listConnections().map((record) => ({
+        id: record.id,
+        provider: record.provider,
+        route: record.route,
+        currency: record.currency,
+        enabled: record.enabled,
+      }));
+    },
+  };
+}
+
+export function bindTelemetryDbRepo(telemetry: TelemetryDb): TelemetryDbRepoPort {
+  return {
+    readPage(options): readonly TelemetryRecordView[] {
+      return telemetry.readPage(options ?? {});
+    },
+  };
+}
+
+export function bindCodeIndexRepo(codeIndex: CodeIndexDb): CodeIndexRepoPort {
+  return {
+    fileRanksForCommit(commitSha: string): readonly FileRankSignal[] {
+      return codeIndex.rankingForCommit(commitSha).map((row) => ({
+        path: row.path,
+        score: row.score,
+      }));
+    },
+  };
+}
+
+export function bindBudgetLedgerRepo(ledger: BudgetLedgerRepo): BudgetLedgerPort {
+  return {
+    getBudgetRemaining(
+      scopeKind: ScopeKind,
+      scopeId: string,
+    ): readonly BudgetRemainingView[] {
+      return ledger.getBudgetRemaining(scopeKind, scopeId).map((row) => ({
+        currency: row.currency,
+        remainingUnits: row.remainingUnits,
+        overrun: row.overrun,
+      }));
+    },
+  };
+}
+
+export function graphTaskFromPlanTask(task: PlanTask): GraphCompilerTaskPort {
+  return {
+    id: task.id,
+    title: task.title,
+    primaryFiles: task.primaryFiles,
+    mustBandTokens: task.mustBandTokens,
+    touches: task.touches,
+    implements: task.implements,
+    obeys: task.obeys,
+    createsMigration: task.createsMigration,
+    migrationIntentSlot: task.migrationIntentSlot,
+    mutatesSharedContract: task.mutatesSharedContract,
+    taskKind: task.taskKind,
+  };
 }

@@ -1,14 +1,51 @@
-export const WORKER_LEVELS = ["junior", "mid", "senior", "principal"] as const;
+import {
+  CREW_PRESETS,
+  WORKER_TIERS,
+  isCrewPreset,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+  type CrewPreset,
+  type WorkerTier,
+} from "@ef-harness/shared-contracts";
+import { SCOPE_KINDS, type ScopeKind } from "@ef-harness/db";
+import { CrewLevelsError } from "./errors.js";
 
-export type WorkerLevel = (typeof WORKER_LEVELS)[number];
+export {
+  CREW_PRESETS,
+  SCOPE_KINDS,
+  WORKER_TIERS,
+  isCrewPreset,
+  isWorkerTier,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
+};
+export type { CrewPreset, ScopeKind, WorkerTier };
+
+export const WORKER_LEVELS = WORKER_TIERS;
+export type WorkerLevel = WorkerTier;
+
+export type WorkerTierInput =
+  | WorkerTier
+  | "junior"
+  | "mid"
+  | "senior"
+  | "principal"
+  | "jr"
+  | "sr"
+  | "manager";
+
+export type CrewPresetInput =
+  | CrewPreset
+  | "fastest"
+  | "balanced"
+  | "cheapest"
+  | "budget"
+  | "thorough";
 
 export const DIFFICULTY_TIERS = ["trivial", "standard", "complex", "critical"] as const;
 
 export type DifficultyTier = (typeof DIFFICULTY_TIERS)[number];
-
-export const CREW_PRESETS = ["fastest", "balanced", "cheapest"] as const;
-
-export type CrewPreset = (typeof CREW_PRESETS)[number];
 
 export const CREW_ROLES = [
   "worker",
@@ -62,16 +99,6 @@ export const BLOCK_REASONS = [
 ] as const;
 
 export type BlockReason = (typeof BLOCK_REASONS)[number];
-
-export const SCOPE_KINDS = [
-  "project",
-  "feature",
-  "task",
-  "wave_paperwork",
-  "grant",
-] as const;
-
-export type ScopeKind = (typeof SCOPE_KINDS)[number];
 
 export const PASS_PROBABILITY_MIN = 0.05;
 export const PASS_PROBABILITY_MAX = 0.98;
@@ -129,7 +156,7 @@ export interface ModelRosterEntry {
   readonly family: string;
   readonly provider: string;
   readonly connectionId: string;
-  readonly tier: WorkerLevel;
+  readonly tier: WorkerTier;
   readonly contextWindow: number;
   readonly supportsTools: boolean;
   readonly supportsStructuredJson: boolean;
@@ -161,7 +188,7 @@ export interface PassEstimate {
 }
 
 export interface LevelQuote {
-  readonly level: WorkerLevel;
+  readonly level: WorkerTier;
   readonly modelId: string;
   readonly family: string;
   readonly unitCost: bigint;
@@ -175,9 +202,9 @@ export interface LevelAssignment {
   readonly status: "assigned" | "blocked";
   readonly taskId: string;
   readonly difficulty: DifficultyTier;
-  readonly level: WorkerLevel | null;
+  readonly level: WorkerTier | null;
   readonly modelId: string | null;
-  readonly modelTier: WorkerLevel | null;
+  readonly modelTier: WorkerTier | null;
   readonly family: string | null;
   readonly provider: string | null;
   readonly connectionId: string | null;
@@ -188,7 +215,7 @@ export interface LevelAssignment {
   readonly passProbability: number;
   readonly rationale: string;
   readonly singleModelMode: boolean;
-  readonly floor: WorkerLevel;
+  readonly floor: WorkerTier;
   readonly floorHeld: boolean;
   readonly escalated: boolean;
   readonly criticalPathBoost: boolean;
@@ -198,8 +225,24 @@ export interface LevelAssignment {
   readonly compared: readonly LevelQuote[];
 }
 
-export function isWorkerLevel(value: string): value is WorkerLevel {
-  return (WORKER_LEVELS as readonly string[]).includes(value);
+export function coerceWorkerTier(value: string): WorkerTier {
+  const canonical = normalizeWorkerTier(value);
+  if (canonical === undefined) {
+    throw new CrewLevelsError("bad-model", `unsupported worker tier: ${value}`);
+  }
+  return canonical;
+}
+
+export function coerceCrewPreset(value: string): CrewPreset {
+  const canonical = normalizeCrewPreset(value);
+  if (canonical === undefined) {
+    throw new CrewLevelsError("bad-task", `unsupported crew preset: ${value}`);
+  }
+  return canonical;
+}
+
+export function isWorkerLevel(value: string): value is WorkerTier {
+  return isWorkerTier(value);
 }
 
 export function isDifficultyTier(value: string): value is DifficultyTier {
@@ -218,41 +261,38 @@ export function isDiversityRole(role: CrewRole): role is DiversityRole {
   return (DIVERSITY_ROLES as readonly string[]).includes(role);
 }
 
-export function levelRank(level: WorkerLevel): number {
-  switch (level) {
-    case "junior":
+export function levelRank(level: WorkerTier | WorkerTierInput | string): number {
+  const canonical = coerceWorkerTier(level);
+  switch (canonical) {
+    case "Junior":
       return 0;
-    case "mid":
+    case "Mid":
       return 1;
-    case "senior":
+    case "Senior":
       return 2;
-    case "principal":
+    case "Principal":
       return 3;
   }
 }
 
-export function levelByRank(rank: number): WorkerLevel {
-  if (rank <= 0) return "junior";
-  if (rank === 1) return "mid";
-  if (rank === 2) return "senior";
-  return "principal";
+export function levelByRank(rank: number): WorkerTier {
+  if (rank <= 0) return "Junior";
+  if (rank === 1) return "Mid";
+  if (rank === 2) return "Senior";
+  return "Principal";
 }
 
-export function levelLabel(level: WorkerLevel): string {
-  switch (level) {
-    case "junior":
-      return "Junior";
-    case "mid":
-      return "Mid";
-    case "senior":
-      return "Senior";
-    case "principal":
-      return "Principal";
-  }
+export function levelLabel(level: WorkerTier | WorkerTierInput | string): string {
+  return coerceWorkerTier(level);
 }
 
-export function higherLevel(left: WorkerLevel, right: WorkerLevel): WorkerLevel {
-  return levelRank(left) >= levelRank(right) ? left : right;
+export function higherLevel(
+  left: WorkerTier | WorkerTierInput | string,
+  right: WorkerTier | WorkerTierInput | string,
+): WorkerTier {
+  const a = coerceWorkerTier(left);
+  const b = coerceWorkerTier(right);
+  return levelRank(a) >= levelRank(b) ? a : b;
 }
 
 export function entryCurrency(entry: ModelRosterEntry): CostCurrency {

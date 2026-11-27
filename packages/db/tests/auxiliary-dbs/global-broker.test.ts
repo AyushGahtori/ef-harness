@@ -153,7 +153,20 @@ describe("global broker database", () => {
       scale: 1_000_000,
       createdAt: 10,
     });
+    db.upsertConnection({
+      id: "anthropic-disabled",
+      provider: "anthropic",
+      route: "api_key",
+      currency: "usd",
+      scale: 1_000_000,
+      enabled: false,
+      createdAt: 11,
+    });
     expect(db.getConnection("openai-personal")?.vaultRef).toBe("wincred:ef-harness/openai");
+    expect(db.listConnections().map((conn) => [conn.id, conn.enabled])).toEqual([
+      ["anthropic-disabled", false],
+      ["openai-personal", true],
+    ]);
     for (const prefix of vaultSecretPrefixes()) {
       expect(() =>
         db.upsertConnection({

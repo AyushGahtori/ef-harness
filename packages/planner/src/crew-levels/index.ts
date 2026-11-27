@@ -16,6 +16,13 @@ export {
   sameLevelRetryCost,
 } from "./money.js";
 export type { CostAmount } from "./money.js";
+export {
+  bindBudgetLedgerRepo,
+  bindCodeIndexRepo,
+  bindGlobalDbRepo,
+  bindTelemetryDbRepo,
+  graphTaskFromPlanTask,
+} from "./ports.js";
 export type {
   BudgetLedgerPort,
   BudgetRemainingView,
@@ -32,6 +39,7 @@ export { buildRationale } from "./rationale.js";
 export type { RationaleInput } from "./rationale.js";
 export {
   VersionedModelRoster,
+  defaultModelRoster,
   defaultPassPriors,
   normalizeModelEntry,
   passPriors,
@@ -40,10 +48,13 @@ export type {
   EligibilityQuery,
   LocalModelCapabilities,
   ModelEntryInit,
+  ResolvedModelAssignment,
+  ResolveTierOptions,
   RosterSource,
   SignedProviderPolicy,
   SubscriptionWeight,
 } from "./roster.js";
+export type { RosterSnapshot } from "./selection-core.js";
 export { ExpectedCostLevelSelector, selectionInput } from "./selector.js";
 export type { LevelSelectionInput, SelectionOptions } from "./selector.js";
 export {
@@ -67,23 +78,31 @@ export {
   SCOPE_KINDS,
   SPEND_KINDS,
   WORKER_LEVELS,
+  WORKER_TIERS,
+  coerceCrewPreset,
+  coerceWorkerTier,
   entryCurrency,
   higherLevel,
+  isCrewPreset,
   isCrewRole,
   isDifficultyTier,
   isDiversityRole,
   isMicroLocal,
   isRiskTag,
   isWorkerLevel,
+  isWorkerTier,
   levelByRank,
   levelLabel,
   levelRank,
+  normalizeCrewPreset,
+  normalizeWorkerTier,
 } from "./types.js";
 export type {
   BlockReason,
   CompiledTaskFeatures,
   CostCurrency,
   CrewPreset,
+  CrewPresetInput,
   CrewRole,
   DifficultyAssessment,
   DifficultyTier,
@@ -101,4 +120,6 @@ export type {
   SpendKind,
   TokenEstimate,
   WorkerLevel,
+  WorkerTier,
+  WorkerTierInput,
 } from "./types.js";

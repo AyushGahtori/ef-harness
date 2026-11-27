@@ -1,123 +1,275 @@
 import {
+  ExpectedCostLevelSelector,
+  HistoricalPassRateCalibrator,
+  VersionedModelRoster,
+  defaultModelRoster,
+  isCrewRole,
+  isRiskTag,
+  selectionInput,
+  type CompiledTaskFeatures,
+  type CostCurrency,
+  type GlobalConnectionView,
+  type MigrationKind,
+  type RiskTag,
+} from "../crew-levels/index.js";
+import { SchedulerError } from "./errors.js";
+import {
   AGE_MS_PER_SKIP,
   BALANCED_PRESET_CAP,
   CACHE_BONUS_MS,
   CHEAPEST_PRESET_CAP,
-  CREW_LEVELS,
   EXPLICIT_BOOST_MS,
-  levelIndex,
-  type CrewLevel,
+  coerceCrewPreset,
   type CrewPreset,
+  type CrewPresetInput,
   type CrewPresetProfile,
   type DifficultyTier,
   type LevelSelection,
   type LevelSelectionRequest,
+  type ProviderConnection,
   type ScheduleGraph,
   type ScheduleTask,
   type TaskLevelAssignment,
+  type WorkerTier,
 } from "./types.js";
 
-/**
- * Local stand-in for Task 106 `ExpectedCostLevelSelector`.
- * E[cost] = unit_cost / P(pass). Safety floors and Hint 2+ escalation stay here
- * until the crew-levels barrel is wired.
- */
-export const UNIT_COST_MICRO_USD: Readonly<Record<CrewLevel, number>> = {
-  junior: 20_000,
-  mid: 80_000,
-  senior: 180_000,
-  principal: 400_000,
+export const DEFAULT_SCHEDULER_ROSTER: VersionedModelRoster = defaultModelRoster();
+
+export function defaultSchedulerRoster(): VersionedModelRoster {
+  return DEFAULT_SCHEDULER_ROSTER;
+}
+
+const DIFFICULTY_METRICS: Readonly<
+  Record<
+    DifficultyTier,
+    { readonly fileCount: number; readonly mustBandTokens: number; readonly contractFanIn: number }
+  >
+> = {
+  trivial: { fileCount: 1, mustBandTokens: 100, contractFanIn: 0 },
+  standard: { fileCount: 3, mustBandTokens: 6_000, contractFanIn: 0 },
+  complex: { fileCount: 5, mustBandTokens: 20_000, contractFanIn: 0 },
+  critical: { fileCount: 9, mustBandTokens: 36_000, contractFanIn: 4 },
 };
 
-export const PASS_PROBABILITY: Readonly<Record<DifficultyTier, Readonly<Record<CrewLevel, number>>>> = {
-  trivial: { junior: 0.9, mid: 0.95, senior: 0.97, principal: 0.98 },
-  standard: { junior: 0.55, mid: 0.88, senior: 0.93, principal: 0.96 },
-  complex: { junior: 0.25, mid: 0.7, senior: 0.9, principal: 0.94 },
-  critical: { junior: 0.15, mid: 0.55, senior: 0.85, principal: 0.92 },
-};
-
-const FLOOR_TAGS = new Set(["auth", "payments", "destructive_migration", "cross_feature_conflict"]);
-
-export function expectedCostMicroUsd(level: CrewLevel, difficulty: DifficultyTier): number {
-  return Math.round(UNIT_COST_MICRO_USD[level] / PASS_PROBABILITY[difficulty][level]);
-}
-
-export function safetyFloor(task: ScheduleTask): CrewLevel {
-  if (task.role === "oracle-author@1") return "senior";
-  if (task.riskTags.some((tag) => FLOOR_TAGS.has(tag))) return "senior";
-  if (task.difficulty === "critical") return "mid";
-  return "junior";
-}
-
-function atLeast(level: CrewLevel, floor: CrewLevel): CrewLevel {
-  return levelIndex(level) >= levelIndex(floor) ? level : floor;
-}
-
-function escalate(level: CrewLevel, steps: number): CrewLevel {
-  const next = Math.min(CREW_LEVELS.length - 1, levelIndex(level) + steps);
-  return CREW_LEVELS[next] ?? "principal";
-}
-
-function cheapestLevel(task: ScheduleTask, floor: CrewLevel): CrewLevel {
-  let best = floor;
-  let bestCost = expectedCostMicroUsd(floor, task.difficulty);
-  for (const level of CREW_LEVELS) {
-    if (levelIndex(level) < levelIndex(floor)) continue;
-    const cost = expectedCostMicroUsd(level, task.difficulty);
-    if (cost < bestCost) {
-      best = level;
-      bestCost = cost;
+function toCompiledTaskFeatures(task: ScheduleTask, hintStep: number): CompiledTaskFeatures {
+  const metrics = DIFFICULTY_METRICS[task.difficulty];
+  const riskTags: RiskTag[] = [];
+  let migrationKind: MigrationKind = "none";
+  let crossFeatureConflictMerge = false;
+  for (const tag of task.riskTags) {
+    if (isRiskTag(tag) && !riskTags.includes(tag)) {
+      riskTags.push(tag);
+    } else if (tag === "destructive_migration") {
+      migrationKind = "destructive";
+      if (!riskTags.includes("migrations")) riskTags.push("migrations");
+    } else if (tag === "expand_contract_migration") {
+      migrationKind = "expand-contract";
+      if (!riskTags.includes("migrations")) riskTags.push("migrations");
+    } else if (tag === "cross_feature_conflict") {
+      crossFeatureConflictMerge = true;
     }
   }
-  return best;
+  const roleId = task.role !== null && isCrewRole(task.role) ? task.role : null;
+  return {
+    taskId: task.id,
+    fileCount: metrics.fileCount,
+    mustBandTokens: metrics.mustBandTokens,
+    riskTags,
+    contractFanIn: metrics.contractFanIn,
+    fileRanks: [],
+    priorFailedAttempts: Math.max(0, hintStep),
+    roleId,
+    migrationKind,
+    crossFeatureConflictMerge,
+    language: "ts",
+  };
+}
+
+export function safetyFloor(task: ScheduleTask): WorkerTier {
+  if (task.role === "oracle-author@1") return "Senior";
+  const floorTags = new Set([
+    "auth",
+    "payments",
+    "migrations",
+    "destructive_migration",
+    "expand_contract_migration",
+    "cross_feature_conflict",
+  ]);
+  if (task.riskTags.some((tag) => floorTags.has(tag))) return "Senior";
+  if (task.difficulty === "critical") return "Senior";
+  return "Junior";
 }
 
 export interface ExpectedCostLevelSelectorPort {
   selectLevel(input: LevelSelectionRequest): LevelSelection;
 }
 
-export class LocalExpectedCostLevelSelector implements ExpectedCostLevelSelectorPort {
+export interface CrewLevelsSelectorAdapterOptions {
+  readonly roster?: VersionedModelRoster;
+  readonly calibrator?: HistoricalPassRateCalibrator;
+  readonly currency?: CostCurrency;
+  readonly paidFallbackApproved?: boolean;
+  readonly allowedConnectionIds?: readonly string[] | null;
+  readonly nowMs?: number;
+}
+
+function toGlobalConnectionViews(
+  connections: readonly ProviderConnection[],
+): readonly GlobalConnectionView[] {
+  return connections.map((connection) => ({
+    id: connection.id,
+    provider: connection.kind === "subscription" ? "subscription" : "api",
+    route: connection.kind === "subscription" ? "subscription" : "api_key",
+    currency: connection.kind === "subscription" ? `allowance:${connection.id}` : "usd",
+    enabled:
+      connection.authorized &&
+      !connection.throttled &&
+      !connection.allowanceExhausted &&
+      connection.pacingSlots > 0,
+  }));
+}
+
+export class CrewLevelsSelectorAdapter implements ExpectedCostLevelSelectorPort {
+  private readonly roster: VersionedModelRoster;
+  private readonly selector: ExpectedCostLevelSelector;
+  private readonly defaultCurrency: CostCurrency;
+  private readonly defaultPaidFallbackApproved: boolean | undefined;
+  private readonly allowedConnectionIds: readonly string[] | null;
+  private readonly defaultNowMs: number;
+
+  constructor(
+    selector?: ExpectedCostLevelSelector,
+    options: CrewLevelsSelectorAdapterOptions = {},
+  ) {
+    this.roster = options.roster ?? DEFAULT_SCHEDULER_ROSTER;
+    const calibrator =
+      options.calibrator ?? HistoricalPassRateCalibrator.fromRoster(this.roster, []);
+    this.selector = selector ?? new ExpectedCostLevelSelector(this.roster, calibrator);
+    this.defaultCurrency = options.currency ?? "micro-usd";
+    this.defaultPaidFallbackApproved = options.paidFallbackApproved;
+    this.allowedConnectionIds = options.allowedConnectionIds ?? null;
+    this.defaultNowMs = options.nowMs ?? 0;
+  }
+
   selectLevel(input: LevelSelectionRequest): LevelSelection {
-    const floor = safetyFloor(input.task);
-    let level = cheapestLevel(input.task, floor);
-    if (input.preset === "Fastest" && input.onCriticalPath) {
-      level = atLeast("principal", floor);
-    } else if (input.preset === "Fastest" && (input.task.difficulty === "complex" || input.task.difficulty === "critical")) {
-      level = atLeast(atLeast(level, "senior"), floor);
-    } else if (
-      input.preset === "Balanced" &&
-      (input.onCriticalPath || input.task.difficulty === "complex" || input.task.difficulty === "critical")
+    const preset = coerceCrewPreset(input.preset);
+    const features = toCompiledTaskFeatures(input.task, input.hintStep);
+    const hasRosterMatch =
+      input.connections !== undefined &&
+      input.connections.length > 0 &&
+      this.roster.entries.some((entry) =>
+        input.connections!.some((conn) => conn.id === entry.connectionId),
+      );
+    const connections = hasRosterMatch && input.connections
+      ? toGlobalConnectionViews(input.connections)
+      : null;
+    const currency: CostCurrency =
+      hasRosterMatch &&
+      input.connections?.some(
+        (conn) =>
+          conn.kind === "subscription" &&
+          conn.authorized &&
+          !conn.throttled &&
+          !conn.allowanceExhausted &&
+          this.roster.entries.some(
+            (entry) => entry.connectionId === conn.id && entry.spendKind === "subscription",
+          ),
+      ) &&
+      (preset === "Cheapest" || input.paidFallbackApproved === false)
+        ? "ppm"
+        : this.defaultCurrency;
+    const paidFallbackApproved = hasRosterMatch
+      ? (input.paidFallbackApproved ?? this.defaultPaidFallbackApproved ?? false)
+      : (this.defaultPaidFallbackApproved ?? true);
+    const assignment = this.selector.select(
+      selectionInput(features, preset, currency, {
+        nowMs: input.nowMs ?? this.defaultNowMs,
+        failedAttempts: Math.max(0, input.hintStep),
+        onCriticalPath: input.onCriticalPath,
+        role: features.roleId ?? "worker",
+        paidFallbackApproved,
+        allowedConnectionIds: this.allowedConnectionIds,
+        connections,
+      }),
+    );
+    if (
+      assignment.status === "blocked" ||
+      assignment.level === null ||
+      assignment.modelId === null ||
+      assignment.modelTier === null
     ) {
-      level = atLeast(atLeast(level, "senior"), floor);
+      throw new SchedulerError("no_eligible_model", assignment.rationale);
     }
-    const escalations = input.hintStep >= 2 ? input.hintStep - 1 : 0;
-    if (escalations > 0) level = atLeast(escalate(level, escalations), floor);
-    const pass = PASS_PROBABILITY[input.task.difficulty][level];
-    const cost = expectedCostMicroUsd(level, input.task.difficulty);
-    const dollars = (cost / 1_000_000).toFixed(2);
-    const percent = Math.round(pass * 100);
-    const why = input.onCriticalPath
-      ? "critical path"
-      : input.task.riskTags.length > 0
-        ? `tags ${input.task.riskTags.join("+")}`
-        : `${input.task.difficulty} leaf`;
     return {
-      level,
-      expectedCostMicroUsd: cost,
-      passProbability: pass,
-      safetyFloor: floor,
-      rationale: `Assigned ${level} (est. $${dollars}, ${percent}% 1st-pass) — ${input.preset}; ${why}`,
+      level: assignment.level,
+      modelId: assignment.modelId,
+      modelTier: assignment.modelTier,
+      family: assignment.family ?? "unknown",
+      provider: assignment.provider ?? "unknown",
+      connectionId: assignment.connectionId ?? "default",
+      expectedCostMicroUsd: Number(assignment.expectedCost),
+      passProbability: assignment.passProbability,
+      safetyFloor: assignment.floor,
+      rationale: assignment.rationale,
     };
   }
 }
 
-export class CrewPresetProfileEngine {
-  constructor(private readonly levels: ExpectedCostLevelSelectorPort = new LocalExpectedCostLevelSelector()) {}
+export class LocalExpectedCostLevelSelector implements ExpectedCostLevelSelectorPort {
+  private readonly inner: CrewLevelsSelectorAdapter;
 
-  profile(preset: CrewPreset): CrewPresetProfile {
-    if (preset === "Fastest") {
+  constructor(options: CrewLevelsSelectorAdapterOptions = {}) {
+    this.inner = new CrewLevelsSelectorAdapter(undefined, options);
+  }
+
+  selectLevel(input: LevelSelectionRequest): LevelSelection {
+    return this.inner.selectLevel(input);
+  }
+}
+
+export interface CrewPresetEngineConfig {
+  readonly levels?: ExpectedCostLevelSelectorPort;
+  readonly selector?: ExpectedCostLevelSelector;
+  readonly roster?: VersionedModelRoster;
+  readonly calibrator?: HistoricalPassRateCalibrator;
+}
+
+function resolveSelectorPort(
+  input?: ExpectedCostLevelSelectorPort | ExpectedCostLevelSelector | CrewPresetEngineConfig,
+): ExpectedCostLevelSelectorPort {
+  if (input === undefined) {
+    return new CrewLevelsSelectorAdapter();
+  }
+  if (input instanceof ExpectedCostLevelSelector) {
+    return new CrewLevelsSelectorAdapter(input);
+  }
+  if ("selectLevel" in input) {
+    return input;
+  }
+  if (input.levels) {
+    return input.levels;
+  }
+  const roster = input.roster ?? DEFAULT_SCHEDULER_ROSTER;
+  const calibrator =
+    input.calibrator ?? HistoricalPassRateCalibrator.fromRoster(roster, []);
+  const selector = input.selector ?? new ExpectedCostLevelSelector(roster, calibrator);
+  return new CrewLevelsSelectorAdapter(selector, { roster, calibrator });
+}
+
+export class CrewPresetProfileEngine {
+  private readonly levels: ExpectedCostLevelSelectorPort;
+
+  constructor(
+    levels?: ExpectedCostLevelSelectorPort | ExpectedCostLevelSelector | CrewPresetEngineConfig,
+  ) {
+    this.levels = resolveSelectorPort(levels);
+  }
+
+  profile(preset: CrewPreset | CrewPresetInput | string): CrewPresetProfile {
+    const canonical = coerceCrewPreset(preset);
+    if (canonical === "Fastest") {
       return {
-        preset,
+        preset: canonical,
         userPresetCap: Number.POSITIVE_INFINITY,
         prewarmNextWave: true,
         preferSubscription: false,
@@ -125,9 +277,9 @@ export class CrewPresetProfileEngine {
         summary: "Maximizes width and puts high first-pass models on the critical path",
       };
     }
-    if (preset === "Cheapest") {
+    if (canonical === "Cheapest") {
       return {
-        preset,
+        preset: canonical,
         userPresetCap: CHEAPEST_PRESET_CAP,
         prewarmNextWave: false,
         preferSubscription: true,
@@ -136,7 +288,7 @@ export class CrewPresetProfileEngine {
       };
     }
     return {
-      preset,
+      preset: canonical,
       userPresetCap: BALANCED_PRESET_CAP,
       prewarmNextWave: false,
       preferSubscription: false,
@@ -145,20 +297,46 @@ export class CrewPresetProfileEngine {
     };
   }
 
-  assignLevel(task: ScheduleTask, onCriticalPath: boolean, preset: CrewPreset, hintStep = task.hintStep): LevelSelection {
-    return this.levels.selectLevel({ task, preset, onCriticalPath, hintStep });
+  assignLevel(
+    task: ScheduleTask,
+    onCriticalPath: boolean,
+    preset: CrewPreset | CrewPresetInput | string,
+    hintStep = task.hintStep,
+    options: {
+      readonly connections?: readonly ProviderConnection[];
+      readonly paidFallbackApproved?: boolean;
+      readonly nowMs?: number;
+    } = {},
+  ): LevelSelection {
+    const canonical = coerceCrewPreset(preset);
+    return this.levels.selectLevel({
+      task,
+      preset: canonical,
+      onCriticalPath,
+      hintStep,
+      ...(options.connections === undefined ? {} : { connections: options.connections }),
+      ...(options.paidFallbackApproved === undefined
+        ? {}
+        : { paidFallbackApproved: options.paidFallbackApproved }),
+      ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
+    });
   }
 
   assignAll(
     graph: ScheduleGraph,
     onCriticalPath: ReadonlySet<string>,
-    preset: CrewPreset,
+    preset: CrewPreset | CrewPresetInput | string,
     hintOverride: Readonly<Record<string, number>> = {},
   ): readonly TaskLevelAssignment[] {
+    const canonical = coerceCrewPreset(preset);
     return graph.tasks.map((task) => {
       const critical = onCriticalPath.has(task.id);
       const hint = hintOverride[task.id] ?? task.hintStep;
-      return { taskId: task.id, onCriticalPath: critical, ...this.assignLevel(task, critical, preset, hint) };
+      return {
+        taskId: task.id,
+        onCriticalPath: critical,
+        ...this.assignLevel(task, critical, canonical, hint),
+      };
     });
   }
 }

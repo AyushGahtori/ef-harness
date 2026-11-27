@@ -5,9 +5,13 @@ import {
   BALANCED_PRESET_CAP,
   CHEAPEST_PRESET_CAP,
   SEQUENTIAL_CHAIN_REASON,
+  coerceCrewPreset,
+  coerceGovernorPressure,
   type BindingConstraint,
   type CrewPreset,
+  type CrewPresetInput,
   type GovernorPressure,
+  type GovernorPressureInput,
   type ParallelismDecision,
   type ParallelismInput,
   type ScheduleGraph,
@@ -21,9 +25,10 @@ export interface DagWidth {
 
 const widthCache = new WeakMap<ScheduleGraph, DagWidth>();
 
-export function presetCap(preset: CrewPreset): number {
-  if (preset === "Fastest") return Number.POSITIVE_INFINITY;
-  if (preset === "Balanced") return BALANCED_PRESET_CAP;
+export function presetCap(preset: CrewPreset | CrewPresetInput | string): number {
+  const canonical = coerceCrewPreset(preset);
+  if (canonical === "Fastest") return Number.POSITIVE_INFINITY;
+  if (canonical === "Balanced") return BALANCED_PRESET_CAP;
   return CHEAPEST_PRESET_CAP;
 }
 
@@ -34,12 +39,17 @@ function assertCap(value: number, label: string): void {
   }
 }
 
-export function effectiveHardwareCap(hardwarePoolCap: number, pressure: GovernorPressure): number {
+export function effectiveHardwareCap(
+  hardwarePoolCap: number,
+  pressure: GovernorPressure | GovernorPressureInput | string,
+): number {
   if (!Number.isInteger(hardwarePoolCap) || hardwarePoolCap < 0) {
     throw new SchedulerError("invalid_graph", "Hardware pool cap must be a non-negative integer");
   }
-  if (pressure === "Orange") return Math.min(hardwarePoolCap, 1);
-  if (pressure === "Yellow") return Math.min(hardwarePoolCap, Math.max(1, Math.floor(hardwarePoolCap / 2)));
+  const canonical = coerceGovernorPressure(pressure);
+  if (canonical === "RED") return 0;
+  if (canonical === "ORANGE") return Math.min(hardwarePoolCap, 1);
+  if (canonical === "YELLOW") return Math.min(hardwarePoolCap, Math.max(1, Math.floor(hardwarePoolCap / 2)));
   return hardwarePoolCap;
 }
 

@@ -3,12 +3,12 @@ import { clampPassProbability, probabilityMicro } from "./money.js";
 import type { TelemetryRecordView } from "./ports.js";
 import {
   type DifficultyTier,
+  type ModelRosterEntry,
   type PassEstimate,
   type PassPriors,
   PRIOR_STRENGTH,
   isDifficultyTier,
 } from "./types.js";
-import type { VersionedModelRoster } from "./roster.js";
 
 export interface PassObservation {
   readonly modelId: string;
@@ -152,7 +152,7 @@ export class HistoricalPassRateCalibrator {
   }
 
   static fromRoster(
-    roster: VersionedModelRoster,
+    roster: { readonly entries: readonly ModelRosterEntry[] },
     observations: readonly PassObservation[],
   ): HistoricalPassRateCalibrator {
     const priors = new Map<string, PassPriors>();

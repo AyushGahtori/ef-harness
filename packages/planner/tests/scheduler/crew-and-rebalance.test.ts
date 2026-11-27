@@ -9,7 +9,7 @@ import {
   WAITING_FOR_RESET_REASON,
   createScheduleState,
 } from "../../src/scheduler/index.js";
-import type { InFlightTurn, ProviderConnection, ScheduleTask } from "../../src/scheduler/index.js";
+import type { InFlightTurnInit, ProviderConnection, ScheduleTask } from "../../src/scheduler/index.js";
 import { independent, task } from "./fixtures.js";
 
 function connection(partial: Partial<ProviderConnection> & Pick<ProviderConnection, "id" | "kind">): ProviderConnection {
@@ -22,7 +22,7 @@ function connection(partial: Partial<ProviderConnection> & Pick<ProviderConnecti
   };
 }
 
-function turn(taskId: string, level: InFlightTurn["level"] = "principal"): InFlightTurn {
+function turn(taskId: string, level: InFlightTurnInit["level"] = "principal"): InFlightTurnInit {
   return {
     taskId,
     featureId: taskId,
@@ -62,9 +62,12 @@ describe("crew presets", () => {
     expect(balanced?.projection.peakWorkers).toBe(5);
     expect(cheapest?.projection.peakWorkers).toBe(3);
     expect(fastest?.projection.parallelMinutes).toBeLessThan(balanced?.projection.parallelMinutes ?? 0);
-    expect(fastest?.levels.every((row) => row.level === "principal")).toBe(true);
-    expect(balanced?.levels.every((row) => row.level === "senior")).toBe(true);
-    expect(cheapest?.levels.every((row) => row.level === "junior")).toBe(true);
+    expect(fastest?.levels.every((row) => row.level === "Principal")).toBe(true);
+    expect(balanced?.levels.every((row) => row.level === "Senior")).toBe(true);
+    expect(cheapest?.levels.every((row) => row.level === "Junior")).toBe(true);
+    expect(fastest?.levels.every((row) => row.modelId === "claude-opus-4-6")).toBe(true);
+    expect(balanced?.levels.every((row) => row.modelId === "claude-sonnet-4-6")).toBe(true);
+    expect(cheapest?.levels.every((row) => row.modelId === "claude-haiku-4-5")).toBe(true);
     expect(fastest?.prewarmNextWave?.reason).toBe("fastest-preset-jit");
     expect(fastest?.prewarmNextWave?.waveIndex).toBe(2);
     expect(balanced?.prewarmNextWave).toBeNull();
@@ -94,12 +97,12 @@ describe("crew presets", () => {
       successors: [],
     });
     const selector = new LocalExpectedCostLevelSelector();
-    expect(engine.assignLevel(auth, true, "Cheapest").level).toBe("senior");
+    expect(engine.assignLevel(auth, true, "Cheapest").level).toBe("Senior");
     expect(selector.selectLevel({ task: leaf, preset: "Cheapest", onCriticalPath: false, hintStep: 2 }).level).toBe(
-      "mid",
+      "Mid",
     );
-    expect(engine.assignLevel(leaf, true, "Fastest").level).toBe("principal");
-    expect(engine.assignLevel(leaf, true, "Balanced").level).toBe("senior");
+    expect(engine.assignLevel(leaf, true, "Fastest").level).toBe("Principal");
+    expect(engine.assignLevel(leaf, true, "Balanced").level).toBe("Senior");
     const complex = task({
       id: "T-Hard",
       featureId: "hard",
@@ -108,8 +111,12 @@ describe("crew presets", () => {
       avgExecTimeMs: 10_000,
       successors: [],
     });
-    expect(engine.assignLevel(complex, false, "Balanced").level).toBe("senior");
-    expect(engine.assignLevel(complex, false, "Cheapest").level).toBe("junior");
+    const complexBalancedCp = engine.assignLevel(complex, true, "Balanced");
+    const complexCheapest = engine.assignLevel(complex, false, "Cheapest");
+    expect(complexBalancedCp.level).toBe("Senior");
+    expect(complexBalancedCp.modelId).toBe("claude-sonnet-4-6");
+    expect(complexCheapest.level).toBe("Mid");
+    expect(complexCheapest.modelId).toBe("gpt-4.1-mini");
   });
 
   it("prefers an unthrottled subscription and parks instead of a silent paid fallback", () => {
@@ -231,7 +238,8 @@ describe("DynamicScheduleRebalancer", () => {
     expect(result.ranks.rankUMs.get("T-C")).toBeGreaterThan(result.ranks.rankUMs.get("T-A") ?? 0);
     expect(result.ranks.onCriticalPath.has("T-C")).toBe(true);
     expect(result.admissions[0]?.taskId).toBe("T-C");
-    expect(result.admissions[0]?.level).toBe("principal");
+    expect(result.admissions[0]?.level).toBe("Principal");
+    expect(result.admissions[0]?.modelId).toBe("claude-opus-4-6");
   });
 
   it("switches Fastest to Cheapest for the next claim and leaves running turns alone", () => {
@@ -250,16 +258,17 @@ describe("DynamicScheduleRebalancer", () => {
     expect(switched.abortedTaskIds).toEqual([]);
     expect(switched.admissions).toEqual([]);
     expect(switched.state.preset).toBe("Cheapest");
-    expect(switched.state.inFlight.every((row) => row.presetAtClaim === "Fastest" && row.level === "principal")).toBe(
+    expect(switched.state.inFlight.every((row) => row.presetAtClaim === "Fastest" && row.level === "Principal")).toBe(
       true,
     );
     state = switched.state;
     state = rebalancer.rebalance(state, { type: "task_completed", taskId: "a", nowMs: 2 }).state;
     const next = rebalancer.rebalance(state, { type: "task_completed", taskId: "b", nowMs: 3 });
     expect(next.admissions.map((row) => row.taskId)).toEqual(["wait"]);
-    expect(next.admissions[0]?.level).toBe("junior");
+    expect(next.admissions[0]?.level).toBe("Junior");
+    expect(next.admissions[0]?.modelId).toBe("claude-haiku-4-5");
     expect(next.admissions[0]?.preset).toBe("Cheapest");
-    expect(next.state.inFlight.filter((row) => row.taskId !== "wait").every((row) => row.level === "principal")).toBe(
+    expect(next.state.inFlight.filter((row) => row.taskId !== "wait").every((row) => row.level === "Principal")).toBe(
       true,
     );
   });

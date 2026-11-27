@@ -1,3 +1,4 @@
+import type { ExpectedCostLevelSelector } from "../crew-levels/index.js";
 import { at, SchedulerError } from "./errors.js";
 import { computeRanks, indexGraph } from "./graph.js";
 import type { IndexedGraph } from "./graph.js";
@@ -9,6 +10,8 @@ import { blockedByLease, conflictsWithOccupied, orderReadyTasks } from "./select
 import type { OccupiedWork } from "./select.js";
 import {
   MS_PER_MINUTE,
+  coerceCrewPreset,
+  coerceGovernorPressure,
   featureBranch,
   type ActiveSlotSample,
   type LiveScheduleState,
@@ -30,23 +33,25 @@ interface RunningJob {
 export function projectSchedule(
   state: LiveScheduleState,
   options: ProjectOptions,
-  levels?: ExpectedCostLevelSelectorPort,
+  levels?: ExpectedCostLevelSelectorPort | ExpectedCostLevelSelector,
 ): ScheduleProjection {
+  const preset = coerceCrewPreset(state.preset);
+  const governorPressure = coerceGovernorPressure(state.governorPressure);
   const indexed = indexGraph(state.graph, state.execTimeOverrideMs);
   const ranks = computeRanks(indexed);
   const pacing = pacingCapOf(state.connections, state.paidFallbackApproved);
   const decision = calculator.calculate({
     graph: state.graph,
     hardwarePoolCap: state.hardwarePoolCap,
-    governorPressure: state.governorPressure,
+    governorPressure,
     providerPacingCap: pacing,
     worktreeSlotCap: state.worktreeSlotCap,
-    preset: state.preset,
+    preset,
     developerMax: state.developerMax,
   });
   const workerCap = options.workerCap === null ? decision.wEff : options.workerCap;
   const engine = new CrewPresetProfileEngine(levels);
-  const profile = engine.profile(state.preset);
+  const profile = engine.profile(preset);
   const done = new Set(state.completedTaskIds);
   const held = new Set(state.holds.map((hold) => hold.taskId));
   const endAt = new Map<string, number>();
@@ -139,7 +144,7 @@ export function projectSchedule(
         const task = at(indexed.tasks, index, "task");
         const exec = indexed.execMs[index] ?? task.avgExecTimeMs;
         const hint = state.hintOverride[task.id] ?? task.hintStep;
-        const level = engine.assignLevel(task, ranks.onCriticalPath.has(task.id), state.preset, hint);
+        const level = engine.assignLevel(task, ranks.onCriticalPath.has(task.id), preset, hint);
         const endMs = time + exec;
         running.push({
           taskId: task.id,
@@ -155,6 +160,7 @@ export function projectSchedule(
           startMs: time,
           endMs,
           level: level.level,
+          modelId: level.modelId,
           connectionId: "projected",
           writeScope: task.writeScope,
           onCriticalPath: ranks.onCriticalPath.has(task.id),
@@ -226,8 +232,10 @@ function predecessorReadyAt(
 
 export function projectWithSpeedup(
   state: LiveScheduleState,
-  levels?: ExpectedCostLevelSelectorPort,
+  levels?: ExpectedCostLevelSelectorPort | ExpectedCostLevelSelector,
 ): ScheduleProjection {
+  const preset = coerceCrewPreset(state.preset);
+  const governorPressure = coerceGovernorPressure(state.governorPressure);
   const parallel = projectSchedule(state, { policy: "heft", workerCap: null }, levels);
   const sequential = projectSchedule(state, { policy: "fifo", workerCap: 1 }, levels);
   const parallelMs = Math.round(parallel.parallelMinutes * MS_PER_MINUTE);
@@ -236,10 +244,10 @@ export function projectWithSpeedup(
   const decision = calculator.calculate({
     graph: state.graph,
     hardwarePoolCap: state.hardwarePoolCap,
-    governorPressure: state.governorPressure,
+    governorPressure,
     providerPacingCap: pacingCapOf(state.connections, state.paidFallbackApproved),
     worktreeSlotCap: state.worktreeSlotCap,
-    preset: state.preset,
+    preset,
     developerMax: state.developerMax,
   });
   const low = Math.max(1, Math.round(parallel.parallelMinutes));

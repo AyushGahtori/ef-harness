@@ -3,13 +3,16 @@ import { performance } from "node:perf_hooks";
 import { dispatchReady } from "./dispatch.js";
 import type { DispatchDeps } from "./dispatch.js";
 import { SchedulerError } from "./errors.js";
-import type {
-  DispatchAssignment,
-  InFlightTurn,
-  LiveScheduleState,
-  RebalanceEvent,
-  RebalanceResult,
-  TaskHoldRecord,
+import {
+  coerceCrewPreset,
+  coerceGovernorPressure,
+  coerceTaskHoldReason,
+  type DispatchAssignment,
+  type InFlightTurn,
+  type LiveScheduleState,
+  type RebalanceEvent,
+  type RebalanceResult,
+  type TaskHoldRecord,
 } from "./types.js";
 
 export class ParallelWaveDispatcher {
@@ -22,15 +25,17 @@ export class ParallelWaveDispatcher {
 
 export class DynamicScheduleRebalancer {
   private readonly dispatcher: ParallelWaveDispatcher;
+  private readonly deps: DispatchDeps;
 
   constructor(deps: DispatchDeps = {}) {
+    this.deps = deps;
     this.dispatcher = new ParallelWaveDispatcher(deps);
   }
 
   rebalance(state: LiveScheduleState, event: RebalanceEvent): RebalanceResult {
     const started = performance.now();
     const yieldedToHold: string[] = [];
-    const next = applyEvent(state, event, yieldedToHold);
+    const next = applyEvent(state, event, yieldedToHold, this.deps);
     const batch = this.dispatcher.dispatch(next);
     const admittedAt = new Set(batch.admissions.map((row) => row.taskId));
     const readySince = { ...batch.readySinceMs };
@@ -67,6 +72,7 @@ function toTurn(row: DispatchAssignment, state: LiveScheduleState): InFlightTurn
     attemptId: row.attemptId,
     connectionId: row.connectionId,
     level: row.level,
+    modelId: row.modelId,
     presetAtClaim: row.preset,
     startedAtMs: state.nowMs,
     execTimeMs: state.execTimeOverrideMs[row.taskId] ?? task?.avgExecTimeMs ?? 1,
@@ -75,7 +81,12 @@ function toTurn(row: DispatchAssignment, state: LiveScheduleState): InFlightTurn
   };
 }
 
-function applyEvent(state: LiveScheduleState, event: RebalanceEvent, yieldedToHold: string[]): LiveScheduleState {
+function applyEvent(
+  state: LiveScheduleState,
+  event: RebalanceEvent,
+  yieldedToHold: string[],
+  deps: DispatchDeps,
+): LiveScheduleState {
   if (event.nowMs < state.nowMs) {
     throw new SchedulerError("time_went_backwards", `Event time ${event.nowMs} is before ${state.nowMs}`);
   }
@@ -101,24 +112,42 @@ function applyEvent(state: LiveScheduleState, event: RebalanceEvent, yieldedToHo
     };
   }
   if (event.type === "task_hold") {
+    const reason = coerceTaskHoldReason(event.reason);
+    deps.holds?.placeHold({
+      task: event.taskId,
+      reason,
+      source: event.source,
+      now: event.nowMs,
+    });
     const exists = state.holds.some(
-      (hold) => hold.taskId === event.taskId && hold.reason === event.reason && hold.source === event.source,
+      (hold) => hold.taskId === event.taskId && hold.reason === reason && hold.source === event.source,
     );
     const holds: TaskHoldRecord[] = exists
       ? [...state.holds]
-      : [...state.holds, { taskId: event.taskId, reason: event.reason, source: event.source, createdAtMs: event.nowMs }];
+      : [...state.holds, { taskId: event.taskId, reason, source: event.source, createdAtMs: event.nowMs }];
     if (state.inFlight.some((turn) => turn.taskId === event.taskId)) yieldedToHold.push(event.taskId);
     return { ...base, holds, inFlight: state.inFlight.filter((turn) => turn.taskId !== event.taskId) };
   }
   if (event.type === "task_release") {
+    const reason = coerceTaskHoldReason(event.reason);
+    deps.holds?.releaseHold({
+      task: event.taskId,
+      reason,
+      source: event.source,
+      now: event.nowMs,
+    });
     return {
       ...base,
       holds: state.holds.filter(
-        (hold) => !(hold.taskId === event.taskId && hold.reason === event.reason && hold.source === event.source),
+        (hold) => !(hold.taskId === event.taskId && hold.reason === reason && hold.source === event.source),
       ),
     };
   }
-  if (event.type === "governor") return { ...base, governorPressure: event.pressure };
-  if (event.type === "provider_pacing") return { ...base, connections: event.connections };
-  return { ...base, preset: event.preset };
+  if (event.type === "governor") {
+    return { ...base, governorPressure: coerceGovernorPressure(event.pressure) };
+  }
+  if (event.type === "provider_pacing") {
+    return { ...base, connections: event.connections };
+  }
+  return { ...base, preset: coerceCrewPreset(event.preset) };
 }

@@ -50,12 +50,12 @@ describe("ExpectedCostLevelSelector", () => {
   it("picks Mid under Cheapest when a cheap low pass-rate Junior has the higher expected cost", () => {
     const assignment = assign(crossover(), complexTask(), "cheapest");
     expect(assignment.status).toBe("assigned");
-    expect(assignment.level).toBe("mid");
+    expect(assignment.level).toBe("Mid");
     expect(assignment.modelId).toBe("mid");
     expect(assignment.difficulty).toBe("complex");
-    const junior = quote(assignment, "junior");
-    const mid = quote(assignment, "mid");
-    const senior = quote(assignment, "senior");
+    const junior = quote(assignment, "Junior");
+    const mid = quote(assignment, "Mid");
+    const senior = quote(assignment, "Senior");
     expect(junior?.unitCost).toBe(20_000n);
     expect(mid?.unitCost).toBe(80_000n);
     expect(junior?.sameLevelRetryCost).toBe(100_000n);
@@ -76,13 +76,13 @@ describe("ExpectedCostLevelSelector", () => {
   it("keeps Cheapest on expected cost and raises first-pass probability for critical-path Fastest and Balanced", () => {
     const task = complexTask();
     const roster = crossover();
-    expect(assign(roster, task, "cheapest", { onCriticalPath: true }).level).toBe("mid");
-    expect(assign(roster, task, "fastest", { onCriticalPath: true }).level).toBe("senior");
+    expect(assign(roster, task, "cheapest", { onCriticalPath: true }).level).toBe("Mid");
+    expect(assign(roster, task, "fastest", { onCriticalPath: true }).level).toBe("Senior");
     const balanced = assign(roster, task, "balanced", { onCriticalPath: true });
-    expect(balanced.level).toBe("senior");
+    expect(balanced.level).toBe("Senior");
     expect(balanced.criticalPathBoost).toBe(true);
     expect(balanced.rationale).toContain("critical path prefers higher first-pass probability");
-    expect(assign(roster, task, "fastest", { onCriticalPath: false }).level).toBe("mid");
+    expect(assign(roster, task, "fastest", { onCriticalPath: false }).level).toBe("Mid");
   });
 
   it("holds auth, payments, migrations, and oracle-author at Senior under Cheapest", () => {
@@ -100,13 +100,13 @@ describe("ExpectedCostLevelSelector", () => {
     ];
     for (const task of cases) {
       const assignment = assign(roster, task, "cheapest");
-      expect(assignment.level).toBe("senior");
-      expect(assignment.floor).toBe("senior");
+      expect(assignment.level).toBe("Senior");
+      expect(assignment.floor).toBe("Senior");
       expect(assignment.floorHeld).toBe(true);
       expect(assignment.rationale).toContain("safety floor");
     }
     const oracle = assign(roster, blankTask(), "cheapest", { role: "oracle-author@1" });
-    expect(oracle.level).toBe("senior");
+    expect(oracle.level).toBe("Senior");
     expect(oracle.difficulty).toBe("critical");
   });
 
@@ -117,7 +117,7 @@ describe("ExpectedCostLevelSelector", () => {
     );
     const assignment = assign(roster, blankTask({ riskTags: ["concurrency"] }), "cheapest");
     expect(assignment.difficulty).toBe("complex");
-    expect(assignment.level).toBe("junior");
+    expect(assignment.level).toBe("Junior");
   });
 
   it("escalates one level on Hint 2 and not on Hint 1", () => {
@@ -127,13 +127,13 @@ describe("ExpectedCostLevelSelector", () => {
       { modelId: "senior", tier: "senior", rate: 80_000n, priors: { trivial: 0.98 } },
     );
     const task = blankTask();
-    expect(assign(roster, task, "cheapest").level).toBe("junior");
-    expect(assign(roster, task, "cheapest", { failedAttempts: 1 }).level).toBe("junior");
+    expect(assign(roster, task, "cheapest").level).toBe("Junior");
+    expect(assign(roster, task, "cheapest", { failedAttempts: 1 }).level).toBe("Junior");
     const hint2 = assign(roster, task, "cheapest", { failedAttempts: 2 });
-    expect(hint2.level).toBe("mid");
+    expect(hint2.level).toBe("Mid");
     expect(hint2.escalated).toBe(true);
     expect(hint2.rationale).toContain("escalated after Hint 2");
-    expect(assign(roster, task, "cheapest", { failedAttempts: 3 }).level).toBe("senior");
+    expect(assign(roster, task, "cheapest", { failedAttempts: 3 }).level).toBe("Senior");
   });
 
   it("maps a single connected model onto the task and still rejects missing tool support", () => {
@@ -176,8 +176,8 @@ describe("ExpectedCostLevelSelector", () => {
       paidFallbackApproved: false,
     });
     expect(alone.singleModelMode).toBe(true);
-    expect(alone.level).toBe("senior");
-    expect(alone.modelTier).toBe("junior");
+    expect(alone.level).toBe("Senior");
+    expect(alone.modelTier).toBe("Junior");
     expect(alone.floorHeld).toBe(false);
 
     const withAlternative = rosterOf(
@@ -265,7 +265,7 @@ describe("ExpectedCostLevelSelector", () => {
       buildWorkerFamily: "openai",
     });
     expect(oracle.family).toBe("anthropic");
-    expect(oracle.level).toBe("senior");
+    expect(oracle.level).toBe("Senior");
     expect(oracle.crossFamily).toBe(true);
 
     const relaxed = assign(
@@ -301,7 +301,7 @@ describe("ExpectedCostLevelSelector", () => {
         budgetScope: { scopeKind: "task", scopeId: "T-1" },
       },
     );
-    expect(shortfall.level).toBe("junior");
+    expect(shortfall.level).toBe("Junior");
     expect(shortfall.budgetShortfall).toBe(true);
     expect(shortfall.floorHeld).toBe(true);
 

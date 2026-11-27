@@ -1,105 +1,136 @@
-/**
- * Local stand-in for Task 092 `WriteScopeDisjointnessChecker` / `patternsOverlap`.
- * Windows ASCII case-folding and `**` / `*` containment, including
- * `src/api/**` ∩ `src/api/orders.ts` and `src/Order.ts` ∩ `src/order.ts`.
- */
+import {
+  DeterministicGraphCompiler,
+  normalizeWritePattern,
+  patternsOverlap,
+  type CompilationDiagnostic,
+  type CompilationInput,
+  type PlanTask,
+} from "../graph-compiler/index.js";
+import type { ScheduleGraph } from "./types.js";
 
-function foldAsciiCase(value: string): string {
-  let folded = "";
-  for (const char of value) {
-    const code = char.codePointAt(0) ?? 0;
-    folded += code >= 65 && code <= 90 ? String.fromCodePoint(code + 32) : char;
-  }
-  return folded;
+export { patternsOverlap };
+
+const defaultCompiler = new DeterministicGraphCompiler();
+const DEFAULT_COMPILED_AT = "1970-01-01T00:00:00Z";
+
+function stubPlanTask(
+  id: string,
+  featureId: string,
+  writeScope: readonly string[],
+  dependsOn: readonly string[] = [],
+): PlanTask {
+  return {
+    id,
+    featureId,
+    title: id,
+    taskKind: "integration",
+    level: "junior",
+    writeScope,
+    primaryFiles: [],
+    responsibilities: [],
+    touches: [],
+    mustBandTokens: 0,
+    mustTokenAttribution: [],
+    mustBandRuleIds: [],
+    implements: [],
+    obeys: [],
+    handlesEdgeCases: [],
+    dependsOn,
+    names: [],
+    mutatesSharedContract: false,
+    createsMigration: false,
+    migrationIntentSlot: null,
+    estimatedMinCostMicroUsd: 0,
+    generatedScaffold: false,
+  };
+}
+
+function pairCompilationInput(
+  left: readonly string[],
+  right: readonly string[],
+): CompilationInput {
+  return {
+    tasks: [
+      stubPlanTask("left", "feature-left", left),
+      stubPlanTask("right", "feature-right", right),
+    ],
+    features: [
+      { id: "feature-left", title: "left", dependsOn: [], active: true },
+      { id: "feature-right", title: "right", dependsOn: [], active: true },
+    ],
+    requirements: [],
+    checks: [],
+    contradictions: [],
+    brownfieldNames: [],
+    mustAsk: [],
+    budget: { remainingProjectMicroUsd: 0, remainingWaveMicroUsd: 0 },
+    waivers: [],
+    sharedContractOwnerTaskIds: [],
+    platform: "windows",
+    planEpoch: 0,
+    compiledAt: DEFAULT_COMPILED_AT,
+  };
 }
 
 export function normalizePattern(pattern: string): readonly string[] {
-  const slashed = pattern.replaceAll("\\", "/").trim();
-  const folded = foldAsciiCase(slashed);
-  const segments: string[] = [];
-  for (const part of folded.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") {
-      segments.pop();
-      continue;
-    }
-    segments.push(part);
-  }
-  return segments;
+  return normalizeWritePattern(pattern, "windows").segments;
 }
 
-function segmentOverlap(left: string, right: string): boolean {
-  if (!left.includes("*") && !right.includes("*")) return left === right;
-  const memo = new Map<string, boolean>();
-  const walk = (i: number, j: number): boolean => {
-    const key = `${i}:${j}`;
-    const cached = memo.get(key);
-    if (cached !== undefined) return cached;
-    let result = false;
-    if (i === left.length && j === right.length) {
-      result = true;
-    } else if (i < left.length && left[i] === "*") {
-      result = walk(i + 1, j) || (j < right.length && walk(i, j + 1));
-    } else if (j < right.length && right[j] === "*") {
-      result = (i < left.length && walk(i + 1, j)) || walk(i, j + 1);
-    } else if (i < left.length && j < right.length && left[i] === right[j]) {
-      result = walk(i + 1, j + 1);
-    }
-    memo.set(key, result);
-    return result;
-  };
-  return walk(0, 0);
-}
-
-export function patternsOverlap(left: readonly string[], right: readonly string[]): boolean {
-  const memo = new Map<string, boolean>();
-  const walk = (i: number, j: number): boolean => {
-    const key = `${i}:${j}`;
-    const cached = memo.get(key);
-    if (cached !== undefined) return cached;
-    let result = false;
-    if (i === left.length && j === right.length) {
-      result = true;
-    } else if (i === left.length) {
-      result = right.slice(j).every((segment) => segment === "**");
-    } else if (j === right.length) {
-      result = left.slice(i).every((segment) => segment === "**");
-    } else {
-      const a = left[i] ?? "";
-      const b = right[j] ?? "";
-      if (a === "**" && b === "**") {
-        result = walk(i + 1, j) || walk(i, j + 1) || walk(i + 1, j + 1);
-      } else if (a === "**") {
-        result = walk(i + 1, j) || walk(i, j + 1);
-      } else if (b === "**") {
-        result = walk(i, j + 1) || walk(i + 1, j);
-      } else if (segmentOverlap(a, b)) {
-        result = walk(i + 1, j + 1);
-      }
-    }
-    memo.set(key, result);
-    return result;
-  };
-  return walk(0, 0);
-}
-
-export function writeScopesOverlap(left: readonly string[], right: readonly string[]): boolean {
+export function writeScopesOverlap(
+  left: readonly string[],
+  right: readonly string[],
+  compiler: DeterministicGraphCompiler = defaultCompiler,
+): boolean {
   if (left.length === 0 || right.length === 0) return true;
-  const a = left.map((pattern) => normalizePattern(pattern));
-  const b = right.map((pattern) => normalizePattern(pattern));
-  for (const leftPattern of a) {
-    for (const rightPattern of b) {
-      if (leftPattern.length === 0 || rightPattern.length === 0) continue;
-      const leftMeta = leftPattern.some((segment) => segment.includes("*"));
-      const rightMeta = rightPattern.some((segment) => segment.includes("*"));
-      if (!leftMeta && !rightMeta) {
-        if (leftPattern.join("/") === rightPattern.join("/")) return true;
-        continue;
-      }
-      if (patternsOverlap(leftPattern, rightPattern)) return true;
+  const nonEmptyLeft = left.filter((pattern) => normalizeWritePattern(pattern, "windows").posix !== "");
+  const nonEmptyRight = right.filter((pattern) => normalizeWritePattern(pattern, "windows").posix !== "");
+  if (nonEmptyLeft.length === 0 || nonEmptyRight.length === 0) return false;
+  const diagnostics = compiler.validateDisjointWriteScopes(
+    pairCompilationInput(nonEmptyLeft, nonEmptyRight),
+  );
+  return diagnostics.some(
+    (item) =>
+      item.code === "parallel_write_overlap" ||
+      item.code === "windows_case_collision",
+  );
+}
+
+export function validateDisjointScheduleWriteScopes(
+  graph: ScheduleGraph,
+  compiler: DeterministicGraphCompiler = defaultCompiler,
+): readonly CompilationDiagnostic[] {
+  const predecessors = new Map<string, string[]>();
+  for (const task of graph.tasks) predecessors.set(task.id, []);
+  for (const task of graph.tasks) {
+    for (const edge of task.successors) {
+      const list = predecessors.get(edge.to);
+      if (list) list.push(task.id);
     }
   }
-  return false;
+  const featureIds = [...new Set(graph.tasks.map((task) => task.featureId))];
+  const input: CompilationInput = {
+    tasks: graph.tasks.map((task) =>
+      stubPlanTask(task.id, task.featureId, task.writeScope, predecessors.get(task.id) ?? []),
+    ),
+    features: featureIds.map((id) => ({
+      id,
+      title: id,
+      dependsOn: [],
+      active: true,
+    })),
+    requirements: [],
+    checks: [],
+    contradictions: [],
+    brownfieldNames: [],
+    mustAsk: [],
+    budget: { remainingProjectMicroUsd: 0, remainingWaveMicroUsd: 0 },
+    waivers: [],
+    sharedContractOwnerTaskIds: [],
+    platform: "windows",
+    planEpoch: 0,
+    compiledAt: DEFAULT_COMPILED_AT,
+  };
+  return compiler.validateDisjointWriteScopes(input);
 }
 
 export function scopeHitsLease(writeScope: readonly string[], prefixes: readonly string[]): boolean {

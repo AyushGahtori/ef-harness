@@ -7,7 +7,7 @@ import {
   type DifficultyTier,
   type RiskTag,
   type ScoreContribution,
-  type WorkerLevel,
+  type WorkerTier,
   isRiskTag,
 } from "./types.js";
 
@@ -204,15 +204,15 @@ export class TaskDifficultyClassifier {
 export function minimumWorkerLevel(
   assessment: DifficultyAssessment,
   role: CrewRole,
-): WorkerLevel {
+): WorkerTier {
   if (
     role === "oracle-author@1" ||
     assessment.tier === "critical" ||
     assessment.criticalMarkers.length > 0
   ) {
-    return "senior";
+    return "Senior";
   }
-  return "junior";
+  return "Junior";
 }
 
 export function assertClosedRiskTags(tags: readonly string[]): RiskTag[] {

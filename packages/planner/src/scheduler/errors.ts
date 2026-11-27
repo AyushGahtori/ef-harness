@@ -1,5 +1,10 @@
 export class SchedulerError extends Error {
-  readonly code: "cycle" | "invalid_graph" | "unknown_task" | "time_went_backwards";
+  readonly code:
+    | "cycle"
+    | "invalid_graph"
+    | "unknown_task"
+    | "time_went_backwards"
+    | "no_eligible_model";
 
   constructor(code: SchedulerError["code"], message: string) {
     super(message);

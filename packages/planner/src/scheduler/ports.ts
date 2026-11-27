@@ -1,9 +1,18 @@
-import type {
-  ClaimRefusalReason,
-  HoldReason,
-  PathLeaseView,
-  ProviderConnection,
-  TaskHoldRecord,
+import {
+  isHoldReason as isDbHoldReason,
+  type HoldReason as DbHoldReason,
+  type TaskHold,
+  type TaskHoldAndSubmissionRepo,
+  type TaskLeaseManager,
+} from "@ef-harness/db";
+import { SchedulerError } from "./errors.js";
+import {
+  coerceTaskHoldReason,
+  type ClaimRefusalReason,
+  type PathLeaseView,
+  type ProviderConnection,
+  type TaskHoldReason,
+  type TaskHoldRecord,
 } from "./types.js";
 import { scopeHitsLease } from "./write-scope.js";
 
@@ -26,37 +35,141 @@ export type ClaimResult =
   | { readonly claimed: true; readonly epoch: number; readonly attemptId: string }
   | { readonly claimed: false; readonly reason: ClaimRefusalReason };
 
-/**
- * Local port for Task 020 `TaskLeaseManager.claimTask`.
- * The sibling export is `TaskLeaseManager`, not `TaskClaimManager`.
- */
 export interface TaskClaimManagerPort {
   claimTask(input: ClaimTaskInput): ClaimResult;
 }
 
 export interface PlaceHoldInput {
   readonly task: string;
-  readonly reason: HoldReason;
+  readonly reason: TaskHoldReason;
   readonly source: string;
   readonly now: number;
+  readonly rev?: number;
 }
 
 export interface ReleaseHoldInput {
   readonly task: string;
-  readonly reason: HoldReason;
+  readonly reason: TaskHoldReason;
   readonly source: string;
   readonly now: number;
+  readonly rev?: number;
 }
 
-/**
- * Local port for Task 021 `TaskHoldAndSubmissionRepo`.
- * The sibling export is `TaskHoldAndSubmissionRepo`, not `TaskHoldsManager`.
- */
 export interface TaskHoldsManagerPort {
   isTaskHeld(task: string): boolean;
   listActiveHolds(task: string): readonly TaskHoldRecord[];
   placeHold(input: PlaceHoldInput): void;
   releaseHold(input: ReleaseHoldInput): void;
+}
+
+const EDITOR_OVERLAP_SOURCE_PREFIX = "editor_overlap:";
+
+function isMissingTaskFkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("FOREIGN KEY constraint failed");
+}
+
+export function bindTaskClaimManager(
+  leases: TaskLeaseManager,
+  options: { readonly registerScopes?: boolean } = {},
+): TaskClaimManagerPort {
+  const registerScopes = options.registerScopes ?? true;
+  return {
+    claimTask(input: ClaimTaskInput): ClaimResult {
+      if (registerScopes && input.writeScope.length > 0) {
+        try {
+          leases.registerTaskScopes(input.task, input.writeScope);
+        } catch (error) {
+          if (!isMissingTaskFkError(error)) throw error;
+        }
+      }
+      return leases.claimTask({
+        task: input.task,
+        attemptId: input.attemptId,
+        expectedBrief: input.expectedBrief,
+        expiresAt: input.expiresAt,
+        rev: input.rev,
+        runtime: input.runtime,
+        model: input.model,
+        connection: input.connection,
+        baseCommit: input.baseCommit,
+        now: input.now,
+      });
+    },
+  };
+}
+
+function toDbHold(
+  reason: TaskHoldReason,
+  source: string,
+): { readonly reason: DbHoldReason; readonly source: string } {
+  const canonical = coerceTaskHoldReason(reason);
+  if (isDbHoldReason(canonical)) return { reason: canonical, source };
+  if (canonical === "editor_overlap") {
+    return {
+      reason: "user_pause",
+      source: source.startsWith(EDITOR_OVERLAP_SOURCE_PREFIX)
+        ? source
+        : `${EDITOR_OVERLAP_SOURCE_PREFIX}${source}`,
+    };
+  }
+  throw new SchedulerError("invalid_graph", `Unsupported task hold reason: ${reason}`);
+}
+
+function fromDbHold(hold: TaskHold): TaskHoldRecord {
+  if (hold.reason === "user_pause" && hold.source.startsWith(EDITOR_OVERLAP_SOURCE_PREFIX)) {
+    return {
+      taskId: hold.task,
+      reason: "editor_overlap",
+      source: hold.source.slice(EDITOR_OVERLAP_SOURCE_PREFIX.length),
+      createdAtMs: hold.createdAt,
+    };
+  }
+  return {
+    taskId: hold.task,
+    reason: hold.reason,
+    source: hold.source,
+    createdAtMs: hold.createdAt,
+  };
+}
+
+export function bindTaskHoldsManager(
+  repo: TaskHoldAndSubmissionRepo,
+  options: { readonly nextRev?: () => number } = {},
+): TaskHoldsManagerPort {
+  let fallbackRev = 0;
+  const nextRev = options.nextRev ?? (() => {
+    fallbackRev += 1;
+    return fallbackRev;
+  });
+  return {
+    isTaskHeld(task: string): boolean {
+      return repo.isTaskHeld(task);
+    },
+    listActiveHolds(task: string): readonly TaskHoldRecord[] {
+      return repo.listActiveHolds(task).map(fromDbHold);
+    },
+    placeHold(input: PlaceHoldInput): void {
+      const mapped = toDbHold(input.reason, input.source);
+      repo.placeHold({
+        task: input.task,
+        reason: mapped.reason,
+        source: mapped.source,
+        now: input.now,
+        rev: input.rev ?? nextRev(),
+      });
+    },
+    releaseHold(input: ReleaseHoldInput): void {
+      const mapped = toDbHold(input.reason, input.source);
+      repo.releaseHold({
+        task: input.task,
+        reason: mapped.reason,
+        source: mapped.source,
+        now: input.now,
+        rev: input.rev ?? nextRev(),
+      });
+    },
+  };
 }
 
 export function isConnectionUsable(connection: ProviderConnection, paidFallbackApproved: boolean): boolean {
@@ -129,20 +242,22 @@ export class InMemoryTaskHoldsManager implements TaskHoldsManagerPort {
   }
 
   placeHold(input: PlaceHoldInput): void {
-    if (this.rows.some((row) => row.taskId === input.task && row.reason === input.reason && row.source === input.source)) {
+    const reason = coerceTaskHoldReason(input.reason);
+    if (this.rows.some((row) => row.taskId === input.task && row.reason === reason && row.source === input.source)) {
       return;
     }
     this.rows.push({
       taskId: input.task,
-      reason: input.reason,
+      reason,
       source: input.source,
       createdAtMs: input.now,
     });
   }
 
   releaseHold(input: ReleaseHoldInput): void {
+    const reason = coerceTaskHoldReason(input.reason);
     const index = this.rows.findIndex(
-      (row) => row.taskId === input.task && row.reason === input.reason && row.source === input.source,
+      (row) => row.taskId === input.task && row.reason === reason && row.source === input.source,
     );
     if (index >= 0) this.rows.splice(index, 1);
   }

@@ -1,13 +1,26 @@
+import { TaskNotFoundError } from "@ef-harness/db";
+import type {
+  ExpectedCostLevelSelector,
+  HistoricalPassRateCalibrator,
+  VersionedModelRoster,
+} from "../crew-levels/index.js";
 import { at } from "./errors.js";
 import { computeRanks, indexGraph } from "./graph.js";
 import type { IndexedGraph } from "./graph.js";
-import { pacingCapOf, orderConnections, type TaskClaimManagerPort } from "./ports.js";
+import {
+  orderConnections,
+  pacingCapOf,
+  type TaskClaimManagerPort,
+  type TaskHoldsManagerPort,
+} from "./ports.js";
 import { WaveParallelismCalculator } from "./parallelism.js";
 import { CrewPresetProfileEngine } from "./presets.js";
 import type { ExpectedCostLevelSelectorPort } from "./presets.js";
 import { orderReadyTasks, takeCandidates } from "./select.js";
 import {
   WAITING_FOR_RESET_REASON,
+  coerceCrewPreset,
+  coerceGovernorPressure,
   featureBranch,
   worktreeSlotFor,
   type DispatchAssignment,
@@ -31,13 +44,26 @@ export interface DispatchBatch {
 
 export interface DispatchDeps {
   readonly claims?: TaskClaimManagerPort;
-  readonly levels?: ExpectedCostLevelSelectorPort;
+  readonly holds?: TaskHoldsManagerPort;
+  readonly levels?: ExpectedCostLevelSelectorPort | ExpectedCostLevelSelector;
+  readonly roster?: VersionedModelRoster;
+  readonly calibrator?: HistoricalPassRateCalibrator;
 }
 
 const calculator = new WaveParallelismCalculator();
 
 export function heldIds(state: LiveScheduleState): Set<string> {
   return new Set(state.holds.map((hold) => hold.taskId));
+}
+
+function isHeldOnPort(holds: TaskHoldsManagerPort | undefined, taskId: string): boolean {
+  if (holds === undefined) return false;
+  try {
+    return holds.isTaskHeld(taskId);
+  } catch (error) {
+    if (error instanceof TaskNotFoundError) return false;
+    throw error;
+  }
 }
 
 export function prewarmFor(state: LiveScheduleState, presetWantsIt: boolean): PrewarmIntent | null {
@@ -58,21 +84,38 @@ export function prewarmFor(state: LiveScheduleState, presetWantsIt: boolean): Pr
   };
 }
 
-export function dispatchReady(state: LiveScheduleState, deps: DispatchDeps = {}, policy: "heft" | "fifo" = "heft"): DispatchBatch {
+function engineForDispatch(deps: DispatchDeps): CrewPresetProfileEngine {
+  if (deps.levels) return new CrewPresetProfileEngine(deps.levels);
+  if (deps.roster || deps.calibrator) {
+    return new CrewPresetProfileEngine({
+      ...(deps.roster === undefined ? {} : { roster: deps.roster }),
+      ...(deps.calibrator === undefined ? {} : { calibrator: deps.calibrator }),
+    });
+  }
+  return new CrewPresetProfileEngine();
+}
+
+export function dispatchReady(
+  state: LiveScheduleState,
+  deps: DispatchDeps = {},
+  policy: "heft" | "fifo" = "heft",
+): DispatchBatch {
+  const preset = coerceCrewPreset(state.preset);
+  const governorPressure = coerceGovernorPressure(state.governorPressure);
   const indexed = indexGraph(state.graph, state.execTimeOverrideMs);
   const ranks = computeRanks(indexed);
   const pacing = pacingCapOf(state.connections, state.paidFallbackApproved);
   const parallelism = calculator.calculate({
     graph: state.graph,
     hardwarePoolCap: state.hardwarePoolCap,
-    governorPressure: state.governorPressure,
+    governorPressure,
     providerPacingCap: pacing,
     worktreeSlotCap: state.worktreeSlotCap,
-    preset: state.preset,
+    preset,
     developerMax: state.developerMax,
   });
-  const engine = new CrewPresetProfileEngine(deps.levels);
-  const profile = engine.profile(state.preset);
+  const engine = engineForDispatch(deps);
+  const profile = engine.profile(preset);
   const held = heldIds(state);
   const runningIds = new Set(state.inFlight.map((turn) => turn.taskId));
   const done = new Set(state.completedTaskIds);
@@ -80,7 +123,14 @@ export function dispatchReady(state: LiveScheduleState, deps: DispatchDeps = {},
   const readySince = { ...state.readySinceMs };
   for (let index = 0; index < indexed.tasks.length; index += 1) {
     const task = at(indexed.tasks, index, "task");
-    if (done.has(task.id) || runningIds.has(task.id) || held.has(task.id)) continue;
+    if (
+      done.has(task.id) ||
+      runningIds.has(task.id) ||
+      held.has(task.id) ||
+      isHeldOnPort(deps.holds, task.id)
+    ) {
+      continue;
+    }
     if (!predecessorsDone(indexed, index, done)) continue;
     readyIndexes.push(index);
     if (readySince[task.id] === undefined) readySince[task.id] = state.nowMs;
@@ -130,7 +180,12 @@ export function dispatchReady(state: LiveScheduleState, deps: DispatchDeps = {},
       continue;
     }
     const hint = state.hintOverride[task.id] ?? task.hintStep;
-    const level = engine.assignLevel(task, ranks.onCriticalPath.has(task.id), state.preset, hint);
+    const level = engine.assignLevel(task, ranks.onCriticalPath.has(task.id), preset, hint, {
+      connections: state.connections,
+      paidFallbackApproved: state.paidFallbackApproved,
+      nowMs: state.nowMs,
+    });
+    const assignedConnection = connectionId ?? level.connectionId ?? "local-unassigned";
     serial += 1;
     const attemptId = `attempt:${task.id}:${serial}`;
     if (deps.claims) {
@@ -141,8 +196,8 @@ export function dispatchReady(state: LiveScheduleState, deps: DispatchDeps = {},
         expiresAt: state.nowMs + 15 * 60_000,
         rev: serial,
         runtime: "native",
-        model: level.level,
-        connection: connectionId ?? "local-unassigned",
+        model: level.modelId,
+        connection: assignedConnection,
         baseCommit: task.baseCommit,
         now: state.nowMs,
         featureBranch: featureBranch(task.featureSlug),
@@ -162,11 +217,12 @@ export function dispatchReady(state: LiveScheduleState, deps: DispatchDeps = {},
       featureBranch: featureBranch(task.featureSlug),
       worktreeSlot: worktreeSlotFor(task.featureSlug),
       level: level.level,
-      connectionId: connectionId ?? "local-unassigned",
+      modelId: level.modelId,
+      connectionId: assignedConnection,
       rankUMs: ranks.rankUMs.get(task.id) ?? 0,
       writeScope: task.writeScope,
       waveIndex: task.waveIndex,
-      preset: state.preset,
+      preset,
       expectedCostMicroUsd: level.expectedCostMicroUsd,
       passProbability: level.passProbability,
       rationale: level.rationale,
