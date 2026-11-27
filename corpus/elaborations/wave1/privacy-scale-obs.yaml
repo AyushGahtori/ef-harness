@@ -1,0 +1,253 @@
+kind: option_elaborations
+id: wave1-privacy-scale-obs
+version: 1
+title: "Wave 1 Privacy elaborations"
+elaborations:
+  - id: ELAB-Q-PSO-01-HARD-DELETE
+    question: Q-PSO-01
+    option: hard_delete
+    cells:
+      - cell: wave1.Q-PSO-01.hard_delete.behavior
+        value: "The user row and personal fields are removed immediately, with no 30-day restorable copy."
+      - cell: wave1.Q-PSO-01.hard_delete.failure
+        value: "If Hard delete user on GDPR request is interrupted, the effect is not applied twice."
+      - cell: conflicts_with
+        value: "Q-PSO-02:immutable_plain_email"
+      - cell: layer1_warning
+        value: "conflicts_with the immutable plain-text email audit. Offer an anonymized actor-ID audit trail."
+    edge_cases:
+      - "If Hard delete user on GDPR request is interrupted, the effect is not applied twice."
+    bounds:
+      - "Hard delete user on GDPR request allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-01-SOFT-DELETE-30-DAY
+    question: Q-PSO-01
+    option: soft_delete_30_day
+    cells:
+      - cell: wave1.Q-PSO-01.soft_delete_30_day.behavior
+        value: "The account is hidden immediately and personal fields are purged after 30 days."
+      - cell: wave1.Q-PSO-01.soft_delete_30_day.failure
+        value: "If Soft-delete with 30-day purge is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Soft-delete with 30-day purge is interrupted, the effect is not applied twice."
+    bounds:
+      - "Soft-delete with 30-day purge allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-01-EXPORT-THEN-DELETE
+    question: Q-PSO-01
+    option: export_then_delete
+    cells:
+      - cell: wave1.Q-PSO-01.export_then_delete.behavior
+        value: "The person receives an export, then the erasure job runs."
+      - cell: wave1.Q-PSO-01.export_then_delete.failure
+        value: "If Export then delete is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Export then delete is interrupted, the effect is not applied twice."
+    bounds:
+      - "Export then delete allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-02-IMMUTABLE-PLAIN-EMAIL
+    question: Q-PSO-02
+    option: immutable_plain_email
+    cells:
+      - cell: wave1.Q-PSO-02.immutable_plain_email.behavior
+        value: "The audit row stores the email in plain text and cannot be edited or purged."
+      - cell: wave1.Q-PSO-02.immutable_plain_email.failure
+        value: "If Immutable audit log storing user email in plain text is interrupted, the effect is not applied twice."
+      - cell: conflicts_with
+        value: "Q-PSO-01:hard_delete"
+      - cell: layer1_warning
+        value: "conflicts_with Hard delete user on GDPR request. Offer an anonymized actor-ID audit trail."
+      - cell: offered_alternative
+        value: "Q-PSO-02:anonymized_actor_id"
+    edge_cases:
+      - "If Immutable audit log storing user email in plain text is interrupted, the effect is not applied twice."
+    bounds:
+      - "Immutable audit log storing user email in plain text allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-02-ANONYMIZED-ACTOR-ID
+    question: Q-PSO-02
+    option: anonymized_actor_id
+    cells:
+      - cell: wave1.Q-PSO-02.anonymized_actor_id.behavior
+        value: "The audit row stores an actor id. The email can be purged without rewriting history."
+      - cell: wave1.Q-PSO-02.anonymized_actor_id.failure
+        value: "If Anonymized actor-ID audit trail is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Anonymized actor-ID audit trail is interrupted, the effect is not applied twice."
+    bounds:
+      - "Anonymized actor-ID audit trail allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-03-EXPLICIT-INVALIDATION
+    question: Q-PSO-03
+    option: explicit_invalidation
+    cells:
+      - cell: wave1.Q-PSO-03.explicit_invalidation.behavior
+        value: "A successful write deletes the affected cache keys before the response returns."
+      - cell: wave1.Q-PSO-03.explicit_invalidation.failure
+        value: "If Explicit cache invalidation is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Explicit cache invalidation is interrupted, the effect is not applied twice."
+    bounds:
+      - "Explicit cache invalidation allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-03-TTL-ONLY
+    question: Q-PSO-03
+    option: ttl_only
+    cells:
+      - cell: wave1.Q-PSO-03.ttl_only.behavior
+        value: "Entries expire by time. A write does not purge them early."
+      - cell: wave1.Q-PSO-03.ttl_only.failure
+        value: "If TTL-only cache is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If TTL-only cache is interrupted, the effect is not applied twice."
+    bounds:
+      - "TTL-only cache allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-04-IDEMPOTENT-WORKERS
+    question: Q-PSO-04
+    option: idempotent_workers
+    cells:
+      - cell: wave1.Q-PSO-04.idempotent_workers.behavior
+        value: "The same job id applies the effect once across retries."
+      - cell: wave1.Q-PSO-04.idempotent_workers.failure
+        value: "If Idempotent worker retries is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Idempotent worker retries is interrupted, the effect is not applied twice."
+    bounds:
+      - "Idempotent worker retries allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-04-UNCHECKED-RETRIES
+    question: Q-PSO-04
+    option: unchecked_retries
+    cells:
+      - cell: wave1.Q-PSO-04.unchecked_retries.behavior
+        value: "A retry can apply the effect again. This option is the failure case."
+      - cell: wave1.Q-PSO-04.unchecked_retries.failure
+        value: "If Unchecked retries is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Unchecked retries is interrupted, the effect is not applied twice."
+    bounds:
+      - "Unchecked retries allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-05-EDGE-AND-APP-LIMITS
+    question: Q-PSO-05
+    option: edge_and_app_limits
+    cells:
+      - cell: wave1.Q-PSO-05.edge_and_app_limits.behavior
+        value: "The edge and the app both limit bursts, including password tries."
+      - cell: wave1.Q-PSO-05.edge_and_app_limits.failure
+        value: "If Edge and application rate limits is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Edge and application rate limits is interrupted, the effect is not applied twice."
+    bounds:
+      - "Edge and application rate limits allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-05-NO-LIMIT
+    question: Q-PSO-05
+    option: no_limit
+    cells:
+      - cell: wave1.Q-PSO-05.no_limit.behavior
+        value: "No limit is configured. This option is the failure case."
+      - cell: wave1.Q-PSO-05.no_limit.failure
+        value: "If No rate limit is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If No rate limit is interrupted, the effect is not applied twice."
+    bounds:
+      - "No rate limit allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-06-SINGLE-REGION
+    question: Q-PSO-06
+    option: single_region
+    cells:
+      - cell: wave1.Q-PSO-06.single_region.behavior
+        value: "All data and compute stay in one region."
+      - cell: wave1.Q-PSO-06.single_region.failure
+        value: "If Single region is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Single region is interrupted, the effect is not applied twice."
+    bounds:
+      - "Single region allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-06-MULTI-REGION
+    question: Q-PSO-06
+    option: multi_region
+    cells:
+      - cell: wave1.Q-PSO-06.multi_region.behavior
+        value: "A second region serves reads and a numeric latency target is named."
+      - cell: wave1.Q-PSO-06.multi_region.failure
+        value: "If Multi-region with a latency target is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Multi-region with a latency target is interrupted, the effect is not applied twice."
+    bounds:
+      - "Multi-region with a latency target allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-07-OTEL-AND-SENTRY
+    question: Q-PSO-07
+    option: otel_and_sentry
+    cells:
+      - cell: wave1.Q-PSO-07.otel_and_sentry.behavior
+        value: "Traces and metrics go to OpenTelemetry and exceptions go to Sentry, without raw secrets."
+      - cell: wave1.Q-PSO-07.otel_and_sentry.failure
+        value: "If OpenTelemetry and Sentry is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If OpenTelemetry and Sentry is interrupted, the effect is not applied twice."
+    bounds:
+      - "OpenTelemetry and Sentry allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-07-LOGS-ONLY
+    question: Q-PSO-07
+    option: logs_only
+    cells:
+      - cell: wave1.Q-PSO-07.logs_only.behavior
+        value: "One structured log line per request. No error-tracking vendor is configured."
+      - cell: wave1.Q-PSO-07.logs_only.failure
+        value: "If Structured logs only is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Structured logs only is interrupted, the effect is not applied twice."
+    bounds:
+      - "Structured logs only allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-08-DEFINED-RPO-RTO
+    question: Q-PSO-08
+    option: defined_rpo_rto
+    cells:
+      - cell: wave1.Q-PSO-08.defined_rpo_rto.behavior
+        value: "Recovery point and recovery time are named, and a drill restores a backup."
+      - cell: wave1.Q-PSO-08.defined_rpo_rto.failure
+        value: "If Defined RPO, RTO, and DR drills is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Defined RPO, RTO, and DR drills is interrupted, the effect is not applied twice."
+    bounds:
+      - "Defined RPO, RTO, and DR drills allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."
+  - id: ELAB-Q-PSO-08-NO-DRILL
+    question: Q-PSO-08
+    option: no_drill
+    cells:
+      - cell: wave1.Q-PSO-08.no_drill.behavior
+        value: "Backups may exist but nobody restores them. This option is the failure case."
+      - cell: wave1.Q-PSO-08.no_drill.failure
+        value: "If No recovery drill is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If No recovery drill is interrupted, the effect is not applied twice."
+    bounds:
+      - "No recovery drill allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. After the failure path, retained personal data matches the stated window and no extra copy remains."

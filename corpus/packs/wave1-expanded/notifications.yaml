@@ -1,0 +1,490 @@
+# requires_settled messaging.activation=active. Core notifications.outbound=email_only for a catering summary does not set this flag.
+kind: question_pack
+id: notifications
+version: 1
+title: "Notifications"
+questions:
+  - id: Q-NTF-01
+    version: 1
+    scope: project
+    domains: [notifications]
+    title: "Which notification channels are in this product?"
+    explain: "Channels are transactional email, SMS, an in-app bell, push, or Slack and webhooks."
+    criteria:
+      - messaging.activation
+      - messaging.channels
+    applies_when:
+      - criterion: messaging.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [outbound_message, external_api]
+    options:
+      - id: transactional_email
+        label: "Transactional Email via Resend/SMTP"
+        meaning: "Product messages go out as transactional email through Resend or SMTP, not as a marketing blast."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Transactional Email via Resend/SMTP means Product messages go out as transactional email through Resend or SMTP, not as a marketing blast."
+      - id: in_app_bell
+        label: "In-app bell"
+        meaning: "The only channel is an in-app bell. No email or SMS is sent."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing In-app bell means The only channel is an in-app bell. No email or SMS is sent."
+      - id: sms_push_slack
+        label: "SMS, push, and Slack webhooks"
+        meaning: "SMS, mobile push, and a Slack or webhook channel are all in scope."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing SMS, push, and Slack webhooks means SMS, mobile push, and a Slack or webhook channel are all in scope."
+    stage_recommendations:
+      prototype:
+        option: transactional_email
+        rationale: "Prototype recommends Transactional Email via Resend/SMTP until a later stage needs a stricter rule."
+      mvp:
+        option: transactional_email
+        rationale: "MVP recommends Transactional Email via Resend/SMTP as the pragmatic default once this pack is active."
+      production:
+        option: transactional_email
+        rationale: "Production recommends Transactional Email via Resend/SMTP so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "just transactional email through Resend or SMTP, no SMS"
+        style: spoken_dictation
+        settles:
+          messaging.channels: transactional_email
+      - utterance: "Use Transactional Email via Resend/SMTP. Product messages go out as transactional email through Resend or SMTP, not as a marketing blast."
+        style: plain
+        settles:
+          messaging.channels: transactional_email
+      - utterance: "The decision for this product is Transactional Email via Resend/SMTP."
+        style: plain
+        settles:
+          messaging.channels: transactional_email
+      - utterance: "Settle Which notification channels are in this product as Transactional Email via Resend/SMTP."
+        style: plain
+        settles:
+          messaging.channels: transactional_email
+      - utterance: "I am choosing Transactional Email via Resend/SMTP. Channels are transactional email, SMS, an in-app bell, push, or Slack and webhooks."
+        style: plain
+        settles:
+          messaging.channels: transactional_email
+    negative_examples:
+      - utterance: "We might do In-app bell someday."
+        must_not_settle: [in_app_bell]
+        reason: "A someday mention of In-app bell does not settle messaging.channels."
+      - utterance: "emails totals to catering"
+        must_not_settle: [transactional_email]
+        reason: "A single catering summary is the core outbound decision, not this messaging pack."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-NTF-02
+    version: 1
+    scope: project
+    domains: [notifications]
+    title: "When does a message send?"
+    explain: "A message is immediate, a digest, or a timezone-aware schedule."
+    criteria:
+      - messaging.trigger_timing
+    applies_when:
+      - criterion: messaging.activation
+        equals: active
+    requires:
+      - Q-NTF-01
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [outbound_message, scheduling, time_display]
+    options:
+      - id: immediate
+        label: "Immediate send"
+        meaning: "The message leaves as soon as the triggering event commits."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Immediate send means The message leaves as soon as the triggering event commits."
+      - id: digest_batched
+        label: "Digest or batched"
+        meaning: "Events fold into one digest per recipient for the window."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Digest or batched means Events fold into one digest per recipient for the window."
+      - id: scheduled_timezone
+        label: "Scheduled timezone-aware"
+        meaning: "The send waits for a clock time in the recipient IANA zone."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Scheduled timezone-aware means The send waits for a clock time in the recipient IANA zone."
+    stage_recommendations:
+      prototype:
+        option: immediate
+        rationale: "Prototype recommends Immediate send until a later stage needs a stricter rule."
+      mvp:
+        option: digest_batched
+        rationale: "MVP recommends Digest or batched as the pragmatic default once this pack is active."
+      production:
+        option: scheduled_timezone
+        rationale: "Production recommends Scheduled timezone-aware so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "send it right away, don't batch it overnight"
+        style: spoken_dictation
+        settles:
+          messaging.trigger_timing: digest_batched
+      - utterance: "Use Digest or batched. Events fold into one digest per recipient for the window."
+        style: plain
+        settles:
+          messaging.trigger_timing: digest_batched
+      - utterance: "The decision for this product is Digest or batched."
+        style: plain
+        settles:
+          messaging.trigger_timing: digest_batched
+      - utterance: "Settle When does a message send as Digest or batched."
+        style: plain
+        settles:
+          messaging.trigger_timing: digest_batched
+      - utterance: "I am choosing Digest or batched. A message is immediate, a digest, or a timezone-aware schedule."
+        style: plain
+        settles:
+          messaging.trigger_timing: digest_batched
+    negative_examples:
+      - utterance: "We might do Immediate send someday."
+        must_not_settle: [immediate]
+        reason: "A someday mention of Immediate send does not settle messaging.trigger_timing."
+      - utterance: "Make it nice."
+        must_not_settle: [immediate]
+        reason: "A quality wish does not settle messaging.trigger_timing."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-NTF-03
+    version: 1
+    scope: project
+    domains: [notifications]
+    title: "How do preference, opt-out, and unsubscribe work?"
+    explain: "Each channel the user can receive must have an opt-out that the send path checks."
+    criteria:
+      - messaging.opt_out
+    applies_when:
+      - criterion: messaging.activation
+        equals: active
+    requires:
+      - Q-NTF-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [outbound_message, personal_data]
+    options:
+      - id: per_channel_opt_out
+        label: "Per-channel opt-out and unsubscribe"
+        meaning: "Every non-security channel has an unsubscribe that suppresses the next send."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Per-channel opt-out and unsubscribe means Every non-security channel has an unsubscribe that suppresses the next send."
+      - id: forced_send
+        label: "Send with no unsubscribe"
+        meaning: "Messages send even after the person asks to stop. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Send with no unsubscribe means Messages send even after the person asks to stop. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: per_channel_opt_out
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Per-channel opt-out and unsubscribe."
+      mvp:
+        option: per_channel_opt_out
+        rationale: "MVP recommends Per-channel opt-out and unsubscribe as the pragmatic default once this pack is active."
+      production:
+        option: per_channel_opt_out
+        rationale: "Production recommends Per-channel opt-out and unsubscribe so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "they have to be able to unsubscribe, don't force the mail"
+        style: spoken_dictation
+        settles:
+          messaging.opt_out: per_channel_opt_out
+      - utterance: "Use Per-channel opt-out and unsubscribe. Every non-security channel has an unsubscribe that suppresses the next send."
+        style: plain
+        settles:
+          messaging.opt_out: per_channel_opt_out
+      - utterance: "The decision for this product is Per-channel opt-out and unsubscribe."
+        style: plain
+        settles:
+          messaging.opt_out: per_channel_opt_out
+      - utterance: "Settle How do preference, opt-out, and unsubscribe work as Per-channel opt-out and unsubscribe."
+        style: plain
+        settles:
+          messaging.opt_out: per_channel_opt_out
+      - utterance: "I am choosing Per-channel opt-out and unsubscribe. Each channel the user can receive must have an opt-out that the send path checks."
+        style: plain
+        settles:
+          messaging.opt_out: per_channel_opt_out
+    negative_examples:
+      - utterance: "We might do Send with no unsubscribe someday."
+        must_not_settle: [forced_send]
+        reason: "A someday mention of Send with no unsubscribe does not settle messaging.opt_out."
+      - utterance: "Make it nice."
+        must_not_settle: [forced_send]
+        reason: "A quality wish does not settle messaging.opt_out."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-NTF-04
+    version: 1
+    scope: project
+    domains: [notifications]
+    title: "What happens on bounce, retry, and dead-letter?"
+    explain: "A failed send retries with the same idempotency key and then dead-letters instead of vanishing or duplicating."
+    criteria:
+      - messaging.delivery_failure
+    applies_when:
+      - criterion: messaging.activation
+        equals: active
+    requires:
+      - Q-NTF-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [outbound_message, background_job]
+    options:
+      - id: retry_then_dead_letter
+        label: "Retry then dead-letter"
+        meaning: "Transient failures retry with backoff. Exhaustion writes one dead-letter row."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Retry then dead-letter means Transient failures retry with backoff. Exhaustion writes one dead-letter row."
+      - id: drop_on_failure
+        label: "Drop on first failure"
+        meaning: "The first provider error deletes the message. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Drop on first failure means The first provider error deletes the message. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: retry_then_dead_letter
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Retry then dead-letter."
+      mvp:
+        option: retry_then_dead_letter
+        rationale: "MVP recommends Retry then dead-letter as the pragmatic default once this pack is active."
+      production:
+        option: retry_then_dead_letter
+        rationale: "Production recommends Retry then dead-letter so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if it bounces, retry a few times and then park it, don't send it twice"
+        style: spoken_dictation
+        settles:
+          messaging.delivery_failure: retry_then_dead_letter
+      - utterance: "Use Retry then dead-letter. Transient failures retry with backoff. Exhaustion writes one dead-letter row."
+        style: plain
+        settles:
+          messaging.delivery_failure: retry_then_dead_letter
+      - utterance: "The decision for this product is Retry then dead-letter."
+        style: plain
+        settles:
+          messaging.delivery_failure: retry_then_dead_letter
+      - utterance: "Settle What happens on bounce, retry, and dead-letter as Retry then dead-letter."
+        style: plain
+        settles:
+          messaging.delivery_failure: retry_then_dead_letter
+      - utterance: "I am choosing Retry then dead-letter. A failed send retries with the same idempotency key and then dead-letters instead of vanishing or duplicating."
+        style: plain
+        settles:
+          messaging.delivery_failure: retry_then_dead_letter
+    negative_examples:
+      - utterance: "We might do Drop on first failure someday."
+        must_not_settle: [drop_on_failure]
+        reason: "A someday mention of Drop on first failure does not settle messaging.delivery_failure."
+      - utterance: "Make it nice."
+        must_not_settle: [drop_on_failure]
+        reason: "A quality wish does not settle messaging.delivery_failure."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-NTF-05
+    version: 1
+    scope: project
+    domains: [notifications]
+    title: "How are templates customized and localized?"
+    explain: "Templates are either one locale or a localized set with the same variables."
+    criteria:
+      - messaging.templates
+    applies_when:
+      - criterion: messaging.activation
+        equals: active
+    requires:
+      - Q-NTF-01
+    conflicts_with: []
+    risk_tier: low
+    impact: low
+    reversibility: easy
+    must_ask: false
+    touches: [outbound_message, user_content]
+    options:
+      - id: localized_templates
+        label: "Localized templates"
+        meaning: "Each locale has its own template and the same named variables."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Localized templates means Each locale has its own template and the same named variables."
+      - id: single_locale
+        label: "Single locale template"
+        meaning: "One locale is rendered. A missing translation is not a second send."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Single locale template means One locale is rendered. A missing translation is not a second send."
+    stage_recommendations:
+      prototype:
+        option: single_locale
+        rationale: "Prototype recommends Single locale template until a later stage needs a stricter rule."
+      mvp:
+        option: localized_templates
+        rationale: "MVP recommends Localized templates as the pragmatic default once this pack is active."
+      production:
+        option: localized_templates
+        rationale: "Production recommends Localized templates so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "English only for now, we can translate the template later"
+        style: spoken_dictation
+        settles:
+          messaging.templates: localized_templates
+      - utterance: "Use Localized templates. Each locale has its own template and the same named variables."
+        style: plain
+        settles:
+          messaging.templates: localized_templates
+      - utterance: "The decision for this product is Localized templates."
+        style: plain
+        settles:
+          messaging.templates: localized_templates
+      - utterance: "Settle How are templates customized and localized as Localized templates."
+        style: plain
+        settles:
+          messaging.templates: localized_templates
+      - utterance: "I am choosing Localized templates. Templates are either one locale or a localized set with the same variables."
+        style: plain
+        settles:
+          messaging.templates: localized_templates
+    negative_examples:
+      - utterance: "We might do Single locale template someday."
+        must_not_settle: [single_locale]
+        reason: "A someday mention of Single locale template does not settle messaging.templates."
+      - utterance: "Make it nice."
+        must_not_settle: [single_locale]
+        reason: "A quality wish does not settle messaging.templates."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-NTF-06
+    version: 1
+    scope: project
+    domains: [notifications]
+    title: "What anti-spam rate limit applies?"
+    explain: "A per-recipient cap stops a loop from mailing the same person without bound."
+    criteria:
+      - messaging.rate_limits
+    applies_when:
+      - criterion: messaging.activation
+        equals: active
+    requires:
+      - Q-NTF-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [outbound_message, rate_limited]
+    options:
+      - id: per_recipient_cap
+        label: "Per-recipient anti-spam cap"
+        meaning: "A recipient accepts a fixed number of product messages per hour. The rest are suppressed."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Per-recipient anti-spam cap means A recipient accepts a fixed number of product messages per hour. The rest are suppressed."
+      - id: unlimited
+        label: "Unlimited sends"
+        meaning: "No cap is applied. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Unlimited sends means No cap is applied. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: per_recipient_cap
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Per-recipient anti-spam cap."
+      mvp:
+        option: per_recipient_cap
+        rationale: "MVP recommends Per-recipient anti-spam cap as the pragmatic default once this pack is active."
+      production:
+        option: per_recipient_cap
+        rationale: "Production recommends Per-recipient anti-spam cap so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "cap it so one person can't get a hundred mails in an hour"
+        style: spoken_dictation
+        settles:
+          messaging.rate_limits: per_recipient_cap
+      - utterance: "Use Per-recipient anti-spam cap. A recipient accepts a fixed number of product messages per hour. The rest are suppressed."
+        style: plain
+        settles:
+          messaging.rate_limits: per_recipient_cap
+      - utterance: "The decision for this product is Per-recipient anti-spam cap."
+        style: plain
+        settles:
+          messaging.rate_limits: per_recipient_cap
+      - utterance: "Settle What anti-spam rate limit applies as Per-recipient anti-spam cap."
+        style: plain
+        settles:
+          messaging.rate_limits: per_recipient_cap
+      - utterance: "I am choosing Per-recipient anti-spam cap. A per-recipient cap stops a loop from mailing the same person without bound."
+        style: plain
+        settles:
+          messaging.rate_limits: per_recipient_cap
+    negative_examples:
+      - utterance: "We might do Unlimited sends someday."
+        must_not_settle: [unlimited]
+        reason: "A someday mention of Unlimited sends does not settle messaging.rate_limits."
+      - utterance: "Make it nice."
+        must_not_settle: [unlimited]
+        reason: "A quality wish does not settle messaging.rate_limits."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0

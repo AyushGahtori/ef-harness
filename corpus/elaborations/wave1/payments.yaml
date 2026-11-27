@@ -1,0 +1,321 @@
+kind: option_elaborations
+id: wave1-payments
+version: 1
+title: "Wave 1 Payments elaborations"
+elaborations:
+  - id: ELAB-Q-PAY-01-ONE-TIME
+    question: Q-PAY-01
+    option: one_time
+    cells:
+      - cell: wave1.Q-PAY-01.one_time.behavior
+        value: "The customer pays a single amount and is not enrolled in a renewal."
+      - cell: wave1.Q-PAY-01.one_time.failure
+        value: "If One-time charge is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If One-time charge is interrupted, the effect is not applied twice."
+    bounds:
+      - "One-time charge allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-01-STRIPE-SUBSCRIPTIONS
+    question: Q-PAY-01
+    option: stripe_subscriptions
+    cells:
+      - cell: wave1.Q-PAY-01.stripe_subscriptions.behavior
+        value: "Stripe renews a plan on a cadence and proration rules apply at a change."
+      - cell: wave1.Q-PAY-01.stripe_subscriptions.failure
+        value: "If Stripe Subscriptions is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Stripe Subscriptions is interrupted, the effect is not applied twice."
+    bounds:
+      - "Stripe Subscriptions allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-01-USAGE-CREDITS
+    question: Q-PAY-01
+    option: usage_credits
+    cells:
+      - cell: wave1.Q-PAY-01.usage_credits.behavior
+        value: "The customer draws down prepaid credits, and a zero balance stops the paid action."
+      - cell: wave1.Q-PAY-01.usage_credits.failure
+        value: "If Usage credits is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Usage credits is interrupted, the effect is not applied twice."
+    bounds:
+      - "Usage credits allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-01-MARKETPLACE-SPLIT
+    question: Q-PAY-01
+    option: marketplace_split
+    cells:
+      - cell: wave1.Q-PAY-01.marketplace_split.behavior
+        value: "A platform fee is split from the seller payout on each captured charge."
+      - cell: wave1.Q-PAY-01.marketplace_split.failure
+        value: "If Marketplace split is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Marketplace split is interrupted, the effect is not applied twice."
+    bounds:
+      - "Marketplace split allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-02-STRIPE-CHECKOUT
+    question: Q-PAY-02
+    option: stripe_checkout
+    cells:
+      - cell: wave1.Q-PAY-02.stripe_checkout.behavior
+        value: "Stripe hosts the payment page and returns the customer only after Stripe accepts the attempt."
+      - cell: wave1.Q-PAY-02.stripe_checkout.failure
+        value: "If Stripe Checkout is interrupted, the effect is not applied twice."
+      - cell: conflicts_with
+        value: "Q-PAY-03:client_redirect_marks_paid"
+      - cell: layer1_warning
+        value: "browser-close / spoofed-redirect revenue loss. Require server-side signed webhook fulfillment."
+    edge_cases:
+      - "If Stripe Checkout is interrupted, the effect is not applied twice."
+    bounds:
+      - "Stripe Checkout allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-02-STRIPE-ELEMENTS
+    question: Q-PAY-02
+    option: stripe_elements
+    cells:
+      - cell: wave1.Q-PAY-02.stripe_elements.behavior
+        value: "Card fields are embedded, and the server still confirms the PaymentIntent."
+      - cell: wave1.Q-PAY-02.stripe_elements.failure
+        value: "If Stripe Elements is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Stripe Elements is interrupted, the effect is not applied twice."
+    bounds:
+      - "Stripe Elements allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-02-INVOICES
+    question: Q-PAY-02
+    option: invoices
+    cells:
+      - cell: wave1.Q-PAY-02.invoices.behavior
+        value: "Stripe sends an invoice and the order stays unpaid until the invoice is paid."
+      - cell: wave1.Q-PAY-02.invoices.failure
+        value: "If Invoices is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Invoices is interrupted, the effect is not applied twice."
+    bounds:
+      - "Invoices allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-03-SIGNED-WEBHOOK-FULFILLMENT
+    question: Q-PAY-03
+    option: signed_webhook_fulfillment
+    cells:
+      - cell: wave1.Q-PAY-03.signed_webhook_fulfillment.behavior
+        value: "The server verifies the Stripe signature and fulfills from that event, ignoring the browser return."
+      - cell: wave1.Q-PAY-03.signed_webhook_fulfillment.failure
+        value: "The same webhook event id arrives twice after a timeout. The ledger gains one paid order."
+    edge_cases:
+      - "The same webhook event id arrives twice after a timeout. The ledger gains one paid order."
+    bounds:
+      - "One fulfillment row per webhook event id."
+    oracle_hints:
+      - "Duplicate-event idempotency oracle. Replaying the same signed webhook event id fulfills the order once, and the second delivery does not create another paid order."
+  - id: ELAB-Q-PAY-03-CLIENT-REDIRECT-MARKS-PAID
+    question: Q-PAY-03
+    option: client_redirect_marks_paid
+    cells:
+      - cell: wave1.Q-PAY-03.client_redirect_marks_paid.behavior
+        value: "The browser return URL marks the order paid and no signed webhook is required."
+      - cell: wave1.Q-PAY-03.client_redirect_marks_paid.failure
+        value: "If Client redirect marks order paid without webhooks is interrupted, the effect is not applied twice."
+      - cell: conflicts_with
+        value: "Q-PAY-02:stripe_checkout"
+      - cell: layer1_warning
+        value: "browser-close / spoofed-redirect revenue loss. Require server-side signed webhook fulfillment."
+    edge_cases:
+      - "If Client redirect marks order paid without webhooks is interrupted, the effect is not applied twice."
+    bounds:
+      - "Client redirect marks order paid without webhooks allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure oracle. Closing the browser or spoofing the redirect must not mark the order paid. Idempotency does not apply because no webhook event id exists."
+  - id: ELAB-Q-PAY-04-PRORATE-AND-DUNNING
+    question: Q-PAY-04
+    option: prorate_and_dunning
+    cells:
+      - cell: wave1.Q-PAY-04.prorate_and_dunning.behavior
+        value: "Upgrades prorate immediately and a failed renewal retries before access ends."
+      - cell: wave1.Q-PAY-04.prorate_and_dunning.failure
+        value: "If Prorate with dunning is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Prorate with dunning is interrupted, the effect is not applied twice."
+    bounds:
+      - "Prorate with dunning allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-04-CANCEL-AT-PERIOD-END
+    question: Q-PAY-04
+    option: cancel_at_period_end
+    cells:
+      - cell: wave1.Q-PAY-04.cancel_at_period_end.behavior
+        value: "Cancellation keeps access until the paid period ends and does not prorate a refund."
+      - cell: wave1.Q-PAY-04.cancel_at_period_end.failure
+        value: "If Cancel at period end is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Cancel at period end is interrupted, the effect is not applied twice."
+    bounds:
+      - "Cancel at period end allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-04-GRACE-THEN-DUNNING
+    question: Q-PAY-04
+    option: grace_then_dunning
+    cells:
+      - cell: wave1.Q-PAY-04.grace_then_dunning.behavior
+        value: "A short grace window stays open, then dunning emails start and access ends."
+      - cell: wave1.Q-PAY-04.grace_then_dunning.failure
+        value: "If Grace period then dunning is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Grace period then dunning is interrupted, the effect is not applied twice."
+    bounds:
+      - "Grace period then dunning allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-05-PARTIAL-REFUNDS-SERVER
+    question: Q-PAY-05
+    option: partial_refunds_server
+    cells:
+      - cell: wave1.Q-PAY-05.partial_refunds_server.behavior
+        value: "An authorized server call refunds a minor-unit amount up to the captured total."
+      - cell: wave1.Q-PAY-05.partial_refunds_server.failure
+        value: "If Server-side partial refunds is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Server-side partial refunds is interrupted, the effect is not applied twice."
+    bounds:
+      - "Server-side partial refunds allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-05-FULL-REFUND-ONLY
+    question: Q-PAY-05
+    option: full_refund_only
+    cells:
+      - cell: wave1.Q-PAY-05.full_refund_only.behavior
+        value: "The only refund is the entire capture. A partial amount is rejected."
+      - cell: wave1.Q-PAY-05.full_refund_only.failure
+        value: "If Full refund only is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Full refund only is interrupted, the effect is not applied twice."
+    bounds:
+      - "Full refund only allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-05-MANUAL-DISPUTES
+    question: Q-PAY-05
+    option: manual_disputes
+    cells:
+      - cell: wave1.Q-PAY-05.manual_disputes.behavior
+        value: "A dispute is recorded and a person decides the evidence, with no automatic refund."
+      - cell: wave1.Q-PAY-05.manual_disputes.failure
+        value: "If Manual dispute handling is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Manual dispute handling is interrupted, the effect is not applied twice."
+    bounds:
+      - "Manual dispute handling allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-06-STRIPE-TAX
+    question: Q-PAY-06
+    option: stripe_tax
+    cells:
+      - cell: wave1.Q-PAY-06.stripe_tax.behavior
+        value: "Stripe calculates tax and a receipt is sent after the paid event."
+      - cell: wave1.Q-PAY-06.stripe_tax.failure
+        value: "If Stripe Tax and receipts is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Stripe Tax and receipts is interrupted, the effect is not applied twice."
+    bounds:
+      - "Stripe Tax and receipts allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-06-MANUAL-VAT
+    question: Q-PAY-06
+    option: manual_vat
+    cells:
+      - cell: wave1.Q-PAY-06.manual_vat.behavior
+        value: "A person issues the VAT invoice. The charge itself does not calculate tax."
+      - cell: wave1.Q-PAY-06.manual_vat.failure
+        value: "If Manual VAT invoices is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Manual VAT invoices is interrupted, the effect is not applied twice."
+    bounds:
+      - "Manual VAT invoices allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-06-NO-TAX
+    question: Q-PAY-06
+    option: no_tax
+    cells:
+      - cell: wave1.Q-PAY-06.no_tax.behavior
+        value: "The price is tax-exclusive and no tax is collected in this version."
+      - cell: wave1.Q-PAY-06.no_tax.failure
+        value: "If No tax collection is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If No tax collection is interrupted, the effect is not applied twice."
+    bounds:
+      - "No tax collection allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-07-INTEGER-MINOR-UNITS
+    question: Q-PAY-07
+    option: integer_minor_units
+    cells:
+      - cell: wave1.Q-PAY-07.integer_minor_units.behavior
+        value: "Amounts are integers in the currency minor unit, and display divides by the exponent."
+      - cell: wave1.Q-PAY-07.integer_minor_units.failure
+        value: "If Integer minor units is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Integer minor units is interrupted, the effect is not applied twice."
+    bounds:
+      - "Integer minor units allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-07-DECIMAL-FLOATS
+    question: Q-PAY-07
+    option: decimal_floats
+    cells:
+      - cell: wave1.Q-PAY-07.decimal_floats.behavior
+        value: "Amounts are binary floats. This option is offered only so it can be rejected."
+      - cell: wave1.Q-PAY-07.decimal_floats.failure
+        value: "If Decimal floats is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Decimal floats is interrupted, the effect is not applied twice."
+    bounds:
+      - "Decimal floats allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-08-ISOLATED-KEYS
+    question: Q-PAY-08
+    option: isolated_keys
+    cells:
+      - cell: wave1.Q-PAY-08.isolated_keys.behavior
+        value: "Test and live secrets live in different environment names and different webhook endpoints."
+      - cell: wave1.Q-PAY-08.isolated_keys.failure
+        value: "If Isolated test-mode and live keys is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Isolated test-mode and live keys is interrupted, the effect is not applied twice."
+    bounds:
+      - "Isolated test-mode and live keys allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."
+  - id: ELAB-Q-PAY-08-SHARED-KEY
+    question: Q-PAY-08
+    option: shared_key
+    cells:
+      - cell: wave1.Q-PAY-08.shared_key.behavior
+        value: "One secret is used for test and live. This option is the failure case."
+      - cell: wave1.Q-PAY-08.shared_key.failure
+        value: "If Shared key for test and live is interrupted, the effect is not applied twice."
+    edge_cases:
+      - "If Shared key for test and live is interrupted, the effect is not applied twice."
+    bounds:
+      - "Shared key for test and live allows one in-flight effect per idempotency key."
+    oracle_hints:
+      - "Failure and idempotency oracle. Replaying the same provider event id applies the money effect once."

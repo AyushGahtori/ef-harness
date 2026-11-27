@@ -1,0 +1,668 @@
+# requires_settled billing.activation=active. Core integrations.external=none (no Stripe) leaves this pack dormant.
+kind: question_pack
+id: payments
+version: 1
+title: "Payments"
+questions:
+  - id: Q-PAY-01
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "Which billing model charges the customer?"
+    explain: "The billing model chooses one-time, subscription, usage credits, or a marketplace split before any charge is taken."
+    criteria:
+      - billing.activation
+      - billing.model
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [money, external_api]
+    options:
+      - id: one_time
+        label: "One-time charge"
+        meaning: "The customer pays a single amount and is not enrolled in a renewal."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing One-time charge means The customer pays a single amount and is not enrolled in a renewal."
+      - id: stripe_subscriptions
+        label: "Stripe Subscriptions"
+        meaning: "Stripe renews a plan on a cadence and proration rules apply at a change."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Stripe Subscriptions means Stripe renews a plan on a cadence and proration rules apply at a change."
+      - id: usage_credits
+        label: "Usage credits"
+        meaning: "The customer draws down prepaid credits, and a zero balance stops the paid action."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Usage credits means The customer draws down prepaid credits, and a zero balance stops the paid action."
+      - id: marketplace_split
+        label: "Marketplace split"
+        meaning: "A platform fee is split from the seller payout on each captured charge."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Marketplace split means A platform fee is split from the seller payout on each captured charge."
+    stage_recommendations:
+      prototype:
+        option: one_time
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is One-time charge."
+      mvp:
+        option: stripe_subscriptions
+        rationale: "MVP recommends Stripe Subscriptions as the pragmatic default once this pack is active."
+      production:
+        option: stripe_subscriptions
+        rationale: "Production recommends Stripe Subscriptions so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "yeah charge them with Stripe Subscriptions, not a one-off and not a marketplace cut"
+        style: spoken_dictation
+        settles:
+          billing.model: stripe_subscriptions
+      - utterance: "Use Stripe Subscriptions. Stripe renews a plan on a cadence and proration rules apply at a change."
+        style: plain
+        settles:
+          billing.model: stripe_subscriptions
+      - utterance: "The decision for this product is Stripe Subscriptions."
+        style: plain
+        settles:
+          billing.model: stripe_subscriptions
+      - utterance: "Settle Which billing model charges the customer as Stripe Subscriptions."
+        style: plain
+        settles:
+          billing.model: stripe_subscriptions
+      - utterance: "I am choosing Stripe Subscriptions. The billing model chooses one-time, subscription, usage credits, or a marketplace split before any charge is taken."
+        style: plain
+        settles:
+          billing.model: stripe_subscriptions
+    negative_examples:
+      - utterance: "We might do One-time charge someday."
+        must_not_settle: [one_time]
+        reason: "A someday mention of One-time charge does not settle billing.model."
+      - utterance: "We might add payments later."
+        must_not_settle: [stripe_subscriptions]
+        reason: "A future maybe does not settle the billing model or unlock the payments pack."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-02
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "Which processor and checkout flow takes the card?"
+    explain: "Checkout is Stripe Checkout, Stripe Elements, or an invoice. A client redirect never marks the order paid."
+    criteria:
+      - billing.checkout_flow
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [money, route, external_api]
+    options:
+      - id: stripe_checkout
+        label: "Stripe Checkout"
+        meaning: "Stripe hosts the payment page and returns the customer only after Stripe accepts the attempt."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Stripe Checkout conflicts with Client redirect marks order paid without webhooks because of browser-close / spoofed-redirect revenue loss. Require server-side signed webhook fulfillment."
+      - id: stripe_elements
+        label: "Stripe Elements"
+        meaning: "Card fields are embedded, and the server still confirms the PaymentIntent."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Stripe Elements means Card fields are embedded, and the server still confirms the PaymentIntent."
+      - id: invoices
+        label: "Invoices"
+        meaning: "Stripe sends an invoice and the order stays unpaid until the invoice is paid."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Invoices means Stripe sends an invoice and the order stays unpaid until the invoice is paid."
+    stage_recommendations:
+      prototype:
+        option: stripe_checkout
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Stripe Checkout."
+      mvp:
+        option: stripe_checkout
+        rationale: "MVP recommends Stripe Checkout as the pragmatic default once this pack is active."
+      production:
+        option: stripe_checkout
+        rationale: "Production recommends Stripe Checkout so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "just send them to Stripe Checkout, don't take the card on our own page"
+        style: spoken_dictation
+        settles:
+          billing.checkout_flow: stripe_checkout
+      - utterance: "Use Stripe Checkout. Stripe hosts the payment page and returns the customer only after Stripe accepts the attempt."
+        style: plain
+        settles:
+          billing.checkout_flow: stripe_checkout
+      - utterance: "The decision for this product is Stripe Checkout."
+        style: plain
+        settles:
+          billing.checkout_flow: stripe_checkout
+      - utterance: "Settle Which processor and checkout flow takes the card as Stripe Checkout."
+        style: plain
+        settles:
+          billing.checkout_flow: stripe_checkout
+      - utterance: "I am choosing Stripe Checkout. Checkout is Stripe Checkout, Stripe Elements, or an invoice. A client redirect never marks the order paid."
+        style: plain
+        settles:
+          billing.checkout_flow: stripe_checkout
+    negative_examples:
+      - utterance: "We might do Stripe Elements someday."
+        must_not_settle: [stripe_elements]
+        reason: "A someday mention of Stripe Elements does not settle billing.checkout_flow."
+      - utterance: "Make it nice."
+        must_not_settle: [stripe_elements]
+        reason: "A quality wish does not settle billing.checkout_flow."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-03
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "What authority marks an order paid?"
+    explain: "Fulfillment trusts a signed webhook, never the browser redirect. Duplicate webhook deliveries must be idempotent."
+    criteria:
+      - billing.fulfillment_authority
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-02
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [money, inbound_webhook, credentials]
+    options:
+      - id: signed_webhook_fulfillment
+        label: "Signed webhook fulfillment"
+        meaning: "The server verifies the Stripe signature and fulfills from that event, ignoring the browser return."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Signed webhook fulfillment means The server verifies the Stripe signature and fulfills from that event, ignoring the browser return."
+      - id: client_redirect_marks_paid
+        label: "Client redirect marks order paid without webhooks"
+        meaning: "The browser return URL marks the order paid and no signed webhook is required."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Conflict with Stripe Checkout: browser-close / spoofed-redirect revenue loss. Require server-side signed webhook fulfillment."
+    stage_recommendations:
+      prototype:
+        option: signed_webhook_fulfillment
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Signed webhook fulfillment."
+      mvp:
+        option: signed_webhook_fulfillment
+        rationale: "MVP recommends Signed webhook fulfillment as the pragmatic default once this pack is active."
+      production:
+        option: signed_webhook_fulfillment
+        rationale: "Production recommends Signed webhook fulfillment so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "don't trust the redirect, only the signed webhook can mark it paid"
+        style: spoken_dictation
+        settles:
+          billing.fulfillment_authority: signed_webhook_fulfillment
+      - utterance: "Use Signed webhook fulfillment. The server verifies the Stripe signature and fulfills from that event, ignoring the browser return."
+        style: plain
+        settles:
+          billing.fulfillment_authority: signed_webhook_fulfillment
+      - utterance: "The decision for this product is Signed webhook fulfillment."
+        style: plain
+        settles:
+          billing.fulfillment_authority: signed_webhook_fulfillment
+      - utterance: "Settle What authority marks an order paid as Signed webhook fulfillment."
+        style: plain
+        settles:
+          billing.fulfillment_authority: signed_webhook_fulfillment
+      - utterance: "I am choosing Signed webhook fulfillment. Fulfillment trusts a signed webhook, never the browser redirect. Duplicate webhook deliveries must be idempotent."
+        style: plain
+        settles:
+          billing.fulfillment_authority: signed_webhook_fulfillment
+    negative_examples:
+      - utterance: "We might do Client redirect marks order paid without webhooks someday."
+        must_not_settle: [client_redirect_marks_paid]
+        reason: "A someday mention of Client redirect marks order paid without webhooks does not settle billing.fulfillment_authority."
+      - utterance: "Make it nice."
+        must_not_settle: [client_redirect_marks_paid]
+        reason: "A quality wish does not settle billing.fulfillment_authority."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-04
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "How do proration, cancellation, grace, and dunning work?"
+    explain: "A plan change, cancel, grace window, or failed renewal needs one explicit rule before the first invoice."
+    criteria:
+      - billing.lifecycle
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [money, scheduling]
+    options:
+      - id: prorate_and_dunning
+        label: "Prorate with dunning"
+        meaning: "Upgrades prorate immediately and a failed renewal retries before access ends."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Prorate with dunning means Upgrades prorate immediately and a failed renewal retries before access ends."
+      - id: cancel_at_period_end
+        label: "Cancel at period end"
+        meaning: "Cancellation keeps access until the paid period ends and does not prorate a refund."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Cancel at period end means Cancellation keeps access until the paid period ends and does not prorate a refund."
+      - id: grace_then_dunning
+        label: "Grace period then dunning"
+        meaning: "A short grace window stays open, then dunning emails start and access ends."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Grace period then dunning means A short grace window stays open, then dunning emails start and access ends."
+    stage_recommendations:
+      prototype:
+        option: cancel_at_period_end
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Cancel at period end."
+      mvp:
+        option: prorate_and_dunning
+        rationale: "MVP recommends Prorate with dunning as the pragmatic default once this pack is active."
+      production:
+        option: prorate_and_dunning
+        rationale: "Production recommends Prorate with dunning so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if they cancel, let them keep it until the period ends, and chase failed cards"
+        style: spoken_dictation
+        settles:
+          billing.lifecycle: prorate_and_dunning
+      - utterance: "Use Prorate with dunning. Upgrades prorate immediately and a failed renewal retries before access ends."
+        style: plain
+        settles:
+          billing.lifecycle: prorate_and_dunning
+      - utterance: "The decision for this product is Prorate with dunning."
+        style: plain
+        settles:
+          billing.lifecycle: prorate_and_dunning
+      - utterance: "Settle How do proration, cancellation, grace, and dunning work as Prorate with dunning."
+        style: plain
+        settles:
+          billing.lifecycle: prorate_and_dunning
+      - utterance: "I am choosing Prorate with dunning. A plan change, cancel, grace window, or failed renewal needs one explicit rule before the first invoice."
+        style: plain
+        settles:
+          billing.lifecycle: prorate_and_dunning
+    negative_examples:
+      - utterance: "We might do Cancel at period end someday."
+        must_not_settle: [cancel_at_period_end]
+        reason: "A someday mention of Cancel at period end does not settle billing.lifecycle."
+      - utterance: "Make it nice."
+        must_not_settle: [cancel_at_period_end]
+        reason: "A quality wish does not settle billing.lifecycle."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-05
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "How are refunds, disputes, and partial refunds applied?"
+    explain: "Refunds and disputes move money. The server records a partial refund without trusting the client amount."
+    criteria:
+      - billing.refunds
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-01
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [money, destructive_write]
+    options:
+      - id: partial_refunds_server
+        label: "Server-side partial refunds"
+        meaning: "An authorized server call refunds a minor-unit amount up to the captured total."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Server-side partial refunds means An authorized server call refunds a minor-unit amount up to the captured total."
+      - id: full_refund_only
+        label: "Full refund only"
+        meaning: "The only refund is the entire capture. A partial amount is rejected."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Full refund only means The only refund is the entire capture. A partial amount is rejected."
+      - id: manual_disputes
+        label: "Manual dispute handling"
+        meaning: "A dispute is recorded and a person decides the evidence, with no automatic refund."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Manual dispute handling means A dispute is recorded and a person decides the evidence, with no automatic refund."
+    stage_recommendations:
+      prototype:
+        option: partial_refunds_server
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Server-side partial refunds."
+      mvp:
+        option: partial_refunds_server
+        rationale: "MVP recommends Server-side partial refunds as the pragmatic default once this pack is active."
+      production:
+        option: partial_refunds_server
+        rationale: "Production recommends Server-side partial refunds so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "let support refund part of the charge, not always the whole thing"
+        style: spoken_dictation
+        settles:
+          billing.refunds: partial_refunds_server
+      - utterance: "Use Server-side partial refunds. An authorized server call refunds a minor-unit amount up to the captured total."
+        style: plain
+        settles:
+          billing.refunds: partial_refunds_server
+      - utterance: "The decision for this product is Server-side partial refunds."
+        style: plain
+        settles:
+          billing.refunds: partial_refunds_server
+      - utterance: "Settle How are refunds, disputes, and partial refunds applied as Server-side partial refunds."
+        style: plain
+        settles:
+          billing.refunds: partial_refunds_server
+      - utterance: "I am choosing Server-side partial refunds. Refunds and disputes move money. The server records a partial refund without trusting the client amount."
+        style: plain
+        settles:
+          billing.refunds: partial_refunds_server
+    negative_examples:
+      - utterance: "We might do Full refund only someday."
+        must_not_settle: [full_refund_only]
+        reason: "A someday mention of Full refund only does not settle billing.refunds."
+      - utterance: "Make it nice."
+        must_not_settle: [full_refund_only]
+        reason: "A quality wish does not settle billing.refunds."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-06
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "How are tax, VAT, and receipts handled?"
+    explain: "Tax and the customer receipt are decided before the first live charge, including a no-tax choice."
+    criteria:
+      - billing.tax_receipts
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [money, outbound_message]
+    options:
+      - id: stripe_tax
+        label: "Stripe Tax and receipts"
+        meaning: "Stripe calculates tax and a receipt is sent after the paid event."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Stripe Tax and receipts means Stripe calculates tax and a receipt is sent after the paid event."
+      - id: manual_vat
+        label: "Manual VAT invoices"
+        meaning: "A person issues the VAT invoice. The charge itself does not calculate tax."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Manual VAT invoices means A person issues the VAT invoice. The charge itself does not calculate tax."
+      - id: no_tax
+        label: "No tax collection"
+        meaning: "The price is tax-exclusive and no tax is collected in this version."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing No tax collection means The price is tax-exclusive and no tax is collected in this version."
+    stage_recommendations:
+      prototype:
+        option: manual_vat
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Manual VAT invoices."
+      mvp:
+        option: stripe_tax
+        rationale: "MVP recommends Stripe Tax and receipts as the pragmatic default once this pack is active."
+      production:
+        option: stripe_tax
+        rationale: "Production recommends Stripe Tax and receipts so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "turn on Stripe Tax and email a receipt, don't make me compute VAT"
+        style: spoken_dictation
+        settles:
+          billing.tax_receipts: stripe_tax
+      - utterance: "Use Stripe Tax and receipts. Stripe calculates tax and a receipt is sent after the paid event."
+        style: plain
+        settles:
+          billing.tax_receipts: stripe_tax
+      - utterance: "The decision for this product is Stripe Tax and receipts."
+        style: plain
+        settles:
+          billing.tax_receipts: stripe_tax
+      - utterance: "Settle How are tax, VAT, and receipts handled as Stripe Tax and receipts."
+        style: plain
+        settles:
+          billing.tax_receipts: stripe_tax
+      - utterance: "I am choosing Stripe Tax and receipts. Tax and the customer receipt are decided before the first live charge, including a no-tax choice."
+        style: plain
+        settles:
+          billing.tax_receipts: stripe_tax
+    negative_examples:
+      - utterance: "We might do Manual VAT invoices someday."
+        must_not_settle: [manual_vat]
+        reason: "A someday mention of Manual VAT invoices does not settle billing.tax_receipts."
+      - utterance: "Make it nice."
+        must_not_settle: [manual_vat]
+        reason: "A quality wish does not settle billing.tax_receipts."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-07
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "How are currency and rounding stored?"
+    explain: "Money is stored as integer minor units. Decimal floats are rejected because they drift."
+    criteria:
+      - billing.currency_rounding
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-01
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [money]
+    options:
+      - id: integer_minor_units
+        label: "Integer minor units"
+        meaning: "Amounts are integers in the currency minor unit, and display divides by the exponent."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Integer minor units means Amounts are integers in the currency minor unit, and display divides by the exponent."
+      - id: decimal_floats
+        label: "Decimal floats"
+        meaning: "Amounts are binary floats. This option is offered only so it can be rejected."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Decimal floats means Amounts are binary floats. This option is offered only so it can be rejected."
+    stage_recommendations:
+      prototype:
+        option: integer_minor_units
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Integer minor units."
+      mvp:
+        option: integer_minor_units
+        rationale: "MVP recommends Integer minor units as the pragmatic default once this pack is active."
+      production:
+        option: integer_minor_units
+        rationale: "Production recommends Integer minor units so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "store cents as integers, don't use floats for the price"
+        style: spoken_dictation
+        settles:
+          billing.currency_rounding: integer_minor_units
+      - utterance: "Use Integer minor units. Amounts are integers in the currency minor unit, and display divides by the exponent."
+        style: plain
+        settles:
+          billing.currency_rounding: integer_minor_units
+      - utterance: "The decision for this product is Integer minor units."
+        style: plain
+        settles:
+          billing.currency_rounding: integer_minor_units
+      - utterance: "Settle How are currency and rounding stored as Integer minor units."
+        style: plain
+        settles:
+          billing.currency_rounding: integer_minor_units
+      - utterance: "I am choosing Integer minor units. Money is stored as integer minor units. Decimal floats are rejected because they drift."
+        style: plain
+        settles:
+          billing.currency_rounding: integer_minor_units
+    negative_examples:
+      - utterance: "We might do Decimal floats someday."
+        must_not_settle: [decimal_floats]
+        reason: "A someday mention of Decimal floats does not settle billing.currency_rounding."
+      - utterance: "Make it nice."
+        must_not_settle: [decimal_floats]
+        reason: "A quality wish does not settle billing.currency_rounding."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PAY-08
+    version: 1
+    scope: project
+    domains: [payments]
+    title: "How are test-mode and live keys isolated?"
+    explain: "Test-mode keys and live keys stay in separate config and never share a webhook secret."
+    criteria:
+      - billing.key_isolation
+    applies_when:
+      - criterion: billing.activation
+        equals: active
+    requires:
+      - Q-PAY-02
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [credentials, config_env, money]
+    options:
+      - id: isolated_keys
+        label: "Isolated test-mode and live keys"
+        meaning: "Test and live secrets live in different environment names and different webhook endpoints."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Isolated test-mode and live keys means Test and live secrets live in different environment names and different webhook endpoints."
+      - id: shared_key
+        label: "Shared key for test and live"
+        meaning: "One secret is used for test and live. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Shared key for test and live means One secret is used for test and live. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: isolated_keys
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Isolated test-mode and live keys."
+      mvp:
+        option: isolated_keys
+        rationale: "MVP recommends Isolated test-mode and live keys as the pragmatic default once this pack is active."
+      production:
+        option: isolated_keys
+        rationale: "Production recommends Isolated test-mode and live keys so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "keep the test key and the live key in different env vars, never the same one"
+        style: spoken_dictation
+        settles:
+          billing.key_isolation: isolated_keys
+      - utterance: "Use Isolated test-mode and live keys. Test and live secrets live in different environment names and different webhook endpoints."
+        style: plain
+        settles:
+          billing.key_isolation: isolated_keys
+      - utterance: "The decision for this product is Isolated test-mode and live keys."
+        style: plain
+        settles:
+          billing.key_isolation: isolated_keys
+      - utterance: "Settle How are test-mode and live keys isolated as Isolated test-mode and live keys."
+        style: plain
+        settles:
+          billing.key_isolation: isolated_keys
+      - utterance: "I am choosing Isolated test-mode and live keys. Test-mode keys and live keys stay in separate config and never share a webhook secret."
+        style: plain
+        settles:
+          billing.key_isolation: isolated_keys
+    negative_examples:
+      - utterance: "We might do Shared key for test and live someday."
+        must_not_settle: [shared_key]
+        reason: "A someday mention of Shared key for test and live does not settle billing.key_isolation."
+      - utterance: "Make it nice."
+        must_not_settle: [shared_key]
+        reason: "A quality wish does not settle billing.key_isolation."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0

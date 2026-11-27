@@ -1,0 +1,495 @@
+# requires_settled ai.activation=active. A receipt upload or the phrase use on their phones does not set this flag.
+kind: question_pack
+id: ai-llm
+version: 1
+title: "AI/LLM"
+questions:
+  - id: Q-AI-01
+    version: 1
+    scope: project
+    domains: [ai]
+    title: "What AI task is in scope?"
+    explain: "The task is extraction, classification, chat, RAG, or generation. Naming a task activates this pack."
+    criteria:
+      - ai.activation
+      - ai.task_type
+    applies_when:
+      - criterion: ai.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [external_api, user_content, file_upload]
+    options:
+      - id: extraction
+        label: "Extraction"
+        meaning: "The model pulls structured fields from a document and does not chat."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Extraction means The model pulls structured fields from a document and does not chat."
+      - id: classification
+        label: "Classification"
+        meaning: "The model assigns one label from a closed list."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Classification means The model assigns one label from a closed list."
+      - id: ai_chat_over_pdfs
+        label: "AI chat over uploaded company PDFs"
+        meaning: "People chat with the model about PDFs they uploaded, and the pack's must-ask privacy and quota questions still apply."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing AI chat over uploaded company PDFs means People chat with the model about PDFs they uploaded, and the pack's must-ask privacy and quota questions still apply."
+      - id: rag_over_user_pdfs
+        label: "RAG over user PDFs"
+        meaning: "Answers are retrieved from the user's PDFs and cited, not answered from memory alone."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing RAG over user PDFs means Answers are retrieved from the user's PDFs and cited, not answered from memory alone."
+      - id: generation
+        label: "Generation"
+        meaning: "The model drafts new text from a prompt and is not grounded in an upload."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Generation means The model drafts new text from a prompt and is not grounded in an upload."
+    stage_recommendations:
+      prototype:
+        option: extraction
+        rationale: "Prototype recommends Extraction until a later stage needs a stricter rule."
+      mvp:
+        option: rag_over_user_pdfs
+        rationale: "MVP recommends RAG over user PDFs as the pragmatic default once this pack is active."
+      production:
+        option: rag_over_user_pdfs
+        rationale: "Production recommends RAG over user PDFs so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "it's a chat over the PDFs the company uploads, not a generic writer"
+        style: spoken_dictation
+        settles:
+          ai.task_type: rag_over_user_pdfs
+      - utterance: "Use RAG over user PDFs. Answers are retrieved from the user's PDFs and cited, not answered from memory alone."
+        style: plain
+        settles:
+          ai.task_type: rag_over_user_pdfs
+      - utterance: "The decision for this product is RAG over user PDFs."
+        style: plain
+        settles:
+          ai.task_type: rag_over_user_pdfs
+      - utterance: "Settle What AI task is in scope as RAG over user PDFs."
+        style: plain
+        settles:
+          ai.task_type: rag_over_user_pdfs
+      - utterance: "I am choosing RAG over user PDFs. The task is extraction, classification, chat, RAG, or generation. Naming a task activates this pack."
+        style: plain
+        settles:
+          ai.task_type: rag_over_user_pdfs
+    negative_examples:
+      - utterance: "We might do Extraction someday."
+        must_not_settle: [extraction]
+        reason: "A someday mention of Extraction does not settle ai.task_type."
+      - utterance: "upload a photo of the receipt"
+        must_not_settle: [rag_over_user_pdfs]
+        reason: "A receipt photo on an expense CLI is not an LLM task and must not settle RAG."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AI-02
+    version: 1
+    scope: project
+    domains: [ai]
+    title: "How are grounding, citation, and hallucination handled?"
+    explain: "The product either cites a source or refuses, or it allows an uncited best effort."
+    criteria:
+      - ai.grounding
+    applies_when:
+      - criterion: ai.activation
+        equals: active
+    requires:
+      - Q-AI-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [user_content, external_api]
+    options:
+      - id: cite_or_refuse
+        label: "Cite sources or refuse"
+        meaning: "An answer without a retrieved citation is refused."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Cite sources or refuse means An answer without a retrieved citation is refused."
+      - id: best_effort
+        label: "Best effort with hallucinations allowed"
+        meaning: "The model may answer with no citation. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Best effort with hallucinations allowed means The model may answer with no citation. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: cite_or_refuse
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Cite sources or refuse."
+      mvp:
+        option: cite_or_refuse
+        rationale: "MVP recommends Cite sources or refuse as the pragmatic default once this pack is active."
+      production:
+        option: cite_or_refuse
+        rationale: "Production recommends Cite sources or refuse so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if it can't cite the PDF, it should say it doesn't know"
+        style: spoken_dictation
+        settles:
+          ai.grounding: cite_or_refuse
+      - utterance: "Use Cite sources or refuse. An answer without a retrieved citation is refused."
+        style: plain
+        settles:
+          ai.grounding: cite_or_refuse
+      - utterance: "The decision for this product is Cite sources or refuse."
+        style: plain
+        settles:
+          ai.grounding: cite_or_refuse
+      - utterance: "Settle How are grounding, citation, and hallucination handled as Cite sources or refuse."
+        style: plain
+        settles:
+          ai.grounding: cite_or_refuse
+      - utterance: "I am choosing Cite sources or refuse. The product either cites a source or refuses, or it allows an uncited best effort."
+        style: plain
+        settles:
+          ai.grounding: cite_or_refuse
+    negative_examples:
+      - utterance: "We might do Best effort with hallucinations allowed someday."
+        must_not_settle: [best_effort]
+        reason: "A someday mention of Best effort with hallucinations allowed does not settle ai.grounding."
+      - utterance: "Make it nice."
+        must_not_settle: [best_effort]
+        reason: "A quality wish does not settle ai.grounding."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AI-03
+    version: 1
+    scope: project
+    domains: [ai]
+    title: "Is the model output structured or streamed?"
+    explain: "Callers get either a structured document or a streaming text UX, not an unspecified mix."
+    criteria:
+      - ai.output_ux
+    applies_when:
+      - criterion: ai.activation
+        equals: active
+    requires:
+      - Q-AI-01
+    conflicts_with: []
+    risk_tier: low
+    impact: low
+    reversibility: easy
+    must_ask: false
+    touches: [route, interactive_ui]
+    options:
+      - id: structured_json
+        label: "Structured JSON output"
+        meaning: "The model returns one schema-validated document. A partial stream is not success."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Structured JSON output means The model returns one schema-validated document. A partial stream is not success."
+      - id: streaming_text
+        label: "Streaming text UX"
+        meaning: "Tokens stream to the screen and the saved answer is the completed stream."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Streaming text UX means Tokens stream to the screen and the saved answer is the completed stream."
+    stage_recommendations:
+      prototype:
+        option: structured_json
+        rationale: "Prototype recommends Structured JSON output until a later stage needs a stricter rule."
+      mvp:
+        option: structured_json
+        rationale: "MVP recommends Structured JSON output as the pragmatic default once this pack is active."
+      production:
+        option: streaming_text
+        rationale: "Production recommends Streaming text UX so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "give me JSON I can validate, not a stream of tokens"
+        style: spoken_dictation
+        settles:
+          ai.output_ux: structured_json
+      - utterance: "Use Structured JSON output. The model returns one schema-validated document. A partial stream is not success."
+        style: plain
+        settles:
+          ai.output_ux: structured_json
+      - utterance: "The decision for this product is Structured JSON output."
+        style: plain
+        settles:
+          ai.output_ux: structured_json
+      - utterance: "Settle Is the model output structured or streamed as Structured JSON output."
+        style: plain
+        settles:
+          ai.output_ux: structured_json
+      - utterance: "I am choosing Structured JSON output. Callers get either a structured document or a streaming text UX, not an unspecified mix."
+        style: plain
+        settles:
+          ai.output_ux: structured_json
+    negative_examples:
+      - utterance: "We might do Streaming text UX someday."
+        must_not_settle: [streaming_text]
+        reason: "A someday mention of Streaming text UX does not settle ai.output_ux."
+      - utterance: "Make it nice."
+        must_not_settle: [streaming_text]
+        reason: "A quality wish does not settle ai.output_ux."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AI-04
+    version: 1
+    scope: project
+    domains: [ai]
+    title: "What per-user token quota and abuse control apply?"
+    explain: "Prototype still asks this. A per-user token cap and an abuse stop are required so a demo cannot run up a surprise bill."
+    criteria:
+      - ai.token_quota
+    applies_when:
+      - criterion: ai.activation
+        equals: active
+    requires:
+      - Q-AI-01
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [external_api, rate_limited, money]
+    options:
+      - id: per_user_token_quota
+        label: "Per-user token spend limits"
+        meaning: "Each user has a token budget. The next call past the budget is rejected before the provider is billed."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Per-user token spend limits means Each user has a token budget. The next call past the budget is rejected before the provider is billed."
+      - id: uncapped
+        label: "Uncapped provider spend"
+        meaning: "No per-user cap is enforced. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Uncapped provider spend means No per-user cap is enforced. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: per_user_token_quota
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Per-user token spend limits."
+      mvp:
+        option: per_user_token_quota
+        rationale: "MVP recommends Per-user token spend limits as the pragmatic default once this pack is active."
+      production:
+        option: per_user_token_quota
+        rationale: "Production recommends Per-user token spend limits so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "cap the tokens per user or someone will run the bill up"
+        style: spoken_dictation
+        settles:
+          ai.token_quota: per_user_token_quota
+      - utterance: "Use Per-user token spend limits. Each user has a token budget. The next call past the budget is rejected before the provider is billed."
+        style: plain
+        settles:
+          ai.token_quota: per_user_token_quota
+      - utterance: "The decision for this product is Per-user token spend limits."
+        style: plain
+        settles:
+          ai.token_quota: per_user_token_quota
+      - utterance: "Settle What per-user token quota and abuse control apply as Per-user token spend limits."
+        style: plain
+        settles:
+          ai.token_quota: per_user_token_quota
+      - utterance: "I am choosing Per-user token spend limits. Prototype still asks this. A per-user token cap and an abuse stop are required so a demo cannot run up a surprise bill."
+        style: plain
+        settles:
+          ai.token_quota: per_user_token_quota
+    negative_examples:
+      - utterance: "We might do Uncapped provider spend someday."
+        must_not_settle: [uncapped]
+        reason: "A someday mention of Uncapped provider spend does not settle ai.token_quota."
+      - utterance: "Make it nice."
+        must_not_settle: [uncapped]
+        reason: "A quality wish does not settle ai.token_quota."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AI-05
+    version: 1
+    scope: project
+    domains: [ai]
+    title: "What is the PII and prompt-injection boundary?"
+    explain: "Prototype still asks this. Untrusted uploads and personal data need an egress policy before any document is sent to a model provider."
+    criteria:
+      - ai.egress_policy
+    applies_when:
+      - criterion: ai.activation
+        equals: active
+    requires:
+      - Q-AI-01
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [personal_data, external_api, file_upload, user_content]
+    options:
+      - id: no_raw_pii_egress
+        label: "Block raw PII and untrusted content from the provider"
+        meaning: "Raw personal data is stripped, and uploaded text is data, not instructions, before a provider call."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Block raw PII and untrusted content from the provider means Raw personal data is stripped, and uploaded text is data, not instructions, before a provider call."
+      - id: send_documents_to_provider
+        label: "Send uploaded documents to the model provider"
+        meaning: "The raw upload, including personal data, is sent to the provider. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Send uploaded documents to the model provider means The raw upload, including personal data, is sent to the provider. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: no_raw_pii_egress
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Block raw PII and untrusted content from the provider."
+      mvp:
+        option: no_raw_pii_egress
+        rationale: "MVP recommends Block raw PII and untrusted content from the provider as the pragmatic default once this pack is active."
+      production:
+        option: no_raw_pii_egress
+        rationale: "Production recommends Block raw PII and untrusted content from the provider so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "don't send the raw employee names off to the model, and don't trust the PDF text as instructions"
+        style: spoken_dictation
+        settles:
+          ai.egress_policy: no_raw_pii_egress
+      - utterance: "Use Block raw PII and untrusted content from the provider. Raw personal data is stripped, and uploaded text is data, not instructions, before a provider call."
+        style: plain
+        settles:
+          ai.egress_policy: no_raw_pii_egress
+      - utterance: "The decision for this product is Block raw PII and untrusted content from the provider."
+        style: plain
+        settles:
+          ai.egress_policy: no_raw_pii_egress
+      - utterance: "Settle What is the PII and prompt-injection boundary as Block raw PII and untrusted content from the provider."
+        style: plain
+        settles:
+          ai.egress_policy: no_raw_pii_egress
+      - utterance: "I am choosing Block raw PII and untrusted content from the provider. Prototype still asks this. Untrusted uploads and personal data need an egress policy before any document is sent to a model provider."
+        style: plain
+        settles:
+          ai.egress_policy: no_raw_pii_egress
+    negative_examples:
+      - utterance: "We might do Send uploaded documents to the model provider someday."
+        must_not_settle: [send_documents_to_provider]
+        reason: "A someday mention of Send uploaded documents to the model provider does not settle ai.egress_policy."
+      - utterance: "Make it nice."
+        must_not_settle: [send_documents_to_provider]
+        reason: "A quality wish does not settle ai.egress_policy."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-AI-06
+    version: 1
+    scope: project
+    domains: [ai]
+    title: "What eval fixture and provider-down fallback exist?"
+    explain: "Offline fixtures make the AI path deterministic, and a fallback answers when the provider is down."
+    criteria:
+      - ai.eval_fallback
+    applies_when:
+      - criterion: ai.activation
+        equals: active
+    requires:
+      - Q-AI-01
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [external_api, config_env]
+    options:
+      - id: fixture_fallback
+        label: "Offline deterministic eval fixtures and provider-down fallback"
+        meaning: "Tests use a frozen fixture, and a provider outage returns that fallback instead of an error page."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Offline deterministic eval fixtures and provider-down fallback means Tests use a frozen fixture, and a provider outage returns that fallback instead of an error page."
+      - id: fail_closed_no_fallback
+        label: "Fail closed with no fixture"
+        meaning: "A provider outage fails the request and there is no offline fixture."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Fail closed with no fixture means A provider outage fails the request and there is no offline fixture."
+    stage_recommendations:
+      prototype:
+        option: fixture_fallback
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Offline deterministic eval fixtures and provider-down fallback."
+      mvp:
+        option: fixture_fallback
+        rationale: "MVP recommends Offline deterministic eval fixtures and provider-down fallback as the pragmatic default once this pack is active."
+      production:
+        option: fixture_fallback
+        rationale: "Production recommends Offline deterministic eval fixtures and provider-down fallback so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "when the model host is down, use the fixture answer, don't hang"
+        style: spoken_dictation
+        settles:
+          ai.eval_fallback: fixture_fallback
+      - utterance: "Use Offline deterministic eval fixtures and provider-down fallback. Tests use a frozen fixture, and a provider outage returns that fallback instead of an error page."
+        style: plain
+        settles:
+          ai.eval_fallback: fixture_fallback
+      - utterance: "The decision for this product is Offline deterministic eval fixtures and provider-down fallback."
+        style: plain
+        settles:
+          ai.eval_fallback: fixture_fallback
+      - utterance: "Settle What eval fixture and provider-down fallback exist as Offline deterministic eval fixtures and provider-down fallback."
+        style: plain
+        settles:
+          ai.eval_fallback: fixture_fallback
+      - utterance: "I am choosing Offline deterministic eval fixtures and provider-down fallback. Offline fixtures make the AI path deterministic, and a fallback answers when the provider is down."
+        style: plain
+        settles:
+          ai.eval_fallback: fixture_fallback
+    negative_examples:
+      - utterance: "We might do Fail closed with no fixture someday."
+        must_not_settle: [fail_closed_no_fallback]
+        reason: "A someday mention of Fail closed with no fixture does not settle ai.eval_fallback."
+      - utterance: "Make it nice."
+        must_not_settle: [fail_closed_no_fallback]
+        reason: "A quality wish does not settle ai.eval_fallback."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0

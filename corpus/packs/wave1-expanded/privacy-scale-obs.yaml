@@ -1,0 +1,637 @@
+# requires_settled privacy.activation=active. Core privacy.class=basic_contact_data does not set this flag. Regulated personal data or an explicit GDPR or company-PDF prompt does.
+kind: question_pack
+id: privacy-scale-obs
+version: 1
+title: "Privacy"
+questions:
+  - id: Q-PSO-01
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "How do GDPR and CCPA export and erasure work?"
+    explain: "A person can export their data and be forgotten. Hard delete conflicts with a plain-text email audit log."
+    criteria:
+      - privacy.activation
+      - privacy.erasure
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [personal_data, destructive_write, file_download]
+    options:
+      - id: hard_delete
+        label: "Hard delete user on GDPR request"
+        meaning: "The user row and personal fields are removed immediately, with no 30-day restorable copy."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Hard delete user on GDPR request conflicts_with the immutable plain-text email audit. Offer an anonymized actor-ID audit trail."
+      - id: soft_delete_30_day
+        label: "Soft-delete with 30-day purge"
+        meaning: "The account is hidden immediately and personal fields are purged after 30 days."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Soft-delete with 30-day purge means The account is hidden immediately and personal fields are purged after 30 days."
+      - id: export_then_delete
+        label: "Export then delete"
+        meaning: "The person receives an export, then the erasure job runs."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Export then delete means The person receives an export, then the erasure job runs."
+    stage_recommendations:
+      prototype:
+        option: soft_delete_30_day
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Soft-delete with 30-day purge."
+      mvp:
+        option: soft_delete_30_day
+        rationale: "MVP recommends Soft-delete with 30-day purge as the pragmatic default once this pack is active."
+      production:
+        option: soft_delete_30_day
+        rationale: "Production recommends Soft-delete with 30-day purge so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "keep them for 30 days in a soft delete, then purge, and let them download an export"
+        style: spoken_dictation
+        settles:
+          privacy.erasure: soft_delete_30_day
+      - utterance: "Use Soft-delete with 30-day purge. The account is hidden immediately and personal fields are purged after 30 days."
+        style: plain
+        settles:
+          privacy.erasure: soft_delete_30_day
+      - utterance: "The decision for this product is Soft-delete with 30-day purge."
+        style: plain
+        settles:
+          privacy.erasure: soft_delete_30_day
+      - utterance: "Settle How do GDPR and CCPA export and erasure work as Soft-delete with 30-day purge."
+        style: plain
+        settles:
+          privacy.erasure: soft_delete_30_day
+      - utterance: "I am choosing Soft-delete with 30-day purge. A person can export their data and be forgotten. Hard delete conflicts with a plain-text email audit log."
+        style: plain
+        settles:
+          privacy.erasure: soft_delete_30_day
+    negative_examples:
+      - utterance: "We might do Hard delete user on GDPR request someday."
+        must_not_settle: [hard_delete]
+        reason: "A someday mention of Hard delete user on GDPR request does not settle privacy.erasure."
+      - utterance: "Users log in."
+        must_not_settle: [hard_delete]
+        reason: "A login does not settle GDPR erasure."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-02
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "How immutable is the audit log, and how long is PII kept?"
+    explain: "An audit trail that stores a plain email cannot coexist with hard deletion of that email. Use an actor id."
+    criteria:
+      - privacy.audit_log
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires:
+      - Q-PSO-01
+    conflicts_with: []
+    risk_tier: critical
+    impact: critical
+    reversibility: irreversible
+    must_ask: true
+    touches: [personal_data, logging]
+    options:
+      - id: immutable_plain_email
+        label: "Immutable audit log storing user email in plain text"
+        meaning: "The audit row stores the email in plain text and cannot be edited or purged."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Immutable audit log storing user email in plain text conflicts_with Hard delete user on GDPR request. Offer an anonymized actor-ID audit trail."
+      - id: anonymized_actor_id
+        label: "Anonymized actor-ID audit trail"
+        meaning: "The audit row stores an actor id. The email can be purged without rewriting history."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Anonymized actor-ID audit trail means The audit row stores an actor id. The email can be purged without rewriting history."
+    stage_recommendations:
+      prototype:
+        option: anonymized_actor_id
+        rationale: "Prototype still asks because this choice is irreversible. The recommended answer is Anonymized actor-ID audit trail."
+      mvp:
+        option: anonymized_actor_id
+        rationale: "MVP recommends Anonymized actor-ID audit trail as the pragmatic default once this pack is active."
+      production:
+        option: anonymized_actor_id
+        rationale: "Production recommends Anonymized actor-ID audit trail so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "log an actor id, not their email address, and don't make the log store the name forever"
+        style: spoken_dictation
+        settles:
+          privacy.audit_log: anonymized_actor_id
+      - utterance: "Use Anonymized actor-ID audit trail. The audit row stores an actor id. The email can be purged without rewriting history."
+        style: plain
+        settles:
+          privacy.audit_log: anonymized_actor_id
+      - utterance: "The decision for this product is Anonymized actor-ID audit trail."
+        style: plain
+        settles:
+          privacy.audit_log: anonymized_actor_id
+      - utterance: "Settle How immutable is the audit log, and how long is PII kept as Anonymized actor-ID audit trail."
+        style: plain
+        settles:
+          privacy.audit_log: anonymized_actor_id
+      - utterance: "I am choosing Anonymized actor-ID audit trail. An audit trail that stores a plain email cannot coexist with hard deletion of that email. Use an actor id."
+        style: plain
+        settles:
+          privacy.audit_log: anonymized_actor_id
+    negative_examples:
+      - utterance: "We might do Immutable audit log storing user email in plain text someday."
+        must_not_settle: [immutable_plain_email]
+        reason: "A someday mention of Immutable audit log storing user email in plain text does not settle privacy.audit_log."
+      - utterance: "Make it nice."
+        must_not_settle: [immutable_plain_email]
+        reason: "A quality wish does not settle privacy.audit_log."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-03
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "What cache freshness guarantee is required?"
+    explain: "A cache is either invalidated on write or allowed to expire by TTL."
+    criteria:
+      - privacy.cache_freshness
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [caching]
+    options:
+      - id: explicit_invalidation
+        label: "Explicit cache invalidation"
+        meaning: "A successful write deletes the affected cache keys before the response returns."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Explicit cache invalidation means A successful write deletes the affected cache keys before the response returns."
+      - id: ttl_only
+        label: "TTL-only cache"
+        meaning: "Entries expire by time. A write does not purge them early."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing TTL-only cache means Entries expire by time. A write does not purge them early."
+    stage_recommendations:
+      prototype:
+        option: ttl_only
+        rationale: "Prototype recommends TTL-only cache until a later stage needs a stricter rule."
+      mvp:
+        option: explicit_invalidation
+        rationale: "MVP recommends Explicit cache invalidation as the pragmatic default once this pack is active."
+      production:
+        option: explicit_invalidation
+        rationale: "Production recommends Explicit cache invalidation so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "it's fine if the list is a minute stale"
+        style: spoken_dictation
+        settles:
+          privacy.cache_freshness: explicit_invalidation
+      - utterance: "Use Explicit cache invalidation. A successful write deletes the affected cache keys before the response returns."
+        style: plain
+        settles:
+          privacy.cache_freshness: explicit_invalidation
+      - utterance: "The decision for this product is Explicit cache invalidation."
+        style: plain
+        settles:
+          privacy.cache_freshness: explicit_invalidation
+      - utterance: "Settle What cache freshness guarantee is required as Explicit cache invalidation."
+        style: plain
+        settles:
+          privacy.cache_freshness: explicit_invalidation
+      - utterance: "I am choosing Explicit cache invalidation. A cache is either invalidated on write or allowed to expire by TTL."
+        style: plain
+        settles:
+          privacy.cache_freshness: explicit_invalidation
+    negative_examples:
+      - utterance: "We might do TTL-only cache someday."
+        must_not_settle: [ttl_only]
+        reason: "A someday mention of TTL-only cache does not settle privacy.cache_freshness."
+      - utterance: "Make it nice."
+        must_not_settle: [ttl_only]
+        reason: "A quality wish does not settle privacy.cache_freshness."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-04
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "How do background workers retry?"
+    explain: "A worker retry is idempotent, or it is allowed to apply the effect again."
+    criteria:
+      - privacy.worker_retries
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [background_job]
+    options:
+      - id: idempotent_workers
+        label: "Idempotent worker retries"
+        meaning: "The same job id applies the effect once across retries."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Idempotent worker retries means The same job id applies the effect once across retries."
+      - id: unchecked_retries
+        label: "Unchecked retries"
+        meaning: "A retry can apply the effect again. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Unchecked retries means A retry can apply the effect again. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: idempotent_workers
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Idempotent worker retries."
+      mvp:
+        option: idempotent_workers
+        rationale: "MVP recommends Idempotent worker retries as the pragmatic default once this pack is active."
+      production:
+        option: idempotent_workers
+        rationale: "Production recommends Idempotent worker retries so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "if the job runs twice it still only sends the one email"
+        style: spoken_dictation
+        settles:
+          privacy.worker_retries: idempotent_workers
+      - utterance: "Use Idempotent worker retries. The same job id applies the effect once across retries."
+        style: plain
+        settles:
+          privacy.worker_retries: idempotent_workers
+      - utterance: "The decision for this product is Idempotent worker retries."
+        style: plain
+        settles:
+          privacy.worker_retries: idempotent_workers
+      - utterance: "Settle How do background workers retry as Idempotent worker retries."
+        style: plain
+        settles:
+          privacy.worker_retries: idempotent_workers
+      - utterance: "I am choosing Idempotent worker retries. A worker retry is idempotent, or it is allowed to apply the effect again."
+        style: plain
+        settles:
+          privacy.worker_retries: idempotent_workers
+    negative_examples:
+      - utterance: "We might do Unchecked retries someday."
+        must_not_settle: [unchecked_retries]
+        reason: "A someday mention of Unchecked retries does not settle privacy.worker_retries."
+      - utterance: "Make it nice."
+        must_not_settle: [unchecked_retries]
+        reason: "A quality wish does not settle privacy.worker_retries."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-05
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "What rate limit and brute-force posture is required?"
+    explain: "Sign-in and public writes have a limit, or the product accepts an unbounded try loop."
+    criteria:
+      - privacy.abuse_posture
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [rate_limited]
+    options:
+      - id: edge_and_app_limits
+        label: "Edge and application rate limits"
+        meaning: "The edge and the app both limit bursts, including password tries."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Edge and application rate limits means The edge and the app both limit bursts, including password tries."
+      - id: no_limit
+        label: "No rate limit"
+        meaning: "No limit is configured. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing No rate limit means No limit is configured. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: edge_and_app_limits
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Edge and application rate limits."
+      mvp:
+        option: edge_and_app_limits
+        rationale: "MVP recommends Edge and application rate limits as the pragmatic default once this pack is active."
+      production:
+        option: edge_and_app_limits
+        rationale: "Production recommends Edge and application rate limits so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "lock them out after a handful of bad passwords"
+        style: spoken_dictation
+        settles:
+          privacy.abuse_posture: edge_and_app_limits
+      - utterance: "Use Edge and application rate limits. The edge and the app both limit bursts, including password tries."
+        style: plain
+        settles:
+          privacy.abuse_posture: edge_and_app_limits
+      - utterance: "The decision for this product is Edge and application rate limits."
+        style: plain
+        settles:
+          privacy.abuse_posture: edge_and_app_limits
+      - utterance: "Settle What rate limit and brute-force posture is required as Edge and application rate limits."
+        style: plain
+        settles:
+          privacy.abuse_posture: edge_and_app_limits
+      - utterance: "I am choosing Edge and application rate limits. Sign-in and public writes have a limit, or the product accepts an unbounded try loop."
+        style: plain
+        settles:
+          privacy.abuse_posture: edge_and_app_limits
+    negative_examples:
+      - utterance: "We might do No rate limit someday."
+        must_not_settle: [no_limit]
+        reason: "A someday mention of No rate limit does not settle privacy.abuse_posture."
+      - utterance: "Make it nice."
+        must_not_settle: [no_limit]
+        reason: "A quality wish does not settle privacy.abuse_posture."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-06
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "What region and latency target apply?"
+    explain: "The product runs in one region or in several, with a named latency target when it is multi-region."
+    criteria:
+      - privacy.region_latency
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [external_api]
+    options:
+      - id: single_region
+        label: "Single region"
+        meaning: "All data and compute stay in one region."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Single region means All data and compute stay in one region."
+      - id: multi_region
+        label: "Multi-region with a latency target"
+        meaning: "A second region serves reads and a numeric latency target is named."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Multi-region with a latency target means A second region serves reads and a numeric latency target is named."
+    stage_recommendations:
+      prototype:
+        option: single_region
+        rationale: "Prototype recommends Single region until a later stage needs a stricter rule."
+      mvp:
+        option: single_region
+        rationale: "MVP recommends Single region as the pragmatic default once this pack is active."
+      production:
+        option: multi_region
+        rationale: "Production recommends Multi-region with a latency target so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span, infer.from_stated_technology]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "one region is enough, we don't need a second continent"
+        style: spoken_dictation
+        settles:
+          privacy.region_latency: single_region
+      - utterance: "Use Single region. All data and compute stay in one region."
+        style: plain
+        settles:
+          privacy.region_latency: single_region
+      - utterance: "The decision for this product is Single region."
+        style: plain
+        settles:
+          privacy.region_latency: single_region
+      - utterance: "Settle What region and latency target apply as Single region."
+        style: plain
+        settles:
+          privacy.region_latency: single_region
+      - utterance: "I am choosing Single region. The product runs in one region or in several, with a named latency target when it is multi-region."
+        style: plain
+        settles:
+          privacy.region_latency: single_region
+    negative_examples:
+      - utterance: "We might do Multi-region with a latency target someday."
+        must_not_settle: [multi_region]
+        reason: "A someday mention of Multi-region with a latency target does not settle privacy.region_latency."
+      - utterance: "Make it nice."
+        must_not_settle: [multi_region]
+        reason: "A quality wish does not settle privacy.region_latency."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-07
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "What logging, metrics, and error tracking are required?"
+    explain: "Operations get structured logs only, or logs plus OpenTelemetry and Sentry."
+    criteria:
+      - privacy.telemetry
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: medium
+    impact: medium
+    reversibility: easy
+    must_ask: false
+    touches: [logging]
+    options:
+      - id: otel_and_sentry
+        label: "OpenTelemetry and Sentry"
+        meaning: "Traces and metrics go to OpenTelemetry and exceptions go to Sentry, without raw secrets."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing OpenTelemetry and Sentry means Traces and metrics go to OpenTelemetry and exceptions go to Sentry, without raw secrets."
+      - id: logs_only
+        label: "Structured logs only"
+        meaning: "One structured log line per request. No error-tracking vendor is configured."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Structured logs only means One structured log line per request. No error-tracking vendor is configured."
+    stage_recommendations:
+      prototype:
+        option: logs_only
+        rationale: "Prototype recommends Structured logs only until a later stage needs a stricter rule."
+      mvp:
+        option: otel_and_sentry
+        rationale: "MVP recommends OpenTelemetry and Sentry as the pragmatic default once this pack is active."
+      production:
+        option: otel_and_sentry
+        rationale: "Production recommends OpenTelemetry and Sentry so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "structured logs are enough for the demo, add Sentry when we go live"
+        style: spoken_dictation
+        settles:
+          privacy.telemetry: otel_and_sentry
+      - utterance: "Use OpenTelemetry and Sentry. Traces and metrics go to OpenTelemetry and exceptions go to Sentry, without raw secrets."
+        style: plain
+        settles:
+          privacy.telemetry: otel_and_sentry
+      - utterance: "The decision for this product is OpenTelemetry and Sentry."
+        style: plain
+        settles:
+          privacy.telemetry: otel_and_sentry
+      - utterance: "Settle What logging, metrics, and error tracking are required as OpenTelemetry and Sentry."
+        style: plain
+        settles:
+          privacy.telemetry: otel_and_sentry
+      - utterance: "I am choosing OpenTelemetry and Sentry. Operations get structured logs only, or logs plus OpenTelemetry and Sentry."
+        style: plain
+        settles:
+          privacy.telemetry: otel_and_sentry
+    negative_examples:
+      - utterance: "We might do Structured logs only someday."
+        must_not_settle: [logs_only]
+        reason: "A someday mention of Structured logs only does not settle privacy.telemetry."
+      - utterance: "Make it nice."
+        must_not_settle: [logs_only]
+        reason: "A quality wish does not settle privacy.telemetry."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
+  - id: Q-PSO-08
+    version: 1
+    scope: project
+    domains: [privacy]
+    title: "What backup RPO, RTO, and DR drill are required?"
+    explain: "A backup has a recovery point, a recovery time, and a drill, or the product has no drill."
+    criteria:
+      - privacy.backup_dr
+    applies_when:
+      - criterion: privacy.activation
+        equals: active
+    requires: []
+    conflicts_with: []
+    risk_tier: high
+    impact: high
+    reversibility: costly
+    must_ask: true
+    touches: [logging, destructive_write]
+    options:
+      - id: defined_rpo_rto
+        label: "Defined RPO, RTO, and DR drills"
+        meaning: "Recovery point and recovery time are named, and a drill restores a backup."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing Defined RPO, RTO, and DR drills means Recovery point and recovery time are named, and a drill restores a backup."
+      - id: no_drill
+        label: "No recovery drill"
+        meaning: "Backups may exist but nobody restores them. This option is the failure case."
+        stage_suitability: [prototype, mvp, production]
+        consequences: "Choosing No recovery drill means Backups may exist but nobody restores them. This option is the failure case."
+    stage_recommendations:
+      prototype:
+        option: defined_rpo_rto
+        rationale: "Prototype still asks because this choice is costly. The recommended answer is Defined RPO, RTO, and DR drills."
+      mvp:
+        option: defined_rpo_rto
+        rationale: "MVP recommends Defined RPO, RTO, and DR drills as the pragmatic default once this pack is active."
+      production:
+        option: defined_rpo_rto
+        rationale: "Production recommends Defined RPO, RTO, and DR drills so the live behavior matches the stated failure rule."
+    allowed_inference_rules: [infer.from_explicit_user_span]
+    invalidates_on_change: []
+    positive_examples:
+      - utterance: "we should be able to get yesterday back within a work day, and actually practice it"
+        style: spoken_dictation
+        settles:
+          privacy.backup_dr: defined_rpo_rto
+      - utterance: "Use Defined RPO, RTO, and DR drills. Recovery point and recovery time are named, and a drill restores a backup."
+        style: plain
+        settles:
+          privacy.backup_dr: defined_rpo_rto
+      - utterance: "The decision for this product is Defined RPO, RTO, and DR drills."
+        style: plain
+        settles:
+          privacy.backup_dr: defined_rpo_rto
+      - utterance: "Settle What backup RPO, RTO, and DR drill are required as Defined RPO, RTO, and DR drills."
+        style: plain
+        settles:
+          privacy.backup_dr: defined_rpo_rto
+      - utterance: "I am choosing Defined RPO, RTO, and DR drills. A backup has a recovery point, a recovery time, and a drill, or the product has no drill."
+        style: plain
+        settles:
+          privacy.backup_dr: defined_rpo_rto
+    negative_examples:
+      - utterance: "We might do No recovery drill someday."
+        must_not_settle: [no_drill]
+        reason: "A someday mention of No recovery drill does not settle privacy.backup_dr."
+      - utterance: "Make it nice."
+        must_not_settle: [no_drill]
+        reason: "A quality wish does not settle privacy.backup_dr."
+    stage_applicability:
+      prototype: true
+      mvp: true
+      production: true
+    status: active
+    eval:
+      asked: 0
+      changed_build_decision: 0
+      user_marked_unhelpful: 0
