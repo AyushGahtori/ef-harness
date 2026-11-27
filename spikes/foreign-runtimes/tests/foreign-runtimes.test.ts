@@ -205,31 +205,39 @@ describe("foreign-runtimes", () => {
   it("kills a Windows process tree after the cancel timeout", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ef-job-"));
     const pidFile = path.join(dir, "pids.txt");
-    const handle = await spawnRuntime({
-      command: process.execPath,
-      args: [path.join(spike, "fakes", "hang-tree.mjs"), pidFile],
-      cwd: dir,
-      job: true,
-    });
-    expect(handle.status).toBe("ok");
-    if (handle.status !== "ok") return;
-    await new Promise<void>((resolve, reject) => {
-      let buffer = "";
-      const timer = setTimeout(() => reject(new Error("child did not become ready")), 15000);
-      handle.child.stdout.on("data", (chunk: Buffer) => {
-        buffer += chunk.toString("utf8");
-        if (buffer.includes("ready")) {
-          clearTimeout(timer);
-          resolve();
-        }
+    let handle: Awaited<ReturnType<typeof spawnRuntime>> | undefined;
+    try {
+      handle = await spawnRuntime({
+        command: process.execPath,
+        args: [path.join(spike, "fakes", "hang-tree.mjs"), pidFile],
+        cwd: dir,
+        job: true,
       });
-    });
-    handle.child.stdin.write("go\n");
-    const pids = await waitForPids(pidFile);
-    await interruptRuntime(handle, 200);
-    await waitUntilDead(pids);
-    expect(pids.every((pid) => !alive(pid))).toBe(true);
-    fs.rmSync(dir, { recursive: true, force: true });
+      expect(handle.status).toBe("ok");
+      if (handle.status !== "ok") return;
+      const activeHandle = handle;
+      await new Promise<void>((resolve, reject) => {
+        let buffer = "";
+        const timer = setTimeout(() => reject(new Error("child did not become ready")), 15000);
+        activeHandle.child.stdout.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString("utf8");
+          if (buffer.includes("ready")) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+      });
+      activeHandle.child.stdin.write("go\n");
+      const pids = await waitForPids(pidFile);
+      await interruptRuntime(activeHandle, 200);
+      await waitUntilDead(pids);
+      expect(pids.every((pid) => !alive(pid))).toBe(true);
+    } finally {
+      if (handle?.status === "ok") {
+        await interruptRuntime(handle, 200).catch(() => undefined);
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }, 30000);
 
   it("round-trips the scratch MCP server over stdio and loopback", async () => {

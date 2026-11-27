@@ -5,13 +5,19 @@ export { normalizeNfc } from "./normalize.js";
 export {
   CONTENT_HASH_ALGORITHM,
   CONTENT_HASH_PREFIX,
+  Sha256HexSchema,
+  Sha256PrefixedSchema,
+  canonicalJson,
+  canonicalSha256,
   computeNodeContentHash,
   computeRequestHash,
   computeResultSetHash,
   computeSearchQueryHash,
   digestSha256,
+  toBareSha256Hex,
+  toPrefixedSha256,
 } from "./hash.js";
-export type { NodeContent, SearchQuery, SearchResultRef } from "./hash.js";
+export type { NodeContent, SearchQuery, SearchResultRef, Sha256Prefixed } from "./hash.js";
 export {
   ENTITY_ID_SPECS,
   assertValidEntityId,

@@ -46,7 +46,11 @@ export {
   CanonicalizationError,
   ENTITY_ID_SPECS,
   EntityIdError,
+  Sha256HexSchema,
+  Sha256PrefixedSchema,
   assertValidEntityId,
+  canonicalJson,
+  canonicalSha256,
   canonicalizeJson,
   computeFailureFingerprint,
   computeNodeContentHash,
@@ -61,6 +65,8 @@ export {
   parseEntityId,
   splitSearchText,
   stripVolatileFailureTokens,
+  toBareSha256Hex,
+  toPrefixedSha256,
   tryParseEntityId,
 } from "./canonical/index.js";
 export type {
@@ -71,6 +77,7 @@ export type {
   ParsedEntityId,
   SearchQuery,
   SearchResultRef,
+  Sha256Prefixed,
 } from "./canonical/index.js";
 export {
   ARRAY_MAX_ITEMS,

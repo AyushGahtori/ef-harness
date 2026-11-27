@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import { CanonicalizationError } from "./errors.js";
 import { canonicalizeJson } from "./canonicalize.js";
 import { normalizeNfc } from "./normalize.js";
@@ -6,10 +7,50 @@ import { normalizeNfc } from "./normalize.js";
 export const CONTENT_HASH_ALGORITHM = "sha256" as const;
 export const CONTENT_HASH_PREFIX = "sha256:" as const;
 
+export type Sha256Prefixed = `sha256:${string}`;
+
+const BARE_SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+const PREFIXED_SHA256_RE = /^sha256:[0-9a-f]{64}$/;
+
+export const Sha256PrefixedSchema = z.string().regex(PREFIXED_SHA256_RE);
+export const Sha256HexSchema = z.string().regex(BARE_SHA256_HEX_RE);
+
+export { canonicalizeJson as canonicalJson } from "./canonicalize.js";
+
 /** SHA-256 over the UTF-8 bytes of `text`, prefixed with `sha256:`. */
-export function digestSha256(text: string): string {
+export function digestSha256(text: string): Sha256Prefixed {
   const hex = createHash("sha256").update(text, "utf8").digest("hex");
   return `${CONTENT_HASH_PREFIX}${hex}`;
+}
+
+/** Validate and normalize a bare or `sha256:`-prefixed lowercase 64-hex SHA-256 digest to bare 64-char hex. */
+export function toBareSha256Hex(digest: string): string {
+  if (typeof digest !== "string") {
+    throw new CanonicalizationError(
+      "invalid_input",
+      "SHA-256 digest must be a 64-character lowercase hex string or sha256:<hex>",
+    );
+  }
+  if (BARE_SHA256_HEX_RE.test(digest)) {
+    return digest;
+  }
+  if (PREFIXED_SHA256_RE.test(digest)) {
+    return digest.slice(CONTENT_HASH_PREFIX.length);
+  }
+  throw new CanonicalizationError(
+    "invalid_input",
+    "SHA-256 digest must be 64 lowercase hex characters or 'sha256:<64-lowercase-hex>'",
+  );
+}
+
+/** Validate and normalize a bare or `sha256:`-prefixed lowercase 64-hex SHA-256 digest to `sha256:<hex>`. */
+export function toPrefixedSha256(digest: string): Sha256Prefixed {
+  return `${CONTENT_HASH_PREFIX}${toBareSha256Hex(digest)}`;
+}
+
+/** RFC 8785 JCS canonical JSON string hashed with SHA-256 as `sha256:<64-lowercase-hex>`. */
+export function canonicalSha256(value: unknown): Sha256Prefixed {
+  return digestSha256(canonicalizeJson(value));
 }
 
 export interface NodeContent {

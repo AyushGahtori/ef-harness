@@ -48,8 +48,9 @@ export async function probeLocalhostCookieIsolation(): Promise<LocalhostCookieRe
     server.once("error", reject);
     server.listen(reserved.port, LOOPBACK_HOST, () => resolve());
   });
-  const browser = await launchChromium();
+  let browser: Browser | undefined;
   try {
+    browser = await launchChromium();
     const context = await browser.newContext();
     const page = await context.newPage();
     const env1 = `http://env1.localhost:${reserved.port}/`;
@@ -77,7 +78,7 @@ export async function probeLocalhostCookieIsolation(): Promise<LocalhostCookieRe
       isolated: env1ResolvedToLoopback && env2ResolvedToLoopback && env1CookieVisibleOnEnv1 && !env1CookieVisibleOnEnv2,
     };
   } finally {
-    await browser.close();
+    await browser?.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await reserved.release();
   }
