@@ -744,3 +744,45 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/verifier test` (after that install): exit `0` — `Test Files 31 passed (31)`, `Tests 178 passed (178)` (`0` skipped)
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+
+---
+
+## [C24] — Surface verifier fixes and one runner adapter
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `fa4b5df4d13d2cc5d6be393aaf77376393e910a8` (`integrate: C24 unify surface verifiers and land 061-063 fixes`)
+- **Findings Fixed:** `F-025` task-061, task-062, and task-063 portion (binder dynamic import/require and path escape, post-action page errors, clean migration re-run refusal, and one `SurfaceVerifierAdapter` on `CleanVerifierRunner`). `task-064.patch` and `task-066.patch` stay for C25. The advanced alias stays for C25. Did not re-merge `task/061`, `task/062`, or `task/063`. Did not edit `schema/**` or `path_leases.mode`. Did not change `runner/ports.ts` `SurfaceVerifierAdapter` (`id`, `supports`, `collect`). Did not turn `RedBeforeGreenGate` into a surface collector. Did not merge `main`. Did not open a pull request. Did not start C25.
+
+### What Changed
+- Re-verified on `717ff83b422b0a8c2e57afe99b684518d2d8e68f`. `task/061-red-before-green-blind-binder` (`cc176e3`), `task/062-ui-interaction-contract-verifier` (`fe62a40`), and `task/063-multi-surface-verifiers` (`9b455fd`) are ancestors. `git apply --stat` and `git apply --check` were clean for all three patches, then `git apply` landed them.
+- `task-061.patch` is 3 binder files (`+91/−9`). `auditBinderAdapter` rejects undeclared `require()` and dynamic `import()`. `hasUnsafePath` rejects absolute paths, drive letters, and parent traversal before a binder write. `task-062.patch` is 3 UI files (`+28/−1`). `inspect` records page and console errors after pointer actions, including a click handler that throws. `task-063.patch` is 3 migration files (`+39/−1`). `allowCleanRefusalOnRerun` passes idempotence when a second run refuses without changing rows or integrity.
+- The landed runner plug-in stays `SurfaceVerifierAdapter` in `packages/verifier/src/runner/ports.ts`. The combination-task `run(ctx): Promise<CheckOutcome>` shape was not introduced. `CheckSurface` stays `unit | time | network | browser | api | auth | cli | migration | ai-eval | job`.
+- Local names `SurfaceVerifierAdapter` in `ui-contract` and `surfaces` are now `UiCollectPort` and `SurfaceCheckVerifier`. The package barrel exports one `SurfaceVerifierAdapter`, and the old `UiContractSurfaceVerifierAdapter` / `SurfacesSurfaceVerifierAdapter` names are aliases of that runner type. `registerIntegratedSurfaceVerifiers` registers UI (`browser`), API, auth, time, job, CLI, and migration. Webhook, rate-limit, and concurrency stay on `createDefaultSurfaceRegistry` because `CheckSurface` has no token for them. `RedBeforeGreenGate` stays the Task 061 gate (`evaluate`, `lock`, `provePostHoc`).
+
+### What It Fixed
+- **F-025 (task-061):** `require("../src/internal")` and `await import("../src/internal")` in a binder adapter are `undeclared_helper`. Writes to `../../.harness-binder/...`, `/.harness-binder/...`, `C:\.harness-binder\...`, and `.harness-binder/../../src/evil.ts` throw `BindingDefectError`.
+- **F-025 (task-062):** A Print button whose click listener throws `boom-after-click` fails with attribution `implementation` and message `Unhandled page error on /kitchen-post-action-throw`.
+- **F-025 (task-063):** A migration that deletes a predecessor row fails through the runner adapter with `row count` in the log. An explicit clean refusal on re-run passes when data and integrity hold.
+- **F-025 (wiring):** `CleanVerifierRunner.registerSurfaceVerifier` accepts the UI, API, CLI, and migration adapters from `integratedSurfaceAdapters`. One check id comes back from migration collect, not the split `:preservation` ids.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor cc176e3 HEAD`: exit `0`
+- `git merge-base --is-ancestor fe62a40 HEAD`: exit `0`
+- `git merge-base --is-ancestor 9b455fd HEAD`: exit `0`
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-061.patch`: exit `0` — `3 files changed, 91 insertions(+), 9 deletions(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-061.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-061.patch`: exit `0` (clean)
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-062.patch`: exit `0` — `3 files changed, 28 insertions(+), 1 deletion(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-062.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-062.patch`: exit `0` (clean)
+- `git apply --stat ../ef-audit-handoff/dirty_worktree_patches/task-063.patch`: exit `0` — `3 files changed, 39 insertions(+), 1 deletion(-)`
+- `git apply --check ../ef-audit-handoff/dirty_worktree_patches/task-063.patch`: exit `0` (clean)
+- `git apply ../ef-audit-handoff/dirty_worktree_patches/task-063.patch`: exit `0` (clean)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/verifier test` (before Playwright Chromium was installed): exit `1` — `Test Files 1 failed | 31 passed (32)`, `Tests 171 passed | 11 skipped (182)` (`HumanStepRequired('install_playwright_chromium')` in `tests/ui-contract/verifier.test.ts` beforeAll)
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm --filter @ef-harness/verifier test -- tests/binder tests/ui-contract tests/surfaces tests/integrated-surfaces.test.ts`: exit `0` — `Test Files 32 passed (32)`, `Tests 182 passed (182)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
