@@ -2,13 +2,13 @@
 
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
-- **Current Verified `harness/integration` `HEAD`:** `c07aa07b51a3cc9dca6bc3558bf5cd96ce17b45e` (Wave 0 Proof Gate PASSED)
-- **`C05` Uncommitted WIP Snapshot Branch:** `harness/c05-wip` (1 commit ahead of `c07aa07`; 27 files in `packages/db`, `pnpm --filter @ef-harness/db build` exits `0`)
+- **Current Verified `harness/integration` `HEAD`:** `717ff83b422b0a8c2e57afe99b684518d2d8e68f` (`integrate: C23 static audit fixes and clean verifier`)
+- **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
 
 | Task | Wave | Status | Commit SHA | Findings Resolved | Proof Summary |
 | --- | --- | --- | --- | --- | --- |
 | C01 | Wave 0 | done | 1d992c5 | F-001, F-002 | build/typecheck/lint OK; spikes 9 files 44/44; schema 67/67; harmony 6/6 |
-| C02 | Wave 0 | done | 00e4377 | F-007 | build/typecheck/lint OK; shared-contracts 29 files 158/158; spikes 9 files 44/44; schema 67/67 |
+| C02 | Wave 0 | done | 00e4377 | F-007, F-002 | build/typecheck/lint OK; shared-contracts 29 files 158/158; spikes 9 files 44/44; schema 67/67 |
 | C03 | Wave 0 | done | d7765b7 | F-004, F-005, F-006, F-015 | 0 zod/v4; build/typecheck/lint OK; shared-contracts 29 files 162/162; schema 67/67 |
 | C04 | Wave 0 | done | c07aa07 | F-003, F-039, F-040, F-045, F-055 | build/typecheck/lint OK; contracts 30 files 171/171; obs 3/3; schema 67/67 |
 | C05 | Wave 1 | done | 159657c | F-010, F-012 | build/typecheck/lint OK; db 61 files 361/361; schema 67/67 |
@@ -27,8 +27,8 @@
 | C18 | Wave 2 | done | fc94482 | F-018, F-020, F-021, F-039, F-049 | build/typecheck/lint OK; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17 passed; schema 67/67 |
 | C19 | Wave 2 | done | 0d86e53 | F-012, F-022 | build/typecheck/lint OK; test-env 84 passed, 3 failed, 3 skipped (same 3 as fc94482 on Linux); sandbox 169 passed, 14 skipped; schema 67/67 |
 | C20 | Wave 2 | done | a12f6fa | F-021, F-022 | build/typecheck/lint OK; test-env 87 passed, 3 skipped (Windows native assertion kept, not skipped); sandbox 169 passed, 14 skipped; schema 67/67 |
-| C21 | Wave 2 | done | 8103171 | F-011, F-023 | build/typecheck/lint OK; worker-loop 25 files 137 passed; schema 67/67 |
-| C22 | Wave 2 | done | 9aedea0 | F-021, F-023 | build/typecheck/lint OK; worker-loop 25 files 146 passed; schema 67/67 |
+| C21 | Wave 2 | done | 8103171 | F-023 | build/typecheck/lint OK; worker-loop 25 files 137 passed; schema 67/67 |
+| C22 | Wave 2 | done | 9aedea0 | F-023 | build/typecheck/lint OK; worker-loop 25 files 146 passed; schema 67/67 |
 | C23 | Wave 2 | done | 717ff83 | F-024 | build/typecheck/lint OK; completeness-gate 7 files 50 passed; verifier 31 files 178 passed; schema 67/67 |
 | C24 | Wave 2 | pending | - | F-025 | - |
 | C25 | Wave 2 | pending | - | F-012, F-017, F-025 | - |
