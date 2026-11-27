@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ef-harness://m2/baseline-metrics.schema.json",
+  "title": "M2ExitGateBaselineMetrics",
+  "description": "Versioned sequential M2 Kitchen baseline consumed by Task 134. paperworkPct is a fraction of total tokens. passRatePct is a 0-100 percentage. Wall-clock fields are the scripted sequential durations, not the CI host clock.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "totalWallClockSec",
+    "phase0Sec",
+    "waveBuildSec",
+    "completionAuditSec",
+    "totalTokens",
+    "paperworkPct",
+    "hiddenPassCount",
+    "hiddenTotalCount",
+    "passRatePct"
+  ],
+  "properties": {
+    "totalWallClockSec": { "type": "number", "minimum": 0 },
+    "phase0Sec": { "type": "number", "minimum": 0 },
+    "waveBuildSec": { "type": "number", "minimum": 0 },
+    "completionAuditSec": { "type": "number", "minimum": 0 },
+    "totalTokens": { "type": "integer", "minimum": 0 },
+    "paperworkPct": { "type": "number", "minimum": 0, "maximum": 1 },
+    "hiddenPassCount": { "type": "integer", "minimum": 0 },
+    "hiddenTotalCount": { "type": "integer", "minimum": 25 },
+    "passRatePct": { "type": "number", "minimum": 0, "maximum": 100 }
+  }
+}

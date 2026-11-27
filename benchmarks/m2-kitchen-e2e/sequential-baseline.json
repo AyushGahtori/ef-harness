@@ -1,0 +1,23 @@
+{
+  "schema": "m2-sequential-baseline@1",
+  "totalWallClockSec": 2820,
+  "phase0Sec": 240,
+  "waveBuildSec": 1680,
+  "completionAuditSec": 90,
+  "tokens": {
+    "discovery": 1000,
+    "spec": 3000,
+    "research": 5000,
+    "architecture": 5000,
+    "planning": 3000,
+    "audit": 1000,
+    "coding": 82000
+  },
+  "envelopePct": {
+    "spec": 0.03,
+    "research": 0.05,
+    "architecture": 0.06,
+    "planning": 0.04,
+    "audit": 0.02
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "production": [
+    "server.mjs",
+    "public/index.html",
+    "public/kitchen.html",
+    "public/print.html",
+    "public/tokens.css",
+    "public/app.css",
+    "public/app.js"
+  ]
+}

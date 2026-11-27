@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kitchen summary</title>
+    <link rel="stylesheet" href="/tokens.css">
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body data-page="kitchen">
+    <header>
+      <img src="/assets/mark.png" width="32" height="32" alt="Office kitchen">
+      <h1>Kitchen summary</h1>
+    </header>
+    <main>
+      <p id="summary-status" role="status" class="muted">Loading dish counts.</p>
+      <table id="dishes">
+        <caption>Dish counts</caption>
+        <thead>
+          <tr>
+            <th scope="col">Dish</th>
+            <th scope="col">Count</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <h2>Dietary notes</h2>
+      <ul id="notes"></ul>
+      <button id="send-email" type="button">Email catering</button>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
