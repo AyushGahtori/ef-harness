@@ -1026,3 +1026,36 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
 - Stopped before C31.
 
+---
+
+## [C31] — Spec expansion over ProjectStateDb with Z3 cutoff checks
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7
+- **Commit on `harness/integration`:** `21daf72b96a07a36b17aebfabd0b7f50d6007dd0` (`integrate: C31 wire spec expansion over ProjectStateDb and Z3`)
+- **Findings Fixed:** `F-034` for `expands` and `contradicts` edges written through `KnowledgeGraphRepo` (the v2 migration already seeds `expands`, `contradicts`, and `informs`; the repo now accepts those additive types without changing the 14-row `schema/state.sql` seed), and `F-035` for the uncommitted `task-079` collapse and requirements-view fixes, `listCells` / `listMaterializedRequirements`, discovery decision fields (`selectedOptionId`, `groupId`, with `value` / `criterionId` fallbacks), and Layer-4 `z3-solver` WASM. `task/079-spec-matrix-generators` (`f19582e`), `task/080-spec-cell-filler-proposed-review` (`0f5e3d9`), and `task/081-five-layer-contradiction-checker` (`24fe966`) were already ancestors. Applied `dirty_worktree_patches/task-079.patch`. Did not re-merge those task branches. Did not merge `task/162` or `task/164`. Did not edit `schema/**` or `path_leases.mode`. Did not merge `main`. Did not open a pull request. Did not start C32.
+
+### What Changed
+- Re-verified on `ae6e426367673956b4ac948a932ef23c91922db8`. `git merge-base --is-ancestor` succeeded for `f19582e`, `0f5e3d9`, and `24fe966`. No task branch was merged.
+- `git apply --stat` and `git apply --check` succeeded for `task-079.patch`, then the patch was applied. `ScopedRuleCollapser` keeps the majority signature as the rule. Matrix manifests and groups are `source` nodes, and unfilled cells stay `draft`, so they stay out of the `requirements` view. `sealCell` returns a new cell. Generators that still build drafts go through `finish`, which keeps that return value.
+- `SpecMatrixGenerator` runs the 12 matrix generators and writes rules, exception cells, and `expands` edges through `KnowledgeGraphRepo`. `SpecCellFiller` materializes settled discovery decisions into spec items and links each active spec to its decision with `expands`. A `proposed` basis stays `draft`. `FiveLayerContradictionChecker` solves kitchen print versus order cutoff with `z3-solver` WASM and records a `contradicts` edge. `OrderedCellFillerPipeline.listMaterializedRequirements` and `MatrixCellPersistenceRepo.listCells` are available to the sibling packages. `Z3UnsatCoreSolver.solve` stays the deterministic boolean fallback used when WASM is disabled.
+
+### What It Fixed
+- **F-034:** `KnowledgeGraphRepo` accepts `expands` and `contradicts` on a `ProjectStateDb` that has already run the v2 edge-type migration. Spec cells and contradiction pairs are inserted through that repo, not by a side-channel `edge_types` insert.
+- **F-035:** Majority-signature collapse no longer anchors on the first cell or drops covered cells at 47. Manifest and group rows no longer enter `requirements`. Settled discovery decisions keep `selectedOptionId` and `groupId` (falling back to `value` and `criterionId`). Layer 4 uses the installed `z3-solver` WASM for the cutoff/window constraint, with the deterministic comparison only when WASM is explicitly disabled.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor f19582e HEAD`: exit `0`
+- `git merge-base --is-ancestor 0f5e3d9 HEAD`: exit `0`
+- `git merge-base --is-ancestor 24fe966 HEAD`: exit `0`
+- `git apply --stat` and `git apply --check` on `task-079.patch`: exit `0` (4 files, +125/−74)
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `pnpm lint` (`eslint .`): exit `134` (JavaScript heap out of memory)
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/spec-expansion test`: exit `0` — `Test Files 11 passed (11)`, `Tests 51 passed (51)` (`0` skipped)
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)` (`0` skipped)
+- `pnpm --filter @ef-harness/corpus test`: exit `0` — `Test Files 2 passed (2)`, `Tests 7 passed (7)` (`0` skipped)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit`: exit `0` — `harmony ok`
+- Stopped before C32.
+
