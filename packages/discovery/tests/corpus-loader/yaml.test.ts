@@ -76,6 +76,32 @@ describe("strict corpus parsers", () => {
     }
   });
 
+  it("resolves a bounded anchor and rejects an alias past the expansion cap", () => {
+    const parsed = parseStrictYaml(
+      [
+        "suitability: &stages",
+        "  - prototype",
+        "  - mvp",
+        "  - production",
+        "again: *stages",
+        "defaults: &opts",
+        "  prototype: rest",
+        "  mvp: rest",
+        "choice:",
+        "  <<: *opts",
+        "  production: rpc",
+      ].join("\n"),
+      "anchor.yaml",
+    );
+    expect(parsed).toMatchObject({
+      suitability: ["prototype", "mvp", "production"],
+      again: ["prototype", "mvp", "production"],
+      choice: { prototype: "rest", mvp: "rest", production: "rpc" },
+    });
+    const bomb = ["item: &row", "  - 1", ...Array.from({ length: 101 }, (_, index) => `copy${index}: *row`)].join("\n");
+    expect(() => parseStrictYaml(bomb, "bomb.yaml")).toThrow(YamlParseError);
+  });
+
   it("hashes the same documents identically when key order differs", () => {
     const left = parseStrictYaml("b: 1\na: two\n", "left.yaml");
     const right = parseStrictYaml("a: two\nb: 1\n", "right.yaml");

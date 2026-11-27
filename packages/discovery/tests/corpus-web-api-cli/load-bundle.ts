@@ -292,6 +292,11 @@ function loadElaborationFile(repoRoot: string, relativePath: string): Elaboratio
   return listFrom(doc, "elaborations", relativePath).map((item) => parseElaboration(item, relativePath));
 }
 
+function isSiblingPackDocument(doc: unknown): boolean {
+  if (!isRecord(doc) || !Array.isArray(doc.questions) || doc.questions.length === 0) return false;
+  return doc.questions.every((item) => isRecord(item) && typeof item.pack === "string" && item.pack.trim() !== "");
+}
+
 function siblingQuestionFiles(repoRoot: string): string[] {
   const dir = path.join(repoRoot, SIBLING_PACK_DIR);
   if (!fs.existsSync(dir)) return [];
@@ -313,7 +318,9 @@ export class CorpusPackLoader {
       questions.push(...loadQuestionFile(this.repoRoot, relativePath));
     }
 
-    const sibling = siblingQuestionFiles(this.repoRoot);
+    const sibling = siblingQuestionFiles(this.repoRoot).filter((relativePath) =>
+      isSiblingPackDocument(parseCorpusYaml(readCorpusText(this.repoRoot, relativePath), relativePath)),
+    );
     let coreSource: CorpusBundle["core_source"];
     if (sibling.length > 0) {
       coreSource = "sibling-pack";

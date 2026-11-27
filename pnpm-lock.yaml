@@ -228,6 +228,9 @@ importers:
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../packages/shared-contracts
+      yaml:
+        specifier: ^2.8.0
+        version: 2.9.1
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

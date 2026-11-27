@@ -4,17 +4,12 @@ import { CorpusShapeError } from "./errors.js";
 import { normalizeQuestionGraph } from "./graph.js";
 import { corpusBundleHash } from "./hash.js";
 import { parseStrictJson } from "./json-document.js";
+import { readElaborationPack, readPolicyPack, readQuestionPack, readRulePack, readSeamPack } from "./interpret.js";
 import {
-  inferDocumentKind,
-  readElaborationPack,
-  readPolicyPack,
-  readQuestionPack,
-  readRulePack,
-  readSeamPack,
-} from "./interpret.js";
-import {
+  CORPUS_DOCUMENT_KINDS,
   PACK_MANIFEST_SCHEMA_VERSION,
   type CorpusBundle,
+  type CorpusDocumentKind,
   type CrossCuttingRuleManifest,
   type LoadedQuestion,
   type OptionElaborationManifest,
@@ -50,14 +45,16 @@ export class CorpusPackLoader {
     if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
       throw new CorpusShapeError(`Corpus root is not a directory: ${root}`, { filePath: root });
     }
-    const files = collectCorpusFiles(root).map((full) => {
+    const files = collectCorpusFiles(root).flatMap((full) => {
       const relative = path.relative(root, full).split(path.sep).join("/");
+      if (isCorpusIndexFile(relative)) return [];
       const text = fs.readFileSync(full, "utf8");
       const document = relative.endsWith(".json")
         ? parseStrictJson(text, full)
         : parseStrictYaml(text, full, { uniqueKeys: this.uniqueKeys });
-      const kind = inferDocumentKind(relative, isRecord(document) ? document.kind : undefined);
-      return { path: relative, full, kind, document };
+      const kind = canonicalDocumentKind(document);
+      if (!kind) return [];
+      return [{ path: relative, full, kind, document }];
     });
     const parsed: ParsedCorpusFile[] = files.map((file) => ({
       path: file.path,
@@ -128,6 +125,21 @@ function collectCorpusFiles(root: string): string[] {
     if (fs.existsSync(directory) && fs.statSync(directory).isDirectory()) walk(directory);
   }
   return found;
+}
+
+const CORPUS_INDEX_FILES = new Set(["manifest.yaml", "activation-table.yaml"]);
+
+function isCorpusIndexFile(relativePath: string): boolean {
+  const name = relativePath.split("/").pop() ?? "";
+  return CORPUS_INDEX_FILES.has(name);
+}
+
+function canonicalDocumentKind(document: unknown): CorpusDocumentKind | null {
+  if (!isRecord(document)) return null;
+  const kind = document.kind;
+  if (typeof kind !== "string") return null;
+  if (!(CORPUS_DOCUMENT_KINDS as readonly string[]).includes(kind)) return null;
+  return kind as CorpusDocumentKind;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

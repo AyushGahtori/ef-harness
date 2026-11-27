@@ -2,6 +2,82 @@ import { YamlParseError } from "./errors.js";
 
 export const STRICT_YAML_PARSE_OPTIONS = { uniqueKeys: true } as const;
 
+/** Bounded alias expansion. One count per alias node, not the expanded tree size. */
+export const MAX_YAML_ALIAS_COUNT = 100;
+
+const ANCHOR_NAME = /^&([A-Za-z_][A-Za-z0-9_-]*)$/;
+const ALIAS_NAME = /^\*([A-Za-z_][A-Za-z0-9_-]*)$/;
+
+class AnchorTable {
+  private readonly values = new Map<string, unknown>();
+  private aliasCount = 0;
+
+  define(name: string, value: unknown): void {
+    this.values.set(name, value);
+  }
+
+  resolve(name: string, line: number, filePath: string): unknown {
+    this.aliasCount += 1;
+    if (this.aliasCount > MAX_YAML_ALIAS_COUNT) {
+      throw new YamlParseError(
+        `YAML alias expansion exceeded ${MAX_YAML_ALIAS_COUNT} at line ${line} in ${filePath}`,
+        { filePath, line },
+      );
+    }
+    if (!this.values.has(name)) {
+      throw new YamlParseError(`Unknown YAML alias "*${name}" at line ${line} in ${filePath}`, {
+        filePath,
+        line,
+      });
+    }
+    return cloneYamlValue(this.values.get(name));
+  }
+}
+
+let activeAnchors: AnchorTable | null = null;
+
+function anchors(): AnchorTable {
+  if (!activeAnchors) {
+    throw new YamlParseError("YAML anchors are unavailable outside parseStrictYaml", { line: 1 });
+  }
+  return activeAnchors;
+}
+
+function anchorNameOf(text: string): string | null {
+  const match = ANCHOR_NAME.exec(text);
+  return match?.[1] ?? null;
+}
+
+function aliasNameOf(text: string): string | null {
+  const match = ALIAS_NAME.exec(text);
+  return match?.[1] ?? null;
+}
+
+function cloneYamlValue(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  return structuredClone(value);
+}
+
+function isYamlRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeYamlMappings(target: Record<string, unknown>, value: unknown, line: number, filePath: string): void {
+  if (Array.isArray(value)) {
+    for (const item of value) mergeYamlMappings(target, item, line, filePath);
+    return;
+  }
+  if (!isYamlRecord(value)) {
+    throw new YamlParseError(`YAML merge key must be a mapping at line ${line} in ${filePath}`, {
+      filePath,
+      line,
+    });
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (!Object.hasOwn(target, key)) target[key] = item;
+  }
+}
+
 interface YamlLine {
   readonly number: number;
   readonly indent: number;
@@ -19,22 +95,29 @@ export function parseStrictYaml(
   options?: { readonly uniqueKeys?: boolean },
 ): unknown {
   const uniqueKeys = options?.uniqueKeys ?? STRICT_YAML_PARSE_OPTIONS.uniqueKeys;
-  const lines = lexYaml(source, filePath);
-  if (lines.length === 0) {
-    throw new YamlParseError(`Empty YAML document in ${filePath}`, {
-      filePath,
-      line: 1,
-    });
+  const table = new AnchorTable();
+  const previous = activeAnchors;
+  activeAnchors = table;
+  try {
+    const lines = lexYaml(source, filePath);
+    if (lines.length === 0) {
+      throw new YamlParseError(`Empty YAML document in ${filePath}`, {
+        filePath,
+        line: 1,
+      });
+    }
+    const parsed = parseBlock(lines, 0, 0, filePath, uniqueKeys);
+    if (parsed.next < lines.length) {
+      const leftover = lines[parsed.next];
+      throw new YamlParseError(
+        `Malformed YAML indentation at line ${leftover?.number ?? 1} in ${filePath}`,
+        { filePath, line: leftover?.number },
+      );
+    }
+    return parsed.value;
+  } finally {
+    activeAnchors = previous;
   }
-  const parsed = parseBlock(lines, 0, 0, filePath, uniqueKeys);
-  if (parsed.next < lines.length) {
-    const leftover = lines[parsed.next];
-    throw new YamlParseError(
-      `Malformed YAML indentation at line ${leftover?.number ?? 1} in ${filePath}`,
-      { filePath, line: leftover?.number },
-    );
-  }
-  return parsed.value;
 }
 
 function lexYaml(source: string, filePath: string): YamlLine[] {
@@ -70,11 +153,11 @@ function lexYaml(source: string, filePath: string): YamlLine[] {
         line: number,
       });
     }
-    if (text.startsWith("&") || text.startsWith("*") || text.startsWith("!")) {
-      throw new YamlParseError(
-        `YAML anchors, aliases, and tags are not supported at line ${number} in ${filePath}`,
-        { filePath, line: number },
-      );
+    if (text.startsWith("!")) {
+      throw new YamlParseError(`YAML tags are not supported at line ${number} in ${filePath}`, {
+        filePath,
+        line: number,
+      });
     }
     seenContent = true;
     lines.push({ number, indent, text });
@@ -123,17 +206,7 @@ function parseMapping(
       );
     }
     const pair = splitPair(line.text, line.number, filePath);
-    if (Object.hasOwn(record, pair.key)) {
-      if (uniqueKeys) {
-        throw new YamlParseError(
-          `Duplicate YAML key "${pair.key}" at line ${line.number} in ${filePath}`,
-          { filePath, line: line.number },
-        );
-      }
-    }
-    const taken = takeValue(lines, index, keyIndent, pair, filePath, uniqueKeys);
-    record[pair.key] = taken.value;
-    index = taken.next;
+    index = assignMappingEntry(record, pair, lines, index, keyIndent, filePath, uniqueKeys, line.number);
   }
   return { value: record, next: index };
 }
@@ -160,6 +233,12 @@ function parseSequence(
       );
     }
     const body = line.text.slice(2).trim();
+    const alias = aliasNameOf(body);
+    if (alias) {
+      items.push(anchors().resolve(alias, line.number, filePath));
+      index += 1;
+      continue;
+    }
     if (body === "") {
       const nested = parseBlock(lines, index + 1, dashIndent + 1, filePath, uniqueKeys);
       if (nested.next === index + 1) {
@@ -207,9 +286,7 @@ function parseDashMapping(
       first = false;
       const body = line.text.slice(2).trim();
       const pair = splitPair(body, line.number, filePath);
-      const taken = takeValue(lines, index, keyIndent, pair, filePath, uniqueKeys);
-      record[pair.key] = taken.value;
-      index = taken.next;
+      index = assignMappingEntry(record, pair, lines, index, keyIndent, filePath, uniqueKeys, line.number);
       continue;
     }
     if (line.indent < keyIndent) break;
@@ -221,19 +298,34 @@ function parseDashMapping(
     }
     if (line.text.startsWith("- ")) break;
     const pair = splitPair(line.text, line.number, filePath);
-    if (Object.hasOwn(record, pair.key)) {
-      if (uniqueKeys) {
-        throw new YamlParseError(
-          `Duplicate YAML key "${pair.key}" at line ${line.number} in ${filePath}`,
-          { filePath, line: line.number },
-        );
-      }
-    }
-    const taken = takeValue(lines, index, keyIndent, pair, filePath, uniqueKeys);
-    record[pair.key] = taken.value;
-    index = taken.next;
+    index = assignMappingEntry(record, pair, lines, index, keyIndent, filePath, uniqueKeys, line.number);
   }
   return { value: record, next: index };
+}
+
+function assignMappingEntry(
+  record: Record<string, unknown>,
+  pair: { readonly key: string; readonly valueText: string },
+  lines: readonly YamlLine[],
+  index: number,
+  keyIndent: number,
+  filePath: string,
+  uniqueKeys: boolean,
+  lineNumber: number,
+): number {
+  const taken = takeValue(lines, index, keyIndent, pair, filePath, uniqueKeys);
+  if (pair.key === "<<") {
+    mergeYamlMappings(record, taken.value, lineNumber, filePath);
+    return taken.next;
+  }
+  if (Object.hasOwn(record, pair.key) && uniqueKeys) {
+    throw new YamlParseError(`Duplicate YAML key "${pair.key}" at line ${lineNumber} in ${filePath}`, {
+      filePath,
+      line: lineNumber,
+    });
+  }
+  record[pair.key] = taken.value;
+  return taken.next;
 }
 
 function takeValue(
@@ -246,6 +338,23 @@ function takeValue(
 ): ParsedBlock {
   const line = lines[index];
   const lineNumber = line?.number ?? 1;
+  const alias = aliasNameOf(pair.valueText);
+  if (alias) {
+    return { value: anchors().resolve(alias, lineNumber, filePath), next: index + 1 };
+  }
+  const anchor = anchorNameOf(pair.valueText);
+  if (anchor) {
+    const nested = takeValue(
+      lines,
+      index,
+      keyIndent,
+      { key: pair.key, valueText: "" },
+      filePath,
+      uniqueKeys,
+    );
+    anchors().define(anchor, nested.value);
+    return nested;
+  }
   if (pair.valueText === ">" || pair.valueText === "|" || pair.valueText === ">-" || pair.valueText === "|-") {
     return readBlockScalar(lines, index, keyIndent, pair.valueText, filePath);
   }
@@ -506,7 +615,7 @@ function splitPair(
         });
       }
       const key = unquotePlain(rawKey, line, filePath);
-      if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key)) {
+      if (key !== "<<" && !/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key)) {
         throw new YamlParseError(`Malformed YAML key "${key}" at line ${line} in ${filePath}`, {
           filePath,
           line,
