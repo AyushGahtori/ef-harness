@@ -1,4 +1,4 @@
-import { MissingOpIdError, OpIdReusedError, OperationResultError, ProjectSafeModeError, QueueBackpressureError, QueueClosedError } from "./errors.js";
+import { MissingOpIdError, OpIdReusedError, OperationResultError, ProjectSafeModeError, QueueBackpressureError, QueueBusyError, QueueClosedError } from "./errors.js";
 import { canonicalQuery } from "./query-catalog.js";
 import { defaultComputeRequestHash } from "./request-hash.js";
 import type {
@@ -70,7 +70,7 @@ type Settlement =
 
 export interface CoordinatorWriteQueueOptions {
   readonly stateDb: ProjectStateDb;
-  /** Task 007 `computeRequestHash`. Defaults to the local canonical SHA-256 hasher. */
+  /** Task 007 `computeRequestHash` (`sha256:` + canonical JSON). */
   readonly computeRequestHash?: ComputeRequestHash;
   /** Maximum runtime/interactive operations in one `BEGIN IMMEDIATE` batch. */
   readonly maxBatchSize?: number;
@@ -125,6 +125,7 @@ export class CoordinatorWriteQueue {
   private forceFlush = false;
   private closed = false;
   private stopped = false;
+  private executing = false;
   private safeModeLatched = false;
   private readSetSql = READ_SETS_INDEXED;
   private waiting: (() => void) | null = null;
@@ -182,6 +183,39 @@ export class CoordinatorWriteQueue {
    */
   submitOperation<T>(input: SubmitOperationInput<T>): Promise<OperationReceipt<T>> {
     return this.enqueue(input, input.priority ?? "runtime");
+  }
+
+  /**
+   * Run one idempotent operation on the writer and return its receipt.
+   * Refuses while a batch already holds the writer; use `submitOperation` then.
+   */
+  submitOperationSync<T>(input: SubmitOperationInput<T>): OperationReceipt<T> {
+    if (this.executing) throw new QueueBusyError();
+    const priority = input.priority ?? "runtime";
+    const requestHash = this.assertAcceptable(input, priority);
+    const op = this.makeOperation(input, priority, requestHash);
+    this.executing = true;
+    let began = false;
+    try {
+      this.writerExec("BEGIN IMMEDIATE");
+      began = true;
+      const settlement = this.runSavepoint(op, 0);
+      this.writerExec("COMMIT");
+      began = false;
+      if (settlement.type === "resolve") {
+        this.settleResolve(op, settlement.receipt);
+        return settlement.receipt as OperationReceipt<T>;
+      }
+      this.settleReject(op, settlement.error);
+      throw settlement.error;
+    } catch (error) {
+      if (began) this.rollbackOuter();
+      if (isFatalStorageError(error)) this.activateSafeMode(error, 1);
+      if (!op.settled) this.settleReject(op, error);
+      throw error;
+    } finally {
+      this.executing = false;
+    }
   }
 
   /** Queue a knowledge change set. It never shares a transaction with runtime work. */
@@ -248,10 +282,10 @@ export class CoordinatorWriteQueue {
     return this.done;
   }
 
-  private enqueue<T>(
-    input: { opId: string; kind: string; request: unknown; execute(tx: WriteTransaction): T },
+  private assertAcceptable(
+    input: { opId: string; kind: string; request: unknown; execute(tx: WriteTransaction): unknown },
     priority: WritePriority,
-  ): Promise<OperationReceipt<T>> {
+  ): string {
     if (typeof input.opId !== "string" || input.opId.trim() === "") {
       throw new MissingOpIdError();
     }
@@ -266,7 +300,37 @@ export class CoordinatorWriteQueue {
     if (typeof input.execute !== "function") {
       throw new TypeError("operation execute function is required");
     }
-    const requestHash = this.computeRequestHash(input.request);
+    return this.computeRequestHash(input.request);
+  }
+
+  private makeOperation(
+    input: { opId: string; kind: string; execute(tx: WriteTransaction): unknown },
+    priority: WritePriority,
+    requestHash: string,
+  ): QueuedOperation {
+    const op: QueuedOperation = {
+      seq: this.nextSeq,
+      opId: input.opId,
+      kind: input.kind,
+      requestHash,
+      priority,
+      execute: input.execute,
+      enqueuedPerf: performance.now(),
+      committedRev: null,
+      changedNodes: [],
+      settled: false,
+      resolve: () => undefined,
+      reject: () => undefined,
+    };
+    this.nextSeq += 1;
+    return op;
+  }
+
+  private enqueue<T>(
+    input: { opId: string; kind: string; request: unknown; execute(tx: WriteTransaction): T },
+    priority: WritePriority,
+  ): Promise<OperationReceipt<T>> {
+    const requestHash = this.assertAcceptable(input, priority);
     const queue = this.queueFor(priority);
     const cap = this.caps[priority];
     if (queue.length >= cap) {
@@ -274,21 +338,9 @@ export class CoordinatorWriteQueue {
       throw new QueueBackpressureError(priority, queue.length, cap);
     }
     return new Promise((resolve, reject) => {
-      const op: QueuedOperation = {
-        seq: this.nextSeq,
-        opId: input.opId,
-        kind: input.kind,
-        requestHash,
-        priority,
-        execute: input.execute,
-        enqueuedPerf: performance.now(),
-        committedRev: null,
-        changedNodes: [],
-        settled: false,
-        resolve: (receipt) => resolve(receipt as OperationReceipt<T>),
-        reject,
-      };
-      this.nextSeq += 1;
+      const op = this.makeOperation(input, priority, requestHash);
+      op.resolve = (receipt) => resolve(receipt as OperationReceipt<T>);
+      op.reject = reject;
       queue.push(op);
       if (this.coalesceAnchor === null && this.countEligible() > 0) {
         this.coalesceAnchor = performance.now();
@@ -385,6 +437,15 @@ export class CoordinatorWriteQueue {
   }
 
   private commitBatch(batch: readonly QueuedOperation[]): void {
+    this.executing = true;
+    try {
+      this.commitBatchHoldingWriter(batch);
+    } finally {
+      this.executing = false;
+    }
+  }
+
+  private commitBatchHoldingWriter(batch: readonly QueuedOperation[]): void {
     const staged: Array<{ op: QueuedOperation; settlement: Settlement }> = [];
     let began = false;
     try {
@@ -433,6 +494,17 @@ export class CoordinatorWriteQueue {
   }
 
   private commitBarrier(op: QueuedOperation): void {
+    this.executing = true;
+    let receipt: OperationReceipt<unknown> | undefined;
+    try {
+      receipt = this.commitBarrierHoldingWriter(op);
+    } finally {
+      this.executing = false;
+    }
+    if (receipt && !receipt.replayed) this.propagateAfterCommit(op, receipt);
+  }
+
+  private commitBarrierHoldingWriter(op: QueuedOperation): OperationReceipt<unknown> | undefined {
     let began = false;
     let receipt: OperationReceipt<unknown> | undefined;
     try {
@@ -445,12 +517,12 @@ export class CoordinatorWriteQueue {
       if (began) this.rollbackOuter();
       if (isFatalStorageError(error)) this.activateSafeMode(error, 1);
       this.settleReject(op, error);
-      return;
+      return undefined;
     }
     if (!receipt) throw new Error("knowledge barrier produced no receipt");
     this.barriersCommitted += 1;
     this.settleResolve(op, receipt);
-    if (!receipt.replayed) this.propagateAfterCommit(op, receipt);
+    return receipt;
   }
 
   private applyOperation(op: QueuedOperation): OperationReceipt<unknown> {
@@ -611,6 +683,15 @@ export class CoordinatorWriteQueue {
   }
 
   private pruneNow(nowMs: number): number {
+    this.executing = true;
+    try {
+      return this.pruneNowHoldingWriter(nowMs);
+    } finally {
+      this.executing = false;
+    }
+  }
+
+  private pruneNowHoldingWriter(nowMs: number): number {
     const cutoff = nowMs - this.retentionMs;
     this.writerExec("BEGIN IMMEDIATE");
     try {

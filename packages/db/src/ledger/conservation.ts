@@ -1,5 +1,6 @@
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import type { SQLOutputValue } from "node:sqlite";
 import { loadCanonicalQueries } from "./canonical-queries.js";
+import type { LedgerSql } from "./sql-port.js";
 import { cell, readText, readUnits } from "./sql-values.js";
 
 export interface ConservationMismatch {
@@ -38,7 +39,7 @@ SELECT b.scope_kind, b.scope_id, b.currency, b.reserved_units, b.spent_units,
   FROM budgets b
 `;
 
-export function auditLedgerConservation(db: DatabaseSync): ConservationAudit {
+export function auditLedgerConservation(db: LedgerSql): ConservationAudit {
   const mismatches: ConservationMismatch[] = [];
   for (const row of db.prepare(AUDIT_SQL).all() as Record<string, SQLOutputValue>[]) {
     const scopeKind = readText(cell(row, "scope_kind"), "scope_kind");

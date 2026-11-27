@@ -752,6 +752,7 @@ export type {
 } from "./lifecycles/index.js";
 export {
   BudgetLedgerRepo,
+  bindBudgetLedger,
   BudgetLimitError,
   BudgetScopeExistsError,
   CrossWaveBorrowError,
@@ -780,6 +781,7 @@ export {
 export type {
   BudgetRemainingRow,
   BudgetScopeRecord,
+  BudgetScopeSnapshot,
   ConservationAudit,
   ConservationMismatch,
   CreateBudgetScopeInput,
@@ -810,6 +812,8 @@ export type {
 export {
   AttachedDatabaseForbiddenError as GrantsAttachedDatabaseForbiddenError,
   BrokerGrantIssuer,
+  bindBrokerGrantIssuer,
+  bindProjectGrantReceiver,
   CANONICAL_GRANT_QUERIES,
   ClosureConflictError,
   CrossDatabasePathError,
@@ -882,7 +886,9 @@ export {
   OperationResultError,
   ProjectSafeModeError as WriteQueueProjectSafeModeError,
   QueueBackpressureError,
+  QueueBusyError,
   QueueClosedError,
+  bindCoordinatorWriteQueue,
   WRITE_PRIORITIES,
   canonicalQuery as writeQueueCanonicalQuery,
   defaultComputeRequestHash,

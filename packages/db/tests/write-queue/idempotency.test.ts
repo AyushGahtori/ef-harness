@@ -1,3 +1,4 @@
+import { computeRequestHash } from "@ef-harness/shared-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -49,6 +50,8 @@ describe("write-queue idempotency", () => {
     expect(defaultComputeRequestHash({ b: 1, a: composed })).toBe(
       defaultComputeRequestHash({ a: precomposed, b: 1 }),
     );
+    expect(defaultComputeRequestHash({ a: 1 })).toBe(computeRequestHash({ a: 1 }));
+    expect(defaultComputeRequestHash({ a: 1 })).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(defaultComputeRequestHash({ a: 1 })).not.toBe(defaultComputeRequestHash({ a: 2 }));
   });
 

@@ -112,6 +112,13 @@ export type ReconcileUnknownResult =
   | { ok: true; resolution: "release"; reservationId: string }
   | { ok: false; reason: "missing" | "not_unknown" };
 
+export interface BudgetScopeSnapshot {
+  scopeKind: ScopeKind;
+  scopeId: string;
+  currencies: readonly BudgetRemainingRow[];
+  hardStop: boolean;
+}
+
 export interface BudgetRemainingRow {
   scopeKind: ScopeKind;
   scopeId: string;

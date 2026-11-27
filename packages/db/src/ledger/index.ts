@@ -24,6 +24,7 @@ export {
   splitIntegerByWeights,
   type PaperworkPhase,
 } from "./paperwork-allocation.js";
+export { bindBudgetLedger } from "./project-bind.js";
 export {
   BudgetLedgerRepo,
   type CreateWavePaperworkInput,
@@ -35,6 +36,7 @@ export {
 export type {
   BudgetRemainingRow,
   BudgetScopeRecord,
+  BudgetScopeSnapshot,
   CreateBudgetScopeInput,
   MarkUnknownResult,
   ReconcileUnknownInput,

@@ -57,6 +57,7 @@ export {
   type QueryCatalog,
 } from "./query-catalog.js";
 export { BrokerGrantIssuer } from "./broker-grant-issuer.js";
+export { bindBrokerGrantIssuer, bindProjectGrantReceiver } from "./project-bind.js";
 export { GrantReconciler, type ProjectRestartReport } from "./grant-reconciler.js";
 export { ProjectGrantReceiver } from "./project-grant-receiver.js";
 export {

@@ -55,6 +55,16 @@ export class MissingOpIdError extends Error {
   }
 }
 
+/** A synchronous write was asked for while a batch already holds the writer. */
+export class QueueBusyError extends Error {
+  readonly code = "queue_busy" as const;
+
+  constructor() {
+    super("write queue is executing a transaction; use submitOperation");
+    this.name = "QueueBusyError";
+  }
+}
+
 /** The queue has stopped accepting writes (`drainAndClose`). */
 export class QueueClosedError extends Error {
   readonly code = "queue_closed" as const;

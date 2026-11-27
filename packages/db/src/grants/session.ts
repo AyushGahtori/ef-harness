@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { constants, DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 import { splitSearchText } from "@ef-harness/shared-contracts";
+import type { SqliteConnection } from "../driver/types.js";
+import type { SqlValue } from "../driver/values.js";
 import {
   AttachedDatabaseForbiddenError,
   MissingQueryParameterError,
@@ -72,20 +74,42 @@ export interface SqlRow {
   readonly [column: string]: SQLInputValue;
 }
 
+interface GrantStatement {
+  get(...params: readonly GrantBind[]): unknown;
+  all(...params: readonly GrantBind[]): unknown[];
+  run(...params: readonly GrantBind[]): { changes: number | bigint };
+}
+
+type GrantBind = SQLInputValue | Readonly<Record<string, SQLInputValue>>;
+
+interface GrantSqlite {
+  exec(sql: string): void;
+  prepare(sql: string): GrantStatement;
+  close(): void;
+}
+
 export class GrantSqlSession {
   readonly role: GrantDatabaseRole;
   readonly filePath: string;
-  private readonly db: DatabaseSync;
+  private readonly db: GrantSqlite;
   private readonly catalog: QueryCatalog;
-  private readonly statements = new Map<string, StatementSync>();
+  private readonly statements = new Map<string, GrantStatement>();
+  private readonly ownsConnection: boolean;
   private inImmediateTransaction = false;
   private closed = false;
 
-  private constructor(role: GrantDatabaseRole, filePath: string, db: DatabaseSync, catalog: QueryCatalog) {
+  private constructor(
+    role: GrantDatabaseRole,
+    filePath: string,
+    db: GrantSqlite,
+    catalog: QueryCatalog,
+    ownsConnection: boolean,
+  ) {
     this.role = role;
     this.filePath = filePath;
     this.db = db;
     this.catalog = catalog;
+    this.ownsConnection = ownsConnection;
   }
 
   static open(role: GrantDatabaseRole, filePath: string, catalog = loadQueryCatalog()): GrantSqlSession {
@@ -103,12 +127,34 @@ export class GrantSqlSession {
       limits: { attach: 0 },
     });
     installCrossDatabaseAttachGuard(db);
-    const session = new GrantSqlSession(role, resolved, db, catalog);
+    const session = new GrantSqlSession(role, resolved, grantSqliteFromDatabase(db), catalog, true);
     session.applyWriterPragmas();
     if (role === "state") {
       db.function("ef_search_text", { deterministic: true }, (value) => splitSearchText(value));
     }
     session.applySchemaIfEmpty();
+    session.assertRole();
+    session.assertSingleDatabase();
+    return session;
+  }
+
+  /**
+   * Use an already-open writer. `close()` does not close that handle.
+   * Schema and writer pragmas are the caller's; this only checks the role.
+   */
+  static adopt(
+    role: GrantDatabaseRole,
+    filePath: string,
+    connection: SqliteConnection,
+    catalog = loadQueryCatalog(),
+  ): GrantSqlSession {
+    const session = new GrantSqlSession(
+      role,
+      path.resolve(filePath),
+      grantSqliteFromConnection(connection),
+      catalog,
+      false,
+    );
     session.assertRole();
     session.assertSingleDatabase();
     return session;
@@ -200,7 +246,7 @@ export class GrantSqlSession {
     }
     this.closed = true;
     this.statements.clear();
-    this.db.close();
+    if (this.ownsConnection) this.db.close();
   }
 
   private applyWriterPragmas(): void {
@@ -244,8 +290,9 @@ export class GrantSqlSession {
   }
 
   private assertSingleDatabase(): void {
-    const row = this.db.prepare("SELECT count(*) AS n FROM pragma_database_list").get() as SqlRow;
-    if (Number(row.n) !== 1) {
+    const rows = this.db.prepare("SELECT name FROM pragma_database_list").all() as SqlRow[];
+    const attached = rows.filter((row) => row.name !== "main" && row.name !== "temp");
+    if (attached.length > 0) {
       throw new AttachedDatabaseForbiddenError();
     }
   }
@@ -283,7 +330,7 @@ export class GrantSqlSession {
     }
   }
 
-  private statement(sql: string): StatementSync {
+  private statement(sql: string): GrantStatement {
     const cached = this.statements.get(sql);
     if (cached) {
       return cached;
@@ -293,7 +340,7 @@ export class GrantSqlSession {
     return prepared;
   }
 
-  private namedStatement(name: string): StatementSync {
+  private namedStatement(name: string): GrantStatement {
     const key = `named:${name}`;
     const cached = this.statements.get(key);
     if (cached) {
@@ -356,6 +403,69 @@ class GrantClosedConnectionError extends Error {
     super("Grant SQL connection is closed.");
     this.name = "GrantClosedConnectionError";
   }
+}
+
+function grantSqliteFromDatabase(db: DatabaseSync): GrantSqlite {
+  return {
+    exec(sql: string): void {
+      db.exec(sql);
+    },
+    prepare(sql: string): GrantStatement {
+      const statement = db.prepare(sql);
+      return {
+        get: (...params) => invokeSync(statement, "get", params),
+        all: (...params) => invokeSync(statement, "all", params) as unknown[],
+        run: (...params) => invokeSync(statement, "run", params) as { changes: number | bigint },
+      };
+    },
+    close(): void {
+      db.close();
+    },
+  };
+}
+
+function grantSqliteFromConnection(connection: SqliteConnection): GrantSqlite {
+  return {
+    exec(sql: string): void {
+      connection.exec(sql);
+    },
+    prepare(sql: string): GrantStatement {
+      const statement = connection.prepare(sql);
+      return {
+        get: (...params) => statement.get(asDriverParams(params)),
+        all: (...params) => statement.all(asDriverParams(params)),
+        run: (...params) => statement.run(asDriverParams(params)),
+      };
+    },
+    close(): void {
+      return;
+    },
+  };
+}
+
+function invokeSync(
+  statement: StatementSync,
+  method: "run" | "get" | "all",
+  params: readonly GrantBind[],
+): unknown {
+  const named = params.length === 1 && isNamedBind(params[0]) ? params[0] : undefined;
+  const positional = params as SQLInputValue[];
+  if (method === "run") return named ? statement.run(named) : statement.run(...positional);
+  if (method === "get") return named ? statement.get(named) : statement.get(...positional);
+  return named ? statement.all(named) : statement.all(...positional);
+}
+
+function asDriverParams(
+  params: readonly GrantBind[],
+): Record<string, SqlValue> | readonly SqlValue[] | undefined {
+  if (params.length === 0) return undefined;
+  const first = params[0];
+  if (params.length === 1 && isNamedBind(first)) return first as Record<string, SqlValue>;
+  return params as readonly SqlValue[];
+}
+
+function isNamedBind(value: GrantBind | undefined): value is Readonly<Record<string, SQLInputValue>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Uint8Array);
 }
 
 function stringField(row: SqlRow, key: string): string {

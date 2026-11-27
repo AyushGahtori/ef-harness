@@ -1,5 +1,6 @@
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import type { SQLOutputValue } from "node:sqlite";
 import { LedgerInvariantError } from "./errors.js";
+import type { LedgerSql, LedgerStatement } from "./sql-port.js";
 
 export function changeCount(result: { changes: number | bigint } | number | bigint): number {
   const changes = typeof result === "number" || typeof result === "bigint" ? result : result.changes;
@@ -48,7 +49,7 @@ export function cell(row: Record<string, SQLOutputValue>, key: string): SQLOutpu
   return row[key] ?? null;
 }
 
-export function prepareNamed(db: DatabaseSync, sql: string) {
+export function prepareNamed(db: LedgerSql, sql: string): LedgerStatement {
   const statement = db.prepare(sql);
   statement.setAllowBareNamedParameters(true);
   return statement;

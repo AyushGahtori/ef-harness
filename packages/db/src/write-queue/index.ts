@@ -11,8 +11,10 @@ export {
   OperationResultError,
   ProjectSafeModeError,
   QueueBackpressureError,
+  QueueBusyError,
   QueueClosedError,
 } from "./errors.js";
+export { bindCoordinatorWriteQueue } from "./project-bind.js";
 export { canonicalQuery, loadQueryCatalog } from "./query-catalog.js";
 export { defaultComputeRequestHash } from "./request-hash.js";
 export { WRITE_PRIORITIES } from "./types.js";

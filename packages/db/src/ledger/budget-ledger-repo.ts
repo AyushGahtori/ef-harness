@@ -1,4 +1,5 @@
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { ledgerSqlFromDatabase, type LedgerSql, type LedgerStatement } from "./sql-port.js";
 import { auditLedgerConservation, type ConservationAudit } from "./conservation.js";
 import { loadCanonicalQueries } from "./canonical-queries.js";
 import {
@@ -31,6 +32,7 @@ import { assertScopeKind, thresholdsFromRemaining } from "./thresholds.js";
 import type {
   BudgetRemainingRow,
   BudgetScopeRecord,
+  BudgetScopeSnapshot,
   CreateBudgetScopeInput,
   MarkUnknownResult,
   ReconcileUnknownInput,
@@ -52,7 +54,7 @@ import type {
 } from "./types.js";
 import { RESERVATION_PURPOSES, SCOPE_KINDS } from "./types.js";
 
-type SqlStatement = ReturnType<DatabaseSync["prepare"]>;
+type SqlStatement = LedgerStatement;
 
 export interface WaveWeightInput {
   waveId: string;
@@ -127,8 +129,10 @@ export class BudgetLedgerRepo {
   private readonly settleMarkStmt: SqlStatement;
   private readonly releaseStmt: SqlStatement;
   private readonly remainingStmt: SqlStatement;
+  private readonly db: LedgerSql;
 
-  constructor(private readonly db: DatabaseSync) {
+  constructor(db: DatabaseSync | LedgerSql) {
+    this.db = db instanceof DatabaseSync ? ledgerSqlFromDatabase(db) : db;
     this.db.exec("PRAGMA foreign_keys = ON");
     const queries = loadCanonicalQueries();
     this.insertCurrencyStmt = this.db.prepare(
@@ -386,6 +390,13 @@ export class BudgetLedgerRepo {
       if (!settle.ok) return { ok: false, reason: "not_unknown" };
       return { ok: true, resolution: "settle", settle };
     });
+  }
+
+  getScopeSnapshot(scopeKind: ScopeKind, scopeId: string): BudgetScopeSnapshot {
+    this.assertScope(scopeKind, scopeId);
+    const currencies = this.getBudgetRemaining(scopeKind, scopeId);
+    const hardStop = currencies.some((row) => row.overrun || row.remainingUnits === 0);
+    return { scopeKind, scopeId, currencies, hardStop };
   }
 
   getBudgetRemaining(scopeKind: ScopeKind, scopeId: string): BudgetRemainingRow[] {
@@ -914,7 +925,7 @@ function reservationConstraint(error: unknown, reservationId: string): Error {
   return error instanceof Error ? error : new LedgerInvariantError(String(error));
 }
 
-function rollbackOuter(db: DatabaseSync): void {
+function rollbackOuter(db: LedgerSql): void {
   try {
     db.exec("ROLLBACK");
   } catch (error) {
