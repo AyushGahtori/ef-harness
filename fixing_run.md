@@ -327,3 +327,35 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 64 passed (64)`, `Tests 370 passed (370)`
 - `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+
+---
+
+## [C10] — Transactional outbox and board rollups on ProjectStateDb
+
+- **Subagent Role & Model:** integrator-worker, grok-4.7-medium
+- **Commit on `harness/integration`:** `77877f0477abc7dcbb930c96b0eb3fcb9212be73` (`integrate: C10 bind outbox and read models`)
+- **Findings Fixed:** `F-006`, `F-012`, `F-013`, `F-026`, `F-064` (this seam only)
+
+### What Changed
+- Re-verified on `d33a322`. Did not re-merge `origin/task/026-transactional-outbox` (`ce1ab76`) or `origin/task/027-read-models-rollups-drift` (`a95c149`). `git merge-base --is-ancestor` exited `0` for both. No dirty patch for C10. The only tip diff versus `a95c149` was `packages/db/src/read-models/sql.ts`, already using `@ef-harness/shared-contracts` `splitSearchText`. No local splitter remains on that production path.
+- Kept the live classes `OutboxRepo` and `ReadModelRepo`. Did not rename them to `TransactionalOutboxRepo` or `ReadModelsAndRollupsRepo`. Did not add `getLatestSeq`.
+- Bound those classes to the open `ProjectStateDb` writer (`bindOutbox`, `bindReadModels`). Neither bind opens a second `DatabaseSync`. `ReadModelRepo.close()` does not close the shared writer. The driver's `ATTACH` denial stays; the read-model connection refuses application writes to `rollup_feature_tasks` and `rollup_feature_requirements` except inside drift heal.
+- `OutboxRepo.appendEvent` inserts `outbox` and `outbox_deliveries` on the bound writer and still requires the caller's open transaction, so a `CoordinatorWriteQueue` savepoint is the transaction. `readSinceSeq(streamEpoch, afterSeq, limit)` pages with the live gap-free replay. `ackDelivery` and `currentStreamEpoch` are the bound names. `currentStreamEpoch` returns the `meta.stream_epoch` text only when it is a non-empty canonical integer string (`"1"`, `"2"`, …).
+- `ReadModelRepo.getBoardSnapshot(cursor?, limit?)` pages the trigger-maintained feature rollup. `getFeatureRollups` returns that rollup. `recomputeRollupsAndVerifyZeroDrift` runs the live drift heal and refuses a report that found drift and did not heal it. The board page reads rollup rows and does not `COUNT(*)` task facts.
+- Left `MigrationRunner`, the C07 knowledge binds, the C08 path leases, and the C09 budget, grant, and write-queue binds alone. `path_leases.mode` stays `'intent' | 'granted'`. Did not edit `schema/**`, `packages/sim`, or Windows Job Object, DPAPI, named-pipe, or NSIS code. Did not start the three `CasBlobStore` unification. ipc adapters, `apps/daemon`, and `BoardCockpitView` wiring stay in later waves.
+
+### What It Fixed
+- **F-012:** Outbox append/replay and board/drift reads share the open `ProjectStateDb` writer instead of a second connection.
+- **F-013:** The bound outbox exposes `readSinceSeq`, `ackDelivery`, and `currentStreamEpoch` next to the live connection-passed methods. The bound read model exposes `getBoardSnapshot` and `getFeatureRollups` next to `getBoardSummary` and `getFeatureProgress`. ipc port adapters stay in a later wave. `getLatestSeq` was not added.
+- **F-006:** `currentStreamEpoch()` reads `state.db.meta.stream_epoch` and returns it as a non-empty canonical integer string. `ProjectStateDb.getStreamEpoch()` stays a number.
+- **F-026:** Appending two events through `CoordinatorWriteQueue.submitOperationSync` plus `OutboxRepo.appendEvent` left `0` rows in the `outbox_without_deliveries` check and `0` `SQLITE_BUSY` errors. Daemon rewiring stays in a later wave.
+- **F-064:** `getBoardSnapshot` is the cursor page of feature rollups a later board view can read. Renderer and health-slot wiring stay in a later wave.
+- **Zero drift:** after a direct rollup tamper, `recomputeRollupsAndVerifyZeroDrift()` healed, and the next call reported `drifted === false` with `rollup_feature_tasks.n` back to `1`.
+
+### Verification Run & Results
+- `git merge-base --is-ancestor` for `ce1ab76` and `a95c149`: exit `0` (both ancestors of `d33a322`).
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=8192 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 65 passed (65)`, `Tests 371 passed (371)`
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
