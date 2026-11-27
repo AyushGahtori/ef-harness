@@ -1,10 +1,27 @@
 import { BrandAssetError } from "./errors.js";
-import { BrandAssetSanitizer, MISSING_LIGHT_LOGO_ALERT } from "./brand-asset-sanitizer.js";
 import { assetIdForRole, type BrandAssetStateStore, type StoredBrandAsset } from "./brand-record.js";
 import { FontLicenseInspector, type FontLicenseReport } from "./font-license-inspector.js";
-import type { BrandAssetRole } from "./limits.js";
-import { invertMonochrome } from "./raster-sanitizer.js";
+import { MISSING_LIGHT_LOGO_ALERT, type BrandAssetRole } from "./limits.js";
+import { invertMonochrome, sanitizeRasterBytes, type SanitizedRaster } from "./raster-sanitizer.js";
+import { sanitizeSvgMarkup, type SanitizedSvg } from "./svg-sanitizer.js";
 import type { BrandColorSuggestion, CasBlobStorePort, DesignSystemScaffoldBuilderPort } from "./ports.js";
+
+export interface AssetSanitizer {
+  sanitizeSvg(input: string | Uint8Array): SanitizedSvg;
+  sanitizeRaster(input: Uint8Array, mimeType?: string): Promise<SanitizedRaster>;
+}
+
+function defaultSanitizer(): AssetSanitizer {
+  return {
+    sanitizeSvg(input) {
+      const source = typeof input === "string" ? input : Buffer.from(input).toString("utf8");
+      return sanitizeSvgMarkup(source);
+    },
+    sanitizeRaster(input) {
+      return sanitizeRasterBytes(input);
+    },
+  };
+}
 
 export interface LogoLightOffer {
   readonly role: "logo_light";
@@ -32,7 +49,7 @@ export interface PreparedAsset {
 }
 
 export class BrandAssetRegistry {
-  private readonly sanitizer: BrandAssetSanitizer;
+  private readonly sanitizer: AssetSanitizer;
   private readonly fonts: FontLicenseInspector;
   private readonly projectId: string;
   private readonly designSystem: DesignSystemScaffoldBuilderPort | null;
@@ -44,11 +61,11 @@ export class BrandAssetRegistry {
     readonly cas: CasBlobStorePort;
     readonly state: BrandAssetStateStore;
     readonly designSystem?: DesignSystemScaffoldBuilderPort;
-    readonly sanitizer?: BrandAssetSanitizer;
+    readonly sanitizer?: AssetSanitizer;
     readonly fonts?: FontLicenseInspector;
     readonly projectId?: string;
   }) {
-    this.sanitizer = options.sanitizer ?? new BrandAssetSanitizer();
+    this.sanitizer = options.sanitizer ?? defaultSanitizer();
     this.fonts = options.fonts ?? new FontLicenseInspector();
     this.projectId = options.projectId ?? "brand-assets";
     this.designSystem = options.designSystem ?? null;

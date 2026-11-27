@@ -1,5 +1,11 @@
+import { MISSING_LIGHT_LOGO_ALERT } from "./limits.js";
+import { registerWithProjectStores, type SanitizeAndRegisterInput } from "./project-brand.js";
 import { sanitizeRasterBytes, type SanitizedRaster } from "./raster-sanitizer.js";
+import type { StoredBrandAsset } from "./brand-record.js";
 import { sanitizeSvgMarkup, type SanitizedSvg } from "./svg-sanitizer.js";
+
+export type RegisteredBrandAsset = StoredBrandAsset;
+export type { SanitizeAndRegisterInput };
 
 export class BrandAssetSanitizer {
   sanitizeSvg(input: string | Uint8Array): SanitizedSvg {
@@ -11,7 +17,10 @@ export class BrandAssetSanitizer {
     void mimeType;
     return sanitizeRasterBytes(input);
   }
+
+  sanitizeAndRegisterAsset(input: SanitizeAndRegisterInput): Promise<RegisteredBrandAsset> {
+    return registerWithProjectStores(this, input);
+  }
 }
 
-export const MISSING_LIGHT_LOGO_ALERT =
-  "logo_light is missing. A dark logo on a dark surface can disappear. Accept the auto-inverted monochrome variant or the generated placeholder before shipping.";
+export { MISSING_LIGHT_LOGO_ALERT };

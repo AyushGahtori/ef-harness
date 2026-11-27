@@ -142,6 +142,7 @@ export interface MappedStackFrame {
 export type Severity = "low" | "medium" | "high" | "critical";
 
 export interface SymptomCard {
+  readonly id?: string;
   readonly title: string;
   readonly observedBehavior: string;
   readonly expectedBehavior: string;

@@ -1,5 +1,6 @@
 export { formatRedactionBadge } from "./badge.js";
 export { MemoryCasBlobStore, type CasBlobStorePort, type CasPutMeta, type CasPutResult } from "./cas-port.js";
+export { DbSymptomCas } from "./db-cas.js";
 export { FakeModelAdapter, type ToolLessCompletion, type ToolLessCompletionRequest } from "./fake-model.js";
 export { buildTriagePrompt, frameUntrusted, UNTRUSTED_BEGIN, UNTRUSTED_END } from "./framing.js";
 export {
@@ -13,7 +14,8 @@ export { PacketSecurityRedactor } from "./packet-security-redactor.js";
 export { routeSymptomCard } from "./routing.js";
 export { SafetyScanner } from "./safety-scanner.js";
 export { SourceMapStackMapper, parseStackFrames, isRemoteReference, type ParsedFrame } from "./source-map-mapper.js";
-export { SymptomCardStore, type StateDatabase, type StoredSymptom } from "./symptom-store.js";
+export { BugIntakePipeline } from "./pipeline.js";
+export { SymptomCardStore, type StoredSymptom } from "./symptom-store.js";
 export { ToolLessIssueTriager, type ToolLessModel, type TriageInput, type TriageResult } from "./triager.js";
 export { ResidualSecretError } from "./types.js";
 export type {

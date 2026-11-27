@@ -1,5 +1,8 @@
+import { SecretRedactor } from "@ef-harness/shared-observability";
 import type { MutableCounts, SecretFinding } from "./types.js";
 import { stripHiddenUnicode } from "./unicode.js";
+
+const sharedSecrets = new SecretRedactor();
 
 const AUTH_HEADER_NAMES = [
   "authorization",
@@ -22,6 +25,9 @@ const SENSITIVE_KEY_NAMES = [
   "creditcard",
   "cvv",
   "privatekey",
+  "clientsecret",
+  "idtoken",
+  "code",
 ] as const;
 
 function joined(...parts: readonly string[]): string {
@@ -173,7 +179,7 @@ export function redactFreeText(input: string, counts: MutableCounts): string {
     counts.sensitiveFields += 1;
     return `${lead}${name}${separator}${fieldPlaceholder(name)}`;
   });
-  return text;
+  return sharedSecrets.redact(text);
 }
 
 export function redactHeaderValue(name: string, value: string, counts: MutableCounts): string {

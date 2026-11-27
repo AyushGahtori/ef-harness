@@ -1,9 +1,14 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+import { CasBlobStore, openProjectStateDb, type ProjectStateDb } from "@ef-harness/db";
 import {
+  DbSymptomCas,
   FakeModelAdapter,
   IssueTriageV1Schema,
-  MemoryCasBlobStore,
   ResidualSecretError,
   SymptomCardStore,
   ToolLessIssueTriager,
@@ -150,6 +155,12 @@ describe("ToolLessIssueTriager", () => {
   });
 });
 
+const cleanups: Array<() => void> = [];
+
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup();
+});
+
 describe("SymptomCardStore", () => {
   it("persists scrubbed bytes only and fails closed before CAS or sqlite writes", async () => {
     const secrets = canaries();
@@ -160,9 +171,8 @@ describe("SymptomCardStore", () => {
     expect(scrubbed.ok).toBe(true);
     if (!scrubbed.ok) return;
 
-    const cas = new MemoryCasBlobStore();
-    const db = new DatabaseSync(":memory:");
-    const store = new SymptomCardStore(cas, db);
+    const opened = await openHarness("symptom-ok");
+    const store = new SymptomCardStore(new DbSymptomCas(opened.cas, opened.holderId), opened.project);
     const card: SymptomCard = {
       title: "Session cookie rejected",
       observedBehavior: "The request fails",
@@ -181,15 +191,18 @@ describe("SymptomCardStore", () => {
       route: routeSymptomCard({ ...card, failingHttpRequests: [{ method: "POST", url: "/api/orders", status: 401 }] }),
       scrubbedLogText: scrubbed.value,
     });
-    const stored = Buffer.from(await cas.getBlob(saved.casHash)).toString("utf8");
-    const rows = db.prepare("SELECT id, cas_hash, title, severity, badge, route FROM symptom_cards").all();
-    const dumped = `${stored}\n${JSON.stringify(rows)}`;
+    const bytes = await opened.cas.getBytes(saved.casHash);
+    const stored = Buffer.from(bytes ?? new Uint8Array()).toString("utf8");
+    const persisted = store.getSymptomCard(saved.id);
+    const dumped = `${stored}\n${JSON.stringify(persisted)}`;
     assertAbsent(dumped, [secrets.cookie, secrets.postgres, secrets.jwt, secrets.stripe, "CANARY", "Sup3rS3cret!"]);
-    expect(rows).toHaveLength(1);
+    expect(persisted?.title).toBe(card.title);
+    expect(persisted?.severity).toBe("high");
+    expect(persisted?.id).toBe(saved.id);
 
-    const blocked = new MemoryCasBlobStore();
-    const blockedDb = new DatabaseSync(":memory:");
-    const blockedStore = new SymptomCardStore(blocked, blockedDb);
+    const blocked = await openHarness("symptom-blocked");
+    const before = blobCount(blocked.globalDb);
+    const blockedStore = new SymptomCardStore(new DbSymptomCas(blocked.cas, blocked.holderId), blocked.project);
     await expect(
       blockedStore.save({
         card,
@@ -198,7 +211,34 @@ describe("SymptomCardStore", () => {
         scrubbedLogText: `Bearer ${secrets.stripe}`,
       }),
     ).rejects.toBeInstanceOf(ResidualSecretError);
-    expect(blocked.putCount).toBe(0);
-    expect(blockedDb.prepare("SELECT name FROM sqlite_master WHERE name = 'symptom_cards'").all()).toEqual([]);
+    expect(blobCount(blocked.globalDb)).toBe(before);
+    expect(blocked.project.writer.get("SELECT id FROM nodes WHERE fields ->> '$.recordType' = 'symptom_card'")).toBeUndefined();
   });
 });
+
+async function openHarness(name: string): Promise<{
+  readonly cas: CasBlobStore;
+  readonly project: ProjectStateDb;
+  readonly holderId: string;
+  readonly globalDb: DatabaseSync;
+}> {
+  const root = mkdtempSync(path.join(tmpdir(), `${name}-`));
+  const globalDb = new DatabaseSync(":memory:");
+  globalDb.exec("PRAGMA foreign_keys = ON");
+  globalDb.exec(readFileSync(fileURLToPath(new URL("../../../../schema/global.sql", import.meta.url)), "utf8"));
+  const cas = await CasBlobStore.open({ globalDb, rootDir: path.join(root, "cas"), sleep: async () => {} });
+  const project = openProjectStateDb({ projectId: `${name}-${path.basename(root)}`, rootDir: root });
+  cleanups.push(() => {
+    project.close();
+    globalDb.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+  return { cas, project, holderId: project.getMeta("project_id") ?? project.projectId, globalDb };
+}
+
+function blobCount(globalDb: DatabaseSync): number {
+  const row = globalDb.prepare("SELECT count(*) AS n FROM cas_blobs").get();
+  if (!row || typeof row !== "object" || !("n" in row)) return 0;
+  const value = row.n;
+  return typeof value === "number" ? value : Number(value);
+}

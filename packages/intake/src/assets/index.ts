@@ -26,7 +26,12 @@ export { MemoryCasBlobStore } from "./memory-cas.js";
 export { DOMPURIFY_SVG_PROFILE } from "./svg-profile.js";
 export { formatRemovedLog, sanitizeSvgMarkup, type SanitizedSvg } from "./svg-sanitizer.js";
 export { invertMonochrome, sanitizeRasterBytes, type RasterDerivative, type SanitizedRaster } from "./raster-sanitizer.js";
-export { BrandAssetSanitizer, MISSING_LIGHT_LOGO_ALERT } from "./brand-asset-sanitizer.js";
+export {
+  BrandAssetSanitizer,
+  MISSING_LIGHT_LOGO_ALERT,
+  type RegisteredBrandAsset,
+  type SanitizeAndRegisterInput,
+} from "./brand-asset-sanitizer.js";
 export {
   FontLicenseInspector,
   type FontContainer,
@@ -34,7 +39,7 @@ export {
   type FontLicenseReport,
 } from "./font-license-inspector.js";
 export { assetIdForRole, type BrandAssetStateStore, type StoredBrandAsset } from "./brand-record.js";
-export { SqliteBrandAssetState } from "./sqlite-brand-state.js";
+export { ProjectBrandAssetState, ProjectCasBlobStore } from "./project-brand.js";
 export {
   BrandAssetRegistry,
   type FontRegistration,

@@ -1,17 +1,19 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { CasBlobStore, openProjectStateDb, type ProjectStateDb } from "@ef-harness/db";
 import {
   BrandAssetRegistry,
   DESIGN_SYSTEM_SOURCE,
   FONT_ATTESTATION_PHRASE,
   MISSING_LIGHT_LOGO_ALERT,
-  MemoryCasBlobStore,
   Phase0BrandAssetsGenerator,
-  SqliteBrandAssetState,
+  ProjectBrandAssetState,
+  ProjectCasBlobStore,
   type BrandColorSuggestion,
   type DesignSystemScaffoldBuilderPort,
 } from "../../src/assets/index.js";
@@ -25,8 +27,10 @@ const sharp = require("sharp") as (input: Buffer | { create: object }) => {
 };
 
 const roots: string[] = [];
+const cleanups: Array<() => void> = [];
 
 afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -39,11 +43,7 @@ describe("BrandAssetRegistry and Phase 0 emission", () => {
         suggestions.push(suggestion);
       },
     };
-    const registry = new BrandAssetRegistry({
-      cas: new MemoryCasBlobStore(),
-      state: SqliteBrandAssetState.open(),
-      designSystem,
-    });
+    const registry = await openRegistry(designSystem);
     const png = await sharp({
       create: { width: 6, height: 4, channels: 3, background: { r: 32, g: 64, b: 96 } },
     }).png().toBuffer();
@@ -67,7 +67,7 @@ describe("BrandAssetRegistry and Phase 0 emission", () => {
   });
 
   it("alerts when only a dark logo is uploaded and can accept the inverted offer", async () => {
-    const registry = openRegistry();
+    const registry = await openRegistry();
     const png = await sharp({
       create: { width: 4, height: 4, channels: 4, background: { r: 10, g: 10, b: 10, alpha: 1 } },
     }).png().toBuffer();
@@ -82,7 +82,7 @@ describe("BrandAssetRegistry and Phase 0 emission", () => {
   });
 
   it("refuses to bundle a desktop-only font until the attestation phrase is recorded", async () => {
-    const registry = openRegistry();
+    const registry = await openRegistry();
     const bytes = buildFixtureFont({
       familyName: "Helvetica Neue",
       postscriptName: "HelveticaNeue",
@@ -102,7 +102,7 @@ describe("BrandAssetRegistry and Phase 0 emission", () => {
   });
 
   it("emits typed src/brand/assets.ts and real files, with placeholders when nothing was uploaded", async () => {
-    const registry = openRegistry();
+    const registry = await openRegistry();
     const appRoot = mkdtempSync(path.join(tmpdir(), "brand-assets-"));
     roots.push(appRoot);
     const emitted = await new Phase0BrandAssetsGenerator(registry).emit({
@@ -134,10 +134,36 @@ describe("BrandAssetRegistry and Phase 0 emission", () => {
   }, 20_000);
 });
 
-function openRegistry(): BrandAssetRegistry {
+async function openRegistry(designSystem?: DesignSystemScaffoldBuilderPort): Promise<BrandAssetRegistry> {
+  const root = mkdtempSync(path.join(tmpdir(), "brand-state-"));
+  const globalDb = openGlobal();
+  const cas = await CasBlobStore.open({ globalDb, rootDir: path.join(root, "cas"), sleep: async () => {} });
+  const project = openProject(root);
+  const holderId = project.getMeta("project_id") ?? project.projectId;
+  cleanups.push(() => {
+    project.close();
+    globalDb.close();
+    rmSync(root, { recursive: true, force: true });
+  });
   return new BrandAssetRegistry({
-    cas: new MemoryCasBlobStore(),
-    state: SqliteBrandAssetState.open(),
+    cas: new ProjectCasBlobStore(cas, holderId),
+    state: new ProjectBrandAssetState(project),
+    projectId: holderId,
+    ...(designSystem ? { designSystem } : {}),
+  });
+}
+
+function openGlobal(): DatabaseSync {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec(readFileSync(fileURLToPath(new URL("../../../../schema/global.sql", import.meta.url)), "utf8"));
+  return db;
+}
+
+function openProject(root: string): ProjectStateDb {
+  return openProjectStateDb({
+    projectId: `brand-${path.basename(root)}`,
+    rootDir: root,
   });
 }
 

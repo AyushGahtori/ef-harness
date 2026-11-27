@@ -18,6 +18,9 @@ export type DerivativeName = keyof typeof DERIVATIVE_SIZES;
 
 export const FONT_ATTESTATION_PHRASE = "I hold a web embedding license for this font";
 
+export const MISSING_LIGHT_LOGO_ALERT =
+  "logo_light is missing. A dark logo on a dark surface can disappear. Accept the auto-inverted monochrome variant or the generated placeholder before shipping.";
+
 export const BRAND_ASSET_ROLES = [
   "logo_light",
   "logo_dark",
