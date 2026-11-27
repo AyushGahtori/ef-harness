@@ -157,6 +157,10 @@ export class CompletionWaveController {
       projectId: request.projectId,
       projectLimitUnits: request.projectBudgetUnits,
     });
+    const fixSnapshot = (): ReturnType<BudgetLedgerPort["getScopeSnapshot"]> =>
+      request.ledger.getScopeSnapshot(scopes.fixScopeId);
+    const auditSnapshot = (): ReturnType<BudgetLedgerPort["getScopeSnapshot"]> =>
+      request.ledger.getScopeSnapshot(scopes.auditScopeId);
     const runId = this.store.beginRun(request.projectId);
     const waived = new Set(request.waivedFingerprints ?? []);
     const plan = this.sharded.plan(request.shardInputs);
@@ -230,11 +234,9 @@ export class CompletionWaveController {
     const unresolvedBlocking = latestFindings.some(
       (finding) => !finding.advisory && finding.severity !== "low" && !waived.has(finding.fingerprint),
     );
-    if (
-      !budgetCapHit &&
-      request.ledger.getBudgetRemaining(scopes.fixScopeId) === 0n &&
-      (unresolvedBlocking || regressions.length > 0)
-    ) {
+    const fixView = fixSnapshot();
+    const auditView = auditSnapshot();
+    if (!budgetCapHit && fixView.hardStop && (unresolvedBlocking || regressions.length > 0)) {
       budgetCapHit = true;
     }
     const summary = this.summaries.generate({
@@ -251,9 +253,9 @@ export class CompletionWaveController {
       fixRounds,
       budgetCapHit,
       roundCapHit,
-      auditFixUnits: scopes.fixLimitUnits - request.ledger.getBudgetRemaining(scopes.fixScopeId),
+      auditFixUnits: scopes.fixLimitUnits - fixView.remainingUnits,
       auditFixCapUnits: scopes.fixLimitUnits,
-      finalAuditUnits: scopes.auditLimitUnits - request.ledger.getBudgetRemaining(scopes.auditScopeId),
+      finalAuditUnits: scopes.auditLimitUnits - auditView.remainingUnits,
       finalAuditCapUnits: scopes.auditLimitUnits,
     });
     this.store.saveSummary(runId, summary);

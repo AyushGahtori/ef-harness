@@ -69,17 +69,18 @@ function viewportProblems(checks: readonly ViewportCheck[]): string[] {
 }
 
 export class FeatureJourneyGate {
-  evaluate(input: JourneyEvaluationInput): JourneyReport {
+  async evaluate(input: JourneyEvaluationInput): Promise<JourneyReport> {
     const binder = input.binder ?? passthroughBinder;
-    const proofs = input.sealedChecks.map((check) => {
-      const bound = binder.bind(check);
+    const proofs: JourneyReport["redBeforeGreen"][number][] = [];
+    for (const check of input.sealedChecks) {
+      const bound = await binder.bind(check);
       const base = bound.run(input.base);
       const feature = bound.run(input.feature);
       if (base.pass) {
         throw new VacuousSealedCheckError(check.id);
       }
-      return { checkId: check.id, basePassed: base.pass, featurePassed: feature.pass };
-    });
+      proofs.push({ checkId: check.id, basePassed: base.pass, featurePassed: feature.pass });
+    }
     const seamFailures = input.journeys.flatMap((journey) => {
       const failure = executeSeamJourney(input.mounts, journey);
       return failure ? [failure] : [];
@@ -135,15 +136,15 @@ export class FeatureJourneyGate {
   }
 }
 
-export function runBoundedFixLoop<T>(options: {
+export async function runBoundedFixLoop<T>(options: {
   readonly maxRounds?: number;
   readonly initial: T;
-  readonly evaluate: (state: T) => JourneyReport;
+  readonly evaluate: (state: T) => JourneyReport | Promise<JourneyReport>;
   readonly apply: (state: T, repair: WiringRepair) => T;
-}): { readonly state: T; readonly report: JourneyReport; readonly hints: IntegrationFixHint[] } {
+}): Promise<{ readonly state: T; readonly report: JourneyReport; readonly hints: IntegrationFixHint[] }> {
   const maxRounds = options.maxRounds ?? MAX_FIX_ROUNDS;
   let state = options.initial;
-  let report = options.evaluate(state);
+  let report = await options.evaluate(state);
   const hints: IntegrationFixHint[] = [];
   let round = 0;
   while (!report.ok) {
@@ -155,7 +156,7 @@ export function runBoundedFixLoop<T>(options: {
     hints.push(stamped);
     if (!hint.repair) break;
     state = options.apply(state, hint.repair);
-    report = options.evaluate(state);
+    report = await options.evaluate(state);
   }
   return { state, report, hints };
 }

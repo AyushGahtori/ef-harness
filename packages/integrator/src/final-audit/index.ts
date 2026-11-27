@@ -1,5 +1,5 @@
-export { InMemoryBudgetLedger } from "./budget.js";
-export type { BudgetLedgerPort, Reservation } from "./budget.js";
+export { InMemoryBudgetLedger, ProjectStateBudgetLedger } from "./budget.js";
+export type { BudgetLedgerPort, BudgetScopeView, Reservation } from "./budget.js";
 export { CompletionWaveController } from "./completion-wave-controller.js";
 export type { CompletionWaveControllerDeps, CompletionWaveRequest, CompletionWaveResult } from "./completion-wave-controller.js";
 export {

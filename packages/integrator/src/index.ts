@@ -7,3 +7,13 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export { FeatureIntegratorEngine } from "./feature-integrator/index.js";
+export {
+  CompletionWaveController,
+  FinalAuditStore,
+  InMemoryBudgetLedger,
+  LandingSummaryGenerator,
+  ProjectStateBudgetLedger,
+} from "./final-audit/index.js";
+export type { CompletionWaveRequest, CompletionWaveResult } from "./final-audit/index.js";

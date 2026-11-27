@@ -1,3 +1,5 @@
+import { AskOwnerResponderV1Schema } from "@ef-harness/shared-contracts";
+
 import { checkCitation } from "./citations.js";
 import { consultModel } from "./model-select.js";
 import { buildAskOwnerPrompt } from "./prompts.js";
@@ -11,6 +13,7 @@ import type {
   GraphNode,
   ModelRosterEntry,
   OwnerAnswer,
+  OwnerQuestionRequest,
   SchemaChange,
   SpecialistModel,
   TaskFact,
@@ -110,6 +113,45 @@ function oneRecommendation(options: readonly DecisionOption[]): string {
   return chosen.id;
 }
 
+const FACT_STOP = new Set([
+  "a",
+  "an",
+  "the",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "to",
+  "of",
+  "and",
+  "or",
+  "in",
+  "on",
+  "for",
+  "yet",
+  "that",
+  "this",
+  "it",
+  "we",
+  "did",
+  "not",
+  "with",
+]);
+
+function groundedInFactSheet(text: string, factSheet: string): boolean {
+  const hay = factSheet.toLowerCase();
+  const tokens = (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(
+    (token) => token.length > 2 && !FACT_STOP.has(token),
+  );
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => hay.includes(token));
+}
+
+function blockedPayload(value: object): boolean {
+  return "blocked" in value && Reflect.get(value, "blocked") === true;
+}
+
 function requireSchema(payload: AskOwnerSchemaPayload): AskOwnerSchemaPayload {
   const parsed = parseAskOwnerResponderV1(payload);
   if (!parsed.ok || isBlockedExit(parsed.value)) {
@@ -131,42 +173,46 @@ export class AskOwnerResponderEngine {
     this.workerFamily = options.workerFamily;
   }
 
-  answerQuestion(question: string): OwnerAnswer {
+  async answerQuestion(req: string | OwnerQuestionRequest): Promise<OwnerAnswer> {
+    const question = typeof req === "string" ? req : req.question;
     const grounded = this.lookup(question.trim());
-    if (!grounded) return this.unknown();
-    this.askModel(question, grounded.factSheet);
-    return this.finish("answer", grounded.text, [], grounded);
+    if (!grounded) return this.unknown(0);
+    const model = await this.askModel(question, grounded.factSheet);
+    const text = model.acceptedText ?? grounded.text;
+    return this.finish("answer", text, [], grounded, model.llmCalls);
   }
 
-  formatWorkerEscalation(request: WorkerEscalationRequest): OwnerAnswer {
+  async formatWorkerEscalation(request: WorkerEscalationRequest): Promise<OwnerAnswer> {
     if (request.recordedDecision && this.decisionMatches(request.question, request.recordedDecision.quote)) {
       const text = `This is already decided: ${request.recordedDecision.quote}`;
       const changes: SchemaChange[] = [{ target_id: request.taskId, text: request.recordedDecision.quote }];
-      this.askModel(request.question, text);
-      return this.finish("brief_fix", text, changes, {
+      const model = await this.askModel(request.question, text);
+      const spoken = model.acceptedText ?? text;
+      return this.finish("brief_fix", spoken, changes, {
         text,
         nodeIds: [request.recordedDecision.id, request.taskId],
         receiptIds: [],
         files: [],
         factSheet: text,
-      });
+      }, model.llmCalls);
     }
     const card = request.requirementQuote && request.sealedAssertion
       ? this.disputeCard(request.requirementQuote, request.sealedAssertion)
       : this.ambiguityCard(request.question);
     const text = card.lines.join("\n");
-    this.askModel(request.question, `${text}\n${request.logs}\n${request.diffSummary}`);
-    return this.finish("escalate", text, [], {
+    const model = await this.askModel(request.question, `${text}\n${request.logs}\n${request.diffSummary}`);
+    const spoken = model.acceptedText ?? text;
+    return this.finish("escalate", spoken, [], {
       text,
       nodeIds: [request.requirementId, request.checkId, request.taskId].filter((id): id is string => Boolean(id)),
       receiptIds: [],
       files: [],
       factSheet: text,
       card,
-    });
+    }, model.llmCalls);
   }
 
-  resolveDisputeChoice(request: WorkerEscalationRequest, optionId: string): OwnerAnswer {
+  async resolveDisputeChoice(request: WorkerEscalationRequest, optionId: string): Promise<OwnerAnswer> {
     const quote = request.requirementQuote ?? "";
     const assertion = request.sealedAssertion ?? "";
     const card = this.disputeCard(quote, assertion);
@@ -180,7 +226,7 @@ export class AskOwnerResponderEngine {
         files: [],
         factSheet: text,
         card,
-      });
+      }, 0);
     }
     if (optionId === "keep-check") {
       const text = `Keep the sealed check as written. Sealed check: ${assertion}`;
@@ -191,7 +237,7 @@ export class AskOwnerResponderEngine {
         files: [],
         factSheet: text,
         card,
-      });
+      }, 0);
     }
     const text = card.lines.join("\n");
     return this.finish("escalate", text, [], {
@@ -201,7 +247,7 @@ export class AskOwnerResponderEngine {
       files: [],
       factSheet: text,
       card,
-    });
+    }, 0);
   }
 
   private lookup(question: string): (GroundedText & { card?: DecisionCard }) | null {
@@ -379,19 +425,29 @@ export class AskOwnerResponderEngine {
     };
   }
 
-  private askModel(question: string, factSheet: string): void {
-    if (!this.model || factSheet.trim().length === 0) return;
+  private async askModel(
+    question: string,
+    factSheet: string,
+  ): Promise<{ readonly llmCalls: number; readonly acceptedText: string | null }> {
+    if (!this.model || factSheet.trim().length === 0) return { llmCalls: 0, acceptedText: null };
     const family = this.roster.find((entry) => entry.family !== this.workerFamily) ?? this.roster[0];
-    consultModel(this.model, {
+    const raw = await consultModel(this.model, {
       role: "ask-owner-responder@1",
       family: family?.family ?? "unconfigured",
       vision: false,
       prompt: buildAskOwnerPrompt(question, factSheet),
       imageBytes: 0,
     });
+    if (raw === null) return { llmCalls: 1, acceptedText: null };
+    const parsed = AskOwnerResponderV1Schema.safeParse(raw);
+    if (!parsed.success || blockedPayload(parsed.data) || !("text" in parsed.data)) {
+      return { llmCalls: 1, acceptedText: null };
+    }
+    if (!groundedInFactSheet(parsed.data.text, factSheet)) return { llmCalls: 1, acceptedText: null };
+    return { llmCalls: 1, acceptedText: parsed.data.text };
   }
 
-  private unknown(): OwnerAnswer {
+  private unknown(llmCalls: number): OwnerAnswer {
     const text = "No recorded fact in state.db answers that. I will not guess.";
     return {
       schema: requireSchema({ kind: "answer", text, changes: [] }),
@@ -400,6 +456,7 @@ export class AskOwnerResponderEngine {
       grounded: true,
       guessed: false,
       text,
+      llmCalls,
     };
   }
 
@@ -408,6 +465,7 @@ export class AskOwnerResponderEngine {
     text: string,
     changes: readonly SchemaChange[],
     grounded: GroundedText & { card?: DecisionCard },
+    llmCalls: number,
   ): OwnerAnswer {
     const citations = this.cite(grounded);
     return {
@@ -417,6 +475,7 @@ export class AskOwnerResponderEngine {
       grounded: true,
       guessed: false,
       text,
+      llmCalls,
     };
   }
 

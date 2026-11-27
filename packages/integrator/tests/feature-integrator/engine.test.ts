@@ -142,10 +142,10 @@ function shopLeaves(): Parameters<typeof prepare>[1] {
 }
 
 describe("FeatureIntegratorEngine", () => {
-  it("squashes a wired feature with EF trailers and reaches DONE only when all 7 conditions hold", () => {
+  it("squashes a wired feature with EF trailers and reaches DONE only when all 7 conditions hold", async () => {
     const prepared = prepare("F-Menu", shopLeaves());
     try {
-      const result = new FeatureIntegratorEngine().integrate(request(prepared, "F-Menu"));
+      const result = await new FeatureIntegratorEngine().integrate(request(prepared, "F-Menu"));
       expect(result.status).toBe("done");
       expect(result.featureState).toBe("DONE");
       expect(result.phase).toBe("INTEGRATING");
@@ -175,10 +175,10 @@ describe("FeatureIntegratorEngine", () => {
     }
   });
 
-  it("preserves logical history when configured and still stamps the tip commit", () => {
+  it("preserves logical history when configured and still stamps the tip commit", async () => {
     const prepared = prepare("F-Menu", shopLeaves());
     try {
-      const result = new FeatureIntegratorEngine().integrate(
+      const result = await new FeatureIntegratorEngine().integrate(
         request(prepared, "F-Menu", { history: "preserve" }),
       );
       expect(result.status).toBe("done");
@@ -193,13 +193,13 @@ describe("FeatureIntegratorEngine", () => {
     }
   });
 
-  it("queues two features on isolated branches without moving harness/integration", () => {
+  it("queues two features on isolated branches without moving harness/integration", async () => {
     const first = prepare("F-A", shopLeaves());
     const second = prepare("F-B", shopLeaves());
     try {
       const engine = new FeatureIntegratorEngine();
-      const left = engine.integrate(request(first, "F-A", { mode: "m3_queue" }));
-      const right = engine.integrate(request(second, "F-B", { mode: "m3_queue" }));
+      const left = await engine.integrate(request(first, "F-A", { mode: "m3_queue" }));
+      const right = await engine.integrate(request(second, "F-B", { mode: "m3_queue" }));
       expect(left.status).toBe("queued_for_merge");
       expect(right.status).toBe("queued_for_merge");
       expect(left.queueHandoff?.target).toBe("Task 111");
@@ -214,13 +214,13 @@ describe("FeatureIntegratorEngine", () => {
     }
   });
 
-  it("re-runs merge-tree and re-verifies when integration moves before compare-and-swap", () => {
+  it("re-runs merge-tree and re-verifies when integration moves before compare-and-swap", async () => {
     const prepared = prepare("F-Menu", shopLeaves());
     try {
       const real = createGitRefCas();
       let integrationAttempts = 0;
       let drifted = "";
-      const result = new FeatureIntegratorEngine().integrate(
+      const result = await new FeatureIntegratorEngine().integrate(
         request(prepared, "F-Menu", {
           cas: {
             advance(input) {
@@ -245,7 +245,7 @@ describe("FeatureIntegratorEngine", () => {
     }
   });
 
-  it("repairs a menu versus menu-items seam and blocks a vacuous sealed check", () => {
+  it("repairs a menu versus menu-items seam and blocks a vacuous sealed check", async () => {
     const prepared = prepare("F-Menu", [
       {
         taskId: "T-Menu",
@@ -264,7 +264,7 @@ describe("FeatureIntegratorEngine", () => {
           return { pass, observed: pass ? "mounted" : "missing" };
         },
       };
-      const result = engine.integrate(
+      const result = await engine.integrate(
         request(prepared, "F-Menu", {
           sealedChecks: [sealed],
           viewportChecks: [],
@@ -298,13 +298,13 @@ describe("FeatureIntegratorEngine", () => {
 
     const vacuousRepo = prepare("F-Menu", shopLeaves());
     try {
-      expect(() =>
+      await expect(
         new FeatureIntegratorEngine().integrate(
           request(vacuousRepo, "F-Menu", {
             sealedChecks: [{ id: "sealed-vacuous", run: () => ({ pass: true, observed: "always" }) }],
           }),
         ),
-      ).toThrow(VacuousSealedCheckError);
+      ).rejects.toThrow(VacuousSealedCheckError);
       expect(vacuousRepo.lifecycle.read("F-Menu").state).toBe("LEAVES_MERGED");
       expect(revParse(vacuousRepo.repo, INTEGRATION_REF)).toBe(vacuousRepo.base);
     } finally {
@@ -312,14 +312,14 @@ describe("FeatureIntegratorEngine", () => {
     }
   });
 
-  it("refuses DONE when a contract change request is open and fences a stale epoch", () => {
+  it("refuses DONE when a contract change request is open and fences a stale epoch", async () => {
     const prepared = prepare("F-Menu", shopLeaves());
     try {
-      expect(() =>
+      await expect(
         new FeatureIntegratorEngine().integrate(
           request(prepared, "F-Menu", { openContractChangeRequestIds: ["CCR-9"] }),
         ),
-      ).toThrow(FeatureDoneRefusedError);
+      ).rejects.toThrow(FeatureDoneRefusedError);
       expect(prepared.lifecycle.read("F-Menu").state).toBe("MERGED");
     } finally {
       removeRepo(prepared.repo);
@@ -327,9 +327,9 @@ describe("FeatureIntegratorEngine", () => {
 
     const stale = prepare("F-Menu", shopLeaves());
     try {
-      expect(() =>
+      await expect(
         new FeatureIntegratorEngine().integrate(request(stale, "F-Menu", { expectedEpoch: 1 })),
-      ).toThrow(StaleEpochError);
+      ).rejects.toThrow(StaleEpochError);
       expect(revParse(stale.repo, INTEGRATION_REF)).toBe(stale.base);
     } finally {
       removeRepo(stale.repo);
@@ -338,7 +338,7 @@ describe("FeatureIntegratorEngine", () => {
     const early = prepare("F-Menu", shopLeaves());
     try {
       early.lifecycle.init("F-Menu", 3, "IN_WAVE");
-      expect(() => new FeatureIntegratorEngine().integrate(request(early, "F-Menu"))).toThrow(
+      await expect(new FeatureIntegratorEngine().integrate(request(early, "F-Menu"))).rejects.toThrow(
         FeatureNotReadyError,
       );
     } finally {
@@ -346,10 +346,10 @@ describe("FeatureIntegratorEngine", () => {
     }
   });
 
-  it("stops when feature-integrator@1 returns blocked", () => {
+  it("stops when feature-integrator@1 returns blocked", async () => {
     const prepared = prepare("F-Menu", shopLeaves());
     try {
-      const result = new FeatureIntegratorEngine().integrate(
+      const result = await new FeatureIntegratorEngine().integrate(
         request(prepared, "F-Menu", {
           modelOutput: { blocked: true, reason: "Route contracts cannot both be kept" },
         }),

@@ -73,14 +73,14 @@ function cssDiff(): string {
 }
 
 describe("HighRiskDiffReviewer", () => {
-  it("skips a UI-only token rename and spends zero tokens", () => {
+  it("skips a UI-only token rename and spends zero tokens", async () => {
     const model = new FakeModelAdapter().enqueue("reviewer@1", {
       findings: [IDOR_FINDING],
       verdict: "concerns",
     });
     const envelope = new MemoryReviewEnvelope(10_000);
     const reviewer = new HighRiskDiffReviewer({ model, roster: ROSTER, envelope });
-    const result = reviewer.review(
+    const result = await reviewer.review(
       request({
         touches: ["ui"],
         diff: cssDiff(),
@@ -97,23 +97,23 @@ describe("HighRiskDiffReviewer", () => {
     expect(cssDiff().split("\n").length).toBeGreaterThanOrEqual(20);
   });
 
-  it("runs for high-risk tags, canonical aliases, hint 2, and tag drift", () => {
+  it("runs for high-risk tags, canonical aliases, hint 2, and tag drift", async () => {
     const model = new FakeModelAdapter();
     const reviewer = new HighRiskDiffReviewer({ model, roster: ROSTER });
     for (const touches of [["payments"], ["pii"], ["migrations"], ["security"], ["external_side_effect"], ["concurrency"], ["authz"]]) {
       model.enqueue("reviewer@1", { findings: [], verdict: "ok" });
-      const result = reviewer.review(request({ touches }));
+      const result = await reviewer.review(request({ touches }));
       expect(result.status).toBe("clean");
     }
     model.enqueue("reviewer@1", { findings: [], verdict: "ok" });
-    expect(reviewer.review(request({ touches: ["ui"], hintRetryLevel: 1 })).status).toBe("skipped_low_risk");
+    expect((await reviewer.review(request({ touches: ["ui"], hintRetryLevel: 1 }))).status).toBe("skipped_low_risk");
     model.enqueue("reviewer@1", { findings: [], verdict: "ok" });
-    expect(reviewer.review(request({ touches: ["ui"], hintRetryLevel: 2 })).status).toBe("clean");
+    expect((await reviewer.review(request({ touches: ["ui"], hintRetryLevel: 2 }))).status).toBe("clean");
     model.enqueue("reviewer@1", { findings: [], verdict: "ok" });
-    expect(reviewer.review(request({ touches: ["ui"], tagDrift: true })).status).toBe("clean");
+    expect((await reviewer.review(request({ touches: ["ui"], tagDrift: true }))).status).toBe("clean");
   });
 
-  it("blocks a cited IDOR, feeds the hint ladder, and stays on an independent family", () => {
+  it("blocks a cited IDOR, feeds the hint ladder, and stays on an independent family", async () => {
     const model = new FakeModelAdapter().enqueue("reviewer@1", {
       findings: [IDOR_FINDING],
       verdict: "concerns",
@@ -121,7 +121,7 @@ describe("HighRiskDiffReviewer", () => {
     const ladder = new MemoryHintLadder();
     const envelope = new MemoryReviewEnvelope(10_000);
     const reviewer = new HighRiskDiffReviewer({ model, roster: ROSTER, hintLadder: ladder, envelope });
-    const result = reviewer.review(request());
+    const result = await reviewer.review(request());
     expect(result.status).toBe("blocked_merge");
     if (result.status !== "blocked_merge") return;
     expect(result.blocksMerge).toBe(true);
@@ -145,7 +145,7 @@ describe("HighRiskDiffReviewer", () => {
     expect(prompt).not.toContain("UNRELATED_FILE_SENTINEL");
   });
 
-  it("downgrades a naming nit with no violated rule and drops an ungrounded line", () => {
+  it("downgrades a naming nit with no violated rule and drops an ungrounded line", async () => {
     const model = new FakeModelAdapter().enqueue("reviewer@1", {
       findings: [
         {
@@ -163,7 +163,7 @@ describe("HighRiskDiffReviewer", () => {
     });
     const ladder = new MemoryHintLadder();
     const reviewer = new HighRiskDiffReviewer({ model, roster: ROSTER, hintLadder: ladder });
-    const result = reviewer.review(request());
+    const result = await reviewer.review(request());
     expect(result.status).toBe("clean");
     if (result.status !== "clean") return;
     expect(result.blocksMerge).toBe(false);
@@ -173,30 +173,30 @@ describe("HighRiskDiffReviewer", () => {
     expect(ladder.pushes).toHaveLength(0);
   });
 
-  it("does not treat an invalid verdict or a blocked exit as a rejection", () => {
+  it("does not treat an invalid verdict or a blocked exit as a rejection", async () => {
     const model = new FakeModelAdapter()
       .enqueue("reviewer@1", { verdict: "ok", findings: [IDOR_FINDING] })
       .enqueue("reviewer@1", { blocked: true, reason: "diff was truncated" });
     const reviewer = new HighRiskDiffReviewer({ model, roster: ROSTER });
-    const invalid = reviewer.review(request());
+    const invalid = await reviewer.review(request());
     expect(invalid.status).toBe("model_output_invalid");
     expect(invalid.blocksMerge).toBe(false);
-    const blocked = reviewer.review(request());
+    const blocked = await reviewer.review(request());
     expect(blocked.status).toBe("model_blocked");
     expect(blocked.blocksMerge).toBe(false);
     expect(parseReviewerV1({ verdict: "ok", findings: [IDOR_FINDING] }).ok).toBe(false);
   });
 
-  it("escalates on the third dispute instead of rejecting again", () => {
+  it("escalates on the third dispute instead of rejecting again", async () => {
     const model = new FakeModelAdapter();
     const ladder = new MemoryHintLadder();
     const reviewer = new HighRiskDiffReviewer({ model, roster: ROSTER, hintLadder: ladder });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       model.enqueue("reviewer@1", { findings: [IDOR_FINDING], verdict: "concerns" });
     }
-    const first = reviewer.review(request());
-    const second = reviewer.review(request());
-    const third = reviewer.review(request());
+    const first = await reviewer.review(request());
+    const second = await reviewer.review(request());
+    const third = await reviewer.review(request());
     expect(first.status).toBe("blocked_merge");
     expect(second.status).toBe("blocked_merge");
     if (first.status === "blocked_merge") expect(first.rejectionNumber).toBe(1);
@@ -211,20 +211,20 @@ describe("HighRiskDiffReviewer", () => {
     expect(ladder.pushes).toHaveLength(2);
   });
 
-  it("marks the family degraded when only the worker family is connected", () => {
+  it("marks the family degraded when only the worker family is connected", async () => {
     const model = new FakeModelAdapter().enqueue("reviewer@1", { findings: [], verdict: "ok" });
     const reviewer = new HighRiskDiffReviewer({
       model,
       roster: [{ family: "openai", vision: false, level: "Mid" }],
     });
-    const result = reviewer.review(request());
+    const result = await reviewer.review(request());
     expect(result.status).toBe("clean");
     if (result.status !== "clean") return;
     expect(result.family).toBe("openai");
     expect(result.familyDegraded).toBe(true);
   });
 
-  it("rejects a citation whose lines are outside the diff", () => {
+  it("rejects a citation whose lines are outside the diff", async () => {
     const files = new Map<string, Set<number>>([["src/orders.ts", new Set([13, 14])]]);
     const ground = { files, nodeIds: new Set<string>(), receiptIds: new Set<string>() };
     expect(checkCitation({ filePath: "src/orders.ts", lineRange: { start: 13, end: 14 } }, ground).ok).toBe(true);

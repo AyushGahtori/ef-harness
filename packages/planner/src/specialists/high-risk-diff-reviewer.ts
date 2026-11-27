@@ -97,7 +97,7 @@ export class HighRiskDiffReviewer {
     this.staticAuditGate = options.staticAuditGate ?? null;
   }
 
-  review(request: HighRiskReviewRequest): HighRiskReviewResult {
+  async review(request: HighRiskReviewRequest): Promise<HighRiskReviewResult> {
     const risk = decideReviewerRisk(request);
     if (!risk.run) {
       return {
@@ -123,7 +123,7 @@ export class HighRiskDiffReviewer {
       };
     }
     const prompt = buildReviewerPrompt(prepared);
-    const raw = consultModel(this.model, {
+    const raw = await consultModel(this.model, {
       role: "reviewer@1",
       family: family.family,
       vision: false,

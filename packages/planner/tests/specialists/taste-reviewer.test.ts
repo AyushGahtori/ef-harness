@@ -53,7 +53,7 @@ function request(overrides: Partial<TasteReviewRequest> = {}): TasteReviewReques
 }
 
 describe("AdvisoryTasteVisionReviewer", () => {
-  it("keeps a subjective suggestion advisory and offers one user-approved polish", () => {
+  it("keeps a subjective suggestion advisory and offers one user-approved polish", async () => {
     const model = new FakeModelAdapter().enqueue("taste-reviewer@1", {
       advisory: true,
       findings: [
@@ -67,7 +67,7 @@ describe("AdvisoryTasteVisionReviewer", () => {
       ],
     });
     const reviewer = new AdvisoryTasteVisionReviewer({ model });
-    const result = reviewer.review(request());
+    const result = await reviewer.review(request());
     expect(result.status).toBe("advisory");
     expect(result.label).toBe("ADVISORY ONLY");
     expect(result.blocksMerge).toBe(false);
@@ -85,7 +85,7 @@ describe("AdvisoryTasteVisionReviewer", () => {
     expect(model.calls[0]?.prompt).toContain("styleguide");
   });
 
-  it("can offer a high-confidence layout escalation without blocking the merge", () => {
+  it("can offer a high-confidence layout escalation without blocking the merge", async () => {
     const model = new FakeModelAdapter().enqueue("taste-reviewer@1", {
       advisory: true,
       findings: [
@@ -98,14 +98,14 @@ describe("AdvisoryTasteVisionReviewer", () => {
         },
       ],
     });
-    const result = new AdvisoryTasteVisionReviewer({ model }).review(request());
+    const result = await new AdvisoryTasteVisionReviewer({ model }).review(request());
     expect(result.blocksMerge).toBe(false);
     expect(result.layoutEscalation?.blocksMerge).toBe(false);
     expect(result.layoutEscalation?.confidence).toBe("high");
     expect(result.layoutEscalation?.requiresUserApproval).toBe(true);
   });
 
-  it("drops a finding that cites a file outside the captured screens", () => {
+  it("drops a finding that cites a file outside the captured screens", async () => {
     const model = new FakeModelAdapter().enqueue("taste-reviewer@1", {
       advisory: true,
       findings: [
@@ -118,14 +118,14 @@ describe("AdvisoryTasteVisionReviewer", () => {
         },
       ],
     });
-    const result = new AdvisoryTasteVisionReviewer({ model }).review(request());
+    const result = await new AdvisoryTasteVisionReviewer({ model }).review(request());
     expect(result.findings).toHaveLength(0);
     expect(result.blocksMerge).toBe(false);
   });
 
-  it("skips when no vision model is configured", () => {
+  it("skips when no vision model is configured", async () => {
     const model = new FakeModelAdapter().enqueue("taste-reviewer@1", { advisory: true, findings: [] });
-    const result = new AdvisoryTasteVisionReviewer({ model }).review(
+    const result = await new AdvisoryTasteVisionReviewer({ model }).review(
       request({ roster: [{ family: "openai", vision: false, level: "Senior" }] }),
     );
     expect(result.status).toBe("skipped_no_vision_model");
@@ -135,13 +135,13 @@ describe("AdvisoryTasteVisionReviewer", () => {
     expect(model.calls).toHaveLength(0);
   });
 
-  it("skips on Prototype, Cheapest, and high budget pressure while security review still runs", () => {
+  it("skips on Prototype, Cheapest, and high budget pressure while security review still runs", async () => {
     const tasteModel = new FakeModelAdapter();
     const taste = new AdvisoryTasteVisionReviewer({ model: tasteModel });
-    expect(taste.review(request({ stage: "Prototype" })).status).toBe("skipped_prototype");
-    expect(taste.review(request({ preset: "Cheapest" })).status).toBe("skipped_cheapest");
+    expect((await taste.review(request({ stage: "Prototype" }))).status).toBe("skipped_prototype");
+    expect((await taste.review(request({ preset: "Cheapest" }))).status).toBe("skipped_cheapest");
     expect(
-      taste.review(request({ budgetLimitUnits: 100, budgetSpentUnits: 90 })).status,
+      (await taste.review(request({ budgetLimitUnits: 100, budgetSpentUnits: 90 }))).status,
     ).toBe("skipped_budget_pressure");
     expect(tasteModel.calls).toHaveLength(0);
 
@@ -150,7 +150,7 @@ describe("AdvisoryTasteVisionReviewer", () => {
       model: reviewModel,
       roster: [{ family: "anthropic", vision: false, level: "Senior" }],
     });
-    const reviewed = security.review({
+    const reviewed = await security.review({
       taskId: "T-PAY",
       attemptId: "A-1",
       touches: ["payments"],
@@ -166,30 +166,64 @@ describe("AdvisoryTasteVisionReviewer", () => {
     expect(reviewModel.calls).toHaveLength(1);
   });
 
-  it("refuses production and live-customer screenshots before any vision call", () => {
+  it("refuses production and live-customer screenshots before any vision call", async () => {
     const model = new FakeModelAdapter().enqueue("taste-reviewer@1", { advisory: true, findings: [] });
     const reviewer = new AdvisoryTasteVisionReviewer({ model });
-    const production = reviewer.review(request({ screenshots: shots({ environment: "production" }) }));
+    const production = await reviewer.review(request({ screenshots: shots({ environment: "production" }) }));
     expect(production.status).toBe("rejected_non_synthetic");
-    const live = reviewer.review(
+    const live = await reviewer.review(
       request({ screenshots: shots({ bytes: Buffer.from("contact ada@real-customers.io") }) }),
     );
     expect(live.status).toBe("rejected_non_synthetic");
-    const secret = reviewer.review(
+    const secret = await reviewer.review(
       request({ screenshots: shots({ bytes: Buffer.from("password=hunter2hunter2") }) }),
     );
     expect(secret.status).toBe("rejected_non_synthetic");
     expect(model.calls).toHaveLength(0);
   });
 
-  it("does not accept a taste payload that clears the advisory flag", () => {
+  it("does not accept a taste payload that clears the advisory flag", async () => {
     const model = new FakeModelAdapter().enqueue("taste-reviewer@1", {
       advisory: false,
       findings: [],
     });
-    const result = new AdvisoryTasteVisionReviewer({ model }).review(request());
+    const result = await new AdvisoryTasteVisionReviewer({ model }).review(request());
     expect(result.blocksMerge).toBe(false);
     expect(result.findings).toHaveLength(0);
     expect(result.label).toBe("ADVISORY ONLY");
+  });
+
+  it("drops a line citation past the real file and keeps one inside it", async () => {
+    const body = ["line-1", "line-2", "line-3"].join("\n");
+    const model = new FakeModelAdapter()
+      .enqueue("taste-reviewer@1", {
+        advisory: true,
+        findings: [
+          {
+            screen: "kitchen",
+            region: "header",
+            kind: "spacing",
+            severity: "low",
+            suggestion: "Keep file:src/Kitchen.tsx:2",
+          },
+        ],
+      })
+      .enqueue("taste-reviewer@1", {
+        advisory: true,
+        findings: [
+          {
+            screen: "kitchen",
+            region: "header",
+            kind: "spacing",
+            severity: "low",
+            suggestion: "Drop file:src/Kitchen.tsx:9",
+          },
+        ],
+      });
+    const reviewer = new AdvisoryTasteVisionReviewer({ model });
+    const kept = await reviewer.review(request({ fileTexts: { "src/Kitchen.tsx": body } }));
+    expect(kept.findings).toHaveLength(1);
+    const dropped = await reviewer.review(request({ fileTexts: { "src/Kitchen.tsx": body } }));
+    expect(dropped.findings).toHaveLength(0);
   });
 });

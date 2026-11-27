@@ -311,7 +311,7 @@ export interface CleanSnapshotPort {
 
 /** Local port of blind-binder / red-before-green (Task 056 in the task text, Task 061 on the sibling branch). */
 export interface BlindBinderPort {
-  bind(check: SealedCheck): SealedCheck;
+  bind(check: SealedCheck): SealedCheck | Promise<SealedCheck>;
 }
 
 export interface RegressionResult {

@@ -248,6 +248,7 @@ export interface TasteReviewRequest {
   readonly knownFiles: readonly string[];
   readonly knownNodeIds: readonly string[];
   readonly knownReceiptIds: readonly string[];
+  readonly fileTexts?: Readonly<Record<string, string>>;
 }
 
 export interface TasteFinding {
@@ -352,6 +353,7 @@ export interface OwnerAnswer {
   readonly grounded: true;
   readonly guessed: false;
   readonly text: string;
+  readonly llmCalls: number;
 }
 
 export interface GraphNode {
@@ -399,5 +401,5 @@ export interface ModelCall {
 }
 
 export interface SpecialistModel {
-  complete(call: ModelCall): unknown;
+  complete(call: ModelCall): unknown | Promise<unknown>;
 }

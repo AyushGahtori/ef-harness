@@ -589,3 +589,9 @@ export {
   runPhase0DesignSystem,
 } from "./design-system/index.js";
 export { PostMergeSmokeChecker, SequentialBuildRunner, StateDb } from "./sequential-runner/index.js";
+export {
+  AdvisoryTasteVisionReviewer,
+  AskOwnerResponderEngine,
+  HighRiskDiffReviewer,
+  SpecialistStateDb,
+} from "./specialists/index.js";

@@ -84,7 +84,7 @@ export class FeatureIntegratorEngine {
     this.binder = deps.binder ?? { bind: (check) => check };
   }
 
-  integrate(request: FeatureIntegrationRequest): FeatureIntegrationResult {
+  async integrate(request: FeatureIntegrationRequest): Promise<FeatureIntegrationResult> {
     const row = request.lifecycle.read(request.featureId);
     if (row.state !== "LEAVES_MERGED") {
       throw new FeatureNotReadyError(request.featureId, row.state);
@@ -109,7 +109,7 @@ export class FeatureIntegratorEngine {
     const tree = replaceFiles(repo, assembled.sha, wiring.files);
     this.guardTests(assembledFiles, tree, repo);
 
-    const loop = runBoundedFixLoop<LoopState>({
+    const loop = await runBoundedFixLoop<LoopState>({
       initial: { tree, wiring },
       evaluate: (state) => {
         const feature = this.featureSnapshot(repo, state.tree, "pending");
@@ -179,7 +179,7 @@ export class FeatureIntegratorEngine {
       };
     }
 
-    const landed = this.land(request, commitSha, integrationSha, message, loop.state.wiring);
+    const landed = await this.land(request, commitSha, integrationSha, message, loop.state.wiring);
     this.transition(request, "QUEUED_FOR_MERGE");
     this.transition(request, "MERGED");
     const evidence = this.evidence(request, loop.state.wiring.id, {
@@ -259,13 +259,13 @@ export class FeatureIntegratorEngine {
     return { label: "feature", commit, files: snapshotFiles(repo, treeOrCommit) };
   }
 
-  private land(
+  private async land(
     request: FeatureIntegrationRequest,
     commitSha: string,
     expectedIntegration: string,
     message: string,
     wiring: AggregatedWiringTask,
-  ): string {
+  ): Promise<string> {
     const repo = request.repoPath;
     const first = this.cas(request).advance({
       repo,
@@ -288,7 +288,7 @@ export class FeatureIntegratorEngine {
       tree = replaceFiles(repo, scan.treeOid, resolved.files);
     }
     const merged = commitTree(repo, tree, [actual, commitSha], message);
-    const report = this.journey.evaluate({
+    const report = await this.journey.evaluate({
       base: this.snapshots.read(repo, actual, "base"),
       feature: this.snapshots.read(repo, merged, "feature"),
       sealedChecks: request.sealedChecks,

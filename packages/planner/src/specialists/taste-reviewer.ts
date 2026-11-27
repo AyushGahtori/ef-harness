@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+
 import { checkCitation } from "./citations.js";
 import { consultModel, estimateTokens, selectFamily } from "./model-select.js";
 import { budgetPressure } from "./ports.js";
@@ -78,16 +80,18 @@ function missingCaptures(shots: readonly TasteScreenshot[]): string[] {
   return missing;
 }
 
-function sourceLines(): Set<number> {
+function sourceLines(filePath: string, provided: string | undefined): Set<number> {
+  const text = provided ?? (existsSync(filePath) ? readFileSync(filePath, "utf8") : "");
+  const count = text.length === 0 ? 0 : text.split(/\r?\n/).length;
   const lines = new Set<number>();
-  for (let line = 1; line <= 400; line += 1) lines.add(line);
+  for (let line = 1; line <= count; line += 1) lines.add(line);
   return lines;
 }
 
 function groundFor(request: TasteReviewRequest, shots: readonly TasteScreenshot[]): CitationGround {
   const files = new Map<string, Set<number>>();
-  const remember = (path: string): void => {
-    if (!files.has(path)) files.set(path, sourceLines());
+  const remember = (filePath: string): void => {
+    if (!files.has(filePath)) files.set(filePath, sourceLines(filePath, request.fileTexts?.[filePath]));
   };
   for (const path of request.knownFiles) remember(path);
   for (const shot of shots) {
@@ -155,7 +159,7 @@ export class AdvisoryTasteVisionReviewer {
     this.verifier = options.verifier ?? null;
   }
 
-  review(request: TasteReviewRequest): TasteReviewResult {
+  async review(request: TasteReviewRequest): Promise<TasteReviewResult> {
     if (request.stage === "Prototype") {
       return emptyResult(request, "skipped_prototype", "Prototype stage skips advisory taste review");
     }
@@ -180,7 +184,7 @@ export class AdvisoryTasteVisionReviewer {
     }
     const prompt = buildTastePrompt(screenshots);
     const imageBytes = screenshots.reduce((sum, shot) => sum + shot.bytes.byteLength, 0);
-    const raw = consultModel(this.model, {
+    const raw = await consultModel(this.model, {
       role: "taste-reviewer@1",
       family: family.family,
       vision: true,

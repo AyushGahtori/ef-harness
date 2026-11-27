@@ -1,37 +1,20 @@
-import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { computeNodeContentHash, openProjectStateDb, type ProjectStateDb } from "@ef-harness/db";
 
 import { FinalAuditError } from "./errors.js";
 import type { AuditCheck, LandingSummary, ShardRun } from "./types.js";
 
-const MIGRATION = `
-CREATE TABLE IF NOT EXISTS final_audit_runs (
-  run_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('open', 'complete')),
-  fix_rounds INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
-) STRICT;
+type SqlValue = string | number | bigint | null;
+type SqlRow = Record<string, SqlValue>;
+type Writer = ProjectStateDb["writer"];
 
-CREATE TABLE IF NOT EXISTS final_audit_checks (
-  run_id TEXT NOT NULL,
-  check_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  PRIMARY KEY (run_id, check_id)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS final_audit_shards (
-  run_id TEXT NOT NULL,
-  shard_id TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  PRIMARY KEY (run_id, shard_id)
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS final_audit_summaries (
-  run_id TEXT PRIMARY KEY,
-  payload_json TEXT NOT NULL
-) STRICT;
-`;
+const RECORD_RUN = "final_audit_run";
+const RECORD_CHECK = "final_audit_check";
+const RECORD_SHARD = "final_audit_shard";
+const RECORD_SUMMARY = "final_audit_summary";
 
 function encode(value: unknown): unknown {
   if (typeof value === "bigint") return { $u: value.toString() };
@@ -70,102 +53,239 @@ function fromJson<T>(payload: string, label: string): T {
   }
 }
 
-/** Crash-resumable completion-wave checkpoint. Tables are additive until schema/ can adopt them. */
-export class FinalAuditStore {
-  private constructor(private readonly db: DatabaseSync) {}
+function isRow(value: unknown): value is SqlRow {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-  static open(path = ":memory:"): FinalAuditStore {
-    const db = new DatabaseSync(path);
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec(MIGRATION);
-    return new FinalAuditStore(db);
+function textCell(row: SqlRow, key: string): string {
+  const value = row[key];
+  return typeof value === "string" ? value : "";
+}
+
+function stableId(prefix: string, parts: readonly string[]): string {
+  const digest = createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 24);
+  return `${prefix}-${digest}`;
+}
+
+/** Completion-wave checkpoints stored as `comment` nodes on `ProjectStateDb`. */
+export class FinalAuditStore {
+  private revCounter: number;
+
+  private constructor(
+    private readonly state: ProjectStateDb,
+    private readonly writer: Writer,
+  ) {
+    const row = this.one("SELECT COALESCE(MAX(rev), 0) AS n FROM change_sets");
+    this.revCounter = row ? Number(row.n) : 0;
+  }
+
+  static open(filename = ":memory:"): FinalAuditStore {
+    const root = filename === ":memory:" ? mkdtempSync(path.join(tmpdir(), "ef-final-audit-")) : path.dirname(filename);
+    mkdirSync(root, { recursive: true });
+    const projectId = `a${createHash("sha256").update(root).digest("hex").slice(0, 24)}`;
+    const state = openProjectStateDb({ projectId, rootDir: root });
+    return new FinalAuditStore(state, state.writer);
   }
 
   close(): void {
-    this.db.close();
+    this.state.close();
   }
 
   beginRun(projectId: string): string {
-    const existing = this.db
-      .prepare(
-        "SELECT run_id FROM final_audit_runs WHERE project_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1",
-      )
-      .get(projectId) as { run_id: string } | undefined;
-    if (existing) return existing.run_id;
-    const runId = randomUUID();
-    this.db
-      .prepare("INSERT INTO final_audit_runs (run_id, project_id, status, fix_rounds, created_at) VALUES (?, ?, 'open', 0, ?)")
-      .run(runId, projectId, Date.now());
+    const existing = this.one(
+      `SELECT id FROM nodes
+        WHERE kind = 'comment' AND status = 'active'
+          AND json_extract(fields, '$.record') = ?
+          AND json_extract(fields, '$.projectId') = ?
+          AND json_extract(fields, '$.status') = 'open'
+        ORDER BY json_extract(fields, '$.createdAt') DESC
+        LIMIT 1`,
+      RECORD_RUN,
+      projectId,
+    );
+    if (existing) return textCell(existing, "id");
+    const runId = stableId("FA-RUN", [randomUUID()]);
+    const fields = {
+      record: RECORD_RUN,
+      projectId,
+      status: "open",
+      fixRounds: 0,
+      createdAt: Date.now(),
+    };
+    this.insertComment(runId, projectId, "", fields);
     return runId;
   }
 
   completeRun(runId: string, fixRounds: number): void {
-    this.db.prepare("UPDATE final_audit_runs SET status = 'complete', fix_rounds = ? WHERE run_id = ?").run(fixRounds, runId);
+    this.patchRun(runId, { status: "complete", fixRounds });
   }
 
   readFixRounds(runId: string): number {
-    const row = this.db.prepare("SELECT fix_rounds FROM final_audit_runs WHERE run_id = ?").get(runId) as
-      | { fix_rounds: number }
-      | undefined;
-    return row?.fix_rounds ?? 0;
+    const row = this.one(
+      "SELECT json_extract(fields, '$.fixRounds') AS n FROM nodes WHERE id = ? AND status = 'active'",
+      runId,
+    );
+    if (!row || row.n === null) return 0;
+    return Number(row.n);
   }
 
   saveFixRounds(runId: string, fixRounds: number): void {
-    this.db.prepare("UPDATE final_audit_runs SET fix_rounds = ? WHERE run_id = ?").run(fixRounds, runId);
+    this.patchRun(runId, { fixRounds });
   }
 
   readCheck(runId: string, checkId: string): AuditCheck | null {
-    const row = this.db
-      .prepare("SELECT payload_json FROM final_audit_checks WHERE run_id = ? AND check_id = ?")
-      .get(runId, checkId) as { payload_json: string } | undefined;
+    const row = this.one(
+      `SELECT text FROM nodes
+        WHERE kind = 'comment' AND status = 'active'
+          AND json_extract(fields, '$.record') = ?
+          AND json_extract(fields, '$.runId') = ?
+          AND json_extract(fields, '$.checkId') = ?`,
+      RECORD_CHECK,
+      runId,
+      checkId,
+    );
     if (!row) return null;
-    return fromJson<AuditCheck>(row.payload_json, checkId);
+    return fromJson<AuditCheck>(textCell(row, "text"), checkId);
   }
 
   saveCheck(runId: string, check: AuditCheck): void {
-    this.db
-      .prepare(
-        "INSERT INTO final_audit_checks (run_id, check_id, payload_json) VALUES (?, ?, ?) ON CONFLICT(run_id, check_id) DO UPDATE SET payload_json = excluded.payload_json",
-      )
-      .run(runId, check.id, toJson(check));
+    const id = stableId("FA-CHK", [runId, check.id]);
+    const fields = { record: RECORD_CHECK, runId, checkId: check.id };
+    this.upsertComment(id, check.id, toJson(check), fields);
   }
 
   readShard(runId: string, shardId: string): ShardRun | null {
-    const row = this.db
-      .prepare("SELECT payload_json FROM final_audit_shards WHERE run_id = ? AND shard_id = ?")
-      .get(runId, shardId) as { payload_json: string } | undefined;
+    const row = this.one(
+      `SELECT text FROM nodes
+        WHERE kind = 'comment' AND status = 'active'
+          AND json_extract(fields, '$.record') = ?
+          AND json_extract(fields, '$.runId') = ?
+          AND json_extract(fields, '$.shardId') = ?`,
+      RECORD_SHARD,
+      runId,
+      shardId,
+    );
     if (!row) return null;
-    return fromJson<ShardRun>(row.payload_json, shardId);
+    return fromJson<ShardRun>(textCell(row, "text"), shardId);
   }
 
   saveShard(runId: string, run: ShardRun): void {
-    this.db
-      .prepare(
-        "INSERT INTO final_audit_shards (run_id, shard_id, payload_json) VALUES (?, ?, ?) ON CONFLICT(run_id, shard_id) DO UPDATE SET payload_json = excluded.payload_json",
-      )
-      .run(runId, run.shard.id, toJson(run));
+    const id = stableId("FA-SHARD", [runId, run.shard.id]);
+    const fields = { record: RECORD_SHARD, runId, shardId: run.shard.id };
+    this.upsertComment(id, run.shard.id, toJson(run), fields);
   }
 
   listShardIds(runId: string): string[] {
-    const rows = this.db.prepare("SELECT shard_id FROM final_audit_shards WHERE run_id = ? ORDER BY shard_id").all(runId) as {
-      shard_id: string;
-    }[];
-    return rows.map((row) => row.shard_id);
+    return this.all(
+      `SELECT json_extract(fields, '$.shardId') AS shard_id
+         FROM nodes
+        WHERE kind = 'comment' AND status = 'active'
+          AND json_extract(fields, '$.record') = ?
+          AND json_extract(fields, '$.runId') = ?
+        ORDER BY json_extract(fields, '$.shardId')`,
+      RECORD_SHARD,
+      runId,
+    ).map((row) => textCell(row, "shard_id"));
   }
 
   saveSummary(runId: string, summary: LandingSummary): void {
-    this.db
-      .prepare(
-        "INSERT INTO final_audit_summaries (run_id, payload_json) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET payload_json = excluded.payload_json",
-      )
-      .run(runId, toJson(summary));
+    const id = stableId("FA-SUM", [runId]);
+    const fields = { record: RECORD_SUMMARY, runId };
+    this.upsertComment(id, runId, toJson(summary), fields);
   }
 
   readSummary(runId: string): LandingSummary | null {
-    const row = this.db.prepare("SELECT payload_json FROM final_audit_summaries WHERE run_id = ?").get(runId) as
-      | { payload_json: string }
-      | undefined;
+    const row = this.one(
+      `SELECT text FROM nodes
+        WHERE kind = 'comment' AND status = 'active'
+          AND json_extract(fields, '$.record') = ?
+          AND json_extract(fields, '$.runId') = ?`,
+      RECORD_SUMMARY,
+      runId,
+    );
     if (!row) return null;
-    return fromJson<LandingSummary>(row.payload_json, "summary");
+    return fromJson<LandingSummary>(textCell(row, "text"), "summary");
+  }
+
+  private patchRun(runId: string, patch: { status?: string; fixRounds?: number }): void {
+    const row = this.one("SELECT title, text, fields, version FROM nodes WHERE id = ?", runId);
+    if (!row) return;
+    const parsed: unknown = JSON.parse(textCell(row, "fields"));
+    const fields = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? { ...parsed } : {};
+    if (patch.status !== undefined) Reflect.set(fields, "status", patch.status);
+    if (patch.fixRounds !== undefined) Reflect.set(fields, "fixRounds", patch.fixRounds);
+    this.rewriteComment(runId, textCell(row, "title"), textCell(row, "text"), fields, Number(row.version));
+  }
+
+  private upsertComment(id: string, title: string, text: string, fields: unknown): void {
+    const existing = this.one("SELECT version FROM nodes WHERE id = ?", id);
+    if (!existing) {
+      this.insertComment(id, title, text, fields);
+      return;
+    }
+    this.rewriteComment(id, title, text, fields, Number(existing.version));
+  }
+
+  private insertComment(id: string, title: string, text: string, fields: unknown): void {
+    const rev = this.changeSet(`final audit ${id}`);
+    const hash = computeNodeContentHash({ kind: "comment", title, text, fields });
+    this.run(
+      `INSERT INTO nodes(id, kind, version, content_hash, title, text, fields, change_set, created_rev, updated_rev)
+       VALUES (?, 'comment', 1, ?, ?, ?, ?, ?, ?, ?)`,
+      id,
+      hash,
+      title,
+      text,
+      JSON.stringify(fields),
+      `CS-${rev}`,
+      rev,
+      rev,
+    );
+  }
+
+  private rewriteComment(id: string, title: string, text: string, fields: unknown, version: number): void {
+    const rev = this.changeSet(`final audit ${id}`);
+    const next = version + 1;
+    const hash = computeNodeContentHash({ kind: "comment", title, text, fields });
+    this.run(
+      `UPDATE nodes
+          SET version = ?, content_hash = ?, title = ?, text = ?, fields = ?, change_set = ?, updated_rev = ?
+        WHERE id = ?`,
+      next,
+      hash,
+      title,
+      text,
+      JSON.stringify(fields),
+      `CS-${rev}`,
+      rev,
+      id,
+    );
+  }
+
+  private changeSet(summary: string): number {
+    this.revCounter += 1;
+    const rev = this.revCounter;
+    this.run(
+      `INSERT INTO change_sets(id, rev, origin, author, created_at, summary)
+       VALUES (?, ?, 'kernel', 'final-audit', ?, ?)`,
+      `CS-${rev}`,
+      rev,
+      rev,
+      summary,
+    );
+    return rev;
+  }
+
+  private run(sql: string, ...params: SqlValue[]): void {
+    this.writer.run(sql, params);
+  }
+
+  private one(sql: string, ...params: SqlValue[]): SqlRow | null {
+    const row = this.writer.get(sql, params);
+    return isRow(row) ? row : null;
+  }
+
+  private all(sql: string, ...params: SqlValue[]): SqlRow[] {
+    return this.writer.all(sql, params).flatMap((row: unknown) => (isRow(row) ? [row] : []));
   }
 }

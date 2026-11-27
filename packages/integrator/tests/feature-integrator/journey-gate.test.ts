@@ -34,10 +34,10 @@ describe("FeatureJourneyGate", () => {
     },
   };
 
-  it("proves red-before-green and rejects a sealed check that already passes on the base", () => {
+  it("proves red-before-green and rejects a sealed check that already passes on the base", async () => {
     const base = snapshot("base", {});
     const feature = snapshot("feature", { "src/routes.ts": 'export const routes = [{ path: "/api/menu-items" }];\n' });
-    const report = gate.evaluate({
+    const report = await gate.evaluate({
       base,
       feature,
       sealedChecks: [sealed],
@@ -52,7 +52,7 @@ describe("FeatureJourneyGate", () => {
     ]);
 
     const vacuous: SealedCheck = { id: "sealed-vacuous", run: () => ({ pass: true, observed: "always" }) };
-    expect(() =>
+    await expect(
       gate.evaluate({
         base,
         feature,
@@ -62,9 +62,9 @@ describe("FeatureJourneyGate", () => {
         viewportChecks: [],
         auditFiles: [],
       }),
-    ).toThrow(VacuousSealedCheckError);
+    ).rejects.toThrow(VacuousSealedCheckError);
     try {
-      gate.evaluate({
+      await gate.evaluate({
         base,
         feature,
         sealedChecks: [vacuous],
@@ -79,7 +79,7 @@ describe("FeatureJourneyGate", () => {
     }
   });
 
-  it("pinpoints a cross-leaf route mismatch and can repair it", () => {
+  it("pinpoints a cross-leaf route mismatch and can repair it", async () => {
     const mounts: RouteMount[] = [
       mountFromPlan({
         method: "GET",
@@ -104,7 +104,7 @@ describe("FeatureJourneyGate", () => {
       ],
     });
     expect(failure?.detail).toBe("T-Order expects /api/menu-items while T-Menu mounted /api/menu");
-    const report = gate.evaluate({
+    const report = await gate.evaluate({
       base: snapshot("base", {}),
       feature: snapshot("feature", { "src/routes.ts": 'export const routes = [{ path: "/api/menu-items" }];\n' }),
       sealedChecks: [sealed],
@@ -133,7 +133,7 @@ describe("FeatureJourneyGate", () => {
     expect(report.hint?.repair).toEqual({ fromPath: "/api/menu", toPath: "/api/menu-items" });
   });
 
-  it("runs a local API, database, and mailbox seam plus both viewports", () => {
+  it("runs a local API, database, and mailbox seam plus both viewports", async () => {
     const mounts = [
       mountFromPlan({
         method: "POST",
@@ -173,7 +173,7 @@ describe("FeatureJourneyGate", () => {
       }),
     ).toBeNull();
 
-    const report = gate.evaluate({
+    const report = await gate.evaluate({
       base: snapshot("base", {}),
       feature: snapshot("feature", { "src/routes.ts": 'export const routes = [{ path: "/api/menu-items" }];\n' }),
       sealedChecks: [sealed],
@@ -188,9 +188,9 @@ describe("FeatureJourneyGate", () => {
     expect(report.ok).toBe(true);
   });
 
-  it("stops after two fix rounds", () => {
+  it("stops after two fix rounds", async () => {
     let evaluations = 0;
-    const looping = runBoundedFixLoop({
+    const looping = await runBoundedFixLoop({
       initial: 0,
       evaluate: () => {
         evaluations += 1;
@@ -208,7 +208,7 @@ describe("FeatureJourneyGate", () => {
     expect(looping.report.ok).toBe(false);
     expect(evaluations).toBe(3);
 
-    const once = runBoundedFixLoop({
+    const once = await runBoundedFixLoop({
       initial: 0,
       evaluate: (state) =>
         emptyReport(state === 1, state === 1
