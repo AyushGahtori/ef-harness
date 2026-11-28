@@ -1,7 +1,5 @@
-import { spawnSync } from "node:child_process";
 import type { ExecutionMode, ForeignRuntimeId, SandboxTierId } from "./types.js";
 import { SupervisionError } from "./errors.js";
-import { assignWindowsJob, terminateWindowsJob } from "./windows-job.js";
 
 /**
  * Local ports for sibling tasks that are not on the foundation base.
@@ -34,10 +32,10 @@ export interface JobAssignment {
  * primitive on the sibling branch is Task 040 `WindowsJobManager`.
  */
 export interface WindowsJobSupervisorPort {
-  create(sessionId: string): JobAssignment;
-  attach(jobId: string, pid: number): void;
-  list(jobId: string): readonly number[];
-  kill(jobId: string, reason: string): readonly number[];
+  create(sessionId: string): JobAssignment | Promise<JobAssignment>;
+  attach(jobId: string, pid: number): void | Promise<void>;
+  list(jobId: string): readonly number[] | Promise<readonly number[]>;
+  kill(jobId: string, reason: string): readonly number[] | Promise<readonly number[]>;
 }
 
 export interface SandboxTierChoice {
@@ -161,9 +159,6 @@ export class PidTrackingJobSupervisor implements WindowsJobSupervisorPort {
     if (!Number.isInteger(pid) || pid <= 0) {
       throw new SupervisionError("invalid_pid", "Job attach requires a positive pid");
     }
-    if (process.platform === "win32" && !assignWindowsJob(jobId, pid)) {
-      throw new SupervisionError("job_assign", `Could not assign pid ${pid} to ${jobId}`);
-    }
     pids.add(pid);
   }
 
@@ -173,10 +168,7 @@ export class PidTrackingJobSupervisor implements WindowsJobSupervisorPort {
 
   kill(jobId: string, reason: string): readonly number[] {
     const pids = [...this.require(jobId)];
-    const closed = terminateWindowsJob(jobId);
-    if (!closed) {
-      for (const pid of pids) killProcessTree(pid);
-    }
+    for (const pid of pids) killProcessTree(pid);
     this.jobs.set(jobId, new Set());
     void reason;
     return pids;
@@ -191,23 +183,13 @@ export class PidTrackingJobSupervisor implements WindowsJobSupervisorPort {
 
 export function killProcessTree(pid: number): void {
   if (!Number.isInteger(pid) || pid <= 0) return;
-  if (process.platform === "win32") {
+  if (process.platform !== "win32") {
     try {
-      process.kill(pid, "SIGKILL");
+      process.kill(-pid, "SIGKILL");
+      return;
     } catch (error) {
-      if (!isMissingProcess(error)) {
-        spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-          windowsHide: true,
-          stdio: "ignore",
-        });
-        return;
-      }
+      if (!isMissingProcess(error)) throw error;
     }
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
-    return;
   }
   try {
     process.kill(pid, "SIGKILL");
@@ -228,14 +210,15 @@ export class LocalSandboxTierSelector implements SandboxTierSelectorPort {
 }
 
 export class LocalLoopbackAllowlistProxy implements LoopbackAllowlistProxyPort {
-  constructor(private readonly endpoint = "http://127.0.0.1:9") {}
+  constructor(private readonly endpoint = "") {}
 
   bind(input: { readonly sessionId: string; readonly tier: SandboxTierId }): ProxyBinding {
+    const endpoint = this.endpoint.length > 0 ? this.endpoint : `http://127.0.0.1/proxy/${input.sessionId}`;
     return {
-      endpoint: this.endpoint,
+      endpoint,
       env: {
-        HTTP_PROXY: this.endpoint,
-        HTTPS_PROXY: this.endpoint,
+        HTTP_PROXY: endpoint,
+        HTTPS_PROXY: endpoint,
         NO_PROXY: "127.0.0.1,localhost",
         EF_HARNESS_PROXY_SESSION: input.sessionId,
         EF_HARNESS_SANDBOX_TIER: input.tier,
@@ -248,7 +231,7 @@ export class LocalLeasedMcpServer implements LeasedMcpServerPort {
   lease(input: { readonly sessionId: string; readonly tools: readonly string[] }): McpLease {
     return {
       leaseId: `lease-${input.sessionId}`,
-      endpoint: `http://127.0.0.1:9/mcp/${input.sessionId}`,
+      endpoint: `http://127.0.0.1/mcp/${input.sessionId}`,
       tools: input.tools,
     };
   }

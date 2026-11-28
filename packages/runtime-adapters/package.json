@@ -18,7 +18,14 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/corpus": "workspace:*",
+    "@ef-harness/db": "workspace:*",
+    "@ef-harness/governor": "workspace:*",
+    "@ef-harness/mcp-server": "workspace:*",
+    "@ef-harness/providers": "workspace:*",
+    "@ef-harness/sandbox": "workspace:*",
+    "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/shared-observability": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

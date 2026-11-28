@@ -10,7 +10,28 @@
   ],
   "references": [
     {
+      "path": "../../corpus"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../governor"
+    },
+    {
+      "path": "../mcp-server"
+    },
+    {
+      "path": "../providers"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../shared-observability"
     }
   ]
 }

@@ -1,5 +1,4 @@
 import { SupervisionError } from "./errors.js";
-import type { NormalizedRuntimeEvent } from "./runtime-event.js";
 import type { ExecutionMode, ForeignRuntimeId, NormalizedUsage, PermissionReply, SandboxTierId } from "./types.js";
 
 export const AGENT_RUNTIME_ADAPTER_METHODS = [
@@ -7,12 +6,12 @@ export const AGENT_RUNTIME_ADAPTER_METHODS = [
   "authStatus",
   "startSession",
   "sendTurn",
-  "steer",
   "interrupt",
   "resume",
-  "events",
   "respondPermission",
   "usage",
+  "terminate",
+  "dispose",
 ] as const;
 
 export type AgentRuntimeAdapterMethod = (typeof AGENT_RUNTIME_ADAPTER_METHODS)[number];
@@ -61,6 +60,10 @@ export interface SessionStartSpec {
   readonly resumeSupported?: boolean;
   readonly command?: string;
   readonly args?: readonly string[];
+  readonly attemptId?: string;
+  readonly taskId?: string;
+  readonly modelId?: string;
+  readonly connectionId?: string;
 }
 
 export interface SessionHandle {
@@ -113,15 +116,15 @@ export interface ResumeResult {
 export interface AgentRuntimeAdapter {
   readonly runtime: ForeignRuntimeId;
   probe(): Promise<ProbeResult>;
-  authStatus(): Promise<AuthStatus>;
+  authStatus(connectionId?: string): Promise<AuthStatus>;
   startSession(spec: SessionStartSpec): Promise<SessionHandle>;
   sendTurn(sessionId: string, briefOrPrompt: string): Promise<TurnReceipt>;
-  steer(sessionId: string, deltaNote: string): Promise<SteerReceipt>;
   interrupt(sessionId: string): Promise<InterruptResult>;
   resume(sessionId: string, checkpointRef: string): Promise<ResumeResult>;
-  events(sessionId: string): AsyncIterable<NormalizedRuntimeEvent>;
-  respondPermission(sessionId: string, requestId: string, decision: PermissionReply): PermissionReply;
-  usage(sessionId: string): NormalizedUsage;
+  respondPermission(sessionId: string, requestId: string, decision: PermissionReply): Promise<PermissionReply>;
+  usage(sessionId: string): Promise<NormalizedUsage>;
+  terminate(sessionId: string): Promise<InterruptResult>;
+  dispose(): Promise<void>;
 }
 
 export function assertAgentRuntimeAdapter(value: unknown): asserts value is AgentRuntimeAdapter {

@@ -235,11 +235,11 @@ describe("supervised runtime", () => {
       path: "src/api/orders.ts",
     });
     expect(allowed.effect).toBe("allow");
-    expect(adapter.respondPermission("session-1", "allow-1", { effect: "allow" }).effect).toBe("allow");
+    expect((await adapter.respondPermission("session-1", "allow-1", { effect: "allow" })).effect).toBe("allow");
 
     const denied = adapter.requestPermission("session-1", "deny-1", { kind: "edit", path: "nope.ts" });
     expect(denied.effect).toBe("deny");
-    expect(adapter.respondPermission("session-1", "deny-1", { effect: "allow" }).effect).toBe("deny");
+    expect((await adapter.respondPermission("session-1", "deny-1", { effect: "allow" })).effect).toBe("deny");
 
     adapter.ingest("session-1", {
       source: "claude",
@@ -249,7 +249,7 @@ describe("supervised runtime", () => {
         usage: { input_tokens: 4, output_tokens: 6 },
       },
     });
-    expect(adapter.usage("session-1")).toMatchObject({ inputTokens: 4, outputTokens: 6, costMicroUsd: 2_000_000 });
+    expect(await adapter.usage("session-1")).toMatchObject({ inputTokens: 4, outputTokens: 6, costMicroUsd: 2_000_000 });
   });
 
   it("denies pending permissions and kills the job when the user stops", async () => {

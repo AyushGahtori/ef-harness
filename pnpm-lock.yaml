@@ -155,6 +155,9 @@ importers:
       '@ef-harness/planner':
         specifier: workspace:*
         version: link:../../packages/planner
+      '@ef-harness/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
@@ -218,6 +221,9 @@ importers:
         specifier: ^19.0.0
         version: 19.3.1(react@19.3.1)
     devDependencies:
+      '@ef-harness/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -738,9 +744,30 @@ importers:
 
   packages/runtime-adapters:
     dependencies:
+      '@ef-harness/corpus':
+        specifier: workspace:*
+        version: link:../../corpus
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/governor':
+        specifier: workspace:*
+        version: link:../governor
+      '@ef-harness/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      '@ef-harness/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../shared-observability
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

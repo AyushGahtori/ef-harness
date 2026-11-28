@@ -24,6 +24,33 @@ export type RouteComplianceStatus =
   | "disabled_by_policy"
   | "route_revoked";
 
+export type GuardBillingClass = "local_free" | "subscription" | "pay_per_token" | "copilot_overage";
+
+export type GuardConnectionStatus =
+  | "healthy"
+  | "exhausted"
+  | "expired"
+  | "route_revoked"
+  | "failed"
+  | "crashed"
+  | "paused";
+
+export interface GuardConnectionView {
+  readonly id: string;
+  readonly label: string;
+  readonly provider: string;
+  readonly family: string;
+  readonly billingClass: GuardBillingClass;
+  readonly costRank: number;
+  readonly costEstimate: string;
+  readonly status: GuardConnectionStatus;
+  readonly routable: boolean;
+}
+
+/**
+ * Same request `NoSilentPaidFallbackGuard.evaluate` consumes after
+ * `evaluateScreenFallback` resolves active and candidate connections.
+ */
 export interface FallbackGuardPort {
   evaluate(input: {
     readonly activeId: string;
@@ -34,6 +61,7 @@ export interface FallbackGuardPort {
     readonly spentMicroUsd: number;
     readonly incomingMicroUsd: number;
     readonly userConsent: boolean;
+    readonly connections: readonly GuardConnectionView[];
   }): {
     readonly outcome: "allow" | "block";
     readonly message: string;

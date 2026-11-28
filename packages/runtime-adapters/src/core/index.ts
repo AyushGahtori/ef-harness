@@ -118,6 +118,7 @@ export { translateForeignEvent, type ForeignRawEvent, type Translation } from ".
 export { MandatorySandboxSupervisor, type SandboxEnvelope, type SandboxPrepareInput } from "./sandbox.js";
 
 export { spawnForeignProcess, type ForeignProcess, type ForeignSpawnRequest } from "./spawn.js";
+export { MemoryEnvProcessRegistry, OsJobSupervisor, supervisionCatalog } from "./os-supervision.js";
 
 export { MemoryTurnLog, type TurnLogEntry, type TurnLogStream } from "./turn-log.js";
 

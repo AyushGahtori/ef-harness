@@ -169,6 +169,8 @@ export {
   BuildStopRequestSchema,
   ChatSendParamsSchema,
   ChatSendRequestSchema,
+  ConnectionsSaveKeyParamsSchema,
+  ConnectionsUsageParamsSchema,
   DaemonNotificationSchema,
   DiagExportParamsSchema,
   DiagExportRequestSchema,

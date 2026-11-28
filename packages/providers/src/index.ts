@@ -10,9 +10,20 @@ export function packageIdentity(): {
 
 export {
   ApiConnectionManager,
+  LocalBudgetLedger,
+  LocalGlobalDbConnections as ApiKeyGlobalDbConnections,
   ZeroTokenApiKeyValidator,
 } from "./api-keys/index.js";
-export { SignedProviderPolicyEngine } from "./policy/index.js";
+export {
+  ANTHROPIC_COMPLIANCE_MESSAGE,
+  CompliancePolicyLocks,
+  SignedProviderPolicyEngine,
+} from "./policy/index.js";
+export {
+  NoSilentPaidFallbackGuard,
+  evaluateScreenFallback,
+} from "./fallback-guard/index.js";
+export * as fallbackGuard from "./fallback-guard/index.js";
 export { SignInWithChatGptAuthFlow } from "./siwc/index.js";
 export { BrokerOpenRouterConnections, BrokerOpenRouterVault } from "./openrouter-local/index.js";
 export {

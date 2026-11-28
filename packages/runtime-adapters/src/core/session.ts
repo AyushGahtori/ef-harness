@@ -172,7 +172,8 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     };
   }
 
-  async authStatus(): Promise<AuthStatus> {
+  async authStatus(connectionId?: string): Promise<AuthStatus> {
+    void connectionId;
     return this.readAuth();
   }
 
@@ -217,7 +218,7 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     try {
       this.caps.spawn({ sessionId: spec.sessionId, runtime: this.runtime });
     } catch (error) {
-      this.sandbox.kill(envelope.jobId, "session_cap");
+      await this.sandbox.kill(envelope.jobId, "session_cap");
       throw error;
     }
     let child: ForeignProcess | null = null;
@@ -230,11 +231,11 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
         env: environment,
         jobId: envelope.jobId,
       });
-      this.sandbox.attach(envelope.jobId, child.pid);
+      await this.sandbox.attach(envelope.jobId, child.pid);
       child.release();
     } catch (error) {
       this.caps.endSession(spec.sessionId);
-      this.sandbox.kill(envelope.jobId, "spawn_failed");
+      await this.sandbox.kill(envelope.jobId, "spawn_failed");
       if (child) killProcessTree(child.pid);
       throw error;
     }
@@ -295,7 +296,8 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
 
   async interrupt(sessionId: string): Promise<InterruptResult> {
     const started = performance.now();
-    const settled = this.settle(sessionId, "stopped", null, USER_STOPPED_REASON);
+    const settled = await Promise.resolve(this.settle(sessionId, "stopped", null, USER_STOPPED_REASON));
+    await waitUntilReaped(settled.killedPids);
     return {
       sessionId,
       denied: settled.denied,
@@ -317,7 +319,27 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     return this.bus.subscribe(sessionId);
   }
 
-  respondPermission(sessionId: string, requestId: string, decision: PermissionReply): PermissionReply {
+  respondPermission(sessionId: string, requestId: string, decision: PermissionReply): Promise<PermissionReply> {
+    return Promise.resolve(this.replyPermission(sessionId, requestId, decision));
+  }
+
+  usage(sessionId: string): Promise<NormalizedUsage> {
+    return Promise.resolve(this.require(sessionId).usage);
+  }
+
+  terminate(sessionId: string): Promise<InterruptResult> {
+    return this.interrupt(sessionId);
+  }
+
+  async dispose(): Promise<void> {
+    for (const sessionId of [...this.sessions.keys()]) {
+      const live = this.sessions.get(sessionId);
+      if (live && !live.settled) await this.terminate(sessionId);
+    }
+    this.sessions.clear();
+  }
+
+  private replyPermission(sessionId: string, requestId: string, decision: PermissionReply): PermissionReply {
     const live = this.require(sessionId);
     const pending = live.pending.get(requestId);
     if (!pending) {
@@ -333,10 +355,6 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
         : { type: "permission_decided", requestId, effect: reply.effect, reason: reply.reason },
     );
     return reply;
-  }
-
-  usage(sessionId: string): NormalizedUsage {
-    return this.require(sessionId).usage;
   }
 
   requestPermission(sessionId: string, requestId: string, request: SupervisionRequest): PolicyDecision {
@@ -373,7 +391,8 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     child.onExit((code) => {
       stdout.flush(append("stdout"));
       stderr.flush(append("stderr"));
-      this.settle(sessionId, exitDisposition(code), code, "session_exited");
+      const settled = this.settle(sessionId, exitDisposition(code), code, "session_exited");
+      if (isPromise(settled)) void settled;
     });
   }
 
@@ -382,16 +401,29 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     disposition: SessionDisposition,
     exitCode: number | null,
     denyReason: string,
-  ): SettleResult {
+  ): SettleResult | Promise<SettleResult> {
     const live = this.require(sessionId);
     if (live.settled) return { denied: [], killedPids: [] };
     const denied: { requestId: string; reason: string }[] = [];
     for (const requestId of [...live.pending.keys()]) {
-      const reply = this.respondPermission(sessionId, requestId, { effect: "deny", reason: denyReason });
+      const reply = this.replyPermission(sessionId, requestId, { effect: "deny", reason: denyReason });
       denied.push({ requestId, reason: reply.reason ?? denyReason });
     }
     live.settled = true;
-    const killedPids = this.sandbox.kill(live.handle.jobId, disposition);
+    const killed = this.sandbox.kill(live.handle.jobId, disposition);
+    if (isPromise(killed)) {
+      return killed.then((killedPids) => this.completeSettle(sessionId, disposition, exitCode, denied, killedPids));
+    }
+    return this.completeSettle(sessionId, disposition, exitCode, denied, killed);
+  }
+
+  private completeSettle(
+    sessionId: string,
+    disposition: SessionDisposition,
+    exitCode: number | null,
+    denied: { requestId: string; reason: string }[],
+    killedPids: readonly number[],
+  ): SettleResult {
     this.caps.markBusy(sessionId, false);
     this.caps.endSession(sessionId);
     this.emit(sessionId, {
@@ -408,9 +440,9 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     if (live.settled) return;
     live.settled = true;
     for (const requestId of [...live.pending.keys()]) {
-      this.respondPermission(live.handle.sessionId, requestId, { effect: "deny", reason: "session_exited" });
+      this.replyPermission(live.handle.sessionId, requestId, { effect: "deny", reason: "session_exited" });
     }
-    this.sandbox.kill(live.handle.jobId, disposition);
+    void this.sandbox.kill(live.handle.jobId, disposition);
     this.caps.markBusy(live.handle.sessionId, false);
     this.caps.endSession(live.handle.sessionId);
     this.bus.close(live.handle.sessionId);
@@ -447,6 +479,26 @@ export class SupervisedAgentRuntime implements AgentRuntimeAdapter {
     const live = this.require(sessionId);
     if (live.settled) throw new SupervisionError("session_closed", `Session ${sessionId} is closed`);
     return live;
+  }
+}
+
+function isPromise<T>(value: T | Promise<T>): value is Promise<T> {
+  return typeof (value as Promise<T> | undefined)?.then === "function";
+}
+
+async function waitUntilReaped(pids: readonly number[]): Promise<void> {
+  const deadline = Date.now() + 400;
+  for (;;) {
+    const pending = pids.some((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        return Boolean(error && typeof error === "object" && "code" in error && error.code === "EPERM");
+      }
+    });
+    if (!pending || Date.now() >= deadline) return;
+    await new Promise((resolve) => setTimeout(resolve, 15));
   }
 }
 

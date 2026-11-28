@@ -104,6 +104,8 @@ export {
   CcrV1Schema,
   ChatSendParamsSchema,
   ChatSendRequestSchema,
+  ConnectionsSaveKeyParamsSchema,
+  ConnectionsUsageParamsSchema,
   CheckCountsSchema,
   CheckOutcomeSchema,
   CheckpointUpcasterRegistry,
@@ -631,3 +633,16 @@ export type {
   TraceContext,
   TraceContextSource,
 } from "./telemetry/index.js";
+export { USAGE_RECEIPT_SCHEMA, UsageReceiptLedger, publicUsageReceipt } from "./usage-receipt-ledger.js";
+export type {
+  UsageApiAggregate,
+  UsageCurrency,
+  UsageLocalAggregate,
+  UsagePhase,
+  UsageReceiptInput,
+  UsageReceiptQuery,
+  UsageReceiptRow,
+  UsageWindowAggregate,
+  WindowKind as UsageWindowKind,
+  PricingSource as UsagePricingSource,
+} from "./usage-receipt-ledger.js";

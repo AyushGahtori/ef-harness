@@ -343,6 +343,26 @@ export const JsonRpcRequestSchema = withinJsonByteLimit(
 
 export const RpcRequestSchema = JsonRpcRequestSchema;
 
+export const ConnectionsSaveKeyParamsSchema = z
+  .object({
+    projectId: z.string().min(1).max(256),
+    label: z.string().min(1).max(256),
+    rawKey: z.string().min(1).max(4096),
+    provider: z.string().min(1).max(64),
+  })
+  .strict();
+
+export const ConnectionsUsageParamsSchema = z
+  .object({
+    op: z.enum(["insert", "summarize"]),
+    receipts: z.array(z.record(z.string(), z.unknown())).max(10_000).optional(),
+    currency: z.enum(["micro_usd", "allowance_ppm", "local"]).optional(),
+    search: z.string().max(256).optional(),
+    limit: z.number().int().nonnegative().max(10_000).optional(),
+    offset: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 export const EventsBatchParamsSchema = z
   .object({
     from_seq: nonNegativeIntSchema,

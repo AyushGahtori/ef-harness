@@ -38,7 +38,14 @@ export {
 export { h, tone, NUMERIC } from "./dom.js";
 export { formatCountdown, formatMicroUsd, percentFromPpm } from "./format.js";
 export { moveFocus, type KeyInput } from "./keyboard.js";
-export { detectPastedKeyProvider, pastedProviderLabel, type PastedKeyProvider } from "./key-detect.js";
+export {
+  ANTHROPIC_COMPLIANCE_MESSAGE,
+  anthropicPasteRejection,
+  detectPastedKeyProvider,
+  pastedProviderLabel,
+  type PastedKeyProvider,
+} from "./key-detect.js";
+export { connectionKeyHandoff, postUsageReceipts, type ConnectionsMessagePort } from "./ipc.js";
 export type {
   CardModel,
   ConnectionsViewModel,
@@ -53,6 +60,9 @@ export {
   type ConnectionProbeResult,
   type ExplicitFallbackOrderItem,
   type FallbackGuardPort,
+  type GuardBillingClass,
+  type GuardConnectionStatus,
+  type GuardConnectionView,
   type ProbeKind,
   type RouteComplianceStatus,
   type SettingsNavigationPort,
@@ -72,7 +82,7 @@ export {
 } from "./receipts.js";
 export { ConnectionsManagementScreen, type ExplicitFallbackRule, type ScreenConnection, type ConnectionsScreenOptions } from "./screen.js";
 export { ConnectionsScreenView, renderConnectionsHtml } from "./screen-view.js";
-export { EphemeralKeyBuffer, maskSecret, type SecretVault } from "./secrets.js";
+export { EphemeralKeyBuffer, maskSecret, type ConnectionKeyHandoff } from "./secrets.js";
 export {
   DARK_THEME,
   LIGHT_THEME,

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import type { TelemetryDb } from "@ef-harness/db";
+import { ConnectionsSaveKeyParamsSchema, ConnectionsUsageParamsSchema, type UsageReceiptInput } from "@ef-harness/shared-contracts";
 import {
   BINARY_CHUNK_BYTES,
   CURRENT_PROTOCOL,
@@ -56,6 +57,7 @@ import {
   type InspectorInboxContext,
 } from "../cockpit/inspector-inbox.js";
 import { recordHealthMetric } from "../cockpit/telemetry.js";
+import { insertUsageReceipts, loadUsageLedger, saveConnectionKey } from "../connections/usage-and-keys.js";
 import { handleIntegratedMethod, handleLifecycleMethod } from "../server.js";
 import { isM1View, sha256, SimulatedTask, type M1View } from "./task-run.js";
 
@@ -426,6 +428,11 @@ export class HarnessDaemon {
     if (method === "readResult") return readResult(this.inspectorContext(), record);
     if (method === "reconcile") return reconcileQuestion(this.inspectorContext(), record);
     if (method === "storeSecret") return storeSecret(this.inspectorContext(), record);
+    if (method === "connections.saveKey") {
+      const params = ConnectionsSaveKeyParamsSchema.parse(record);
+      return saveConnectionKey(this.inspectorContext(), params);
+    }
+    if (method === "connections.usage") return this.usageReceipts(record);
     if (method === "runProbe") return runProbe(this.inspectorContext(), record);
     throw new RpcError(RPC_METHOD_NOT_FOUND, `method not found: ${method}`);
   }
@@ -511,6 +518,30 @@ export class HarnessDaemon {
       });
     }
     return result;
+  }
+
+  private usageReceipts(params: Record<string, unknown>): unknown {
+    const parsed = ConnectionsUsageParamsSchema.parse(params);
+    this.requireBundle();
+    const telemetry = this.telemetryDb();
+    if (parsed.op === "insert") {
+      return insertUsageReceipts(telemetry, (parsed.receipts ?? []) as unknown as UsageReceiptInput[]);
+    }
+    const ledger = loadUsageLedger(telemetry);
+    const currency = parsed.currency ?? "micro_usd";
+    const search = parsed.search ?? "";
+    return {
+      total: ledger.count({ currency, search }),
+      rows: ledger.page({
+        currency,
+        search,
+        limit: parsed.limit ?? 80,
+        offset: parsed.offset ?? 0,
+      }),
+      api: ledger.apiAggregates(),
+      windows: ledger.windowAggregates(),
+      local: ledger.localAggregate(),
+    };
   }
 
   private recordMetric(params: Record<string, unknown>): unknown {

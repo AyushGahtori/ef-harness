@@ -32,12 +32,12 @@ describe("NormalizedRuntimeEventBus", () => {
       "authStatus",
       "startSession",
       "sendTurn",
-      "steer",
       "interrupt",
       "resume",
-      "events",
       "respondPermission",
       "usage",
+      "terminate",
+      "dispose",
     ]);
   });
 

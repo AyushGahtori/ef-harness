@@ -73,6 +73,7 @@ function spawnDirect(request: ForeignSpawnRequest): ChildProcess {
     env: { ...request.env },
     shell: false,
     windowsHide: true,
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (!child.pid || child.pid <= 0) {

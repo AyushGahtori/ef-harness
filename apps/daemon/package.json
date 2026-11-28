@@ -22,6 +22,7 @@
     "@ef-harness/governor": "workspace:*",
     "@ef-harness/ipc": "workspace:*",
     "@ef-harness/planner": "workspace:*",
+    "@ef-harness/providers": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
     "@ef-harness/steering": "workspace:*"
   },

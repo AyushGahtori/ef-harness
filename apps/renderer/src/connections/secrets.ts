@@ -4,8 +4,12 @@ export function maskSecret(raw: string): string {
   return `••••${trimmed.slice(-4)}`;
 }
 
-export interface SecretVault {
-  put(secret: string): string;
+/**
+ * One-way handoff. The renderer posts the paste to harnessd and drops the buffer.
+ * It does not keep a vault handle.
+ */
+export interface ConnectionKeyHandoff {
+  save(raw: string, provider: string): { readonly vaultRef: string };
 }
 
 export class EphemeralKeyBuffer {
@@ -19,14 +23,18 @@ export class EphemeralKeyBuffer {
     return this.value;
   }
 
-  save(vault: SecretVault): { readonly vaultRef: string; readonly masked: string } {
+  clear(): void {
+    this.value = null;
+  }
+
+  save(handoff: ConnectionKeyHandoff, provider: string): { readonly vaultRef: string; readonly masked: string } {
     const raw = this.value;
     if (raw === null || raw.trim().length === 0) {
       throw new Error("No key to save");
     }
-    const vaultRef = vault.put(raw);
+    const saved = handoff.save(raw, provider);
     const masked = maskSecret(raw);
     this.value = null;
-    return { vaultRef, masked };
+    return { vaultRef: saved.vaultRef, masked };
   }
 }

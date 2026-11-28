@@ -22,6 +22,9 @@
       "path": "../../packages/planner"
     },
     {
+      "path": "../../packages/providers"
+    },
+    {
       "path": "../../packages/shared-contracts"
     },
     {

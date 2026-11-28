@@ -44,7 +44,7 @@ export class MandatorySandboxSupervisor {
     if (input.choice.hold) {
       throw new SupervisionError("sandbox_unavailable", input.choice.reason);
     }
-    const job = this.jobs.create(input.sessionId);
+    const job = await this.jobs.create(input.sessionId);
     const proxy = await this.proxy.bind({ sessionId: input.sessionId, tier: input.choice.tier });
     const lease = await this.mcp.lease({
       sessionId: input.sessionId,
@@ -62,11 +62,11 @@ export class MandatorySandboxSupervisor {
     };
   }
 
-  attach(jobId: string, pid: number): void {
-    this.jobs.attach(jobId, pid);
+  attach(jobId: string, pid: number): void | Promise<void> {
+    return this.jobs.attach(jobId, pid);
   }
 
-  kill(jobId: string, reason: string): readonly number[] {
+  kill(jobId: string, reason: string): readonly number[] | Promise<readonly number[]> {
     return this.jobs.kill(jobId, reason);
   }
 }

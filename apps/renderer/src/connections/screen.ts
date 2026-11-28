@@ -11,15 +11,18 @@ import {
 } from "./catalog.js";
 import { formatMicroUsd } from "./format.js";
 import { moveFocus, type KeyInput } from "./keyboard.js";
-import { detectPastedKeyProvider, pastedProviderLabel } from "./key-detect.js";
+import { anthropicPasteRejection, detectPastedKeyProvider, pastedProviderLabel } from "./key-detect.js";
 import type { ConnectionsViewModel, HealthRowModel } from "./model.js";
 import {
   probeKindFor,
   type ConnectionProbePort,
   type FallbackGuardPort,
+  type GuardBillingClass,
+  type GuardConnectionStatus,
+  type GuardConnectionView,
   type RouteComplianceStatus,
 } from "./ports.js";
-import { EphemeralKeyBuffer, type SecretVault } from "./secrets.js";
+import { EphemeralKeyBuffer, type ConnectionKeyHandoff } from "./secrets.js";
 import { layoutForWidth } from "./theme.js";
 
 export interface ScreenConnection {
@@ -101,6 +104,39 @@ function copyConnection(input: ScreenConnection): LiveConnection {
   };
 }
 
+function billingClassFor(badge: ScreenConnection["billingTypeBadge"]): GuardBillingClass {
+  if (badge === "Local Free") return "local_free";
+  if (badge === "Subscription") return "subscription";
+  return "pay_per_token";
+}
+
+function guardStatus(row: LiveConnection): GuardConnectionStatus {
+  if (row.paused) return "paused";
+  const badge = row.statusBadge.toLowerCase();
+  if (badge.includes("revoked")) return "route_revoked";
+  if (badge.includes("exhaust")) return "exhausted";
+  if (badge.includes("expired")) return "expired";
+  if (badge.includes("crash")) return "crashed";
+  if (badge.includes("fail")) return "failed";
+  return "healthy";
+}
+
+function guardConnection(row: LiveConnection): GuardConnectionView {
+  const billingClass = billingClassFor(row.billingTypeBadge);
+  const status = guardStatus(row);
+  return {
+    id: row.id,
+    label: row.label,
+    provider: row.provider,
+    family: row.family,
+    billingClass,
+    costRank: billingClass === "local_free" ? 0 : billingClass === "subscription" ? 1 : 2,
+    costEstimate: row.allowanceLabel,
+    status,
+    routable: status === "healthy",
+  };
+}
+
 function expiryWarning(row: LiveConnection, nowMs: number): string | null {
   if (row.provider !== "cursor" || row.expiresAtMs === null) return null;
   const days = Math.ceil((row.expiresAtMs - nowMs) / 86_400_000);
@@ -118,6 +154,7 @@ export class ConnectionsManagementScreen {
   private themeName: "light" | "dark";
   private width: number;
   private neverFallbackWithoutAsking = true;
+  private pasteRejection: string | null = null;
   private geminiNoticeAccepted = false;
   private geminiEnabled = false;
   private geminiBlockReason: string | null = null;
@@ -170,16 +207,28 @@ export class ConnectionsManagementScreen {
     return this.buffer.held();
   }
 
-  beginPaste(raw: string): { readonly provider: string | null } {
+  beginPaste(raw: string): { readonly provider: string | null; readonly message: string | null } {
+    const rejection = anthropicPasteRejection(raw);
+    this.maskedDraft = null;
+    if (rejection) {
+      this.buffer.clear();
+      this.detectedProvider = null;
+      this.pasteRejection = rejection;
+      return { provider: null, message: rejection };
+    }
+    this.pasteRejection = null;
     this.buffer.set(raw);
     const detected = detectPastedKeyProvider(raw);
     this.detectedProvider = detected ? pastedProviderLabel(detected) : null;
-    this.maskedDraft = null;
-    return { provider: this.detectedProvider };
+    return { provider: this.detectedProvider, message: null };
   }
 
-  savePaste(vault: SecretVault): { readonly vaultRef: string; readonly masked: string; readonly provider: string | null } {
-    const saved = this.buffer.save(vault);
+  savePaste(handoff: ConnectionKeyHandoff): { readonly vaultRef: string; readonly masked: string; readonly provider: string | null } {
+    if (this.pasteRejection) throw new Error(this.pasteRejection);
+    const raw = this.buffer.held();
+    const detected = raw ? detectPastedKeyProvider(raw) : null;
+    if (!raw || !detected) throw new Error("No key to save");
+    const saved = this.buffer.save(handoff, detected);
     this.maskedDraft = saved.masked;
     const provider = this.detectedProvider;
     if (provider) {
@@ -343,6 +392,7 @@ export class ConnectionsManagementScreen {
       spentMicroUsd,
       incomingMicroUsd,
       userConsent: false,
+      connections: this.guardConnections(),
     });
     if (decision.outcome === "block") {
       this.stopCard = {
@@ -371,6 +421,7 @@ export class ConnectionsManagementScreen {
       spentMicroUsd,
       incomingMicroUsd,
       userConsent: true,
+      connections: this.guardConnections(),
     });
     if (decision.outcome === "block") {
       this.stopCard = {
@@ -471,6 +522,10 @@ export class ConnectionsManagementScreen {
       focusId: this.focusId,
       focusOrder: this.focusOrder(),
     };
+  }
+
+  private guardConnections(): GuardConnectionView[] {
+    return this.live().map((row) => guardConnection(row));
   }
 
   private live(): LiveConnection[] {

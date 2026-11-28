@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { NoSilentPaidFallbackGuard, evaluateScreenFallback } from "@ef-harness/providers";
 import {
   CLAUDE_CODE_NOTICE,
   ConnectionsManagementScreen,
@@ -10,6 +11,7 @@ import {
   NO_CONNECTIONS_BANNER,
   ORACLE_FAMILY_NOTE,
   PRIMARY_CARDS,
+  ANTHROPIC_COMPLIANCE_MESSAGE,
   auditConnectionsHtml,
   containsForbiddenProvider,
   detectPastedKeyProvider,
@@ -75,7 +77,7 @@ describe("ConnectionsManagementScreen", () => {
   });
 
   it("detects pasted keys, masks the field, and drops the raw value on save", () => {
-    const anthropic = `${"sk-ant"}${"-"}sample8841`;
+    const anthropic = `${["sk", "-ant", "-api"].join("")}sample8841`;
     const openai = `${"sk-proj"}${"-"}sample8841`;
     const openrouter = `${"sk-or-v1"}${"-"}sample8841`;
     const gemini = "AIzaSample8841";
@@ -89,7 +91,7 @@ describe("ConnectionsManagementScreen", () => {
     expect(renderConnectionsHtml(screen.snapshot())).not.toContain(anthropic);
     expect(renderConnectionsHtml(screen.snapshot())).toContain('type="password"');
     expect(renderConnectionsHtml(screen.snapshot())).toContain('autocomplete="off"');
-    const saved = screen.savePaste({ put: () => "vault-ref-sample" });
+    const saved = screen.savePaste({ save: () => ({ vaultRef: "vault-ref-sample" }) });
     expect(saved.masked).toBe("••••8841");
     expect(saved.masked).not.toBe(anthropic);
     expect(screen.secretHeld()).toBeNull();
@@ -97,6 +99,20 @@ describe("ConnectionsManagementScreen", () => {
     expect(html).not.toContain(anthropic);
     expect(html).not.toContain("vault-ref-sample");
     expect(html).toContain("••••8841");
+  });
+
+  it("rejects a subscription oauth paste before it can be saved", () => {
+    const oat = `${["sk", "-ant", "-oat"].join("")}01sample8841`;
+    const screen = new ConnectionsManagementScreen();
+    const paste = screen.beginPaste(oat);
+    expect(detectPastedKeyProvider(oat)).toBeNull();
+    expect(paste.provider).toBeNull();
+    expect(paste.message).toBe(ANTHROPIC_COMPLIANCE_MESSAGE);
+    expect(screen.secretHeld()).toBeNull();
+    expect(renderConnectionsHtml(screen.snapshot())).not.toContain(oat);
+    expect(() => screen.savePaste({ save: () => ({ vaultRef: "vault-ref-sample" }) })).toThrow(
+      ANTHROPIC_COMPLIANCE_MESSAGE,
+    );
   });
 
   it("shows live health, reserve, caps, cursor expiry, and the test drawer", async () => {
@@ -302,7 +318,38 @@ describe("ConnectionsManagementScreen", () => {
       spentMicroUsd: 100,
       incomingMicroUsd: 50,
       userConsent: false,
+      connections: [
+        {
+          id: "chatgpt",
+          label: "ChatGPT Plus",
+          provider: "chatgpt",
+          family: "openai",
+          billingClass: "subscription",
+          costRank: 1,
+          costEstimate: "18% of weekly share",
+          status: "healthy",
+          routable: true,
+        },
+        {
+          id: "openrouter",
+          label: "OpenRouter",
+          provider: "openrouter",
+          family: "openrouter",
+          billingClass: "pay_per_token",
+          costRank: 2,
+          costEstimate: "18% of weekly share",
+          status: "healthy",
+          routable: true,
+        },
+      ],
     });
+    expect(seen).not.toBeNull();
+    if (seen) {
+      const decision = evaluateScreenFallback(new NoSilentPaidFallbackGuard(), seen);
+      expect(decision.outcome).toBe("allow");
+      expect(decision.parked).toBe(false);
+      expect(decision.costEstimate.length).toBeGreaterThan(0);
+    }
   });
 
   it("navigates every control from the keyboard and meets WCAG AA in both themes", () => {
