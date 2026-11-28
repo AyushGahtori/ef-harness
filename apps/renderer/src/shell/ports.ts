@@ -20,7 +20,29 @@ export type ShellDownlink =
     }
   | { jsonrpc: "2.0"; method: "disconnected" };
 
-export type ShellPortMessage = JsonRpcRequest | ShellDownlink;
+export interface TelemetryMetricMessage {
+  jsonrpc: "2.0";
+  id: number;
+  method: "telemetry.metric";
+  params: {
+    attempt: string | null;
+    ts: number;
+    kind: "metric";
+    data: unknown;
+  };
+}
+
+export interface CockpitExplainMessage {
+  jsonrpc: "2.0";
+  id: number;
+  method: "cockpit.explain";
+  params: {
+    contractId: "cockpit-explainer@1";
+    modelOutput: unknown;
+  };
+}
+
+export type ShellPortMessage = JsonRpcRequest | ShellDownlink | TelemetryMetricMessage | CockpitExplainMessage;
 
 /**
  * Preload MessagePort handed across by the desktop utility process.

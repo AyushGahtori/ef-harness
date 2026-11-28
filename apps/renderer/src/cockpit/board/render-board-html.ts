@@ -23,7 +23,7 @@ const MODES = [
   ["by_connection", "By Connection"],
 ] as const;
 
-function renderRow(row: RenderedRow): string {
+function renderRow(row: RenderedRow, healthMarkup: ReadonlyMap<string, string>): string {
   if (row.kind === "swimlane") {
     return `<li class="lane-row" style="top:${row.topPx}px;height:${row.heightPx}px">
       <button type="button" data-group-key="${escapeHtml(row.key)}" aria-expanded="${row.collapsed ? "false" : "true"}">
@@ -69,13 +69,13 @@ function renderRow(row: RenderedRow): string {
       </div>
       <p class="status" title="${escapeHtml(card.statusTitle)}">${escapeHtml(card.statusText)}</p>
       <div class="badges">${badges}</div>
-      <div class="health" data-health-row="true">${health}</div>
+      <div class="health" data-health-row="true">${health}${healthMarkup.get(card.taskId) ?? ""}</div>
       <div class="actions">${actions}</div>
     </article>
   </li>`;
 }
 
-function renderLane(lane: RenderedLane): string {
+function renderLane(lane: RenderedLane, healthMarkup: ReadonlyMap<string, string>): string {
   const listId = `lane-${lane.id}-list`;
   const showList = lane.rows.length > 0;
   const viewportHeight = lane.scrollable
@@ -84,7 +84,7 @@ function renderLane(lane: RenderedLane): string {
   const list = showList
     ? `<div class="viewport" style="height:${viewportHeight}px" data-scroll-top="${lane.scrollTop}"${lane.scrollable ? ` tabindex="0" aria-label="${escapeHtml(lane.label)} tasks"` : ""}>
         <ul class="lane-list" id="${listId}" style="height:${lane.totalHeightPx}px">
-          ${lane.rows.map((row) => renderRow(row)).join("")}
+          ${lane.rows.map((row) => renderRow(row, healthMarkup)).join("")}
         </ul>
       </div>`
     : `<p>None</p>`;
@@ -99,7 +99,10 @@ function renderLane(lane: RenderedLane): string {
   </section>`;
 }
 
-export function renderBoardHtml(snapshot: BoardViewSnapshot): string {
+export function renderBoardHtml(
+  snapshot: BoardViewSnapshot,
+  healthMarkup: ReadonlyMap<string, string> = new Map(),
+): string {
   const theme = BOARD_THEMES[snapshot.theme];
   const modes = MODES.map(
     ([id, label]) =>
@@ -124,7 +127,7 @@ export function renderBoardHtml(snapshot: BoardViewSnapshot): string {
     </div>
     <p class="capacity" data-capacity-header="true">${escapeHtml(snapshot.capacityHeader)}</p>
     <div class="lanes" id="board-lanes">
-      ${snapshot.lanes.map((lane) => renderLane(lane)).join("")}
+      ${snapshot.lanes.map((lane) => renderLane(lane, healthMarkup)).join("")}
     </div>
   </main>
 </body>

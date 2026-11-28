@@ -1,4 +1,6 @@
 import { normalizeGovernorPressure } from "@ef-harness/shared-contracts";
+import type { DaemonStorePort, DaemonStoreSnapshot } from "../cockpit/board/types.js";
+import { boardSnapshotFromPayload } from "../cockpit/board/apply-projection.js";
 import type { AnimationFrameClock } from "./clock.js";
 import type { UiLatencyHeartbeatMonitor } from "./heartbeat.js";
 import type {
@@ -86,6 +88,24 @@ export function createDaemonSnapshot(
   };
 }
 
+export function emptyBoardSnapshot(): DaemonStoreSnapshot {
+  return {
+    revision: 0,
+    tasks: [],
+    capacity: {
+      thinkingUsed: 0,
+      thinkingCapacity: 12,
+      runSlotsUsed: 0,
+      runSlotsCapacity: 2,
+      verifierRunSlots: 0,
+      workerRunSlots: 0,
+      runSlotQueueDepth: 0,
+      mergeQueueIdle: true,
+      mergeQueueDetail: "",
+    },
+  };
+}
+
 export class DaemonStore {
   commitCount = 0;
   appliedCount = 0;
@@ -93,6 +113,7 @@ export class DaemonStore {
   lastBatchLatencyMs = 0;
   overBudgetFlushes = 0;
   private viewState: DaemonSnapshot;
+  private boardState: DaemonStoreSnapshot = emptyBoardSnapshot();
   private queue: DaemonEvent[] = [];
   private frame: number | null = null;
   private inputAt: number | null = null;
@@ -108,6 +129,16 @@ export class DaemonStore {
 
   view(): DaemonView {
     return cloneSnapshot(this.viewState);
+  }
+
+  /** Board slice projected from harnessd `StateDbBoardRow` rows and pool capacity. */
+  boardView(): DaemonStoreSnapshot {
+    return cloneBoard(this.boardState);
+  }
+
+  replaceBoard(snapshot: DaemonStoreSnapshot): void {
+    this.boardState = cloneBoard(snapshot);
+    this.emit();
   }
 
   subscribe(listener: () => void): () => void {
@@ -209,12 +240,30 @@ export class DaemonStore {
     if (event.type === "governor.updated") {
       const governor = readPressure(payload);
       if (governor) this.viewState = { ...this.viewState, governor };
+      return;
+    }
+    if (event.type === "board.snapshot") {
+      const board = boardSnapshotFromPayload(payload);
+      if (board) this.boardState = board;
     }
   }
 
   private emit(): void {
     for (const listener of this.listeners) listener();
   }
+}
+
+function cloneBoard(snapshot: DaemonStoreSnapshot): DaemonStoreSnapshot {
+  return {
+    revision: snapshot.revision,
+    tasks: snapshot.tasks.map((task) => ({
+      ...task,
+      holds: task.holds.map((hold) => ({ ...hold })),
+      inboxBlockedTaskIds: [...task.inboxBlockedTaskIds],
+      blockedBy: task.blockedBy.map((item) => ({ ...item })),
+    })),
+    capacity: { ...snapshot.capacity },
+  };
 }
 
 function cloneSnapshot(snapshot: DaemonSnapshot): DaemonSnapshot {
@@ -242,5 +291,20 @@ export class DaemonStoreProvider {
 
   subscribe(listener: () => void): () => void {
     return this.store.subscribe(listener);
+  }
+}
+
+/** Adapts the shell store to the board cockpit port without replacing shell listeners. */
+export class BoardDaemonStore implements DaemonStorePort {
+  constructor(private readonly store: DaemonStore) {}
+
+  getSnapshot(): DaemonStoreSnapshot {
+    return this.store.boardView();
+  }
+
+  subscribe(listener: (snapshot: DaemonStoreSnapshot) => void): () => void {
+    return this.store.subscribe(() => {
+      listener(this.store.boardView());
+    });
   }
 }

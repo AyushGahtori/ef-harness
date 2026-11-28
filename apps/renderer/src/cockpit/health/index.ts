@@ -9,7 +9,6 @@ export type { BoardHealthSignalEngineOptions, HealthBoardView, WorkerHealthView 
 export { ExplainerProviderError, OnDemandCockpitExplainer, boundExplainerFacts, deterministicExplanation, lastEventSeq } from "./explainer.js";
 export type { ExplainRequest, ExplainerModel } from "./explainer.js";
 export { CockpitExplainerV1Schema, countSentences, ensureSentence, isOneSentence } from "./explainer-schema.js";
-export type { ParsedExplainer } from "./explainer-schema.js";
 export { FakeModelAdapter } from "./fake-model.js";
 export type { FakeModelMode } from "./fake-model.js";
 export {
@@ -32,7 +31,7 @@ export {
 export { combineLoopReadings, measureSteps } from "./loop-patterns.js";
 export type { LoopMeasurement } from "./loop-patterns.js";
 export { BoardHealthSummaryPill } from "./summary-pill.js";
-export { InMemoryTelemetryLog, TELEMETRY_HEALTH_TARGET, metricRow } from "./telemetry-log.js";
+export { PreloadTelemetryLog, TELEMETRY_HEALTH_TARGET, metricRow } from "./telemetry-log.js";
 export {
   ALARM_SIGNAL_KINDS,
   BADGE_TONES,

@@ -1,3 +1,6 @@
+import { attachHealthSlots } from "../health/board-slot.js";
+import { HealthSignalBadgeStrip } from "../health/badge-strip.js";
+import type { HealthSignal, HealthSignalKind } from "../health/types.js";
 import { reduceBoardKey } from "./board-keyboard.js";
 import { BoardFrameBatcher } from "./board-frame-batcher.js";
 import { DeterministicStatusLineFormatter } from "./deterministic-status-line-formatter.js";
@@ -6,6 +9,7 @@ import { indexBoardTasks, isQuickActionEnabled, projectBoard, type IndexedTask }
 import { renderBoardHtml } from "./render-board-html.js";
 import {
   BOARD_LANES,
+  type BoardHealthSignal,
   type BoardHealthSignalPort,
   type BoardKeyEvent,
   type BoardLaneId,
@@ -132,7 +136,13 @@ export class BoardCockpitView {
   }
 
   renderHtml(): string {
-    return renderBoardHtml(this.snapshot());
+    const snap = this.snapshot();
+    return renderBoardHtml(snap, this.healthMarkup(snap));
+  }
+
+  /** Inline Task 125 slots for the cards this frame actually paints. */
+  healthSlots(): ReturnType<typeof attachHealthSlots> {
+    return this.healthSlotsFor(this.snapshot());
   }
 
   setMode(mode: BoardViewMode): void {
@@ -268,6 +278,65 @@ export class BoardCockpitView {
   private reindexMap(): void {
     this.byId = new Map(this.tasks.map((task) => [task.taskId, task]));
   }
+
+  private healthMarkup(snap: BoardViewSnapshot): Map<string, string> {
+    const markup = new Map<string, string>();
+    for (const slot of this.healthSlotsFor(snap)) markup.set(slot.taskId, slot.strip.render());
+    return markup;
+  }
+
+  private healthSlotsFor(snap: BoardViewSnapshot): ReturnType<typeof attachHealthSlots> {
+    const ids = mountedTaskIds(snap);
+    const strips = new Map<string, HealthSignalBadgeStrip>();
+    for (const taskId of ids) strips.set(taskId, this.stripFor(taskId));
+    return attachHealthSlots(
+      ids.map((taskId) => ({ taskId })),
+      strips,
+    );
+  }
+
+  private stripFor(taskId: string): HealthSignalBadgeStrip {
+    const signals = this.health.signalsFor(taskId).map((signal) => toHealthSignal(taskId, signal));
+    return new HealthSignalBadgeStrip(taskId, signals, false);
+  }
 }
 
 export const BOARD_LANE_ORDER: readonly BoardLaneId[] = BOARD_LANES;
+
+const BOARD_SIGNAL_KIND: Readonly<Record<BoardHealthSignal["kind"], HealthSignalKind>> = {
+  stuck_clock: "stuck_no_progress",
+  loop: "loop_detected",
+  throttled: "rate_limited_backoff",
+  allowance_reset: "allowance_window_wait",
+  escalation: "escalated_or_retrying",
+};
+
+function mountedTaskIds(snap: BoardViewSnapshot): string[] {
+  const ids: string[] = [];
+  for (const lane of snap.lanes) {
+    for (const row of lane.rows) {
+      if (row.kind === "card") ids.push(row.card.taskId);
+    }
+  }
+  return ids;
+}
+
+function toHealthSignal(taskId: string, signal: BoardHealthSignal): HealthSignal {
+  return {
+    kind: BOARD_SIGNAL_KIND[signal.kind],
+    variant: signal.kind,
+    alarm: true,
+    tone: signal.kind === "loop" || signal.kind === "stuck_clock" ? "red" : "amber",
+    label: signal.label,
+    clusterLabel: null,
+    taskId,
+    connectionId: "",
+    attemptId: "",
+    detail: null,
+    actions: [],
+    flashing: false,
+    modal: false,
+    inline: true,
+    stealsFocus: false,
+  };
+}

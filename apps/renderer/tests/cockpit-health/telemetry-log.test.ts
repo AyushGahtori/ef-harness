@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { BoardHealthSignalEngine, InMemoryTelemetryLog, TELEMETRY_HEALTH_TARGET } from "../../src/cockpit/health/index.js";
+import { BoardHealthSignalEngine, PreloadTelemetryLog, TELEMETRY_HEALTH_TARGET } from "../../src/cockpit/health/index.js";
+import type { HealthMetricEvent } from "../../src/cockpit/health/index.js";
+import type { PreloadMessagePort, TelemetryMetricMessage } from "../../src/shell/ports.js";
 import { board, failingTests, worker } from "./support.js";
 
 describe("health signal telemetry log", () => {
@@ -11,13 +13,22 @@ describe("health signal telemetry log", () => {
   });
 
   it("records trigger and resolution duration in telemetry.db metric rows", () => {
-    const log = new InMemoryTelemetryLog();
+    const sent: TelemetryMetricMessage[] = [];
+    const port: PreloadMessagePort = {
+      postMessage(message) {
+        if ("method" in message && message.method === "telemetry.metric") sent.push(message);
+      },
+      onMessage() {
+        return () => {};
+      },
+    };
+    const log = new PreloadTelemetryLog(port);
     const engine = new BoardHealthSignalEngine({ liveClock: false, telemetry: log });
     engines.push(engine);
 
     engine.ingest(board(300_000, [worker({ attemptId: "attempt-7" })]));
     engine.ingest(board(300_000, [worker({ attemptId: "attempt-7" })]));
-    const triggered = log.events();
+    const triggered = sent.map((message) => message.params.data as HealthMetricEvent);
     expect(triggered).toHaveLength(1);
     expect(triggered[0]).toMatchObject({
       event: "health_signal_triggered",
@@ -25,12 +36,13 @@ describe("health signal telemetry log", () => {
       taskId: "T-1",
       atMs: 300_000,
     });
-    expect(log.rows[0]).toMatchObject({
+    expect(sent[0]?.params).toMatchObject({
       attempt: "attempt-7",
       ts: 300_000,
       kind: TELEMETRY_HEALTH_TARGET.kind,
     });
     expect(TELEMETRY_HEALTH_TARGET.table).toBe("telemetry");
+    expect(TELEMETRY_HEALTH_TARGET.database).toBe("telemetry.db");
 
     engine.ingest(
       board(360_000, [
@@ -40,7 +52,7 @@ describe("health signal telemetry log", () => {
         }),
       ]),
     );
-    const events = log.events();
+    const events = sent.map((message) => message.params.data as HealthMetricEvent);
     expect(events).toHaveLength(2);
     expect(events[1]).toMatchObject({
       event: "health_signal_resolved",
@@ -50,8 +62,11 @@ describe("health signal telemetry log", () => {
     });
 
     engine.ingest(board(1_000, [worker({ taskId: "T-loop", steps: failingTests(3, "same-fingerprint") })]));
-    expect(log.events().some((event) => event.signal === "loop_detected" && event.event === "health_signal_triggered")).toBe(
-      true,
-    );
+    expect(
+      sent.some((message) => {
+        const event = message.params.data as HealthMetricEvent;
+        return event.signal === "loop_detected" && event.event === "health_signal_triggered";
+      }),
+    ).toBe(true);
   });
 });

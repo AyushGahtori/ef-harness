@@ -39,6 +39,9 @@ import {
   stateDatabasePath,
 } from "./paths.js";
 import { generateSessionToken, timingSafeTokenEqual, writeSessionToken } from "./session-token.js";
+import { explainCockpit } from "../cockpit/explain.js";
+import { readBoardProjection } from "../cockpit/board-projection.js";
+import { recordHealthMetric } from "../cockpit/telemetry.js";
 import { isM1View, sha256, SimulatedTask, type M1View } from "./task-run.js";
 
 export interface HarnessdOptions {
@@ -368,6 +371,8 @@ export class HarnessDaemon {
     if (method === "session.ping") return { ok: true };
     if (method === "daemon.status") return this.statusBody();
     if (method === "snapshot.get") return this.snapshot();
+    if (method === "cockpit.explain") return this.explain(record);
+    if (method === "telemetry.metric") return this.recordMetric(record);
     if (method === "events.subscribe") return this.subscribe(conn, record);
     if (method === "diff.get") return this.diffGet(conn, record);
     if (method === "stream.credit") return this.credit(conn, record);
@@ -413,9 +418,44 @@ export class HarnessDaemon {
     return {
       as_of_seq: this.latestSeq(),
       stream_epoch: this.epoch,
-      sections: { m1: view },
+      sections: { m1: view, board: readBoardProjection(this.requireState()) },
       nextCursor: null,
     };
+  }
+
+  private explain(params: Record<string, unknown>): unknown {
+    const contractId = params.contractId;
+    if (contractId !== undefined && contractId !== "cockpit-explainer@1") {
+      throw new RpcError(RPC_INVALID_REQUEST, "cockpit.explain requires cockpit-explainer@1");
+    }
+    const result = explainCockpit(params.modelOutput);
+    const bundle = this.bundle;
+    if (bundle) {
+      recordHealthMetric(bundle.telemetry, {
+        attempt: null,
+        ts: Date.now(),
+        data: { event: "cockpit_explain", contractId: "cockpit-explainer@1", ok: result.ok },
+      });
+    }
+    return result;
+  }
+
+  private recordMetric(params: Record<string, unknown>): unknown {
+    if (params.kind !== "metric") throw new RpcError(RPC_INVALID_REQUEST, "telemetry kind must be metric");
+    if (typeof params.ts !== "number" || !Number.isSafeInteger(params.ts)) {
+      throw new RpcError(RPC_INVALID_REQUEST, "telemetry ts must be an integer");
+    }
+    const attempt = params.attempt === null || typeof params.attempt === "string" ? params.attempt : null;
+    let data = params.data;
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data) as unknown;
+      } catch {
+        throw new RpcError(RPC_INVALID_REQUEST, "telemetry data is not JSON");
+      }
+    }
+    const bundle = this.requireBundle();
+    return recordHealthMetric(bundle.telemetry, { attempt, ts: params.ts, data });
   }
 
   private subscribe(conn: Conn, params: Record<string, unknown>): unknown {

@@ -39,3 +39,8 @@ export type {
   M1View,
   ShutdownReceipt,
 } from "./bootstrap/index.js";
+export { explainCockpit } from "./cockpit/explain.js";
+export type { CockpitExplainResult } from "./cockpit/explain.js";
+export { readBoardProjection } from "./cockpit/board-projection.js";
+export type { BoardProjection, StateDbBoardRow, ThreePoolCapacitySnapshot } from "./cockpit/board-projection.js";
+export { recordHealthMetric } from "./cockpit/telemetry.js";

@@ -1,22 +1,29 @@
-import type {
-  HealthMetricEvent,
-  TelemetryMetricRow,
-  TelemetryMetricWriter,
-} from "./types.js";
+import type { PreloadMessagePort } from "../../shell/ports.js";
+import type { HealthMetricEvent, TelemetryMetricRow, TelemetryMetricWriter } from "./types.js";
 
 /**
- * In-process stand-in for telemetry.db. Rows match the existing `telemetry`
- * table (attempt, ts, kind, data) and use kind `metric`. No schema change.
+ * Health metrics travel to harnessd as preload JSON-RPC.
+ * The renderer never opens telemetry.db.
  */
-export class InMemoryTelemetryLog implements TelemetryMetricWriter {
-  readonly rows: TelemetryMetricRow[] = [];
+export class PreloadTelemetryLog implements TelemetryMetricWriter {
+  private rpcId = 1;
+
+  constructor(private readonly port: PreloadMessagePort) {}
 
   insertMetric(row: TelemetryMetricRow): void {
-    this.rows.push(row);
-  }
-
-  events(): HealthMetricEvent[] {
-    return this.rows.map((row) => JSON.parse(row.data) as HealthMetricEvent);
+    const data: unknown = JSON.parse(row.data);
+    this.port.postMessage({
+      jsonrpc: "2.0",
+      id: this.rpcId,
+      method: "telemetry.metric",
+      params: {
+        attempt: row.attempt,
+        ts: row.ts,
+        kind: "metric",
+        data,
+      },
+    });
+    this.rpcId += 1;
   }
 }
 

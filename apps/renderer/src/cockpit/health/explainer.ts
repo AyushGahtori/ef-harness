@@ -1,5 +1,6 @@
+import { CockpitExplainerV1Schema, countSentences } from "@ef-harness/shared-contracts";
 import { recommendedClick } from "./actions.js";
-import { CockpitExplainerV1Schema, ensureSentence } from "./explainer-schema.js";
+import { ensureSentence } from "./explainer-schema.js";
 import type {
   BoundedExplainerFacts,
   CockpitExplanation,
@@ -107,16 +108,10 @@ export interface ExplainRequest {
  */
 export class OnDemandCockpitExplainer {
   private readonly cache = new Map<string, CacheEntry>();
-  private readonly schema: CockpitExplainerV1Schema;
   readonly backgroundCalls = 0;
   observedCount = 0;
 
-  constructor(
-    private readonly model: ExplainerModel,
-    schema: CockpitExplainerV1Schema = new CockpitExplainerV1Schema(),
-  ) {
-    this.schema = schema;
-  }
+  constructor(private readonly model: ExplainerModel) {}
 
   /** Remember that the button is visible. This never calls the model. */
   observe(worker: WorkerHealthTelemetry): void {
@@ -154,19 +149,27 @@ export class OnDemandCockpitExplainer {
     const nextClick = recommendedClick(signals);
     try {
       const payload = await this.model.complete(facts);
-      const parsed = this.schema.parse(payload, known, nextClick);
+      const parsed = readExplainerOutput(payload, known);
       if (!parsed.ok) {
         return deterministicExplanation(facts, signals, parsed.reason);
       }
+      const sentences = splitSentences(parsed.text);
+      const trying = sentences[0] ?? parsed.text;
+      const why = sentences[1] ?? trying;
+      const citedEventIds = [facts.timeline.at(-1)?.id].filter((id): id is string => typeof id === "string");
       return {
         taskId: facts.taskId,
         lastEventSeq: facts.lastEventSeq,
         source: "model",
         tokensUsed: this.model.tokensPerCall ?? 1,
         cacheHit: false,
-        bullets: parsed.bullets,
-        citedEventIds: parsed.citedEventIds,
-        citationsVerified: true,
+        bullets: {
+          whatItWasTryingToDo: trying,
+          whyItStalledOrFailed: why,
+          recommendedNextClick: ensureSentence(`Recommended next click: ${nextClick}`),
+        },
+        citedEventIds,
+        citationsVerified: citedEventIds.every((id) => known.has(id)),
         modelRejected: false,
         backgroundCall: false,
         facts,
@@ -178,4 +181,35 @@ export class OnDemandCockpitExplainer {
       throw error;
     }
   }
+}
+
+type ExplainerRead =
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly reason: CockpitExplanation["modelRejected"] & string };
+
+function readExplainerOutput(payload: unknown, knownEventIds: ReadonlySet<string>): ExplainerRead {
+  const parsed = CockpitExplainerV1Schema.safeParse(payload);
+  if (!parsed.success) {
+    const message = parsed.error.issues.map((issue) => issue.message).join(" ");
+    const essay = /sentence|500|character|too big|too_big/i.test(message);
+    return { ok: false, reason: essay ? "essay" : "malformed" };
+  }
+  if ("blocked" in parsed.data) {
+    return { ok: false, reason: "blocked" };
+  }
+  const mentioned = parsed.data.text.match(/\bevt-[\w-]+\b/g) ?? [];
+  if (mentioned.some((id) => !knownEventIds.has(id))) {
+    return { ok: false, reason: "unknown_event_id" };
+  }
+  return { ok: true, text: parsed.data.text };
+}
+
+function splitSentences(text: string): string[] {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return [];
+  if (countSentences(trimmed) <= 1) return [trimmed];
+  return trimmed
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
