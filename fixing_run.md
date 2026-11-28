@@ -1967,3 +1967,35 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint`: exit `0` — 0 errors, 4 warnings (pre-existing unused eslint-disable directives in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
 - `node schema/schema-test.js`: `67/67 passed`
 - Not done: C72 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened.
+
+## [C72] — mystery-bug-investigation, investigation-localization-toolkit
+
+- **Subagent Role & Model:** integrator, grok-4.7
+- **Commit SHA & Subject:** `a24b547a5d515ccfc318507eb79d39db02624872` — `integrate: wire investigations pipeline/localization`
+- **Merge commits:** `131cc2175c65e880a87efac23d14b918b368e4fe` (`integrate: Task 182 mystery-bug-investigation`); `a03fa0d1e3a860154562538dd9a6fd3e96ff27e1` (`integrate: Task 183 investigation-localization-toolkit`)
+- **Branches Merged:** `origin/task/182-mystery-bug-investigation` @ `e61ea0c4bbb305376ddd80c34e9fe25216bcda09`; `origin/task/183-investigation-localization-toolkit` @ `1a6730f427615c0ff6cf6a29faed1f8972ca892a`
+- **Findings Fixed:** F-078 (C72 slice: `FlakeSafeGitBisector` neighbor probe on exit 125, `finally` restore of `badRef`, git through `execGit`, investigations rows on `ProjectStateDb` v2) and F-079 (C72 slice: localization wired into stages 3 and 5, intake and code-map adapters, barrel exports `pipeline` and `localization`). Sweep codemods, `'READY'`/`'BLOCKED'` briefs, and `path_leases` stay with C73.
+- **C73 included:** no. Compared three-dot file lists of tasks 182–183 with tasks 184–185 against `8a9ae08f`. Intersection was empty, so only C72 was integrated.
+
+### What Was Done
+- Compared C72 three-dot lists (`8a9ae08f...origin/task/182-mystery-bug-investigation`, `...183-investigation-localization-toolkit`) with C73 (`...184-sweep-ownership-engine`, `...185-sweep-safety-guards`). C72 paths are `.agent-handoffs/task-182.md`, `packages/investigations/src/pipeline/**`, `packages/investigations/tests/pipeline/**`, `.agent-handoffs/task-183.md`, `packages/investigations/src/localization/**`, `packages/investigations/tests/localization/**`. C73 paths are `.agent-handoffs/task-184.md`, `packages/investigations/src/sweeps/**`, `packages/investigations/tests/sweeps/**`, `.agent-handoffs/task-185.md`, `packages/investigations/src/sweep-guards/**`, `packages/investigations/tests/sweep-guards/**`. `comm -12` of the two sorted unions was empty. Neither task branch edits `pnpm-lock.yaml` or `packages/investigations/package.json`. The combination text lists that manifest as an integration-owned surface for both waves; the task branches do not edit it. C73 was not started.
+- Merged 182 then 183 with `--no-ff` onto `harness/integration` from `8a9ae08fb11a7f6e5eb0e10bba2958ffdc917f59`. No conflicts. No dirty-worktree patch exists for 182 or 183. C71 was not redone.
+- `SqliteInvestigationStore` no longer opens `:memory:` or runs ad-hoc DDL. It writes `state.db.investigations` through `openProjectStateDb`. MigrationRunner v2 now carries the pipeline columns (`symptom_card_json`, repro/fix/receipt JSON, attempt counters) beside the existing stage and ledger columns. `schema/state.sql` and the `path_leases` CHECK were not edited.
+- `FlakeSafeGitBisector` runs rev-parse, rev-list, and checkout through `@ef-harness/git-engine` `execGit` with `developerCheckout: false`. Exit 125 marks that commit skipped and probes `mid - 1`, then `mid + 1`, and so on, instead of setting `low = mid + 1`. `badRef` is checked out in `finally`, including when reproduction throws after leaving that commit.
+- `MysteryBugInvestigationPipeline.proveRootCause` parses `InvestigatorV1Schema`, then runs `FlakeSafeGitBisector` and `DeltaDebuggingInputShrinker` when a quarantine localization request is set. `applyScopedFix` redacts the diff and rejects a `SymptomPatchDetector` hit. `BugIntakeSymptomAdapter` and `CompactCodeMapRouteAdapter` adapt `BugIntakePipeline.getSymptomCard` and `CompactCodeMapQueryService`. The package barrel exports `pipeline`, `localization`, and those classes.
+- Declared `@ef-harness/{db,git-engine,sandbox,test-env,verifier,intake,planner,brownfield,integrator,shared-observability}` on `@ef-harness/investigations`. tsconfig references cover the imported packages (`db`, `git-engine`, `intake`, `brownfield`, `shared-contracts`, `shared-observability`). `sandbox`, `test-env`, `verifier`, `planner`, and `integrator` are declared for the seam and are not imported. Node stayed on the default runtime. The node:sqlite spike was not rerun. Windows Job Object failures were not stubbed.
+
+### What It Fixed
+- Skipping `commits[mid]` (exit 125) still localizes a culprit in `[low .. mid - 1]`. The early-regression fixture blames commit c3, not a commit after the broken syntax commit, and `HEAD` is `badRef` after success and after an abort during the good-endpoint runs.
+- An investigations row written as `CLEAN_REPRO` is still `CLEAN_REPRO` with the same symptom title after `ProjectStateDb` close and reopen.
+- Stage 3 calls the bisector and shrinker. Stage 5 rejects `+ catch (error) { }`.
+
+### Verification Run & Results
+- `pnpm install`: exit `0`. `pnpm-lock.yaml` records the new investigations workspace links only.
+- `pnpm build`: exit `0`
+- `pnpm typecheck`: exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint`: exit `0` — 0 errors, 4 warnings (pre-existing unused eslint-disable directives in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: `67/67 passed · SQLite 3.53.4`
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 68 passed (68)`, `Tests 377 passed (377)`, 0 skipped
+- `pnpm --filter @ef-harness/investigations test -- pipeline localization`: exit `0` — `Test Files 5 passed (5)`, `Tests 27 passed (27)`, 0 skipped (extra arguments did not narrow)
+- Not done: C73 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened.
