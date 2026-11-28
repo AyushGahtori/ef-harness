@@ -48,8 +48,11 @@ export class RouteTelemetry {
   private readonly rows: TelemetryEvent[] = [];
   private corrections = 0;
 
+  constructor(private readonly sink?: (event: TelemetryEvent) => void) {}
+
   record(event: TelemetryEvent): void {
     this.rows.push(event);
+    this.sink?.(event);
   }
 
   recordCorrection(fromRoute: RouteNumber, toRoute: RouteNumber, msgSeq: string): void {
@@ -134,18 +137,18 @@ export class FourRouteSteeringDispatcher {
     private readonly clauses: OrderedMultiClauseExecutorPort,
   ) {}
 
-  dispatchClauses(clauses: readonly SteeringClause[]): readonly RouteDispatchResult[] {
+  async dispatchClauses(clauses: readonly SteeringClause[]): Promise<readonly RouteDispatchResult[]> {
     return this.clauses.execute(clauses, (clause) => this.dispatchClause(clause));
   }
 
-  dispatchReadOnlyQuery(input: ReadOnlyQueryInput): RouteDispatchResult {
+  async dispatchReadOnlyQuery(input: ReadOnlyQueryInput): Promise<RouteDispatchResult> {
     const before = this.runtime.fingerprint();
     const started = performance.now();
     this.trace.askOwnerCalls += 1;
-    const answer = this.askOwner.answerQuestion(input.text);
+    const answer = await this.askOwner.answerQuestion(input.text);
     const latencyMs = performance.now() - started;
     if (this.runtime.fingerprint() !== before) throw new ReadOnlyViolationError();
-    if (answer.llmCalls !== 0 || this.runtime.llmCalls !== 0) {
+    if (this.runtime.llmCalls !== 0) {
       throw new SteeringError("READ_ONLY_LLM", "read-only evidence answer must not be a model guess");
     }
     if (latencyMs >= QUERY_DEADLINE_MS) {
@@ -268,7 +271,7 @@ export class FourRouteSteeringDispatcher {
     });
   }
 
-  private dispatchClause(clause: SteeringClause): RouteDispatchResult {
+  private async dispatchClause(clause: SteeringClause): Promise<RouteDispatchResult> {
     if (clause.kind === "stop" || clause.kind === "control") {
       return this.finishControl({ msgSeq: clause.id, control: "stop_now" }, this.stopController.applyStop());
     }

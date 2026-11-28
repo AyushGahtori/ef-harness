@@ -832,9 +832,33 @@ importers:
 
   packages/steering:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/discovery':
+        specifier: workspace:*
+        version: link:../discovery
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
+      '@ef-harness/integrator':
+        specifier: workspace:*
+        version: link:../integrator
+      '@ef-harness/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../shared-observability
+      '@ef-harness/worker-loop':
+        specifier: workspace:*
+        version: link:../worker-loop
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

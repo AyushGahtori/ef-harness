@@ -1,13 +1,13 @@
-import { DatabaseSync } from "node:sqlite";
 import { LocalCandidateCatalog } from "./catalog.js";
 import { plannedClause, wholeSpan } from "./clause.js";
 import type { MessageRow, RouterStore } from "./database.js";
 import { RouterStore as Store } from "./database.js";
-import { DeterministicRouterModel, planMessage } from "./decompose.js";
+import { DeterministicRouterModel, clausesFromRouterV1, planMessage, toRouterV1 } from "./decompose.js";
 import { RouterPromptBudgetError } from "./errors.js";
 import { classifyFastPath } from "./fast-path.js";
 import { LocalDualFtsSearch } from "./fts.js";
 import { OrderedMultiClauseExecutor } from "./executor.js";
+import { completeOfflineRouter } from "./model-adapter.js";
 import { renderRouterPrompt } from "./prompt.js";
 import {
   LocalOutboxPort,
@@ -22,6 +22,7 @@ import {
   type RouterModelPort,
 } from "./ports.js";
 import { foreignTargetIds, parseRouterV1 } from "./schema.js";
+import { openSteeringState } from "./state-file.js";
 import { UnifiedMessageSequencer } from "./sequencer.js";
 import { InputStartFocusSnapshotter } from "./focus.js";
 import { RouterShortlistRetriever, type FtsSearchPort, type KnowledgeGraphPort } from "./shortlist.js";
@@ -105,15 +106,15 @@ export class SteeringMessageRouter {
     return this.sequencer.accept(this.toNewMessage(input));
   }
 
-  submit(input: SubmitMessageInput): MessageReceipt {
+  async submit(input: SubmitMessageInput): Promise<MessageReceipt> {
     const row = this.accept(input);
-    this.sequencer.drain((message) => this.route(message));
+    await this.sequencer.drain((message) => this.route(message));
     return this.receipt(row.messageId);
   }
 
-  resume(): MessageReceipt[] {
+  async resume(): Promise<MessageReceipt[]> {
     const before = this.store.listMessages().filter((row) => !isCheckpointStatus(row.status));
-    this.sequencer.drain((message) => this.route(message));
+    await this.sequencer.drain((message) => this.route(message));
     return before.map((row) => this.receipt(row.messageId));
   }
 
@@ -159,13 +160,13 @@ export class SteeringMessageRouter {
     };
   }
 
-  private route(seed: MessageRow): void {
+  private async route(seed: MessageRow): Promise<void> {
     const current = this.must(seed.messageId);
     if (isCheckpointStatus(current.status)) return;
     this.providerCalls = 0;
     this.routerInvoked = false;
     if (this.store.listClauses(current.messageId).length > 0) {
-      this.executor.execute(current);
+      await this.executor.execute(current);
       return;
     }
     this.store.transaction(() => {
@@ -183,7 +184,7 @@ export class SteeringMessageRouter {
       return;
     }
     if (fast.kind === "clauses") {
-      this.persistAndExecute(current.messageId, fast.clauses, {
+      await this.persistAndExecute(current.messageId, fast.clauses, {
         fastPath: true,
         routerInvoked: false,
         providerCalls: 0,
@@ -200,19 +201,13 @@ export class SteeringMessageRouter {
     const allowed = new Set(shortlist.cards.map((card) => card.id));
     this.providerCalls = 0;
     this.routerInvoked = false;
-    const gate = this.gateModel(current.text, shortlist.cards, current.focus, history.previousTargets, allowed);
+    const gate = await this.gateModel(current.text, shortlist.cards, current.focus, history.previousTargets, allowed);
     if (gate.ok === false) {
       const card = modelFailureCard(current, gate.reason, gate.errors);
       this.checkpoint(current, card, null, true);
       return;
     }
-    const planned = planMessage({
-      text: current.text,
-      cards: shortlist.cards,
-      focus: current.focus,
-      previousTargets: history.previousTargets,
-    });
-    this.persistAndExecute(current.messageId, planned, {
+    await this.persistAndExecute(current.messageId, gate.clauses, {
       fastPath: false,
       routerInvoked: this.routerInvoked,
       providerCalls: this.providerCalls,
@@ -220,17 +215,24 @@ export class SteeringMessageRouter {
     });
   }
 
-  private gateModel(
+  private async gateModel(
     text: string,
     cards: Parameters<typeof planMessage>[0]["cards"],
     focus: MessageRow["focus"],
     previousTargets: readonly string[],
     allowed: ReadonlySet<string>,
-  ): { ok: true } | { ok: false; reason: "router_blocked" | "invalid_target"; errors: string[] } {
+  ): Promise<
+    { ok: true; clauses: PlannedClause[] } | { ok: false; reason: "router_blocked" | "invalid_target"; errors: string[] }
+  > {
+    if (!this.model.usesProvider) {
+      const clauses = planMessage({ text, cards, focus, previousTargets });
+      await completeOfflineRouter(toRouterV1(clauses));
+      return { ok: true, clauses };
+    }
     const firstPrompt = this.prompt(text, cards, focus, previousTargets, null);
-    const first = this.invoke(firstPrompt);
-    const firstDecision = this.judge(first, text.length, allowed);
-    if (firstDecision.ok) return { ok: true };
+    const first = await this.invoke(firstPrompt);
+    const firstDecision = this.judge(first, text, allowed);
+    if (firstDecision.ok) return { ok: true, clauses: firstDecision.clauses };
     if (firstDecision.reason === "router_blocked") {
       return { ok: false, reason: "router_blocked", errors: firstDecision.errors };
     }
@@ -238,9 +240,9 @@ export class SteeringMessageRouter {
       attempt: 1,
       errors: firstDecision.errors,
     });
-    const second = this.invoke(repair);
-    const secondDecision = this.judge(second, text.length, allowed);
-    if (secondDecision.ok) return { ok: true };
+    const second = await this.invoke(repair);
+    const secondDecision = this.judge(second, text, allowed);
+    if (secondDecision.ok) return { ok: true, clauses: secondDecision.clauses };
     return {
       ok: false,
       reason: secondDecision.reason === "router_blocked" ? "router_blocked" : "invalid_target",
@@ -268,18 +270,19 @@ export class SteeringMessageRouter {
     return rendered;
   }
 
-  private invoke(prompt: ReturnType<typeof renderRouterPrompt>): unknown {
+  private async invoke(prompt: ReturnType<typeof renderRouterPrompt>): Promise<unknown> {
     this.routerInvoked = true;
     if (this.model.usesProvider) this.providerCalls += 1;
+    if (this.model.completeAsync) return this.model.completeAsync(prompt);
     return this.model.complete(prompt);
   }
 
   private judge(
     value: unknown,
-    textLength: number,
+    text: string,
     allowed: ReadonlySet<string>,
-  ): { ok: true } | { ok: false; reason: "router_blocked" | "invalid_target"; errors: string[] } {
-    const parsed = parseRouterV1(value, textLength);
+  ): { ok: true; clauses: PlannedClause[] } | { ok: false; reason: "router_blocked" | "invalid_target"; errors: string[] } {
+    const parsed = parseRouterV1(value, text.length);
     if (!parsed.ok) return { ok: false, reason: "invalid_target", errors: [...parsed.errors] };
     if (isBlockedExit(parsed.value)) {
       return { ok: false, reason: "router_blocked", errors: [parsed.value.reason] };
@@ -292,16 +295,16 @@ export class SteeringMessageRouter {
         errors: foreign.map((id) => `target ${id} is outside the shortlist`),
       };
     }
-    return { ok: true };
+    return { ok: true, clauses: clausesFromRouterV1(text, parsed.value) };
   }
 
-  private persistAndExecute(messageId: string, clauses: readonly PlannedClause[], meta: RouteMeta): void {
+  private async persistAndExecute(messageId: string, clauses: readonly PlannedClause[], meta: RouteMeta): Promise<void> {
     this.store.transaction(() => {
       this.store.replaceClauses(messageId, clauses);
       this.store.recordRouteMeta(messageId, meta);
       this.store.markExecuting(messageId);
     });
-    this.executor.execute(this.must(messageId));
+    await this.executor.execute(this.must(messageId));
   }
 
   private checkpoint(
@@ -397,7 +400,7 @@ function modelFailureCard(
 
 export function openSteeringRouter(options: OpenRouterOptions = {}): SteeringMessageRouter {
   const now = options.now ?? (() => Date.now());
-  const database = new DatabaseSync(options.stateDbPath ?? ":memory:");
+  const database = openSteeringState(options.stateDbPath ?? ":memory:");
   const store = new Store(database);
   const fts = options.search ? null : new LocalDualFtsSearch(database);
   const catalog = options.graph || !fts ? null : new LocalCandidateCatalog(store, fts);

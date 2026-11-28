@@ -104,7 +104,7 @@ export class LocalDualFtsSearch {
     }
     const likeRows = this.db
       .prepare(
-        `SELECT id FROM router_catalog
+        `SELECT id FROM nodes
           WHERE id LIKE '%' || :needle || '%' OR title LIKE '%' || :needle || '%'
           LIMIT :limit`,
       )
@@ -121,7 +121,7 @@ export class LocalDualFtsSearch {
     for (const row of rows) {
       const nid = typeof row.nid === "bigint" ? Number(row.nid) : Number(row.nid);
       const rank = typeof row.rank === "number" ? row.rank : Number(row.rank);
-      const found = this.db.prepare(`SELECT id FROM router_catalog WHERE nid = :nid`).get({ nid }) as
+      const found = this.db.prepare(`SELECT id FROM nodes WHERE nid = :nid`).get({ nid }) as
         | Row
         | undefined;
       if (!found || typeof found.id !== "string") continue;

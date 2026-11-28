@@ -26,14 +26,14 @@ export interface KernelControlPort {
 }
 
 export interface ClauseDispatchPort {
-  answerQuestion(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  editExisting(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  undoFeature(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  addNewFeature(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  readOnlyQuery(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  reserveFeature(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  approve(clause: StoredClause, message: MessageRow): ClauseOutcome;
-  reject(clause: StoredClause, message: MessageRow): ClauseOutcome;
+  answerQuestion(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  editExisting(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  undoFeature(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  addNewFeature(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  readOnlyQuery(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  reserveFeature(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  approve(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
+  reject(clause: StoredClause, message: MessageRow): ClauseOutcome | Promise<ClauseOutcome>;
 }
 
 export interface AmbiguityHoldPort {
@@ -42,6 +42,7 @@ export interface AmbiguityHoldPort {
 
 export interface RouterModelPort {
   complete(prompt: RouterPrompt): unknown;
+  completeAsync?(prompt: RouterPrompt): Promise<unknown>;
   readonly usesProvider: boolean;
 }
 

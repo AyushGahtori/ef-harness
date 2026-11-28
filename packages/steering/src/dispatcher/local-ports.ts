@@ -404,12 +404,15 @@ export class LocalProjectBudget implements ProjectBudgetPort {
 export class LocalOrderedMultiClauseExecutor implements OrderedMultiClauseExecutorPort {
   readonly executedKinds: string[] = [];
 
-  execute<T>(clauses: readonly SteeringClause[], run: (clause: SteeringClause) => T): readonly T[] {
+  async execute<T>(
+    clauses: readonly SteeringClause[],
+    run: (clause: SteeringClause) => T | Promise<T>,
+  ): Promise<T[]> {
     const sorted = [...clauses].sort((left, right) => CLAUSE_RANK[left.kind] - CLAUSE_RANK[right.kind] || left.index - right.index);
     const results: T[] = [];
     for (const clause of sorted) {
       this.executedKinds.push(clause.kind);
-      results.push(run(clause));
+      results.push(await run(clause));
     }
     return results;
   }

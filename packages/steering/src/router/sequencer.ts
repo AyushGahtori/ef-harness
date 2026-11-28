@@ -36,14 +36,14 @@ export class UnifiedMessageSequencer {
     });
   }
 
-  drain(worker: (message: MessageRow) => void): void {
+  async drain(worker: (message: MessageRow) => Promise<void>): Promise<void> {
     if (this.draining) return;
     this.draining = true;
     try {
       for (;;) {
         const next = this.nextIncomplete();
         if (!next) return;
-        worker(next);
+        await worker(next);
       }
     } finally {
       this.draining = false;

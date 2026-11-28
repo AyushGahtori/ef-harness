@@ -1,3 +1,5 @@
+import { DatabaseSync } from "node:sqlite";
+import { isHoldReason } from "@ef-harness/db";
 import type {
   BudgetSnapshot,
   ControlState,
@@ -65,6 +67,7 @@ export class SteeringRuntime {
   readonly impact: Map<string, readonly string[]>;
   budget: BudgetSnapshot;
   graphWrites = 0;
+  private stateDb: DatabaseSync | null = null;
   private commitBarrier: () => Promise<void> = async () => undefined;
 
   constructor(seed: DispatcherSeed = {}) {
@@ -195,6 +198,14 @@ export class SteeringRuntime {
     this.replaceWorker({ ...current, pid, jobId });
   }
 
+  attachState(db: DatabaseSync): void {
+    this.stateDb = db;
+    db.exec(
+      "INSERT OR IGNORE INTO project_runtime(id, state, current_wave, paused, updated_rev) VALUES (1, 'WAVES', 1, 0, 0)",
+    );
+    this.persistControl();
+  }
+
   placeHold(hold: TaskHold): TaskHold {
     const exists = this.holds.some(
       (row) => row.taskId === hold.taskId && row.reason === hold.reason && row.source === hold.source,
@@ -202,6 +213,7 @@ export class SteeringRuntime {
     if (!exists) {
       this.holds.push(hold);
       this.graphWrites += 1;
+      this.persistHold(hold);
     }
     return hold;
   }
@@ -210,7 +222,12 @@ export class SteeringRuntime {
     const before = this.holds.length;
     const next = this.holds.filter((hold) => !(hold.taskId === taskId && hold.reason === reason));
     const removed = before - next.length;
-    if (removed > 0) this.graphWrites += 1;
+    if (removed > 0) {
+      this.graphWrites += 1;
+      this.stateDb
+        ?.prepare("DELETE FROM task_holds WHERE task = :task AND reason = :reason")
+        .run({ task: taskId, reason });
+    }
     this.holds.length = 0;
     this.holds.push(...next);
     return removed;
@@ -267,6 +284,64 @@ export class SteeringRuntime {
     this.paused = next !== "RUNNING";
     this.claimNewTasks = next === "RUNNING";
     this.graphWrites += 1;
+    this.persistControl();
+  }
+
+  private persistControl(): void {
+    const db = this.stateDb;
+    if (!db) return;
+    const paused = this.paused || this.controlState === "PAUSED" ? 1 : 0;
+    db.prepare(
+      "UPDATE project_runtime SET paused = :paused, current_wave = :wave, updated_rev = updated_rev + 1 WHERE id = 1",
+    ).run({ paused, wave: this.currentWave });
+    db.prepare(
+      "INSERT INTO meta(key, value) VALUES ('steering.control_state', :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    ).run({ value: this.controlState });
+  }
+
+  private persistHold(hold: TaskHold): void {
+    const db = this.stateDb;
+    if (!db || !isHoldReason(hold.reason)) return;
+    this.ensureTaskRow(hold.taskId);
+    db.prepare(
+      "INSERT OR IGNORE INTO task_holds(task, reason, source, created_at) VALUES (:task, :reason, :source, :created)",
+    ).run({
+      task: hold.taskId,
+      reason: hold.reason,
+      source: hold.source,
+      created: hold.createdAtMs,
+    });
+  }
+
+  private ensureTaskRow(taskId: string): void {
+    const db = this.stateDb;
+    if (!db) return;
+    const existing = db.prepare("SELECT 1 AS ok FROM task_runtime WHERE task = :task").get({ task: taskId });
+    if (existing) return;
+    const worker = [...this.workers.values()].find((item) => item.taskId === taskId);
+    const feature = this.tasks.get(taskId)?.featureId ?? worker?.featureId ?? "unscoped";
+    const changeSet = `cs-steering-${taskId}`;
+    db.prepare(
+      `INSERT OR IGNORE INTO change_sets(id, rev, origin, origin_ref, author, created_at, summary)
+       VALUES (:id, NULL, 'kernel', NULL, 'steering', :now, 'steering hold')`,
+    ).run({ id: changeSet, now: Date.now() });
+    db.prepare(
+      `INSERT OR IGNORE INTO nodes(
+         id, kind, version, content_hash, title, text, fields, status, owner_role, change_set, created_rev, updated_rev
+       ) VALUES (
+         :id, 'task', 1, :hash, :title, '', :fields, 'active', NULL, :change_set, 0, 0
+       )`,
+    ).run({
+      id: taskId,
+      hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      title: taskId,
+      fields: JSON.stringify({ steeringCatalog: 0 }),
+      change_set: changeSet,
+    });
+    db.prepare(
+      `INSERT OR IGNORE INTO task_runtime(task, feature, state, level, epoch, submission_pending, updated_rev)
+       VALUES (:task, :feature, 'CODING', 'standard', 0, 0, 0)`,
+    ).run({ task: taskId, feature });
   }
 
   armCommitBarrier(barrier: () => Promise<void>): void {

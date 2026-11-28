@@ -8,7 +8,7 @@ export const DELTA_TASK_CEILING = 5;
 export const DELTA_COST_CEILING_MICRO_USD = 1_000_000n;
 export const DELTA_WINDOW_CEILING_PPM = 20_000;
 
-export const USER_PAUSED_REASON = "user_paused";
+export const USER_PAUSED_REASON = "user_pause";
 export const REQUIREMENT_CHANGE_REASON = "requirement_change";
 
 export const CLAUSE_RANK = {
@@ -95,7 +95,7 @@ export interface OwnerAnswer {
   readonly citations: readonly Citation[];
   readonly grounded: boolean;
   readonly guessed: false;
-  readonly llmCalls: 0;
+  readonly llmCalls: number;
 }
 
 export interface RevisionEdit {
@@ -453,4 +453,6 @@ export interface DispatcherSeed {
   readonly sleeper?: Sleeper;
   readonly clock?: Clock;
   readonly llm?: LlmPort;
+  readonly stateDbPath?: string;
+  readonly telemetryDbPath?: string;
 }

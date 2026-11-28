@@ -1,6 +1,6 @@
 import { plannedClause, wholeSpan } from "./clause.js";
 import { contentTokens } from "./shortlist.js";
-import type { InputStartFocus, PlannedClause, RouterPrompt, RouterV1, ShortlistCard, TextSpan } from "./types.js";
+import type { InputStartFocus, IntentType, PlannedClause, RouterIntent, RouterPrompt, RouterV1, ShortlistCard, TextSpan } from "./types.js";
 import type { RouterModelPort as ModelPort } from "./ports.js";
 
 export interface TargetMatch {
@@ -67,6 +67,51 @@ export function planMessage(input: {
     planned.push(buildClause(clauseText, span, kind, match, input));
   }
   return inheritPronouns(planned);
+}
+
+export function clausesFromRouterV1(text: string, value: RouterV1): PlannedClause[] {
+  if ("blocked" in value) return [];
+  return value.clauses.map((clause) => {
+    const clauseText = text.slice(clause.span.start, clause.span.end);
+    const intentType = intentTypeFor(clause.intent, clauseText);
+    const ambiguous = clause.needs_clarification || clause.confidence < 0.55;
+    return plannedClause({
+      clauseText,
+      span: clause.span,
+      intentType,
+      routerIntent: clause.intent,
+      targetCandidateIds: clause.target_id === null ? [] : [clause.target_id],
+      confidence: ambiguous ? "ambiguous" : "high",
+      needsClarification: clause.needs_clarification,
+      routerConfidence: clause.confidence,
+      control: intentType === "stop_control" ? controlKind(clauseText) : null,
+    });
+  });
+}
+
+function intentTypeFor(intent: RouterIntent, clauseText: string): IntentType {
+  switch (intent) {
+    case "control":
+      return "stop_control";
+    case "question":
+      return /\b(how much|spent|budget|cost)\b/i.test(clauseText) ? "read_only_query" : "answer_question";
+    case "explain_impact":
+      return "read_only_query";
+    case "change":
+    case "correct_evidence":
+      return "edit_existing";
+    case "remove":
+      return "undo_feature";
+    case "add":
+    case "new_feature":
+      return "add_new_feature";
+    default:
+      return "answer_question";
+  }
+}
+
+function controlKind(clauseText: string): "pause" | "stop" {
+  return /\bpause\b/i.test(clauseText) && !/\b(stop|abort)\b/i.test(clauseText) ? "pause" : "stop";
 }
 
 export function toRouterV1(clauses: readonly PlannedClause[]): RouterV1 {

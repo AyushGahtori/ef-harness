@@ -1,4 +1,6 @@
-import { FourRouteSteeringDispatcher, RouteTelemetry } from "./dispatcher.js";
+import { TelemetryDb } from "@ef-harness/db";
+import { openSteeringState } from "../router/state-file.js";
+import { FourRouteSteeringDispatcher, RouteTelemetry, type TelemetryEvent } from "./dispatcher.js";
 import { NewFeatureDedupSpawner } from "./dedup-spawner.js";
 import { ImmediateKernelStopController } from "./kernel-stop.js";
 import {
@@ -16,6 +18,7 @@ import {
   LocalTaskHoldsManager,
   LocalWindowsJobSupervisor,
 } from "./local-ports.js";
+import type { AskOwnerResponderEnginePort } from "./ports.js";
 import { SteeringRuntime } from "./runtime.js";
 import type { Clock, DispatcherSeed, Sleeper } from "./types.js";
 
@@ -114,6 +117,23 @@ const systemClock: Clock = {
   },
 };
 
+function openTelemetrySink(filePath: string): (event: TelemetryEvent) => void {
+  const telemetry = TelemetryDb.open({ filePath });
+  return (event) => {
+    telemetry.enqueue({
+      ts: Date.now(),
+      kind: "metric",
+      data: {
+        route: event.route,
+        latencyMs: event.latencyMs,
+        msgSeq: event.msgSeq,
+        kind: event.kind,
+      },
+    });
+    telemetry.flush();
+  };
+}
+
 export interface SteeringAssembly {
   readonly dispatcher: FourRouteSteeringDispatcher;
   readonly runtime: SteeringRuntime;
@@ -126,13 +146,17 @@ export interface SteeringAssembly {
   readonly discovery: LocalDiscoverySessionCoordinator;
   readonly holds: LocalTaskHoldsManager;
   readonly graph: LocalKnowledgeGraphRepo;
-  readonly askOwner: LocalAskOwnerResponderEngine;
+  readonly askOwner: AskOwnerResponderEnginePort;
   readonly telemetry: RouteTelemetry;
 }
 
-export function createFourRouteSteeringDispatcher(seed: DispatcherSeed = {}): SteeringAssembly {
+export function createFourRouteSteeringDispatcher(
+  seed: DispatcherSeed & { readonly askOwner?: AskOwnerResponderEnginePort } = {},
+): SteeringAssembly {
   const runtime = new SteeringRuntime(seed);
-  const askOwner = new LocalAskOwnerResponderEngine(runtime);
+  if (seed.stateDbPath) runtime.attachState(openSteeringState(seed.stateDbPath));
+  const telemetrySink = seed.telemetryDbPath ? openTelemetrySink(seed.telemetryDbPath) : null;
+  const askOwner = seed.askOwner ?? new LocalAskOwnerResponderEngine(runtime);
   const classifier = new LocalChangeClassifier();
   const walker = new LocalReverseImpactWalker(runtime);
   const propagator = new LocalDebouncedRevisionPropagator();
@@ -155,7 +179,7 @@ export function createFourRouteSteeringDispatcher(seed: DispatcherSeed = {}): St
     seed.clock ?? systemClock,
   );
   const dedup = new NewFeatureDedupSpawner(runtime, graph, discovery, budget, policy);
-  const telemetry = new RouteTelemetry();
+  const telemetry = telemetrySink ? new RouteTelemetry(telemetrySink) : new RouteTelemetry();
   const dispatcher = new FourRouteSteeringDispatcher(
     runtime,
     stopController,

@@ -1,7 +1,6 @@
 /**
- * Tables Task 113 owns inside state.db.
- * `user_messages` is not in the frozen schema yet. CREATE IF NOT EXISTS keeps a
- * Task 013 database openable. Fold this DDL into schema/state.sql at integration.
+ * Additive steering tables. They are applied by MigrationRunner state v2.
+ * Canonical `nodes`, `outbox`, and `outbox_deliveries` stay in schema/state.sql.
  */
 export const ROUTER_DDL = `
 CREATE TABLE IF NOT EXISTS user_messages (
@@ -57,35 +56,5 @@ CREATE TABLE IF NOT EXISTS input_focus_snapshots (
   focus_json TEXT NOT NULL,
   live_focus_json TEXT NOT NULL,
   confirmation_required INTEGER NOT NULL DEFAULT 0 CHECK (confirmation_required IN (0,1))
-);
-
-CREATE TABLE IF NOT EXISTS router_catalog (
-  id TEXT PRIMARY KEY,
-  nid INTEGER NOT NULL UNIQUE,
-  kind TEXT NOT NULL,
-  title TEXT NOT NULL,
-  body TEXT NOT NULL,
-  status TEXT NOT NULL,
-  feature_id TEXT,
-  aliases_json TEXT NOT NULL,
-  working INTEGER NOT NULL CHECK (working IN (0,1)),
-  owner_role TEXT
-);
-
-CREATE TABLE IF NOT EXISTS outbox (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  id TEXT NOT NULL UNIQUE,
-  type TEXT NOT NULL,
-  subject TEXT,
-  rev INTEGER,
-  payload TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS outbox_deliveries (
-  event_id TEXT NOT NULL,
-  consumer TEXT NOT NULL,
-  delivered_at INTEGER,
-  PRIMARY KEY (event_id, consumer)
 );
 `;

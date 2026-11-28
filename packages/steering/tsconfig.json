@@ -9,8 +9,14 @@
     "src/**/*.ts"
   ],
   "references": [
-    {
-      "path": "../shared-contracts"
-    }
+    { "path": "../db" },
+    { "path": "../discovery" },
+    { "path": "../git-engine" },
+    { "path": "../integrator" },
+    { "path": "../planner" },
+    { "path": "../sandbox" },
+    { "path": "../shared-contracts" },
+    { "path": "../shared-observability" },
+    { "path": "../worker-loop" }
   ]
 }

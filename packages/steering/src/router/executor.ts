@@ -26,13 +26,13 @@ export class OrderedMultiClauseExecutor {
     private readonly now: () => number,
   ) {}
 
-  execute(message: MessageRow): ClarificationCard | null {
+  async execute(message: MessageRow): Promise<ClarificationCard | null> {
     const clauses = this.store.listClauses(message.messageId);
     for (const clause of clauses) {
       if (clause.intentType !== "add_new_feature") continue;
       if (clause.status === "DONE" || clause.status === "AWAITING_CLARIFICATION") continue;
       if (clause.needsClarification) continue;
-      this.dispatch.reserveFeature(clause, message);
+      await this.dispatch.reserveFeature(clause, message);
     }
     for (const clause of clauses) {
       if (clause.status === "DONE") continue;
@@ -52,7 +52,7 @@ export class OrderedMultiClauseExecutor {
       this.store.transaction(() => {
         this.store.updateClause(message.messageId, clause.clauseId, "DISPATCHED", null);
       });
-      const outcome = this.apply(clause, message);
+      const outcome = await this.apply(clause, message);
       this.store.transaction(() => {
         this.store.updateClause(message.messageId, clause.clauseId, "DONE", outcome.detail);
         this.outbox.appendEventInTx(
@@ -84,7 +84,7 @@ export class OrderedMultiClauseExecutor {
     return clause.needsClarification || clause.confidence === "ambiguous";
   }
 
-  private apply(clause: StoredClause, message: MessageRow): ClauseOutcome {
+  private async apply(clause: StoredClause, message: MessageRow): Promise<ClauseOutcome> {
     if (clause.cardDecision === "approve") return this.dispatch.approve(clause, message);
     if (clause.cardDecision === "reject") return this.dispatch.reject(clause, message);
     const request = {

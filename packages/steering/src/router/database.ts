@@ -1,4 +1,14 @@
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { openSteeringState } from "./state-file.js";
+import {
+  KnowledgeGraphRepo,
+  knowledgeLoadQueryCatalog,
+  readQueriesSql,
+  type KnowledgeSqlRow,
+  type KnowledgeSqlValue,
+  type SqlConnection,
+  type SqlStatement,
+} from "@ef-harness/db";
 import { ROUTER_DDL } from "./ddl.js";
 import { DuplicateMessageConflictError, RouterInputError } from "./errors.js";
 import {
@@ -85,16 +95,39 @@ export interface NewMessage {
   readonly confirmationRequired: boolean;
 }
 
+const NODE_KINDS = new Set([
+  "decision",
+  "spec_item",
+  "edge_case",
+  "rule",
+  "journey",
+  "contract",
+  "arch_node",
+  "research_fact",
+  "plan",
+  "feature",
+  "task",
+  "check",
+  "waiver",
+  "ccr",
+  "source",
+  "asset",
+  "comment",
+]);
+
 export class RouterStore {
   private depth = 0;
   private closed = false;
+  private readonly graph: KnowledgeGraphRepo;
 
   constructor(private readonly db: DatabaseSync) {
     this.db.exec(ROUTER_DDL);
+    const connection = adaptKnowledge(db);
+    this.graph = new KnowledgeGraphRepo(connection, knowledgeLoadQueryCatalog(connection, readQueriesSql()));
   }
 
   static open(path: string): RouterStore {
-    return new RouterStore(new DatabaseSync(path));
+    return new RouterStore(openSteeringState(path));
   }
 
   get database(): DatabaseSync {
@@ -346,56 +379,80 @@ export class RouterStore {
   }
 
   upsertCatalog(node: GraphNodeView & { readonly nid: number }): void {
-    this.db
-      .prepare(
-        `INSERT INTO router_catalog (
-           id, nid, kind, title, body, status, feature_id, aliases_json, working, owner_role
-         ) VALUES (
-           :id, :nid, :kind, :title, :body, :status, :feature_id, :aliases_json, :working, :owner_role
-         )
-         ON CONFLICT(id) DO UPDATE SET
-           nid = excluded.nid,
-           kind = excluded.kind,
-           title = excluded.title,
-           body = excluded.body,
-           status = excluded.status,
-           feature_id = excluded.feature_id,
-           aliases_json = excluded.aliases_json,
-           working = excluded.working,
-           owner_role = excluded.owner_role`,
-      )
-      .run({
-        id: node.id,
-        nid: node.nid,
-        kind: node.kind,
-        title: node.title,
-        body: node.text,
-        status: node.status,
-        feature_id: node.featureId,
-        aliases_json: jsonText(node.aliases),
-        working: node.working ? 1 : 0,
-        owner_role: node.ownerRole,
+    const fields = catalogFields(node);
+    const kind = NODE_KINDS.has(node.kind) ? node.kind : "comment";
+    const status = nodeStatus(node.status);
+    const existing = this.graph.getNode(node.id);
+    if (!existing) {
+      this.graph.commitChangeSet({
+        origin: "chat",
+        author: "steering",
+        summary: `catalog ${node.id}`,
+        nodes: [
+          {
+            op: "create",
+            id: node.id,
+            kind,
+            title: node.title,
+            text: node.text,
+            fields,
+            status: status === "retired" || status === "superseded" ? "active" : status,
+            ownerRole: node.ownerRole,
+          },
+        ],
       });
+      if (status === "retired" || status === "superseded") {
+        this.graph.commitChangeSet({
+          origin: "chat",
+          author: "steering",
+          summary: `retire catalog ${node.id}`,
+          nodes: [{ op: "retire", id: node.id, status }],
+        });
+      }
+      return;
+    }
+    if (status === "retired" || status === "superseded") {
+      this.graph.commitChangeSet({
+        origin: "chat",
+        author: "steering",
+        summary: `retire catalog ${node.id}`,
+        nodes: [{ op: "retire", id: node.id, status }],
+      });
+      return;
+    }
+    this.graph.commitChangeSet({
+      origin: "chat",
+      author: "steering",
+      summary: `catalog ${node.id}`,
+      nodes: [
+        {
+          op: "update",
+          id: node.id,
+          class: "compatible",
+          title: node.title,
+          text: node.text,
+          fields,
+          status,
+          ownerRole: node.ownerRole,
+        },
+      ],
+    });
   }
 
   listCatalog(): Array<GraphNodeView & { readonly nid: number }> {
-    const rows = this.db.prepare(`SELECT * FROM router_catalog ORDER BY nid ASC`).all() as Row[];
-    return rows.map((row) => ({
-      nid: integer(row.nid, "nid"),
-      id: text(row.id, "id"),
-      kind: text(row.kind, "kind") as GraphNodeView["kind"],
-      title: text(row.title, "title"),
-      text: text(row.body, "body"),
-      status: text(row.status, "status"),
-      featureId: textOrNull(row.feature_id),
-      aliases: parseStringArray(text(row.aliases_json, "aliases_json")),
-      working: integer(row.working, "working") === 1,
-      ownerRole: textOrNull(row.owner_role),
-    }));
+    const rows = this.db
+      .prepare(
+        `SELECT nid, id, kind, title, text, status, feature, owner_role, fields
+           FROM nodes
+          WHERE json_extract(fields, '$.steeringCatalog') = 1
+          ORDER BY nid ASC`,
+      )
+      .all() as Row[];
+    return rows.map((row) => catalogView(row));
   }
 
   nextCatalogNid(): number {
-    const row = this.db.prepare(`SELECT COALESCE(MAX(nid), 0) AS max_nid FROM router_catalog`).get() as Row;
+    const row = this.db.prepare(`SELECT COALESCE(MAX(nid), 0) AS max_nid FROM nodes`).get() as Row;
     return integer(row.max_nid, "max_nid") + 1;
   }
 
@@ -573,4 +630,87 @@ function parseStringArray(encoded: string): string[] {
     throw new RouterInputError("expected a string array");
   }
   return value;
+}
+
+function nodeStatus(value: string): "draft" | "active" | "retired" | "superseded" {
+  if (value === "draft" || value === "active" || value === "retired" || value === "superseded") return value;
+  return "active";
+}
+
+function catalogFields(node: GraphNodeView): {
+  readonly steeringCatalog: 1;
+  readonly catalogKind: GraphNodeView["kind"];
+  readonly catalogStatus: string;
+  readonly aliases: readonly string[];
+  readonly working: boolean;
+  readonly feature?: string;
+} {
+  const fields: {
+    steeringCatalog: 1;
+    catalogKind: GraphNodeView["kind"];
+    catalogStatus: string;
+    aliases: readonly string[];
+    working: boolean;
+    feature?: string;
+  } = {
+    steeringCatalog: 1,
+    catalogKind: node.kind,
+    catalogStatus: node.status,
+    aliases: node.aliases,
+    working: node.working,
+  };
+  if (node.featureId) fields.feature = node.featureId;
+  return fields;
+}
+
+function catalogView(row: Row): GraphNodeView & { readonly nid: number } {
+  const fields = parseJson(text(row.fields, "fields"));
+  const record = typeof fields === "object" && fields !== null && !Array.isArray(fields) ? fields as Record<string, unknown> : {};
+  const kind = typeof record.catalogKind === "string" ? record.catalogKind : text(row.kind, "kind");
+  const status = typeof record.catalogStatus === "string" ? record.catalogStatus : text(row.status, "status");
+  const aliases = Array.isArray(record.aliases) && record.aliases.every((item) => typeof item === "string")
+    ? record.aliases
+    : [];
+  return {
+    nid: integer(row.nid, "nid"),
+    id: text(row.id, "id"),
+    kind: kind as GraphNodeView["kind"],
+    title: text(row.title, "title"),
+    text: text(row.text, "text"),
+    status,
+    featureId: textOrNull(row.feature),
+    aliases,
+    working: record.working === true,
+    ownerRole: textOrNull(row.owner_role),
+  };
+}
+
+function adaptKnowledge(db: DatabaseSync): SqlConnection {
+  return {
+    exec(sql: string): void {
+      db.exec(sql);
+    },
+    prepare(sql: string): SqlStatement {
+      const statement = db.prepare(sql);
+      statement.setAllowBareNamedParameters(true);
+      return {
+        all(params: Record<string, KnowledgeSqlValue> = {}): KnowledgeSqlRow[] {
+          return statement.all(params) as KnowledgeSqlRow[];
+        },
+        get(params: Record<string, KnowledgeSqlValue> = {}): KnowledgeSqlRow | undefined {
+          return statement.get(params) as KnowledgeSqlRow | undefined;
+        },
+        run(params: Record<string, KnowledgeSqlValue> = {}): { changes: number; lastInsertRowid: number } {
+          const result = statement.run(params);
+          const changes = typeof result.changes === "bigint" ? Number(result.changes) : result.changes;
+          const lastInsertRowid =
+            typeof result.lastInsertRowid === "bigint" ? Number(result.lastInsertRowid) : result.lastInsertRowid;
+          return { changes, lastInsertRowid };
+        },
+      };
+    },
+    close(): void {
+      return;
+    },
+  };
 }

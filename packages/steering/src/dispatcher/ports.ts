@@ -22,7 +22,7 @@ import type {
 
 /** Local stand-in for Task 102 `AskOwnerResponderEngine.answerQuestion`. */
 export interface AskOwnerResponderEnginePort {
-  answerQuestion(question: string): OwnerAnswer;
+  answerQuestion(question: string): OwnerAnswer | Promise<OwnerAnswer>;
 }
 
 /** Local stand-in for Task 087 `ChangeClassifier.classify`. */
@@ -93,7 +93,10 @@ export interface ProjectBudgetPort {
 
 /** Local stand-in for Task 113 `OrderedMultiClauseExecutor`. */
 export interface OrderedMultiClauseExecutorPort {
-  execute<T>(clauses: readonly SteeringClause[], run: (clause: SteeringClause) => T): readonly T[];
+  execute<T>(
+    clauses: readonly SteeringClause[],
+    run: (clause: SteeringClause) => T | Promise<T>,
+  ): Promise<readonly T[]>;
 }
 
 /** Local stand-in for Task 041 Windows Job Object supervision (`TerminateJobObject`). */

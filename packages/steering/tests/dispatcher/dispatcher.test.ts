@@ -91,22 +91,22 @@ function kitchen(seed: DispatcherSeed = {}) {
 }
 
 describe("four-route steering dispatcher", () => {
-  it("answers read-only questions with citations and zero holds", () => {
+  it("answers read-only questions with citations and zero holds", async () => {
     const harness = kitchen();
     const before = harness.runtime.fingerprint();
-    const worker = harness.dispatcher.dispatchReadOnlyQuery({
+    const worker = await harness.dispatcher.dispatchReadOnlyQuery({
       msgSeq: "q-worker",
       text: "What is worker A0014 doing?",
     });
-    const auth = harness.dispatcher.dispatchReadOnlyQuery({
+    const auth = await harness.dispatcher.dispatchReadOnlyQuery({
       msgSeq: "q-auth",
       text: "Show me how auth tokens are stored",
     });
-    const budget = harness.dispatcher.dispatchReadOnlyQuery({
+    const budget = await harness.dispatcher.dispatchReadOnlyQuery({
       msgSeq: "q-budget",
       text: "How much budget is left?",
     });
-    const orders = harness.dispatcher.dispatchReadOnlyQuery({
+    const orders = await harness.dispatcher.dispatchReadOnlyQuery({
       msgSeq: "q-orders",
       text: "How is the Orders page coming along?",
     });
@@ -456,7 +456,7 @@ describe("four-route steering dispatcher", () => {
     expect(harness.holds.listActiveHolds().every((hold) => hold.taskId === "T-Orders")).toBe(true);
   });
 
-  it("executes compound clauses in stop, answer, edit, add, query order", () => {
+  it("executes compound clauses in stop, answer, edit, add, query order", async () => {
     const harness = kitchen();
     const clauses: SteeringClause[] = [
       { id: "c-query", kind: "query", text: "How much budget is left?", targetId: null, index: 4 },
@@ -465,7 +465,7 @@ describe("four-route steering dispatcher", () => {
       { id: "c-answer", kind: "answer", text: "What is worker A0014 doing?", targetId: null, index: 1 },
       { id: "c-stop", kind: "stop", text: "stop", targetId: null, index: 0 },
     ];
-    const results = harness.dispatcher.dispatchClauses(clauses);
+    const results = await harness.dispatcher.dispatchClauses(clauses);
     expect(harness.clauses.executedKinds).toEqual(["stop", "answer", "edit", "add", "query"]);
     expect(results.map((result) => result.route)).toEqual([4, 1, 2, 3, 1]);
     expect(results[0]?.receipt.detail.control).toBe("stop_now");
