@@ -26,8 +26,8 @@ export function hotDeskOverflowLabel(overflowCount: number): string {
  */
 export class HotDeskOverflowAggregator {
   aggregate(workers: readonly OfficeWorkerRecord[]): HotDeskOverflowSnapshot {
-    const bullpen = workers.filter((worker) => worker.roomId === "engineering_bullpen");
-    const other = workers.filter((worker) => worker.roomId !== "engineering_bullpen");
+    const bullpen = workers.filter((worker) => worker.roomId === "engineering-bullpen");
+    const other = workers.filter((worker) => worker.roomId !== "engineering-bullpen");
     const ranked = rankWorkersForBullpen(bullpen);
     const seatedBullpen = ranked.slice(0, BULLPEN_VISIBLE_DESK_CAP);
     const overflow = ranked.length - seatedBullpen.length;
@@ -51,11 +51,11 @@ export class HotDeskOverflowAggregator {
   }
 
   roomHeading(roomId: keyof typeof OFFICE_ROOM_LABEL, inboxCount: number): string {
-    if (roomId === "ceo_office") {
-      return `${OFFICE_ROOM_LABEL.ceo_office} (${inboxCount} inbox items)`;
+    if (roomId === "ceo-office") {
+      return `${OFFICE_ROOM_LABEL["ceo-office"]} (${inboxCount} inbox items)`;
     }
-    if (roomId === "engineering_bullpen") {
-      return `${OFFICE_ROOM_LABEL.engineering_bullpen} (grouped by Feature)`;
+    if (roomId === "engineering-bullpen") {
+      return `${OFFICE_ROOM_LABEL["engineering-bullpen"]} (grouped by Feature)`;
     }
     return OFFICE_ROOM_LABEL[roomId];
   }

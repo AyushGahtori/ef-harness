@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { OFFICE_LOGICAL_TAB_ROOMS, OfficeSemanticMirrorTree } from "../../src/office/a11y/index.js";
+import { OFFICE_MIRROR_TAB_GROUPS, OfficeSemanticMirrorTree } from "../../src/office/a11y/index.js";
+import { ROOM_IDS } from "../../src/office/renderer/room-ids.js";
 import { makeWorker, MemoryCamera, MemoryInbox, MemoryInspector } from "./fixtures.js";
 
 describe("OfficeSemanticMirrorTree", () => {
@@ -8,9 +9,15 @@ describe("OfficeSemanticMirrorTree", () => {
     const mirror = new OfficeSemanticMirrorTree(camera, new MemoryInspector(), new MemoryInbox());
     mirror.replaceWorkers(
       [
-        makeWorker({ agentId: "A0014", title: "print page", roomId: "qa_lab", priority: 10 }),
-        makeWorker({ agentId: "A0002", title: "flagged fix", roomId: "flagged", flagged: true, priority: 20 }),
-        makeWorker({ agentId: "A0001", title: "inbox flow", roomId: "ceo_office", inboxItem: true, priority: 30 }),
+        makeWorker({ agentId: "A0014", title: "print page", roomId: "qa-verification-lab", priority: 10 }),
+        makeWorker({
+          agentId: "A0002",
+          title: "flagged fix",
+          roomId: "engineering-bullpen",
+          flagged: true,
+          priority: 20,
+        }),
+        makeWorker({ agentId: "A0001", title: "inbox flow", roomId: "ceo-office", inboxItem: true, priority: 30 }),
       ],
       2,
     );
@@ -18,8 +25,8 @@ describe("OfficeSemanticMirrorTree", () => {
     const nodes = mirror.focusNodes();
     const roomOrder = nodes.map((node) => node.roomId);
     for (let index = 1; index < roomOrder.length; index += 1) {
-      const left = OFFICE_LOGICAL_TAB_ROOMS.indexOf(roomOrder[index - 1]!);
-      const right = OFFICE_LOGICAL_TAB_ROOMS.indexOf(roomOrder[index]!);
+      const left = OFFICE_MIRROR_TAB_GROUPS.indexOf(roomOrder[index - 1]!);
+      const right = OFFICE_MIRROR_TAB_GROUPS.indexOf(roomOrder[index]!);
       expect(left).toBeLessThanOrEqual(right);
     }
 
@@ -35,7 +42,7 @@ describe("OfficeSemanticMirrorTree", () => {
     const inspector = new MemoryInspector();
     const mirror = new OfficeSemanticMirrorTree(new MemoryCamera(), inspector, new MemoryInbox());
     mirror.replaceWorkers(
-      [makeWorker({ agentId: "A0014", title: "print page", roomId: "engineering_bullpen" })],
+      [makeWorker({ agentId: "A0014", title: "print page", roomId: "engineering-bullpen" })],
       0,
     );
     mirror.handleKeyDown({ key: "Tab", shiftKey: false });
@@ -52,6 +59,10 @@ describe("OfficeSemanticMirrorTree", () => {
     const html = mirror.renderHtml();
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain("Merge Bay");
+    for (const roomId of ROOM_IDS) {
+      expect(html).toContain(`data-room="${roomId}"`);
+    }
+    expect(html).toContain('data-room="flagged"');
     vi.useRealTimers();
   });
 

@@ -1,23 +1,44 @@
-export const OFFICE_LOGICAL_TAB_ROOMS = [
-  "ceo_office",
+import { ROOM_IDS, type OfficeRoomId } from "../renderer/room-ids.js";
+
+/** The 11 canonical kebab-case rooms from Task 162. */
+export const OFFICE_LOGICAL_TAB_ROOMS = ROOM_IDS;
+
+export type { OfficeRoomId };
+
+export const FLAGGED_GROUP_LABEL = "Waiting on You / Flagged Workers";
+
+/**
+ * Screen-reader tab order: CEO office, the priority-flagged group, then the other ten rooms.
+ */
+export const OFFICE_MIRROR_TAB_GROUPS = [
+  "ceo-office",
   "flagged",
-  "engineering_bullpen",
-  "qa_lab",
-  "merge_bay",
-  "shipping_dock",
-  "break_room",
+  "front-desk",
+  "discovery-lounge",
+  "research-library",
+  "architecture-studio",
+  "planning-war-room",
+  "engineering-bullpen",
+  "qa-verification-lab",
+  "integration-merge-bay",
+  "shipping-dock",
+  "break-room",
 ] as const;
 
-export type OfficeRoomId = (typeof OFFICE_LOGICAL_TAB_ROOMS)[number];
+export type OfficeMirrorGroup = (typeof OFFICE_MIRROR_TAB_GROUPS)[number];
 
 export const OFFICE_ROOM_LABEL: Record<OfficeRoomId, string> = {
-  ceo_office: "CEO Office",
-  flagged: "Waiting on You / Flagged Workers",
-  engineering_bullpen: "Engineering Bullpen",
-  qa_lab: "QA Lab (Pool 2 Test Rigs)",
-  merge_bay: "Merge Bay",
-  shipping_dock: "Shipping Dock",
-  break_room: "Break Room",
+  "ceo-office": "CEO Office",
+  "front-desk": "Front Desk",
+  "discovery-lounge": "Discovery Lounge",
+  "research-library": "Research Library",
+  "architecture-studio": "Architecture Studio",
+  "planning-war-room": "Planning War Room",
+  "engineering-bullpen": "Engineering Bullpen",
+  "qa-verification-lab": "QA Verification Lab (Pool 2 Test Rigs)",
+  "integration-merge-bay": "Integration Merge Bay",
+  "shipping-dock": "Shipping Dock",
+  "break-room": "Break Room",
 };
 
 export const BULLPEN_VISIBLE_DESK_CAP = 28;

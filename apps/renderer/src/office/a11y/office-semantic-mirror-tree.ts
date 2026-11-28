@@ -2,10 +2,12 @@ import { DebouncedAriaLive } from "./debounced-aria-live.js";
 import { reduceOfficeFocusTrap } from "./focus-trap.js";
 import { HotDeskOverflowAggregator } from "./hot-desk-overflow-aggregator.js";
 import {
-  OFFICE_LOGICAL_TAB_ROOMS,
+  FLAGGED_GROUP_LABEL,
+  OFFICE_MIRROR_TAB_GROUPS,
   OFFICE_ROOM_LABEL,
   type InboxPort,
   type OfficeCameraPort,
+  type OfficeMirrorGroup,
   type OfficeRoomId,
   type OfficeSelection,
   type OfficeWorkerRecord,
@@ -15,7 +17,7 @@ import {
 export interface MirrorFocusNode {
   readonly id: string;
   readonly tabIndex: number;
-  readonly roomId: OfficeRoomId;
+  readonly roomId: OfficeMirrorGroup;
   readonly agentId: string;
   readonly label: string;
 }
@@ -70,27 +72,39 @@ export class OfficeSemanticMirrorTree {
     this.tabIndex = 1;
     const nodes: MirrorFocusNode[] = [];
     const snapshot = this.overflow.aggregate(this.workers);
-    for (const roomId of OFFICE_LOGICAL_TAB_ROOMS) {
-      if (roomId === "ceo_office" && this.inboxCount > 0) {
+    for (const group of OFFICE_MIRROR_TAB_GROUPS) {
+      if (group === "ceo-office" && this.inboxCount > 0) {
         nodes.push({
           id: "ceo-inbox",
           tabIndex: this.tabIndex++,
-          roomId,
+          roomId: group,
           agentId: "inbox",
-          label: `${OFFICE_ROOM_LABEL.ceo_office} — ${this.inboxCount} inbox items`,
+          label: `${OFFICE_ROOM_LABEL["ceo-office"]} — ${this.inboxCount} inbox items`,
         });
       }
+      if (group === "flagged") {
+        for (const worker of this.workers.filter((entry) => entry.flagged === true)) {
+          nodes.push({
+            id: `flagged-${worker.agentId}`,
+            tabIndex: this.tabIndex++,
+            roomId: group,
+            agentId: worker.agentId,
+            label: formatAgentTag(worker),
+          });
+        }
+        continue;
+      }
       const roomWorkers =
-        roomId === "engineering_bullpen"
+        group === "engineering-bullpen"
           ? snapshot.seated
               .map((placement) => placement.worker)
-              .filter((worker) => worker.roomId === "engineering_bullpen")
-          : workersInRoom(this.workers, roomId);
+              .filter((worker) => worker.roomId === "engineering-bullpen")
+          : workersInRoom(this.workers, group);
       for (const worker of roomWorkers) {
         nodes.push({
           id: `worker-${worker.agentId}`,
           tabIndex: this.tabIndex++,
-          roomId,
+          roomId: group,
           agentId: worker.agentId,
           label: formatAgentTag(worker),
         });
@@ -100,7 +114,7 @@ export class OfficeSemanticMirrorTree {
       nodes.push({
         id: "hot-desk-overflow",
         tabIndex: this.tabIndex++,
-        roomId: "engineering_bullpen",
+        roomId: "engineering-bullpen",
         agentId: "overflow",
         label: snapshot.overflowLabel,
       });
@@ -146,11 +160,13 @@ export class OfficeSemanticMirrorTree {
     const nodes = this.focusNodes();
     const liveText = this.live.peekRendered();
     const activeDomTabId = this.focusedId ?? nodes[0]?.id ?? null;
-    const rooms = OFFICE_LOGICAL_TAB_ROOMS.map((roomId) => {
+    const rooms = OFFICE_MIRROR_TAB_GROUPS.map((roomId) => {
       const heading =
-        roomId === "ceo_office"
-          ? this.overflow.roomHeading("ceo_office", this.inboxCount)
-          : this.overflow.roomHeading(roomId, 0);
+        roomId === "flagged"
+          ? FLAGGED_GROUP_LABEL
+          : roomId === "ceo-office"
+            ? this.overflow.roomHeading("ceo-office", this.inboxCount)
+            : this.overflow.roomHeading(roomId, 0);
       const roomNodes = nodes.filter((node) => node.roomId === roomId);
       const items = roomNodes
         .map((node) => {

@@ -1,7 +1,9 @@
 export {
   BULLPEN_VISIBLE_DESK_CAP,
   ARIA_LIVE_DEBOUNCE_MS,
+  FLAGGED_GROUP_LABEL,
   OFFICE_LOGICAL_TAB_ROOMS,
+  OFFICE_MIRROR_TAB_GROUPS,
   OFFICE_ROOM_LABEL,
 } from "./types.js";
 export type {
@@ -15,6 +17,7 @@ export type {
   InboxPort,
   MediaQueryPort,
   OfficeCameraPort,
+  OfficeMirrorGroup,
   OfficeRoomId,
   OfficeSelection,
   OfficeWorkerRecord,
@@ -48,3 +51,9 @@ export { detectHighContrastMode, type HighContrastGuidance } from "./high-contra
 export { toggleOfficeBoardView, type OfficeBoardToggleResult } from "./office-board-toggle.js";
 export { reduceOfficeFocusTrap, type FocusTrapDecision } from "./focus-trap.js";
 export { OfficeA11yCoordinator, type OfficeA11yCoordinatorOptions, type OfficeA11ySnapshot } from "./office-a11y-coordinator.js";
+export {
+  bindPressureHysteresisStateMachine,
+  governorPressureFromShell,
+} from "./pressure-binding.js";
+export type { GovernorPressureMachine } from "./pressure-binding.js";
+export { OfficeView, shellCenterTab, type OfficeViewMount } from "./office-view.js";

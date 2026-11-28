@@ -20,7 +20,7 @@ export function makeWorker(
   partial: Partial<OfficeWorkerRecord> & Pick<OfficeWorkerRecord, "agentId" | "title">,
 ): OfficeWorkerRecord {
   return {
-    roomId: "engineering_bullpen",
+    roomId: "engineering-bullpen",
     stateLabel: "Running vitest",
     statusIcon: "⚙",
     priority: 1,

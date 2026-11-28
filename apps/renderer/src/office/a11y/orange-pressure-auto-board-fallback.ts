@@ -1,4 +1,5 @@
 import type {
+  AnimationDirectorPort,
   BoardViewPort,
   CenterTabPort,
   PixiTickerPort,
@@ -38,6 +39,7 @@ export class OrangePressureAutoBoardFallback {
     private readonly tabs: CenterTabPort,
     private readonly board: BoardViewPort,
     private readonly pixi: PixiTickerPort,
+    private readonly director: AnimationDirectorPort,
   ) {}
 
   start(): void {
@@ -56,8 +58,13 @@ export class OrangePressureAutoBoardFallback {
   setUserOverride(active: boolean): OrangeFallbackSnapshot {
     this.userOverrodeOrangeFallback = active;
     if (active && isPressureFallback(this.pressure.pressure)) {
+      this.holdMotion();
       this.tabs.setTab("office");
       this.pixi.start();
+      return this.snapshot();
+    }
+    if (!active) {
+      this.onPressure(this.pressure.pressure);
     }
     return this.snapshot();
   }
@@ -87,6 +94,7 @@ export class OrangePressureAutoBoardFallback {
     if (isPressureFallback(level)) {
       if (this.userOverrodeOrangeFallback) {
         this.recoveryOffer = false;
+        this.holdMotion();
         return;
       }
       this.autoFallbackActive = true;
@@ -100,5 +108,10 @@ export class OrangePressureAutoBoardFallback {
       this.recoveryOffer = true;
       this.autoFallbackActive = false;
     }
+  }
+
+  private holdMotion(): void {
+    this.director.setMotionEnabled(false);
+    this.director.seatAllAtDesks();
   }
 }

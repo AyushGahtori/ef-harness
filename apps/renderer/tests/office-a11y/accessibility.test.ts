@@ -37,8 +37,8 @@ function renderMirror(): string {
   });
   coordinator.setWorkers(
     [
-      makeWorker({ agentId: "A0014", title: "print page", roomId: "qa_lab" }),
-      makeWorker({ agentId: "A0020", title: "merge queue", roomId: "merge_bay" }),
+      makeWorker({ agentId: "A0014", title: "print page", roomId: "qa-verification-lab" }),
+      makeWorker({ agentId: "A0020", title: "merge queue", roomId: "integration-merge-bay" }),
     ],
     1,
   );

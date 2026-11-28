@@ -70,6 +70,7 @@ export class OfficeA11yCoordinator {
       ports.tabs,
       ports.board,
       ports.pixi,
+      ports.director,
     );
     this.mirror = new OfficeSemanticMirrorTree(ports.camera, ports.inspector, ports.inbox);
     this.overflow = new HotDeskOverflowAggregator();

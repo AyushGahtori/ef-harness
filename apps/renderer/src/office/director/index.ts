@@ -10,6 +10,8 @@ export type { TruthfulAnimationDirectorOptions } from "./truthful-animation-dire
 export { ParcelCourierAnimator } from "./parcel-courier.js";
 export type { ParcelHandoffRequest } from "./parcel-courier.js";
 export { createSyntheticOfficeWalkableGrid, addDynamicBlock } from "./synthetic-walkable-grid.js";
+export { FloorPlanWalkableGridPort, walkableGridFromFloorPlan } from "./floor-plan-walkable-grid.js";
+export { OfficeCastProjectorPortAdapter } from "./cast-projector-adapter.js";
 export { InMemoryOfficeCastProjector, LocalWalkableGridPort } from "./ports.js";
 export type { AnimationDirectorPort } from "./ports.js";
 export type {

@@ -12,7 +12,7 @@ describe("HotDeskOverflowAggregator", () => {
     const snapshot = aggregator.aggregate(makeBullpenWave(50));
 
     const bullpenSeated = snapshot.seated.filter(
-      (placement) => placement.worker.roomId === "engineering_bullpen",
+      (placement) => placement.worker.roomId === "engineering-bullpen",
     );
     expect(bullpenSeated.length).toBe(BULLPEN_VISIBLE_DESK_CAP);
     expect(snapshot.overflowCount).toBe(22);

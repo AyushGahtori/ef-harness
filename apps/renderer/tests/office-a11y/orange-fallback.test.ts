@@ -5,6 +5,7 @@ import {
   OrangePressureAutoBoardFallback,
 } from "../../src/office/a11y/index.js";
 import {
+  MemoryAnimationDirector,
   MemoryBoardView,
   MemoryCenterTabs,
   MemoryPixiTicker,
@@ -18,7 +19,8 @@ describe("OrangePressureAutoBoardFallback", () => {
     const board = new MemoryBoardView();
     const pixi = new MemoryPixiTicker();
     pixi.frameCount = 12;
-    const fallback = new OrangePressureAutoBoardFallback(pressure, tabs, board, pixi);
+    const director = new MemoryAnimationDirector();
+    const fallback = new OrangePressureAutoBoardFallback(pressure, tabs, board, pixi, director);
 
     fallback.start();
     pressure.shift("ORANGE");
@@ -45,11 +47,14 @@ describe("OrangePressureAutoBoardFallback", () => {
     const pressure = new MemoryPressureMachine();
     const tabs = new MemoryCenterTabs();
     const pixi = new MemoryPixiTicker();
+    const director = new MemoryAnimationDirector();
+    director.continuousMotionCount = 4;
     const fallback = new OrangePressureAutoBoardFallback(
       pressure,
       tabs,
       new MemoryBoardView(),
       pixi,
+      director,
     );
     fallback.start();
     pressure.shift("ORANGE");
@@ -59,5 +64,8 @@ describe("OrangePressureAutoBoardFallback", () => {
     expect(tabs.activeTab).toBe("office");
     expect(pixi.running).toBe(true);
     expect(overridden.highRamTooltip).toBe(true);
+    expect(director.motionEnabled).toBe(false);
+    expect(director.continuousMotionCount).toBe(0);
+    expect(director.seated).toBe(true);
   });
 });

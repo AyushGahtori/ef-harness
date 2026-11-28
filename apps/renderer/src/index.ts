@@ -36,6 +36,19 @@ export { IsolatedPreviewWebviewHost } from "./preview/host/index.js";
 export { createVisualSteerRouter, VisualSteerRouter } from "./preview/point-to-fix/index.js";
 export { DiagnosticsHealthView, renderHealthDocument } from "./diagnostics/index.js";
 export { diagnosticsHealthSlot } from "./diagnostics/mount.js";
+export {
+  OfficeView,
+  bindPressureHysteresisStateMachine,
+  governorPressureFromShell,
+  shellCenterTab,
+} from "./office/a11y/index.js";
+export type { GovernorPressureMachine, OfficeViewMount } from "./office/a11y/index.js";
+export {
+  FloorPlanWalkableGridPort,
+  OfficeCastProjectorPortAdapter,
+  TruthfulAnimationDirector,
+  walkableGridFromFloorPlan,
+} from "./office/director/index.js";
 export type {
   WelcomeActionId,
   WelcomeBackModel,
