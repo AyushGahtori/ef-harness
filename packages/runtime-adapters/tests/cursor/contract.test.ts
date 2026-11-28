@@ -2,17 +2,45 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CursorAcpFallbackAdapter } from "../../src/cursor/acp-fallback.js";
+import { assertAgentRuntimeAdapter } from "../../src/core/interface.js";
 import { AGENT_RUNTIME_ADAPTER_METHODS } from "../../src/cursor/constants.js";
+import { CursorRuntimeAdapter } from "../../src/cursor/adapter.js";
 import {
   InMemoryCursorAcp,
   InMemoryCursorSdk,
-  InMemoryJobSupervisor,
   createCursorRuntimeDeps,
 } from "../../src/cursor/local-ports.js";
+import type { WindowsJobSupervisorPort } from "../../src/cursor/ports.js";
+import { SupervisedCursorRuntime } from "../../src/cursor/runtime.js";
 import { CursorLocalSdkBridge } from "../../src/cursor/sdk-bridge.js";
 import type { CursorRuntimeDeps } from "../../src/cursor/ports.js";
 import type { CursorSessionSpec, NormalizedRuntimeEvent } from "../../src/cursor/types.js";
+
+class RecordingCursorJob implements WindowsJobSupervisorPort {
+  failToReap = false;
+  private readonly jobs = new Map<string, Set<number>>();
+
+  create(sessionId: string): { readonly jobId: string } {
+    const jobId = `job-${sessionId}`;
+    this.jobs.set(jobId, new Set());
+    return { jobId };
+  }
+
+  attach(jobId: string, pid: number): void {
+    this.jobs.get(jobId)?.add(pid);
+  }
+
+  list(jobId: string): readonly number[] {
+    return [...(this.jobs.get(jobId) ?? [])];
+  }
+
+  kill(jobId: string, reason: string): readonly number[] {
+    void reason;
+    const pids = [...(this.jobs.get(jobId) ?? [])];
+    if (!this.failToReap) this.jobs.set(jobId, new Set());
+    return pids;
+  }
+}
 
 const roots: string[] = [];
 
@@ -93,7 +121,9 @@ describe("Cursor SDK and ACP adapter contract", () => {
     const sdkDeps = createCursorRuntimeDeps({ sdk, usage: sdk });
     const acpDeps = createCursorRuntimeDeps({ acp, usage: sdk });
     const sdkBridge = new CursorLocalSdkBridge(sdkDeps);
-    const acpBridge = new CursorAcpFallbackAdapter(acpDeps);
+    const acpBridge = new SupervisedCursorRuntime(acpDeps, "acp");
+    assertAgentRuntimeAdapter(new CursorRuntimeAdapter(sdkDeps));
+    assertAgentRuntimeAdapter(new CursorRuntimeAdapter(acpDeps));
 
     for (const bridge of [sdkBridge, acpBridge]) {
       for (const method of AGENT_RUNTIME_ADAPTER_METHODS) {
@@ -149,7 +179,7 @@ describe("Cursor SDK and ACP adapter contract", () => {
   it("aborts a hung SDK run and reaps the job in under 500 ms", async () => {
     const dir = worktree("interrupt");
     const sdk = new InMemoryCursorSdk();
-    const jobs = new InMemoryJobSupervisor();
+    const jobs = new RecordingCursorJob();
     sdk.hangSend = true;
     sdk.hangAbort = true;
     const deps: CursorRuntimeDeps = createCursorRuntimeDeps({ sdk, usage: sdk, jobs });
@@ -171,7 +201,7 @@ describe("Cursor SDK and ACP adapter contract", () => {
 
   it("fails closed when the job cannot reap children", async () => {
     const dir = worktree("reap");
-    const jobs = new InMemoryJobSupervisor();
+    const jobs = new RecordingCursorJob();
     jobs.failToReap = true;
     const bridge = new CursorLocalSdkBridge(createCursorRuntimeDeps({ jobs }));
     const ref = await bridge.startSession(spec(dir, "reap"));

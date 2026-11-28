@@ -96,7 +96,7 @@ export class DeterministicSupervisionPolicyEngine {
     }
     const blocked = isBlockedWriteRelative(resolved.relative);
     if (blocked) return { effect: "deny", reason: blocked };
-    const caseFold = context.caseFold ?? process.platform === "win32";
+    const caseFold = context.caseFold ?? true;
     if (!scopeAllows(resolved.relative, context.writeScope, caseFold)) {
       return { effect: "deny", reason: "Path is outside the task write scope" };
     }

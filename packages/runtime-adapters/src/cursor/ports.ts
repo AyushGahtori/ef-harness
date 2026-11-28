@@ -39,10 +39,10 @@ export interface JobAssignment {
 
 /** Task 041 `WindowsJobSupervisor` (sibling process-tree primitive is Task 040). */
 export interface WindowsJobSupervisorPort {
-  create(sessionId: string): JobAssignment;
-  attach(jobId: string, pid: number): void;
-  list(jobId: string): readonly number[];
-  kill(jobId: string, reason: string): readonly number[];
+  create(sessionId: string): JobAssignment | Promise<JobAssignment>;
+  attach(jobId: string, pid: number): void | Promise<void>;
+  list(jobId: string): readonly number[] | Promise<readonly number[]>;
+  kill(jobId: string, reason: string): readonly number[] | Promise<readonly number[]>;
 }
 
 export interface SandboxTierChoice {

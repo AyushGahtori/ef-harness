@@ -34,8 +34,8 @@ export {
   LocalLoopbackAllowlistProxy,
   LocalSilentPaidFallbackGuard,
   LocalTierAMxcSandbox,
-  MemoryGlobalSettingsStore,
 } from "./ports.js";
+export { BrokerGlobalSettingsStore } from "./settings-store.js";
 export type {
   AgentRuntimeAdapter,
   CheckpointStopCard,

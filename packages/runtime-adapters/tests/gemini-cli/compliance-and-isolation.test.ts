@@ -1,8 +1,12 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { assertAgentRuntimeAdapter } from "../../src/core/interface.js";
 import {
+  BrokerGlobalSettingsStore,
+  GeminiCliRuntimeAdapter,
   GeminiHomeAccessError,
   GeminiOptInComplianceGate,
   GeminiOptInRequiredError,
@@ -25,6 +29,15 @@ const marker = personalGeminiMarker();
 const vendor = forbiddenVendorToken();
 
 describe("Gemini CLI compliance gate", () => {
+  it("matches the agent runtime contract and stays off until consent is stored", () => {
+    const runtime = new GeminiCliRuntimeAdapter({
+      gate: new GeminiOptInComplianceGate({ store: BrokerGlobalSettingsStore.open() }),
+    });
+    assertAgentRuntimeAdapter(runtime);
+    expect(runtime.runtime).toBe("gemini-cli");
+    expect(runtime.enabled).toBe(false);
+  });
+
   it("builds the exact off-by-default policy notice", () => {
     const expected = [
       "Gemini CLI runs unmodified via gemini --acp. ",
@@ -61,6 +74,24 @@ describe("Gemini CLI compliance gate", () => {
     });
     expect(restored.enabled).toBe(true);
     expect(restored.snapshot()?.optedInAt).toBe("2026-11-23T12:00:00.000Z");
+  });
+
+  it("persists the opt-in in GlobalBrokerDb and stays off until that row exists", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-gemini-broker-"));
+    const opened = BrokerGlobalSettingsStore.open(root);
+    const first = new GeminiOptInComplianceGate({
+      store: opened,
+      now: () => "2026-11-23T12:00:00.000Z",
+    });
+    expect(first.enabled).toBe(false);
+    first.acceptNotice(complianceNotice());
+    opened.close();
+    const second = new GeminiOptInComplianceGate({
+      store: BrokerGlobalSettingsStore.open(root),
+      now: () => "2026-11-24T00:00:00.000Z",
+    });
+    expect(second.enabled).toBe(true);
+    expect(second.snapshot()?.noticeVersion).toBe(NOTICE_VERSION);
   });
 
   it("refuses a fresh startSession before any process is spawned", async () => {

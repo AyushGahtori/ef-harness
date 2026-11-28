@@ -1,7 +1,6 @@
 import { CursorAdapterError } from "./errors.js";
 import type { CursorRuntimeDeps } from "./ports.js";
-import type { SupervisedCursorRuntime } from "./runtime.js";
-import { CursorAcpFallbackAdapter } from "./acp-fallback.js";
+import { SupervisedCursorRuntime } from "./runtime.js";
 import { CursorLocalSdkBridge } from "./sdk-bridge.js";
 import type {
   AgentRuntimeAdapter,
@@ -22,8 +21,9 @@ import type {
 } from "./types.js";
 
 export class CursorRuntimeAdapter implements AgentRuntimeAdapter {
+  readonly runtime = "cursor" as const;
   private sdkBridge: CursorLocalSdkBridge | null = null;
-  private acpBridge: CursorAcpFallbackAdapter | null = null;
+  private acpBridge: SupervisedCursorRuntime | null = null;
   private readonly owners = new Map<string, CursorTransportKind>();
 
   constructor(private readonly deps: CursorRuntimeDeps) {}
@@ -55,7 +55,7 @@ export class CursorRuntimeAdapter implements AgentRuntimeAdapter {
     return this.owner(sessionId).interrupt(sessionId);
   }
 
-  resume(sessionId: string, checkpointRef: CursorCheckpointRef): Promise<CursorResumeResult> {
+  resume(sessionId: string, checkpointRef: CursorCheckpointRef | string): Promise<CursorResumeResult> {
     return this.owner(sessionId).resume(sessionId, checkpointRef);
   }
 
@@ -75,6 +75,17 @@ export class CursorRuntimeAdapter implements AgentRuntimeAdapter {
     return this.owner(sessionId).usage(sessionId);
   }
 
+  terminate(sessionId: string): ReturnType<SupervisedCursorRuntime["terminate"]> {
+    return this.owner(sessionId).terminate(sessionId);
+  }
+
+  dispose(): Promise<void> {
+    const pending = [this.sdkBridge?.dispose(), this.acpBridge?.dispose()].filter(
+      (item): item is Promise<void> => item !== undefined,
+    );
+    return Promise.all(pending).then(() => undefined);
+  }
+
   private async choose(): Promise<CursorTransportKind> {
     const override = await this.deps.signedPolicy.transportOverride();
     if (override === "sdk" || override === "acp") return override;
@@ -87,7 +98,7 @@ export class CursorRuntimeAdapter implements AgentRuntimeAdapter {
       this.sdkBridge ??= new CursorLocalSdkBridge(this.deps);
       return this.sdkBridge;
     }
-    this.acpBridge ??= new CursorAcpFallbackAdapter(this.deps);
+    this.acpBridge ??= new SupervisedCursorRuntime(this.deps, "acp");
     return this.acpBridge;
   }
 

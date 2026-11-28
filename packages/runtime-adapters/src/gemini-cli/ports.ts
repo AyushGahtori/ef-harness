@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { OsWindowsJob, sharedAllowlistProxy } from "../acp/os-boundary.js";
 import { GEMINI_MIN_VERSION, GEMINI_ROUTE_ID, SETTINGS_KEY } from "./constants.js";
 import { terminatePidTree, type ProcessSpawner } from "./process-util.js";
 
@@ -20,18 +21,6 @@ import { terminatePidTree, type ProcessSpawner } from "./process-util.js";
 export interface GlobalSettingsStore {
   get(key: string): string | null;
   set(key: string, value: string): void;
-}
-
-export class MemoryGlobalSettingsStore implements GlobalSettingsStore {
-  private readonly rows = new Map<string, string>();
-
-  get(key: string): string | null {
-    return this.rows.get(key) ?? null;
-  }
-
-  set(key: string, value: string): void {
-    this.rows.set(key, value);
-  }
 }
 
 export const GLOBAL_OPT_IN_KEY = SETTINGS_KEY;
@@ -110,9 +99,15 @@ export class LocalTierAMxcSandbox {
 /** Local port of Task 041 Windows Job Object. */
 export class LocalJobObject {
   private readonly children: ChildProcess[] = [];
+  private readonly inner = new OsWindowsJob();
+  private jobId: string | null = null;
 
-  attach(child: ChildProcess): void {
+  async attach(child: ChildProcess): Promise<void> {
     this.children.push(child);
+    const pid = child.pid;
+    if (typeof pid !== "number" || pid <= 0) return;
+    this.jobId ??= (await this.inner.create(`gemini-${pid}`)).jobId;
+    await this.inner.attach(this.jobId, pid);
   }
 
   get pids(): readonly (number | undefined)[] {
@@ -120,6 +115,7 @@ export class LocalJobObject {
   }
 
   async terminate(): Promise<void> {
+    if (this.jobId) await this.inner.kill(this.jobId, "terminate");
     const pending: Promise<void>[] = [];
     for (const child of this.children) {
       const pid = child.pid;
@@ -136,11 +132,14 @@ export class LocalJobObject {
 /** Local port of the loopback allowlist proxy named by Task 148. */
 export class LocalLoopbackAllowlistProxy {
   readonly binds: string[] = [];
+  private pending: Promise<string> | null = null;
 
-  endpoint(): string {
-    const url = "http://127.0.0.1:46321";
-    this.binds.push(url);
-    return url;
+  endpoint(): Promise<string> {
+    this.pending ??= sharedAllowlistProxy("gemini-cli").then((server) => {
+      this.binds.push(server.proxyUrl);
+      return server.proxyUrl;
+    });
+    return this.pending;
   }
 }
 
@@ -242,6 +241,7 @@ export interface McpServerSpec {
 }
 
 export interface AgentRuntimeAdapter {
+  readonly runtime: "gemini-cli";
   probe(): Promise<CliGateResult>;
   authStatus(): Promise<{
     readonly enabled: boolean;
@@ -260,7 +260,9 @@ export interface AgentRuntimeAdapter {
     requestId: string,
     decision: { readonly outcome: PermissionOutcome },
   ): Promise<PermissionDecision>;
-  usage(sessionId: string): UsageSnapshot;
+  usage(sessionId: string): Promise<UsageSnapshot>;
+  terminate(sessionId: string): Promise<void>;
+  dispose(): Promise<void>;
 }
 
 export interface SessionSpec {

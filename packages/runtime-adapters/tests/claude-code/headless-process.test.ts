@@ -159,7 +159,7 @@ describe("claude stream-json process", () => {
     expect(fs.existsSync(path.join(layout.home, ".claude", "skills"))).toBe(false);
 
     await harness.adapter.sendTurn(handle.sessionId, "implement the brief");
-    const usage = harness.adapter.usage(handle.sessionId);
+    const usage = await harness.adapter.usage(handle.sessionId);
     expect(usage.inputTokens).toBe(1000);
     expect(usage.outputTokens).toBe(200);
     expect(usage.cacheReadInputTokens).toBe(400);
@@ -187,7 +187,7 @@ describe("claude stream-json process", () => {
     expect(flagValue(receipt.argv, "--disallowedTools")).toBe(STRIPPED_DISALLOWED_TOOLS);
     expect(receipt.argv).not.toContain(forbiddenSkipPermissionsFlag());
     await harness.adapter.sendTurn(handle.sessionId, "edit in scope");
-    const decision = harness.adapter.respondPermission(handle.sessionId, "req-1", { behavior: "deny", message: "no" });
+    const decision = await harness.adapter.respondPermission(handle.sessionId, "req-1", { behavior: "deny", message: "no" });
     expect(decision.behavior).toBe("allow");
     const lines = fs.readFileSync(layout.decisionsPath, "utf8");
     expect(lines).toContain('"behavior":"allow"');
@@ -203,7 +203,7 @@ describe("claude stream-json process", () => {
     });
     const handle = await harness.adapter.startSession(spec(layout));
     await harness.adapter.sendTurn(handle.sessionId, "do not curl");
-    const decision = harness.adapter.respondPermission(handle.sessionId, "req-1", { behavior: "allow" });
+    const decision = await harness.adapter.respondPermission(handle.sessionId, "req-1", { behavior: "allow" });
     expect(decision).toMatchObject({
       behavior: "deny",
       message: "Network exfiltration commands are disabled",
@@ -269,7 +269,7 @@ describe("claude stream-json process", () => {
     expect(timing.forced).toBe(false);
     expect(timing.elapsedMs).toBeLessThan(500);
     await expect(pending).resolves.toBeUndefined();
-    const usage = harness.adapter.usage(handle.sessionId);
+    const usage = await harness.adapter.usage(handle.sessionId);
     expect(usage.inputTokens).toBe(1000);
     expect(usage.cacheReadInputTokens).toBe(400);
     expect(usage.cacheCreationInputTokens).toBe(100);

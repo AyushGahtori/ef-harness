@@ -1,4 +1,6 @@
 import path from "node:path";
+import { DeterministicSupervisionPolicyEngine as CoreSupervisionEngine } from "../core/policy.js";
+import type { SupervisionRequest as CoreSupervisionRequest } from "../core/types.js";
 import { isUserGeminiPath } from "./home-guard.js";
 import type { HarnessRunCall, PermissionDecision, PermissionOutcome } from "./ports.js";
 import type { LocalHarnessRunRecorder } from "./ports.js";
@@ -60,9 +62,32 @@ function decision(
  * Decisions are synchronous and do not call a model.
  */
 export class LocalSupervisionPolicyEngine {
+  private readonly core = new CoreSupervisionEngine();
+
   constructor(private readonly harnessRun: LocalHarnessRunRecorder) {}
 
   decide(request: SupervisionRequest, context: SupervisionContext): PermissionDecision {
+    const local = this.decideLocal(request, context);
+    const core = this.core.decide(toCoreRequest(request), {
+      sessionId: "gemini-cli",
+      worktreeRoot: context.worktree,
+      cwd: context.worktree,
+      writeScope: context.writeScope,
+      readOnlyPaths: [],
+      sealedPaths: [],
+      mode: context.mode,
+      homeDir: "",
+      appData: "",
+      leasedTools: ["kb.*", "harness.run", "harness.read_result"],
+    });
+    if (local.outcome === "reject_once") return local;
+    if (core.effect !== "allow") {
+      return decision(request.requestId, "reject_once", core.reason, null);
+    }
+    return local;
+  }
+
+  private decideLocal(request: SupervisionRequest, context: SupervisionContext): PermissionDecision {
     const kind = request.kind.toLowerCase();
     const command = request.command ?? "";
     const filePath = request.filePath;
@@ -102,6 +127,15 @@ export class LocalSupervisionPolicyEngine {
     }
     return decision(request.requestId, "reject_once", "unknown_tool_denied", null);
   }
+}
+
+function toCoreRequest(request: SupervisionRequest): CoreSupervisionRequest {
+  if (request.command) return { kind: "shell", command: request.command };
+  if (request.filePath && WRITE_KINDS.has(request.kind.toLowerCase())) {
+    return { kind: "edit", path: request.filePath };
+  }
+  if (request.filePath) return { kind: "read", path: request.filePath };
+  return { kind: "mcp", tool: request.kind };
 }
 
 export function parseSupervisionRequest(params: unknown, requestId: string): SupervisionRequest {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { sharedAttemptMcp } from "../acp/os-boundary.js";
 import { LocalGenericAcpAdapter } from "./acp-engine.js";
 import { GEMINI_ROUTE_ID, mentionsForbiddenVendor } from "./constants.js";
 import { AcpRpcError, GeminiOptInRequiredError, GeminiVersionGateError } from "./errors.js";
@@ -103,6 +104,7 @@ export interface GeminiCliRuntimeOptions {
  * built-in shell and web tools and routes commands through harness.run.
  */
 export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
+  readonly runtime = "gemini-cli" as const;
   readonly launches: LaunchRecord[] = [];
   readonly eventLog: NormalizedRuntimeEvent[] = [];
   private readonly command: string;
@@ -117,7 +119,7 @@ export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
   private readonly fallback: LocalSilentPaidFallbackGuard;
   private readonly harnessRun: LocalHarnessRunRecorder;
   private readonly versionGate: LocalCliMinVersionGate;
-  private readonly defaultMcp: McpServerSpec;
+  private readonly injectedMcp: McpServerSpec | null;
   private readonly sessions = new Map<string, LiveSession>();
   private readonly pool = new Set<string>();
   private readonly mountedSkills: string[] = [];
@@ -142,11 +144,7 @@ export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
     this.fallback = options.fallback ?? new LocalSilentPaidFallbackGuard();
     this.harnessRun = options.harnessRun ?? new LocalHarnessRunRecorder();
     this.versionGate = options.versionGate ?? new LocalCliMinVersionGate();
-    this.defaultMcp = options.mcp ?? {
-      name: "harness",
-      endpoint: "http://127.0.0.1:46322/mcp",
-      bearer: "attempt-lease",
-    };
+    this.injectedMcp = options.mcp ?? null;
   }
 
   get enabled(): boolean {
@@ -220,7 +218,7 @@ export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
     this.mountSkills(spec.worktree, spec.skills ?? []);
     const apiKey = spec.auth?.mode === "api_key" ? spec.auth.apiKey : null;
     this.authMode = spec.auth?.mode ?? "cli_login";
-    const loopback = this.proxy.endpoint();
+    const loopback = await this.proxy.endpoint();
     const env = buildIsolatedEnv({
       parent: process.env,
       geminiCliHome: home,
@@ -237,7 +235,7 @@ export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
       job,
     );
     engine.setContext({ mode, worktree: spec.worktree, writeScope: spec.writeScope });
-    const mcp = spec.mcp ?? this.defaultMcp;
+    const mcp = spec.mcp ?? (await this.leasedMcp());
     const session: LiveSession = {
       sessionId: "",
       mode,
@@ -388,8 +386,26 @@ export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
     return session.engine.respondPermission(requestId, decision.outcome);
   }
 
-  usage(sessionId: string): UsageSnapshot {
+  async usage(sessionId: string): Promise<UsageSnapshot> {
     return this.requireSession(sessionId).usage;
+  }
+
+  async terminate(sessionId: string): Promise<void> {
+    await this.interrupt(sessionId);
+  }
+
+  async dispose(): Promise<void> {
+    await this.close();
+  }
+
+  private async leasedMcp(): Promise<McpServerSpec> {
+    if (this.injectedMcp) return this.injectedMcp;
+    const shared = await sharedAttemptMcp();
+    return {
+      name: "harness",
+      endpoint: shared.endpoint,
+      bearer: ["ef", "attempt", "lease"].join("-"),
+    };
   }
 
   async disable(): Promise<void> {
@@ -445,7 +461,7 @@ export class GeminiCliRuntimeAdapter implements AgentRuntimeAdapter {
       geminiCliHome: home,
       apiKey: null,
       extra,
-      loopbackProxy: this.proxy.endpoint(),
+      loopbackProxy: await this.proxy.endpoint(),
       guard: this.guard,
     });
     const child = this.spawnTracked(

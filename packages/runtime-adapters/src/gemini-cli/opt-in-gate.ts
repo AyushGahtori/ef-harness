@@ -6,11 +6,8 @@ import {
   SETTINGS_KEY,
 } from "./constants.js";
 import { GeminiOptInRequiredError, GeminiRouteRevokedError } from "./errors.js";
-import {
-  MemoryGlobalSettingsStore,
-  type GlobalSettingsStore,
-  type OptInRecord,
-} from "./ports.js";
+import type { GlobalSettingsStore, OptInRecord } from "./ports.js";
+import { BrokerGlobalSettingsStore } from "./settings-store.js";
 
 export interface SignedRouteRevocation {
   readonly kind: "route_revoked";
@@ -48,7 +45,7 @@ export class GeminiOptInComplianceGate {
   private readonly now: () => string;
 
   constructor(deps?: { readonly store?: GlobalSettingsStore; readonly now?: () => string }) {
-    this.store = deps?.store ?? new MemoryGlobalSettingsStore();
+    this.store = deps?.store ?? BrokerGlobalSettingsStore.open();
     this.now = deps?.now ?? (() => new Date().toISOString());
   }
 

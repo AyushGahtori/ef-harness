@@ -1,5 +1,7 @@
 import os from "node:os";
 import path from "node:path";
+import { CursorGenericAcp } from "./generic-acp.js";
+import { AllowlistCursorProxy, AttemptMcpCursorLease, OsCursorJob } from "./os-ports.js";
 import { DEFAULT_LEASED_MCP_TOOLS } from "./constants.js";
 import { CursorAdapterError } from "./errors.js";
 import { MemoryAuditLog, SecretRedactor } from "./redact.js";
@@ -23,11 +25,9 @@ import type {
   CursorSdkPort,
   GenericAcpAdapterPort,
   LeasedMcpServerPort,
-  LoopbackAllowlistProxyPort,
   NoSilentPaidFallbackPort,
   SandboxTierSelectorPort,
   SignedCursorTransportPolicyPort,
-  WindowsJobSupervisorPort,
 } from "./ports.js";
 import type {
   CursorAuthState,
@@ -67,39 +67,6 @@ export class LocalSignedCursorPolicy implements SignedCursorTransportPolicyPort 
   }
 }
 
-export class InMemoryJobSupervisor implements WindowsJobSupervisorPort {
-  failToReap = false;
-  private readonly jobs = new Map<string, Set<number>>();
-
-  create(sessionId: string): { readonly jobId: string } {
-    const jobId = `job-${sessionId}`;
-    if (this.jobs.has(jobId)) throw new CursorAdapterError("job_exists", `Job ${jobId} already exists`);
-    this.jobs.set(jobId, new Set());
-    return { jobId };
-  }
-
-  attach(jobId: string, pid: number): void {
-    this.require(jobId).add(pid);
-  }
-
-  list(jobId: string): readonly number[] {
-    return [...this.require(jobId)];
-  }
-
-  kill(jobId: string, reason: string): readonly number[] {
-    if (!reason.trim()) throw new CursorAdapterError("missing_reason", "Job kill requires a reason");
-    const pids = [...this.require(jobId)];
-    if (!this.failToReap) this.jobs.set(jobId, new Set());
-    return pids;
-  }
-
-  private require(jobId: string): Set<number> {
-    const pids = this.jobs.get(jobId);
-    if (!pids) throw new CursorAdapterError("unknown_job", `Unknown job ${jobId}`);
-    return pids;
-  }
-}
-
 export class LocalSandboxTierSelector implements SandboxTierSelectorPort {
   hold = false;
 
@@ -109,12 +76,6 @@ export class LocalSandboxTierSelector implements SandboxTierSelectorPort {
       hold: this.hold,
       reason: this.hold ? "sandbox hold" : "tier A",
     });
-  }
-}
-
-export class LocalLoopbackProxy implements LoopbackAllowlistProxyPort {
-  bind(input: { readonly sessionId: string }): Promise<{ readonly endpoint: string }> {
-    return Promise.resolve({ endpoint: `http://127.0.0.1/proxy/${input.sessionId}` });
   }
 }
 
@@ -422,12 +383,12 @@ export function createCursorRuntimeDeps(
   const expiry = overrides.expiry ?? (keys instanceof InMemoryCursorKeys ? keys : fallbackKeys);
   return {
     sdk,
-    acp: overrides.acp ?? new InMemoryCursorAcp(),
+    acp: overrides.acp ?? new CursorGenericAcp(),
     usage: overrides.usage ?? sdk,
-    jobs: overrides.jobs ?? new InMemoryJobSupervisor(),
+    jobs: overrides.jobs ?? new OsCursorJob(),
     sandbox: overrides.sandbox ?? new LocalSandboxTierSelector(),
-    proxy: overrides.proxy ?? new LocalLoopbackProxy(),
-    mcp: overrides.mcp ?? new LocalLeasedMcp(),
+    proxy: overrides.proxy ?? new AllowlistCursorProxy(),
+    mcp: overrides.mcp ?? new AttemptMcpCursorLease(),
     cliGate: overrides.cliGate ?? new LocalCliMinVersionGate(),
     signedPolicy: overrides.signedPolicy ?? new LocalSignedCursorPolicy(),
     conformance: overrides.conformance ?? new LocalConformanceGate(),

@@ -15,18 +15,7 @@ export const ISOLATED_SKILLS_DIRNAME = ".ef-cursor-skills";
 
 export const DEFAULT_LEASED_MCP_TOOLS = ["kb.*", "harness.run", "harness.read_result"] as const;
 
-export const AGENT_RUNTIME_ADAPTER_METHODS = [
-  "probe",
-  "authStatus",
-  "startSession",
-  "sendTurn",
-  "steer",
-  "interrupt",
-  "resume",
-  "events",
-  "respondPermission",
-  "usage",
-] as const;
+export { AGENT_RUNTIME_ADAPTER_METHODS } from "../core/interface.js";
 
 export const CONFORMANCE_CHECKS = [
   "preToolUse",

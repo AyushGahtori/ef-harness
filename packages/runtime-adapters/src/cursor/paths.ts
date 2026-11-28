@@ -113,12 +113,12 @@ function isMissing(error: unknown): boolean {
 }
 
 function isInside(root: string, candidate: string): boolean {
-  const relative = path.relative(fold(root), fold(candidate));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  const relative = path.posix.relative(fold(root), fold(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.posix.isAbsolute(relative));
 }
 
 function fold(value: string): string {
-  return value.replaceAll("/", "\\").toLowerCase();
+  return value.replaceAll("\\", "/").toLowerCase();
 }
 
 function hasSecretSegment(value: string): boolean {

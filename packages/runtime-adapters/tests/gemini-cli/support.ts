@@ -11,9 +11,21 @@ import {
   LocalPacingClassifier,
   LocalSilentPaidFallbackGuard,
   LocalTierAMxcSandbox,
-  MemoryGlobalSettingsStore,
   complianceNotice,
 } from "../../src/gemini-cli/index.js";
+import type { GlobalSettingsStore } from "../../src/gemini-cli/ports.js";
+
+export class MemoryGlobalSettingsStore implements GlobalSettingsStore {
+  private readonly rows = new Map<string, string>();
+
+  get(key: string): string | null {
+    return this.rows.get(key) ?? null;
+  }
+
+  set(key: string, value: string): void {
+    this.rows.set(key, value);
+  }
+}
 
 export const fakeGeminiPath = fileURLToPath(
   new URL("./fixtures/fake-gemini-acp.mjs", import.meta.url),

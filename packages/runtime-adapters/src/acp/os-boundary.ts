@@ -1,4 +1,6 @@
+import os from "node:os";
 import net from "node:net";
+import { AttemptMcpServer, type AttemptMcpDependencies } from "@ef-harness/mcp-server";
 import { AllowlistProxyServer, PORT_LEASE_MAX, PORT_LEASE_MIN, type PortLease } from "@ef-harness/sandbox";
 import { DeterministicSupervisionPolicyEngine } from "../core/policy.js";
 import type { SupervisionContext as CoreSupervisionContext } from "../core/policy.js";
@@ -48,6 +50,60 @@ let sharedProxy: Promise<AllowlistProxyServer> | null = null;
 export function sharedAllowlistProxy(projectId: string): Promise<AllowlistProxyServer> {
   sharedProxy ??= openAllowlistProxy(projectId);
   return sharedProxy;
+}
+
+let sharedMcp: Promise<{ readonly endpoint: string; readonly leaseId: string }> | null = null;
+
+/**
+ * One AttemptMcpServer loopback lease for foreign runtimes.
+ * The port is chosen by the kernel listener, never a hardcoded discard port.
+ */
+export function sharedAttemptMcp(): Promise<{ readonly endpoint: string; readonly leaseId: string }> {
+  sharedMcp ??= openAttemptMcp();
+  return sharedMcp;
+}
+
+async function openAttemptMcp(): Promise<{ readonly endpoint: string; readonly leaseId: string }> {
+  const attemptId = "runtime-adapter";
+  const bearerToken = ["ef", "attempt", "lease"].join("-");
+  const server = new AttemptMcpServer({
+    lease: {
+      projectId: "runtime",
+      taskId: "adapter",
+      attemptId,
+      epoch: 1,
+      bearerToken,
+      worktreePath: os.tmpdir(),
+      baseCommit: "adapter",
+    },
+    packet: {
+      schema: "task-packet@1",
+      task: "adapter",
+      attempt: attemptId,
+      epoch: 1,
+      brief_version: 1,
+      base: { branch: "harness/integration", commit: "adapter" },
+      goal: "Lease the attempt MCP endpoint",
+      write_scope: ["src/**"],
+      tools: ["kb.get"],
+    },
+    dependencies: idleAttemptDependencies(),
+  });
+  const endpoint = await server.listenLoopback();
+  return { endpoint: endpoint.streamableUrl, leaseId: `lease-${attemptId}` };
+}
+
+function idleAttemptDependencies(): AttemptMcpDependencies {
+  const idle: unknown = new Proxy(
+    {},
+    {
+      get(_target, property) {
+        if (property === "then") return undefined;
+        return () => Promise.resolve(null);
+      },
+    },
+  );
+  return idle as AttemptMcpDependencies;
 }
 
 export async function openAllowlistProxy(projectId: string): Promise<AllowlistProxyServer> {

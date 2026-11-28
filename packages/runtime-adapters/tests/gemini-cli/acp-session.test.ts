@@ -44,7 +44,7 @@ describe("gemini --acp wrapped and stripped sessions", () => {
       expect(turn.usage.outputTokens).toBe(7);
       expect(turn.usage.cachedInputTokens).toBe(3);
       expect(turn.usage.reasoningTokens).toBe(2);
-      expect(harness.runtime.usage(ssh.sessionId).cacheWriteTokens).toBe(1);
+      expect((await harness.runtime.usage(ssh.sessionId)).cacheWriteTokens).toBe(1);
       const decision = await harness.runtime.respondPermission(ssh.sessionId, "9001", {
         outcome: "allow_once",
       });

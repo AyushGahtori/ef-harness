@@ -69,7 +69,7 @@ export class GeminiVisibleConPtyLoginHelper {
       geminiCliHome: home,
       apiKey: null,
       extra: this.loginEnv,
-      loopbackProxy: proxy.endpoint(),
+      loopbackProxy: await proxy.endpoint(),
       guard: this.guard,
     });
     const job = new LocalJobObject();
@@ -80,7 +80,7 @@ export class GeminiVisibleConPtyLoginHelper {
       env,
       windowsHide: false,
     });
-    job.attach(child);
+    await job.attach(child);
     return new LoginSession(child, job, home);
   }
 
@@ -102,7 +102,7 @@ export class GeminiVisibleConPtyLoginHelper {
       geminiCliHome: home,
       apiKey: null,
       extra: this.loginEnv,
-      loopbackProxy: proxy.endpoint(),
+      loopbackProxy: await proxy.endpoint(),
       guard: this.guard,
     });
     const job = new LocalJobObject();

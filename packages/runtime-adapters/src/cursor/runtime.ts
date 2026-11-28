@@ -14,6 +14,7 @@ import { cleanupEphemeralMounts, createGuardedIo, mountVettedSkills, prepareIsol
 import type { WorktreeIo } from "./isolation.js";
 import type { OpenCursorAgent, StoredPermission } from "./ports.js";
 import type { CursorRuntimeDeps } from "./ports.js";
+import { settle } from "./os-ports.js";
 import { assertSandboxTier, buildSandboxOptions } from "./sandbox-options.js";
 import { openCursorSdk } from "./sdk-launch.js";
 import type {
@@ -179,7 +180,7 @@ export class SupervisedCursorRuntime implements AgentRuntimeAdapter {
     }
     const proxy = await this.deps.proxy.bind({ sessionId, tier: tier.tier });
     const lease = await this.deps.mcp.lease({ sessionId, tools: [...DEFAULT_LEASED_MCP_TOOLS] });
-    const job = this.deps.jobs.create(sessionId);
+    const job = await settle(this.deps.jobs.create(sessionId));
     const io = this.deps.io ?? createGuardedIo(this.deps.personalCursorHome);
     const isolated = prepareIsolatedCursorHome({
       worktree: spec.worktree,
@@ -266,14 +267,14 @@ export class SupervisedCursorRuntime implements AgentRuntimeAdapter {
               sandboxOptions,
               hooks,
             });
-      for (const pid of session.agent.childPids) this.deps.jobs.attach(job.jobId, pid);
+      for (const pid of session.agent.childPids) await settle(this.deps.jobs.attach(job.jobId, pid));
     } catch (error) {
-      this.deps.jobs.kill(job.jobId, "launch_failed");
+      await settle(this.deps.jobs.kill(job.jobId, "launch_failed"));
       throw error;
     }
     const argv = session.agent.argv;
     if (argv.join("\n").includes(apiKey)) {
-      this.deps.jobs.kill(job.jobId, "credential_in_argv");
+      await settle(this.deps.jobs.kill(job.jobId, "credential_in_argv"));
       throw new CursorAdapterError("credential_in_argv", "The Cursor key was passed in process argv");
     }
     const launch: CursorLaunchRecord = {
@@ -401,8 +402,8 @@ export class SupervisedCursorRuntime implements AgentRuntimeAdapter {
     session.abort.abort();
     const agent = session.agent;
     if (agent) void agent.abort().then(() => undefined, () => undefined);
-    const killedPids = this.deps.jobs.kill(session.jobId, "interrupt");
-    const lingeringPids = this.deps.jobs.list(session.jobId);
+    const killedPids = await settle(this.deps.jobs.kill(session.jobId, "interrupt"));
+    const lingeringPids = await settle(this.deps.jobs.list(session.jobId));
     cleanupEphemeralMounts({ worktree: session.worktree, io: session.io });
     const elapsedMs = performance.now() - started;
     if (lingeringPids.length > 0) {
@@ -420,14 +421,15 @@ export class SupervisedCursorRuntime implements AgentRuntimeAdapter {
     return { sessionId, elapsedMs, lingeringPids, killedPids, sdkAbortInvoked: true };
   }
 
-  async resume(sessionId: string, checkpointRef: CursorCheckpointRef): Promise<CursorResumeResult> {
+  async resume(sessionId: string, checkpointRef: CursorCheckpointRef | string): Promise<CursorResumeResult> {
+    const ref: CursorCheckpointRef = typeof checkpointRef === "string" ? {} : checkpointRef;
     const session = this.require(sessionId);
     const saved = await this.deps.checkpoints.load(sessionId);
     const labeledWip = saved?.wipDiff ?? session.wipDiff;
     const briefVersion = saved?.briefVersion ?? session.briefVersion;
     const contradictory =
-      checkpointRef.contradictory === true ||
-      (checkpointRef.briefVersion !== undefined && checkpointRef.briefVersion !== briefVersion);
+      ref.contradictory === true ||
+      (ref.briefVersion !== undefined && ref.briefVersion !== briefVersion);
     if (!saved || contradictory) {
       return {
         supported: false,
@@ -463,11 +465,11 @@ export class SupervisedCursorRuntime implements AgentRuntimeAdapter {
         rebuiltBrief: `${session.brief}\n\nLabeled WIP:\n${labeledWip}`,
       };
     }
-    if (this.deps.jobs.list(session.jobId).length === 0) {
+    if ((await settle(this.deps.jobs.list(session.jobId))).length === 0) {
       session.resumeCount += 1;
-      const job = this.deps.jobs.create(`${session.sessionId}-resume-${session.resumeCount}`);
+      const job = await settle(this.deps.jobs.create(`${session.sessionId}-resume-${session.resumeCount}`));
       session.jobId = job.jobId;
-      for (const pid of agent.childPids) this.deps.jobs.attach(job.jobId, pid);
+      for (const pid of agent.childPids) await settle(this.deps.jobs.attach(job.jobId, pid));
     }
     session.aborted = false;
     session.eventsClosed = false;
@@ -544,6 +546,20 @@ export class SupervisedCursorRuntime implements AgentRuntimeAdapter {
 
   async usage(sessionId: string): Promise<NormalizedUsage> {
     return this.require(sessionId).lastUsage;
+  }
+
+  terminate(sessionId: string): Promise<CursorInterruptReceipt> {
+    return this.interrupt(sessionId);
+  }
+
+  async dispose(): Promise<void> {
+    for (const sessionId of [...this.sessions.keys()]) {
+      try {
+        await this.interrupt(sessionId);
+      } catch {
+        continue;
+      }
+    }
   }
 
   private async finishPaused(session: CursorSession): Promise<CursorTurnReceipt> {

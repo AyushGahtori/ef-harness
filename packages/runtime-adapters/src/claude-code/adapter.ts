@@ -13,19 +13,17 @@ import {
 import { CONSOLE_KEY_REQUIRED_MESSAGE } from "./markers.js";
 import { decimalDollarsToMicroUsd, formatBudgetUsd } from "./money.js";
 import { ClaudeStdioPermissionController } from "./permission-controller.js";
+import { AllowlistClaudeProxy, AttemptMcpClaudeLease, OsClaudeJob } from "./os-ports.js";
 import {
   DEFAULT_LEASED_MCP_TOOLS,
   LocalApiConnectionManager,
   LocalAttemptCheckpoints,
   LocalBudgetLedger,
   LocalCliMinVersionGate,
-  LocalLeasedMcpServer,
-  LocalLoopbackAllowlistProxy,
   LocalPacketSecurityRedactor,
   LocalPriceTable,
   LocalSandboxTierSelector,
   LocalWindowsDpapiSecretsVault,
-  PidTrackingJobSupervisor,
   nodeProcessSpawner,
   type ApiConnectionManagerPort,
   type AttemptCheckpointPort,
@@ -106,6 +104,7 @@ interface SessionRecord {
  * Implements the ten-method agent runtime contract against local sibling ports.
  */
 export class ClaudeCodeRuntimeAdapter {
+  readonly runtime = CLAUDE_RUNTIME_ID;
   private readonly command: string;
   private readonly commandPrefix: readonly string[];
   private readonly spawner: ProcessSpawner;
@@ -136,7 +135,7 @@ export class ClaudeCodeRuntimeAdapter {
     this.command = options.command ?? "claude";
     this.commandPrefix = options.commandPrefix ?? [];
     this.spawner = options.spawner ?? nodeProcessSpawner();
-    this.jobs = options.jobs ?? new PidTrackingJobSupervisor();
+    this.jobs = options.jobs ?? new OsClaudeJob();
     this.sandbox = options.sandbox ?? new LocalSandboxTierSelector();
     const vault = options.vault ?? new LocalWindowsDpapiSecretsVault();
     this.connections = options.connections ?? new LocalApiConnectionManager(vault);
@@ -146,8 +145,8 @@ export class ClaudeCodeRuntimeAdapter {
     this.ledger = options.ledger ?? new LocalBudgetLedger();
     this.checkpoints = options.checkpoints ?? new LocalAttemptCheckpoints();
     this.redactor = options.redactor ?? new LocalPacketSecurityRedactor();
-    this.proxy = options.proxy ?? new LocalLoopbackAllowlistProxy();
-    this.mcp = options.mcp ?? new LocalLeasedMcpServer();
+    this.proxy = options.proxy ?? new AllowlistClaudeProxy();
+    this.mcp = options.mcp ?? new AttemptMcpClaudeLease();
     this.permissions = options.permissions ?? new ClaudeStdioPermissionController();
     this.bus = options.bus ?? new NormalizedRuntimeEventBus();
     this.hostEnv = options.hostEnv ?? process.env;
@@ -200,7 +199,7 @@ export class ClaudeCodeRuntimeAdapter {
     };
   }
 
-  authStatus(connectionId = this.defaultConnectionId): ClaudeAuthStatus {
+  async authStatus(connectionId = this.defaultConnectionId): Promise<ClaudeAuthStatus> {
     const secret = connectionId ? this.connections.readConsoleKey(connectionId) : null;
     const verdict = this.enforcer.evaluate({
       secret,
@@ -273,8 +272,8 @@ export class ClaudeCodeRuntimeAdapter {
     }
 
     const sessionId = randomUUID();
-    const job = this.jobs.create(sessionId);
-    const lease = this.mcp.lease({ sessionId, tools: DEFAULT_LEASED_MCP_TOOLS });
+    const job = await this.jobs.create(sessionId);
+    const lease = await this.mcp.lease({ sessionId, tools: DEFAULT_LEASED_MCP_TOOLS });
     const workspace = prepareIsolatedWorkspace({
       attemptId: spec.attemptId,
       worktreeRoot: spec.worktreeRoot,
@@ -284,7 +283,8 @@ export class ClaudeCodeRuntimeAdapter {
       mcpEndpoint: lease.endpoint,
       leasedTools: lease.tools,
     });
-    const proxy = delivery === "proxy" ? this.proxy.bind({ sessionId, connectionId: spec.connectionId }) : null;
+    const proxy =
+      delivery === "proxy" ? await this.proxy.bind({ sessionId, connectionId: spec.connectionId }) : null;
     const scrubbed = scrubChildEnvironment({
       hostEnv: this.hostEnv,
       configDir: workspace.configDir,
@@ -361,12 +361,12 @@ export class ClaudeCodeRuntimeAdapter {
     try {
       const result = await this.transport.sendUserMessage(sessionId, briefOrPrompt);
       const reason = result.subtype === "error_max_budget_usd" ? "error_max_budget_usd" : "result";
-      this.recordSpend(record, reason);
+      await this.recordSpend(record, reason);
       if (result.subtype === "error_max_budget_usd") {
         this.saveCheckpoint(record, "error_max_budget_usd", BUDGET_STOP_HANDOFF);
       }
     } catch (error) {
-      this.recordSpend(record, "exit");
+      await this.recordSpend(record, "exit");
       this.saveCheckpoint(record, "exit", []);
       throw error;
     }
@@ -384,18 +384,19 @@ export class ClaudeCodeRuntimeAdapter {
   async interrupt(sessionId: string): Promise<{ readonly elapsedMs: number; readonly forced: boolean }> {
     const record = this.require(sessionId);
     const timing = await this.transport.interrupt(sessionId);
-    this.recordSpend(record, "interrupt");
+    await this.recordSpend(record, "interrupt");
     this.saveCheckpoint(record, "interrupt", []);
     removeConfigDir(record.configDir);
     if (this.liveAttempt.get(record.attemptId) === sessionId) this.liveAttempt.delete(record.attemptId);
     return timing;
   }
 
-  async resume(sessionId: string, checkpointRef: CheckpointRef): Promise<ClaudeResumeResult> {
+  async resume(sessionId: string, checkpointRef: CheckpointRef | string): Promise<ClaudeResumeResult> {
+    const ref = typeof checkpointRef === "string" ? { attemptId: checkpointRef } : checkpointRef;
     const known = this.sessions.get(sessionId);
-    const attemptId = checkpointRef.attemptId || known?.attemptId || "";
+    const attemptId = ref.attemptId || known?.attemptId || "";
     const stored = attemptId ? this.checkpoints.latest(attemptId) : null;
-    const claudeSessionId = checkpointRef.claudeSessionId ?? stored?.claudeSessionId ?? known?.claudeSessionId ?? "";
+    const claudeSessionId = ref.claudeSessionId ?? stored?.claudeSessionId ?? known?.claudeSessionId ?? "";
     const spec = attemptId ? this.specs.get(attemptId) : undefined;
     if (!claudeSessionId || !spec) return { supported: false, reason: "unsupported_resume" };
     const live = this.liveAttempt.get(attemptId);
@@ -409,11 +410,11 @@ export class ClaudeCodeRuntimeAdapter {
     return this.bus.stream(sessionId);
   }
 
-  respondPermission(
+  async respondPermission(
     sessionId: string,
     requestId: string,
     decision: ClaudePermissionDecision,
-  ): ClaudePermissionDecision {
+  ): Promise<ClaudePermissionDecision> {
     this.require(sessionId);
     const recorded = this.transport.decision(sessionId, requestId);
     if (!recorded) {
@@ -423,7 +424,7 @@ export class ClaudeCodeRuntimeAdapter {
     return recorded;
   }
 
-  usage(sessionId: string): ClaudeUsageReport {
+  async usage(sessionId: string): Promise<ClaudeUsageReport> {
     const record = this.require(sessionId);
     const tokens = this.transport.usage(sessionId);
     const quote = this.prices.estimateMicroUsd(record.modelId, tokens);
@@ -465,6 +466,14 @@ export class ClaudeCodeRuntimeAdapter {
     };
   }
 
+  terminate(sessionId: string): ReturnType<ClaudeCodeRuntimeAdapter["interrupt"]> {
+    return this.interrupt(sessionId);
+  }
+
+  dispose(): Promise<void> {
+    return this.close();
+  }
+
   async close(): Promise<void> {
     for (const sessionId of [...this.sessions.keys()]) {
       const record = this.sessions.get(sessionId);
@@ -490,9 +499,9 @@ export class ClaudeCodeRuntimeAdapter {
     };
   }
 
-  private recordSpend(record: SessionRecord, reason: SpendReceipt["reason"]): void {
+  private async recordSpend(record: SessionRecord, reason: SpendReceipt["reason"]): Promise<void> {
     if (record.spendRecorded || !record.claudeSessionId) return;
-    const report = this.usage(record.sessionId);
+    const report = await this.usage(record.sessionId);
     const provider =
       report.providerCostMicroUsd === null ? null : BigInt(Math.trunc(report.providerCostMicroUsd));
     const estimated =

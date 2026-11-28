@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { assertAgentRuntimeAdapter } from "../../src/core/interface.js";
+import { ClaudeCodeRuntimeAdapter } from "../../src/claude-code/adapter.js";
 import { ClaudeCodeAdapterError } from "../../src/claude-code/errors.js";
 import { formatBudgetUsd } from "../../src/claude-code/money.js";
 import {
@@ -22,6 +24,14 @@ afterEach(async () => {
     const layout = layouts.pop();
     if (layout) removeLayout(layout);
   }
+});
+
+describe("ClaudeCodeRuntimeAdapter contract", () => {
+  it("exposes the ten-method agent runtime and the claude-code id", () => {
+    const adapter = new ClaudeCodeRuntimeAdapter();
+    assertAgentRuntimeAdapter(adapter);
+    expect(adapter.runtime).toBe("claude-code");
+  });
 });
 
 describe("ClaudeConsoleKeyComplianceEnforcer", () => {
@@ -112,7 +122,7 @@ describe("launch refusal before spawn", () => {
     });
     expect(spawner.calls).toBe(0);
     expect(fs.readFileSync(path.join(layout.home, ".claude", ".credentials.json"), "utf8")).toBe(marker);
-    const status = adapter.authStatus("conn-1");
+    const status = await adapter.authStatus("conn-1");
     expect(status.state).toBe("missing_console_key");
     expect(status.readsPersonalClaudeHome).toBe(false);
     expect(JSON.stringify(status)).not.toContain(consoleKey());
@@ -132,7 +142,7 @@ describe("launch refusal before spawn", () => {
       message: CONSOLE_KEY_REQUIRED_MESSAGE,
     });
     expect(spawner.calls).toBe(0);
-    expect(oat.adapter.authStatus("conn-1").state).toBe("rejected_subscription_credential");
+    expect((await oat.adapter.authStatus("conn-1")).state).toBe("rejected_subscription_credential");
 
     const oauth = createHarness(layout, {
       secret: consoleKey(),

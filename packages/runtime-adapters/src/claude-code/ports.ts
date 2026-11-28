@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import { quoteTokenMicroUsd } from "./money.js";
 import { ClaudeCodeAdapterError } from "./errors.js";
@@ -103,10 +103,10 @@ export interface JobAssignment {
 
 /** Task 041 `WindowsJobSupervisor` (sibling primitive may be Task 040 `WindowsJobManager`). */
 export interface WindowsJobSupervisorPort {
-  create(sessionId: string): JobAssignment;
-  attach(jobId: string, pid: number): void;
-  list(jobId: string): readonly number[];
-  kill(jobId: string, reason: string): readonly number[];
+  create(sessionId: string): JobAssignment | Promise<JobAssignment>;
+  attach(jobId: string, pid: number): void | Promise<void>;
+  list(jobId: string): readonly number[] | Promise<readonly number[]>;
+  kill(jobId: string, reason: string): readonly number[] | Promise<readonly number[]>;
 }
 
 export interface ProxyBinding {
@@ -116,7 +116,7 @@ export interface ProxyBinding {
 
 /** Task 046 loopback allowlist proxy. Injects Console auth outside the child env. */
 export interface LoopbackAllowlistProxyPort {
-  bind(input: { readonly sessionId: string; readonly connectionId: string }): ProxyBinding;
+  bind(input: { readonly sessionId: string; readonly connectionId: string }): ProxyBinding | Promise<ProxyBinding>;
 }
 
 export interface McpLease {
@@ -127,7 +127,7 @@ export interface McpLease {
 
 /** Task 049 leased harness MCP server. */
 export interface LeasedMcpServerPort {
-  lease(input: { readonly sessionId: string; readonly tools: readonly string[] }): McpLease;
+  lease(input: { readonly sessionId: string; readonly tools: readonly string[] }): McpLease | Promise<McpLease>;
 }
 
 /** Task 011 `PacketSecurityRedactor`. */
@@ -342,10 +342,6 @@ export class PidTrackingJobSupervisor implements WindowsJobSupervisorPort {
 
 export function killProcessTree(pid: number): void {
   if (!Number.isInteger(pid) || pid <= 0) return;
-  if (process.platform === "win32") {
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-    return;
-  }
   try {
     process.kill(pid, "SIGKILL");
   } catch (error) {
@@ -354,7 +350,7 @@ export function killProcessTree(pid: number): void {
 }
 
 export class LocalLoopbackAllowlistProxy implements LoopbackAllowlistProxyPort {
-  constructor(private readonly endpoint = "http://127.0.0.1:9") {}
+  constructor(private readonly endpoint = "http://127.0.0.1") {}
 
   bind(input: { readonly sessionId: string; readonly connectionId: string }): ProxyBinding {
     return {
@@ -374,7 +370,7 @@ export class LocalLeasedMcpServer implements LeasedMcpServerPort {
   lease(input: { readonly sessionId: string; readonly tools: readonly string[] }): McpLease {
     return {
       leaseId: `lease-${input.sessionId}`,
-      endpoint: `http://127.0.0.1:9/mcp/${input.sessionId}`,
+      endpoint: `http://127.0.0.1/mcp/${input.sessionId}`,
       tools: input.tools,
     };
   }

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CursorAcpFallbackAdapter } from "../../src/cursor/acp-fallback.js";
+import { SupervisedCursorRuntime } from "../../src/cursor/runtime.js";
 import { CursorRuntimeAdapter } from "../../src/cursor/adapter.js";
 import { CURSOR_KEY_EXPIRED_ACCOUNT_CARD } from "../../src/cursor/constants.js";
 import {
@@ -231,7 +231,7 @@ describe("Cursor launch, usage, expiry, and isolation", () => {
   it("keeps the ACP fallback argv free of the DPAPI key and follows signed-policy override", async () => {
     const dirs = tree();
     const acpOnly = wiring(dirs);
-    const acpBridge = new CursorAcpFallbackAdapter(acpOnly.deps);
+    const acpBridge = new SupervisedCursorRuntime(acpOnly.deps, "acp");
     const acpRef = await acpBridge.startSession(spec(dirs.worktree, "acp"));
     expect(acpOnly.acp.lastRequest?.command).toBe("cursor-agent");
     expect(acpOnly.acp.lastRequest?.args).toEqual(["acp"]);

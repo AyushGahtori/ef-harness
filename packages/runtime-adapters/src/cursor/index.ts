@@ -1,5 +1,7 @@
-export { CursorAcpFallbackAdapter } from "./acp-fallback.js";
 export { CursorRuntimeAdapter } from "./adapter.js";
+export { CursorGenericAcp } from "./generic-acp.js";
+export { AllowlistCursorProxy, AttemptMcpCursorLease, OsCursorJob } from "./os-ports.js";
+export { SupervisedCursorRuntime } from "./runtime.js";
 export {
   AGENT_RUNTIME_ADAPTER_METHODS,
   CONFORMANCE_CHECKS,
@@ -13,7 +15,6 @@ export {
   InMemoryCursorAcp,
   InMemoryCursorKeys,
   InMemoryCursorSdk,
-  InMemoryJobSupervisor,
   LocalAllowancePacing,
   LocalCliMinVersionGate,
   LocalConformanceGate,

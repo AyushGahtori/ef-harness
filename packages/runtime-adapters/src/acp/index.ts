@@ -33,7 +33,7 @@ export type { SupervisionPolicyPort, SupervisionContext } from "./policy.js";
 export { NormalizedRuntimeEventBus, makeEvent } from "./events.js";
 export { isAlive, settleJob, signalProcess } from "./job.js";
 export type { WindowsJobPort } from "./job.js";
-export { CoreSupervisionPolicy, OsWindowsJob, openAllowlistProxy, sharedAllowlistProxy } from "./os-boundary.js";
+export { CoreSupervisionPolicy, OsWindowsJob, openAllowlistProxy, sharedAllowlistProxy, sharedAttemptMcp } from "./os-boundary.js";
 export { LocalWarmExecutionPool, WAITING_FOR_RUN_SLOT } from "./pool.js";
 export type { WarmExecutionPoolPort, ExecutionLease } from "./pool.js";
 export { LocalHarnessRunEngine, splitCommand } from "./harness.js";

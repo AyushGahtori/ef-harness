@@ -100,7 +100,7 @@ export class ClaudeStreamJsonTransport {
     };
     this.processes.set(input.sessionId, live);
     this.attach(live);
-    if (typeof child.pid === "number" && child.pid > 0) this.jobs.attach(input.jobId, child.pid);
+    if (typeof child.pid === "number" && child.pid > 0) await this.jobs.attach(input.jobId, child.pid);
     try {
       const claudeSessionId = await withTimeout(live.init.promise, this.initTimeoutMs, "init_timeout");
       if (!claudeSessionId) {
@@ -108,7 +108,7 @@ export class ClaudeStreamJsonTransport {
       }
       return claudeSessionId;
     } catch (error) {
-      this.jobs.kill(input.jobId, "start_failed");
+      await this.jobs.kill(input.jobId, "start_failed");
       child.kill("SIGTERM");
       throw error;
     }
@@ -187,7 +187,7 @@ export class ClaudeStreamJsonTransport {
     let forced = false;
     if (!exited) {
       forced = true;
-      this.jobs.kill(live.jobId, "interrupt_grace_elapsed");
+      await this.jobs.kill(live.jobId, "interrupt_grace_elapsed");
       exited = await waitUntilExited(live, 2_000);
     }
     this.emitExit(live, "interrupt");
@@ -245,7 +245,7 @@ export class ClaudeStreamJsonTransport {
         kind: "other",
         message: "Claude Code emitted an oversized stream frame",
       });
-      this.jobs.kill(live.jobId, "oversized_frame");
+      void this.jobs.kill(live.jobId, "oversized_frame");
       return;
     }
     this.drain(live);

@@ -69,7 +69,7 @@ export class LocalGenericAcpAdapter {
   async start(request: SpawnRequest): Promise<void> {
     const child = this.spawner(request);
     this.child = child;
-    this.job.attach(child);
+    await this.job.attach(child);
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => this.onStdout(chunk));
