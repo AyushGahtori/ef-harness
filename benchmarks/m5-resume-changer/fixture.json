@@ -1,0 +1,76 @@
+{
+  "request": "Add a concise resume export tone toggle",
+  "staleDocPath": "docs/architecture.md",
+  "deletedPath": "src/features/print/DeletedPrintRoute.tsx",
+  "untouchedDirtyPath": "src/app/page.tsx",
+  "allowedChangePaths": [
+    "src/features/export/ToneToggle.tsx",
+    "src/features/export/tone-copy.ts",
+    "tests/export-tone.test.ts"
+  ],
+  "developerName": "Developer Checkout",
+  "developerEmail": "developer@localhost",
+  "baselineTestIds": ["resume-preview", "achievements", "print-page"],
+  "newCheckIds": ["export-tone-toggle"],
+  "headerHeightPx": 64,
+  "tapTargetPx": 44,
+  "sensitive": [
+    {
+      "path": ".env.local",
+      "text": "LOCAL_ONLY=1"
+    }
+  ],
+  "envExampleNames": ["NEXT_PUBLIC_APP_NAME"],
+  "files": [
+    {
+      "path": "package.json",
+      "text": "{\n  \"name\": \"resume-changer-fixture\",\n  \"private\": true,\n  \"scripts\": {\n    \"dev\": \"next dev\",\n    \"build\": \"next build\",\n    \"test\": \"vitest run\"\n  },\n  \"dependencies\": {\n    \"next\": \"15.0.0\",\n    \"react\": \"19.0.0\",\n    \"react-dom\": \"19.0.0\"\n  },\n  \"devDependencies\": {\n    \"tailwindcss\": \"3.4.17\",\n    \"typescript\": \"5.6.0\",\n    \"vitest\": \"3.0.0\"\n  }\n}\n"
+    },
+    {
+      "path": "tailwind.config.ts",
+      "text": "export const content = [\"./src/**/*.tsx\"];\nexport const theme = { headerHeightPx: 64 };\n"
+    },
+    {
+      "path": "src/design/tokens.ts",
+      "text": "export const headerHeightPx = 64;\nexport const bodyFont = \"Source Serif 4\";\n"
+    },
+    {
+      "path": "src/components/ui/Button.tsx",
+      "text": "export function Button(label: string): string {\n  return label;\n}\n"
+    },
+    {
+      "path": "src/app/page.tsx",
+      "text": "export function HomePage(): string {\n  return \"resume home\";\n}\n"
+    },
+    {
+      "path": "src/features/resume/ResumePreview.tsx",
+      "text": "import { Button } from \"../../components/ui/Button.js\";\nexport function ResumePreview(): string {\n  return Button(\"preview\");\n}\n"
+    },
+    {
+      "path": "src/features/achievements/AchievementList.tsx",
+      "text": "export function AchievementList(): string {\n  return \"achievements\";\n}\n"
+    },
+    {
+      "path": "src/features/print/PrintPage.tsx",
+      "text": "export function PrintPage(): string {\n  return \"print page\";\n}\n"
+    },
+    {
+      "path": "src/features/export/export-copy.ts",
+      "text": "export const conciseToneLabel = \"Concise\";\nexport function exportToneOptions(): readonly string[] {\n  return [\"concise\", \"warm\"];\n}\n"
+    }
+  ],
+  "changeFiles": [
+    {
+      "path": "src/features/export/ToneToggle.tsx",
+      "text": "import { headerHeightPx } from \"../../design/tokens.js\";\nexport function ToneToggle(): string {\n  return headerHeightPx > 0 ? \"Concise tone\" : \"Warm tone\";\n}\n"
+    },
+    {
+      "path": "src/features/export/tone-copy.ts",
+      "text": "export const toneHint = \"Shorten the resume export.\";\n"
+    },
+    {
+      "path": "tests/export-tone.test.ts",
+      "text": "export function exportToneTogglePasses(): boolean {\n  return true;\n}\n"
+    }
+  ]
+}
