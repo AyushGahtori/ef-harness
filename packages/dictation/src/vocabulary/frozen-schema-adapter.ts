@@ -162,27 +162,3 @@ export class FrozenGlobalVocabularyStore implements VocabularyStore {
   }
 }
 
-export class MemoryGlobalDbVocabularyDriver implements GlobalDbVocabularyDriver {
-  private readonly rows = new Map<string, FrozenVocabularyRow>();
-  private readonly settings = new Map<string, string>();
-
-  upsertVocabulary(row: FrozenVocabularyRow): void {
-    this.rows.set(entryKey(row.project, row.term), row);
-  }
-
-  deleteVocabulary(project: string, term: string): void {
-    this.rows.delete(entryKey(project, term));
-  }
-
-  listVocabulary(): readonly FrozenVocabularyRow[] {
-    return [...this.rows.values()];
-  }
-
-  readSetting(key: string): string | null {
-    return this.settings.get(key) ?? null;
-  }
-
-  writeSetting(key: string, value: string): void {
-    this.settings.set(key, value);
-  }
-}

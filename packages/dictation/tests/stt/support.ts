@@ -13,6 +13,7 @@ import {
   readyWhisperComponent,
 } from "../../src/stt/index.js";
 import type {
+  DictationVocabularyPipeline,
   HypothesisToken,
   MachineCalibrationSnapshot,
   WhisperComponentStatus,
@@ -23,6 +24,7 @@ export interface SessionOptions {
   readonly component?: WhisperComponentStatus;
   readonly targetKey?: string;
   readonly vocabulary?: readonly string[];
+  readonly pipeline?: DictationVocabularyPipeline;
 }
 
 export function speechPcm(length = 320): Int16Array {
@@ -49,7 +51,7 @@ export function words(
 
 export function createSession(options: SessionOptions = {}) {
   const calibration = new InMemoryMachineCalibration(
-    options.calibration ?? { totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "Green" },
+    options.calibration ?? { totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "GREEN" },
   );
   const gpu = new InMemoryGpuWhisperPriorityArbiter();
   const components = new InMemorySignedComponentDownloader(options.component ?? readyWhisperComponent());
@@ -59,7 +61,17 @@ export function createSession(options: SessionOptions = {}) {
   const composer = new InMemorySingleComposer(options.targetKey ?? "question:Q-41");
   const capture = new InMemoryAudioCapture();
   const engine = new LocalWhisperSttEngine(
-    { jobs, gpu, components, calibration, decoder, capture, composer, speech },
+    {
+      jobs,
+      gpu,
+      components,
+      calibration,
+      decoder,
+      capture,
+      composer,
+      speech,
+      ...(options.pipeline === undefined ? {} : { pipeline: options.pipeline }),
+    },
     options.vocabulary === undefined ? {} : { vocabulary: new MemoryVocabulary(options.vocabulary) },
   );
   return { engine, calibration, gpu, components, jobs, decoder, speech, composer, capture };

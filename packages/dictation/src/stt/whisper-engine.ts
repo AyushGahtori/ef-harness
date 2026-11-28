@@ -7,6 +7,7 @@ import {
 } from "./constants.js";
 import { EditableDictationDraftController, type DraftSnapshot } from "./draft-controller.js";
 import { selectWhisperModel } from "./model-selection.js";
+import type { JobHandle, SpawnedProcess } from "@ef-harness/sandbox";
 import { OsFallbackDictationBridge } from "./os-fallback.js";
 import type {
   AudioCapturePort,
@@ -17,9 +18,12 @@ import type {
   SingleComposerViewPort,
   SupervisedChild,
   WhisperDecoderPort,
-  WindowsJobSupervisorPort,
+  WindowsJobObjectPort,
 } from "./ports.js";
-import { rmsOf } from "./text.js";
+import { resolveWhisperInstall, whisperModelClass } from "./ports.js";
+import { WhisperComponentUnavailable } from "./errors.js";
+import { renderTokens, rmsOf } from "./text.js";
+import type { DictationVocabularyPipeline } from "./vocabulary-pipeline.js";
 import type {
   AudioInputDevice,
   DictationEngineMode,
@@ -27,6 +31,7 @@ import type {
   HotkeyBehavior,
   HotkeyCombo,
   HotkeyEvent,
+  HypothesisToken,
   KeyboardEdit,
   VocabularyLookup,
   WhisperModelId,
@@ -53,7 +58,7 @@ export interface DraftEngineSnapshot extends DraftSnapshot {
 }
 
 export interface LocalWhisperDependencies {
-  readonly jobs: WindowsJobSupervisorPort;
+  readonly jobs: WindowsJobObjectPort;
   readonly gpu: GpuWhisperPriorityArbiterPort;
   readonly components: SignedComponentDownloaderPort;
   readonly calibration: MachineCalibrationPort;
@@ -61,6 +66,7 @@ export interface LocalWhisperDependencies {
   readonly capture: AudioCapturePort;
   readonly composer: SingleComposerViewPort;
   readonly speech: OsSpeechRecognizerPort;
+  readonly pipeline?: DictationVocabularyPipeline;
 }
 
 interface EngineOptions {
@@ -86,8 +92,9 @@ export class LocalWhisperSttEngine {
   private openedBy: "click" | "ptt" | null = null;
   private carryInitialPrompt: string | undefined;
   private modelId: WhisperModelId | null = null;
-  private gpuLeaseId: string | null = null;
+  private gpuActive = false;
   private child: SupervisedChild | null = null;
+  private jobHandle: JobHandle | null = null;
   private pcm = new Int16Array(0);
   private badge: string | null = null;
   private downloadOffer: string | null = null;
@@ -137,34 +144,34 @@ export class LocalWhisperSttEngine {
     this.carryInitialPrompt = prompt;
   }
 
-  handleKey(event: HotkeyEvent): void {
+  async handleKey(event: HotkeyEvent): Promise<void> {
     if (event.repeat) return;
     if (!this.matchesHotkey(event)) return;
     if (this.hotkeyBehavior === "toggle") {
-      if (event.type === "keydown") this.toggle();
+      if (event.type === "keydown") await this.toggle();
       return;
     }
-    if (event.type === "keydown") this.pushToTalkDown();
+    if (event.type === "keydown") await this.pushToTalkDown();
     else this.pushToTalkUp();
   }
 
-  toggle(): void {
+  async toggle(): Promise<void> {
     if (this.draft.isListening()) {
       this.stop();
       return;
     }
     this.openedBy = "click";
-    this.start();
+    await this.start();
   }
 
-  pushToTalkDown(): void {
+  async pushToTalkDown(): Promise<void> {
     if (this.hotkeyBehavior !== "push_to_talk") {
-      this.toggle();
+      await this.toggle();
       return;
     }
     if (this.draft.isListening()) return;
     this.openedBy = "ptt";
-    this.start();
+    await this.start();
   }
 
   pushToTalkUp(): void {
@@ -173,7 +180,7 @@ export class LocalWhisperSttEngine {
     this.stop();
   }
 
-  start(options?: { readonly carryInitialPrompt?: string; readonly deviceId?: string }): void {
+  async start(options?: { readonly carryInitialPrompt?: string; readonly deviceId?: string }): Promise<void> {
     if (this.draft.isListening()) return;
     if (options?.carryInitialPrompt !== undefined) this.carryInitialPrompt = options.carryInitialPrompt;
     if (options?.deviceId !== undefined) this.deviceId = options.deviceId;
@@ -184,25 +191,42 @@ export class LocalWhisperSttEngine {
       return;
     }
     const calibration = this.deps.calibration.snapshot();
-    if (calibration.pressure === "Red") {
+    if (calibration.pressure === "RED") {
       this.enterOsFallback("red_pressure");
       return;
     }
     const modelId = selectWhisperModel(calibration);
-    const component = this.deps.components.resolveWhisperComponent(modelId);
-    if (!component.available) {
-      this.enterOsFallback(component.reason);
+    let component;
+    try {
+      component = await resolveWhisperInstall(this.deps.components, modelId);
+    } catch (error) {
+      const reason = error instanceof WhisperComponentUnavailable ? error.reason : "not_downloaded";
+      this.enterOsFallback(reason);
       return;
     }
     this.modelId = modelId;
-    const lease = this.deps.gpu.acquireInteractive();
-    this.gpuLeaseId = lease.leaseId;
+    const grant = this.deps.gpu.activateDictation(whisperModelClass(modelId));
+    this.gpuActive = grant.ready === true && this.deps.gpu.dictationActive;
+    this.applyPipelinePrompt();
     const args = buildWhisperCppArgs({
       modelPath: component.modelPath,
       ...(this.carryInitialPrompt === undefined ? {} : { carryInitialPrompt: this.carryInitialPrompt }),
     });
     try {
-      this.child = this.deps.jobs.superviseWhisper({ binaryPath: component.binaryPath, args });
+      const job = await this.deps.jobs.createJob({
+        name: "whisper-dictation",
+        kind: "command",
+        limits: { memoryBytes: 1_073_741_824, activeProcessLimit: 4 },
+        timeoutMs: 120_000,
+      });
+      const spawned = await this.deps.jobs.spawnInJob(job, {
+        file: component.binaryPath,
+        args,
+        environment: "dictation",
+        role: "whisper",
+      });
+      this.jobHandle = job;
+      this.child = supervisedChild(spawned, job.id, args);
     } catch {
       this.releaseGpu();
       this.enterOsFallback("quarantined");
@@ -226,7 +250,7 @@ export class LocalWhisperSttEngine {
 
   reconcilePressure(): void {
     if (this.phase !== "whisper") return;
-    if (this.deps.calibration.snapshot().pressure !== "Red") return;
+    if (this.deps.calibration.snapshot().pressure !== "RED") return;
     this.releaseWhisperProcess();
     this.modelId = null;
     this.fallbackReason = "red_pressure";
@@ -247,10 +271,11 @@ export class LocalWhisperSttEngine {
     if (this.phase === "whisper" && this.child) {
       this.child.pushStdin(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
     }
-    const tokens =
+    const decoded =
       this.phase === "whisper"
         ? this.deps.decoder.decode(samples, this.decoderContext())
         : this.fallback.transcribe(samples);
+    const tokens = this.shapeHypothesis(decoded);
     if (tokens.length > 0) this.draft.pushHypothesis(tokens);
   }
 
@@ -275,7 +300,7 @@ export class LocalWhisperSttEngine {
       badge: this.badge,
       downloadOffer: this.downloadOffer,
       fallbackReason: this.fallbackReason,
-      gpuHeld: this.gpuLeaseId !== null && this.deps.gpu.heldLeaseId() === this.gpuLeaseId,
+      gpuHeld: this.gpuActive && this.deps.gpu.dictationActive,
       jobId: this.child?.jobId ?? null,
       jobOpen: this.child !== null && !this.child.terminated,
       wavWrites: this.wavWrites,
@@ -318,18 +343,46 @@ export class LocalWhisperSttEngine {
     this.deps.capture.stop();
   }
 
+  private applyPipelinePrompt(): void {
+    if (this.carryInitialPrompt !== undefined && this.carryInitialPrompt.length > 0) return;
+    const pipeline = this.deps.pipeline;
+    if (!pipeline) return;
+    const built = pipeline.prompts.build({
+      projectId: pipeline.projectId,
+      entries: pipeline.store.list(),
+    });
+    if (built.text.length > 0) this.carryInitialPrompt = built.text;
+  }
+
+  private shapeHypothesis(tokens: readonly HypothesisToken[]): readonly HypothesisToken[] {
+    const pipeline = this.deps.pipeline;
+    if (!pipeline || tokens.length === 0) return tokens;
+    const raw = renderTokens(tokens);
+    const corrected = pipeline.learner.apply(pipeline.projectId, raw);
+    const spoken = pipeline.spokenIds.normalize(pipeline.projectId, corrected.text);
+    if (spoken.text === raw) return tokens;
+    const probability = tokens[0]?.probability ?? 1;
+    return spoken.text
+      .split(" ")
+      .filter((word) => word.length > 0)
+      .map((text) => ({ text, probability }));
+  }
+
   private releaseGpu(): void {
-    if (this.gpuLeaseId === null) return;
-    this.deps.gpu.release(this.gpuLeaseId);
-    this.gpuLeaseId = null;
+    if (!this.gpuActive) return;
+    this.deps.gpu.deactivateDictation();
+    this.gpuActive = false;
   }
 
   private releaseWhisperProcess(): void {
-    if (this.child) {
-      const jobId = this.child.jobId;
-      this.child.terminate();
-      this.deps.jobs.close(jobId);
-      this.child = null;
+    const child = this.child;
+    const job = this.jobHandle;
+    this.child = null;
+    this.jobHandle = null;
+    if (child) child.terminate();
+    if (job) {
+      void this.deps.jobs.terminateJob(job);
+      void this.deps.jobs.closeJob(job);
     }
     this.releaseGpu();
     this.pcm.fill(0);
@@ -358,6 +411,47 @@ export class LocalWhisperSttEngine {
       Boolean(event.shiftKey) === this.hotkey.shift &&
       Boolean(event.metaKey) === this.hotkey.meta
     );
+  }
+}
+
+function supervisedChild(spawned: SpawnedProcess, jobId: string, args: readonly string[]): SupervisedChild {
+  if (
+    typeof Reflect.get(spawned, "pushStdin") === "function" &&
+    typeof Reflect.get(spawned, "terminate") === "function" &&
+    typeof Reflect.get(spawned, "jobId") === "string"
+  ) {
+    return spawned as SpawnedProcess & SupervisedChild;
+  }
+  return new BufferedWhisperChild(jobId, spawned.pid, args);
+}
+
+class BufferedWhisperChild implements SupervisedChild {
+  stdin = new Uint8Array(0);
+  terminated = false;
+
+  constructor(
+    readonly jobId: string,
+    readonly pid: number,
+    readonly args: readonly string[],
+  ) {}
+
+  get stdinBytes(): number {
+    return this.stdin.byteLength;
+  }
+
+  pushStdin(bytes: Uint8Array): void {
+    if (this.terminated) return;
+    const next = new Uint8Array(this.stdin.byteLength + bytes.byteLength);
+    next.set(this.stdin);
+    next.set(bytes, this.stdin.byteLength);
+    this.stdin.fill(0);
+    this.stdin = next;
+  }
+
+  terminate(): void {
+    this.stdin.fill(0);
+    this.stdin = new Uint8Array(0);
+    this.terminated = true;
   }
 }
 

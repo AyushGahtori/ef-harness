@@ -1,14 +1,25 @@
-import { DictationError } from "./errors.js";
+import path from "node:path";
+import type {
+  JobAccounting,
+  JobHandle,
+  JobSpec,
+  ProcessSupervisor,
+  SpawnedProcess,
+  SpawnRequest,
+  WindowsJobObjectManager,
+} from "@ef-harness/sandbox";
+import { redactSecrets } from "@ef-harness/shared-observability";
+import { DictationError, WhisperComponentUnavailable } from "./errors.js";
 import type {
   AudioInputDevice,
   ComposerDraftSnapshot,
   DictationDraftUpdate,
   FallbackReason,
-  GpuWhisperLease,
   HypothesisToken,
   MachineCalibrationSnapshot,
   MicFault,
   VocabularyLookup,
+  WhisperComponentReady,
   WhisperComponentStatus,
   WhisperModelId,
 } from "./types.js";
@@ -17,28 +28,54 @@ export interface MachineCalibrationPort {
   snapshot(): MachineCalibrationSnapshot;
 }
 
-/** Local stand-in for Task 118 `GpuWhisperPriorityArbiter`. */
-export interface GpuWhisperPriorityArbiterPort {
-  acquireInteractive(): GpuWhisperLease;
-  release(leaseId: string): void;
-  heldLeaseId(): string | null;
+/**
+ * Structural port for Task 118 `GpuWhisperPriorityArbiter`.
+ * Dictation is below governor on the layer DAG, so this package does not import it.
+ * `activateDictation` / `deactivateDictation` match that class.
+ */
+export interface DictationGpuGrant {
+  readonly priority: "interactive";
+  readonly device: "gpu" | "cpu";
+  readonly reservedMb: number;
+  readonly modelClass: "base" | "small" | "medium";
+  readonly ready: true;
 }
 
-/** Local stand-in for Task 132 `SignedComponentDownloader` + AV quarantine check. */
-export interface SignedComponentDownloaderPort {
-  resolveWhisperComponent(modelId: WhisperModelId): WhisperComponentStatus;
+export interface GpuWhisperPriorityArbiterPort {
+  activateDictation(modelClass?: "base" | "small" | "medium"): DictationGpuGrant;
+  deactivateDictation(): readonly { readonly id: string }[];
+  readonly dictationActive: boolean;
 }
 
 /**
- * Local stand-in for Task 041 `WindowsJobSupervisor`.
- * The foundation job-object producer is Task 040 `WindowsJobManager`; this port
- * is the dictation-shaped supervise/close surface Task 157 names.
+ * Structural port for Task 132 `SignedComponentDownloader.download`.
+ * Daemon rank is above dictation, so the downloader is injected.
  */
-export interface WindowsJobSupervisorPort {
-  superviseWhisper(spec: { readonly binaryPath: string; readonly args: readonly string[] }): SupervisedChild;
-  activeChildCount(jobId: string): number;
-  close(jobId: string): void;
+export interface InstalledSignedComponent {
+  readonly componentId: string;
+  readonly version: string;
+  readonly label: string;
+  readonly directory: string;
+  readonly sha256: string;
+  readonly verified: true;
 }
+
+export interface SignedComponentDownloaderPort {
+  download(componentId: string): Promise<InstalledSignedComponent>;
+}
+
+/**
+ * Task 040 `WindowsJobObjectManager` methods dictation uses to supervise whisper.cpp.
+ * `WindowsJobObjectManager` is assignable to this port.
+ */
+export type WindowsJobObjectPort = Pick<
+  ProcessSupervisor,
+  "createJob" | "spawnInJob" | "terminateJob" | "closeJob" | "queryJobAccounting"
+>;
+
+export type WindowsJobObjectManagerSatisfiesDictationPort = WindowsJobObjectManager extends WindowsJobObjectPort
+  ? true
+  : never;
 
 /** Hypothesis source. The integrator swaps this for whisper.cpp stdout. */
 export interface WhisperDecoderPort {
@@ -94,42 +131,71 @@ export class InMemoryMachineCalibration implements MachineCalibrationPort {
 }
 
 export class InMemoryGpuWhisperPriorityArbiter implements GpuWhisperPriorityArbiterPort {
-  private lease: GpuWhisperLease | null = null;
-  acquireCount = 0;
-  releaseCount = 0;
+  private active = false;
+  activateCount = 0;
+  deactivateCount = 0;
   backgroundDeferred = false;
+  lastModelClass: "base" | "small" | "medium" | null = null;
 
-  acquireInteractive(): GpuWhisperLease {
-    if (this.lease) return this.lease;
-    this.acquireCount += 1;
-    this.backgroundDeferred = true;
-    this.lease = {
-      leaseId: `gpu-whisper-${this.acquireCount}`,
-      priority: "interactive-whisper",
-    };
-    return this.lease;
+  get dictationActive(): boolean {
+    return this.active;
   }
 
-  release(leaseId: string): void {
-    if (!this.lease || this.lease.leaseId !== leaseId) return;
-    this.lease = null;
-    this.backgroundDeferred = false;
-    this.releaseCount += 1;
+  get acquireCount(): number {
+    return this.activateCount;
+  }
+
+  get releaseCount(): number {
+    return this.deactivateCount;
   }
 
   heldLeaseId(): string | null {
-    return this.lease?.leaseId ?? null;
+    return this.active ? "dictation" : null;
+  }
+
+  activateDictation(modelClass: "base" | "small" | "medium" = "base"): DictationGpuGrant {
+    this.lastModelClass = modelClass;
+    if (!this.active) {
+      this.activateCount += 1;
+      this.backgroundDeferred = true;
+      this.active = true;
+    }
+    return {
+      priority: "interactive",
+      device: "gpu",
+      reservedMb: 0,
+      modelClass,
+      ready: true,
+    };
+  }
+
+  deactivateDictation(): readonly { readonly id: string }[] {
+    if (!this.active) return [];
+    this.active = false;
+    this.backgroundDeferred = false;
+    this.deactivateCount += 1;
+    return [];
   }
 }
 
 export class InMemorySignedComponentDownloader implements SignedComponentDownloaderPort {
-  lastModelId: WhisperModelId | null = null;
+  lastComponentId: string | null = null;
 
   constructor(public result: WhisperComponentStatus) {}
 
-  resolveWhisperComponent(modelId: WhisperModelId): WhisperComponentStatus {
-    this.lastModelId = modelId;
-    return this.result;
+  async download(componentId: string): Promise<InstalledSignedComponent> {
+    this.lastComponentId = componentId;
+    if (!this.result.available) {
+      throw new WhisperComponentUnavailable(this.result.reason, this.result.reason);
+    }
+    return {
+      componentId,
+      version: "1",
+      label: componentId,
+      directory: path.posix.dirname(this.result.modelPath),
+      sha256: "0".repeat(64),
+      verified: true,
+    };
   }
 }
 
@@ -138,11 +204,21 @@ class InMemoryWhisperChild implements SupervisedChild {
   terminated = false;
   closed = false;
 
+  readonly slot: number;
+  readonly startTime = 0;
+  readonly imagePath: string | null;
+  readonly commandLine: string | null;
+
   constructor(
     readonly jobId: string,
     readonly pid: number,
     readonly args: readonly string[],
-  ) {}
+    file: string,
+  ) {
+    this.slot = pid;
+    this.imagePath = file;
+    this.commandLine = [file, ...args].join(" ");
+  }
 
   get stdinBytes(): number {
     return this.stdin.byteLength;
@@ -164,27 +240,62 @@ class InMemoryWhisperChild implements SupervisedChild {
   }
 }
 
-export class InMemoryWindowsJobSupervisor implements WindowsJobSupervisorPort {
+export class InMemoryWindowsJobSupervisor implements WindowsJobObjectPort {
   readonly jobs = new Map<string, InMemoryWhisperChild>();
   readonly diskWrites: string[] = [];
   private sequence = 0;
+  private readonly handles = new Map<string, JobHandle>();
 
-  superviseWhisper(spec: {
-    readonly binaryPath: string;
-    readonly args: readonly string[];
-  }): SupervisedChild {
-    if (spec.binaryPath.trim().length === 0) {
+  async createJob(spec: JobSpec): Promise<JobHandle> {
+    if (spec.name.trim().length === 0) {
+      throw new DictationError("job", "job name is required");
+    }
+    this.sequence += 1;
+    const handle: JobHandle = {
+      id: `whisper-job-${this.sequence}`,
+      name: spec.name,
+      kind: spec.kind,
+      parentId: spec.parent?.id ?? null,
+      limits: spec.limits,
+      requestedLimits: spec.limits,
+      limitsClamped: false,
+      timeoutMs: spec.timeoutMs ?? null,
+    };
+    this.handles.set(handle.id, handle);
+    return handle;
+  }
+
+  async spawnInJob(job: JobHandle, request: SpawnRequest): Promise<SpawnedProcess> {
+    if (!this.handles.has(job.id)) {
+      throw new DictationError("job", "unknown whisper job");
+    }
+    if (request.file.trim().length === 0) {
       throw new DictationError("job", "whisper.cpp binary path is empty");
     }
-    for (const arg of spec.args) {
+    for (const arg of request.args) {
       if (/\.wav$/i.test(arg) || /^https?:\/\//i.test(arg)) {
         throw new DictationError("audio", "Refusing to persist or upload raw audio");
       }
     }
-    this.sequence += 1;
-    const child = new InMemoryWhisperChild(`whisper-job-${this.sequence}`, this.sequence, spec.args);
+    const child = new InMemoryWhisperChild(job.id, this.sequence, request.args, request.file);
     this.jobs.set(child.jobId, child);
     return child;
+  }
+
+  async terminateJob(job: JobHandle): Promise<JobAccounting> {
+    this.finish(job.id);
+    return accounting();
+  }
+
+  async closeJob(job: JobHandle): Promise<void> {
+    this.finish(job.id);
+  }
+
+  async queryJobAccounting(job: JobHandle): Promise<JobAccounting> {
+    const child = this.jobs.get(job.id);
+    const report = accounting();
+    if (!child || child.terminated) return report;
+    return { ...report, activeProcesses: 1, totalTerminatedProcesses: 0 };
   }
 
   activeChildCount(jobId: string): number {
@@ -193,7 +304,7 @@ export class InMemoryWindowsJobSupervisor implements WindowsJobSupervisorPort {
     return 1;
   }
 
-  close(jobId: string): void {
+  private finish(jobId: string): void {
     const child = this.jobs.get(jobId);
     if (!child) return;
     child.terminate();
@@ -349,4 +460,84 @@ export function blockedWhisperComponent(
   reason: Exclude<FallbackReason, "red_pressure">,
 ): WhisperComponentStatus {
   return { available: false, reason };
+}
+
+export function whisperComponentId(modelId: WhisperModelId): string {
+  switch (modelId) {
+    case "base.en":
+      return "whisper-base.en";
+    case "small.en":
+      return "whisper-small.en";
+    case "medium":
+      return "whisper-medium";
+  }
+}
+
+export function whisperModelFile(modelId: WhisperModelId): string {
+  switch (modelId) {
+    case "base.en":
+      return "ggml-base.en.bin";
+    case "small.en":
+      return "ggml-small.en.bin";
+    case "medium":
+      return "ggml-medium.bin";
+  }
+}
+
+export function whisperModelClass(modelId: WhisperModelId): "base" | "small" | "medium" {
+  if (modelId === "medium") return "medium";
+  if (modelId === "small.en") return "small";
+  return "base";
+}
+
+export async function resolveWhisperInstall(
+  downloader: SignedComponentDownloaderPort,
+  modelId: WhisperModelId,
+): Promise<WhisperComponentReady> {
+  try {
+    const installed = await downloader.download(whisperComponentId(modelId));
+    const directory = installed.directory;
+    return {
+      available: true,
+      binaryPath: path.posix.join(directory, "whisper-cli.exe"),
+      modelPath: path.posix.join(directory, whisperModelFile(modelId)),
+      quarantined: false,
+    };
+  } catch (error) {
+    if (error instanceof WhisperComponentUnavailable) throw error;
+    const reason = classifyDownloadFailure(error);
+    const message = redactSecrets(error instanceof Error ? error.message : "whisper component download failed");
+    throw new WhisperComponentUnavailable(reason, message);
+  }
+}
+
+function classifyDownloadFailure(error: unknown): WhisperComponentUnavailable["reason"] {
+  const name = error instanceof Error ? error.name : "";
+  if (name === "ChecksumMismatchError") return "hash_mismatch";
+  if (name === "UnsignedComponentError" || name === "UnsafeArchivePathError") return "quarantined";
+  return "not_downloaded";
+}
+
+function accounting(): JobAccounting {
+  return {
+    activeProcesses: 0,
+    totalProcesses: 1,
+    totalTerminatedProcesses: 1,
+    peakJobMemoryBytes: 0,
+    currentJobMemoryBytes: 0,
+    peakProcessMemoryBytes: 0,
+    jobMemoryLimitBytes: 1_073_741_824,
+    processMemoryLimitBytes: 1_073_741_824,
+    activeProcessLimit: 4,
+    userCpuMs: 0,
+    kernelCpuMs: 0,
+    totalPageFaults: 0,
+    limitFlags: 0,
+    uiRestrictions: 0,
+    cpuRatePercent: null,
+    killOnJobClose: true,
+    uiHandlesRestricted: false,
+    memoryLimitHit: false,
+    activeProcessLimitHit: false,
+  };
 }

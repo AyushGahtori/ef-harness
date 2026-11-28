@@ -1,4 +1,7 @@
-export type MemoryPressure = "Green" | "Yellow" | "Orange" | "Red";
+import type { PressureLevel } from "@ef-harness/shared-contracts";
+
+/** Canonical governor pressure. TitleCase `Red` is not a pressure level. */
+export type MemoryPressure = PressureLevel;
 
 export type WhisperModelId = "base.en" | "small.en" | "medium";
 

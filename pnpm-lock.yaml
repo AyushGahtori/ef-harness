@@ -373,9 +373,21 @@ importers:
 
   packages/dictation:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/governor':
+        specifier: workspace:*
+        version: link:../governor
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../shared-observability
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

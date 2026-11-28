@@ -9,9 +9,9 @@ import {
 import { createSession, silencePcm, speechPcm, words } from "./support.js";
 
 describe("retraction, OS fallback, audio retention, and devices", () => {
-  it("strike-through previews the preceding clause and stays reversible", () => {
+  it("strike-through previews the preceding clause and stays reversible", async () => {
     const { engine, decoder } = createSession();
-    engine.start();
+    await engine.start();
     decoder.queue(words("Move the cutoff to 11:00 no wait make it 10:30 instead"));
     engine.pushPcm(speechPcm());
     const live = engine.snapshot();
@@ -47,9 +47,9 @@ describe("retraction, OS fallback, audio retention, and devices", () => {
     expect(engine.snapshot().fullText.includes("Shift")).toBe(true);
   });
 
-  it("recognizes never mind that part without deleting the clause", () => {
+  it("recognizes never mind that part without deleting the clause", async () => {
     const { engine, decoder } = createSession();
-    engine.start();
+    await engine.start();
     decoder.queue(words("Use a local cache never mind that part"));
     engine.pushPcm(speechPcm());
     const snap = engine.snapshot();
@@ -58,10 +58,10 @@ describe("retraction, OS fallback, audio retention, and devices", () => {
     expect(snap.fullText).toBe("Use a local cache never mind that part");
   });
 
-  it("falls back to Windows dictation when Whisper is missing, quarantined, or Red", () => {
+  it("falls back to Windows dictation when Whisper is missing, quarantined, or Red", async () => {
     const missing = createSession({ component: { available: false, reason: "not_downloaded" } });
     missing.speech.queue(words("hello from windows"));
-    missing.engine.start();
+    await missing.engine.start();
     missing.engine.pushPcm(speechPcm());
     const offline = missing.engine.snapshot();
     expect(offline.mode).toBe("os");
@@ -78,38 +78,38 @@ describe("retraction, OS fallback, audio retention, and devices", () => {
     expect(offline.networkUploads).toBe(0);
 
     const quarantined = createSession({ component: { available: false, reason: "quarantined" } });
-    quarantined.engine.start();
+    await quarantined.engine.start();
     expect(quarantined.engine.snapshot().mode).toBe("os");
     expect(quarantined.engine.snapshot().badge).toBe(OS_DICTATION_BADGE);
     expect(quarantined.engine.snapshot().fallbackReason).toBe("quarantined");
 
     const mismatch = createSession({ component: { available: false, reason: "hash_mismatch" } });
-    mismatch.engine.start();
+    await mismatch.engine.start();
     expect(mismatch.engine.snapshot().fallbackReason).toBe("hash_mismatch");
     expect(mismatch.engine.snapshot().micOn).toBe(true);
 
     const red = createSession({
-      calibration: { totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "Red" },
+      calibration: { totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "RED" },
     });
-    red.engine.start();
+    await red.engine.start();
     expect(red.engine.snapshot().mode).toBe("os");
     expect(red.engine.snapshot().fallbackReason).toBe("red_pressure");
     expect(red.gpu.acquireCount).toBe(0);
     expect(red.engine.snapshot().badge).toBe(OS_DICTATION_BADGE);
   });
 
-  it("releases a running whisper.cpp child when pressure turns Red and keeps the draft", () => {
+  it("releases a running whisper.cpp child when pressure turns Red and keeps the draft", async () => {
     const { engine, decoder, calibration, gpu, jobs } = createSession();
     decoder.queue(words("orders don't allow edits"));
     decoder.queue(words("orders don't allow edits"));
-    engine.start();
+    await engine.start();
     engine.pushPcm(speechPcm());
     engine.pushPcm(speechPcm());
     expect(engine.snapshot().confirmed).toBe("orders don't allow edits");
     expect(engine.snapshot().mode).toBe("whisper");
 
-    calibration.current = { totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "Red" };
-    engine.reconcilePressure();
+    calibration.current = { totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "RED" };
+    await engine.reconcilePressure();
     const parked = engine.snapshot();
     expect(parked.mode).toBe("os");
     expect(parked.confirmed).toBe("orders don't allow edits");
@@ -122,12 +122,12 @@ describe("retraction, OS fallback, audio retention, and devices", () => {
     expect(parked.badge).toBe(OS_DICTATION_BADGE);
   });
 
-  it("keeps confirmed words when the microphone drops and never writes wav audio", () => {
+  it("keeps confirmed words when the microphone drops and never writes wav audio", async () => {
     const { engine, decoder, capture, jobs, gpu } = createSession();
     engine.setCarryInitialPrompt("PostgreSQL Stripe");
     decoder.queue(words("keep this sentence"));
     decoder.queue(words("keep this sentence"));
-    engine.start();
+    await engine.start();
     engine.pushPcm(speechPcm());
     engine.pushPcm(speechPcm());
     const args = engine.snapshot().whisperArgs ?? [];
@@ -159,52 +159,52 @@ describe("retraction, OS fallback, audio retention, and devices", () => {
     }
   });
 
-  it("reports a denied microphone without taking the GPU", () => {
+  it("reports a denied microphone without taking the GPU", async () => {
     const { engine, capture, gpu } = createSession();
     capture.failNext = "permission_denied";
-    engine.start();
+    await engine.start();
     expect(engine.snapshot().micOn).toBe(false);
     expect(engine.snapshot().status).toBe(MIC_DISCONNECTED);
     expect(gpu.acquireCount).toBe(0);
     expect(engine.snapshot().mode).toBe("idle");
   });
 
-  it("supports click-to-toggle and a configurable push-to-talk hotkey", () => {
+  it("supports click-to-toggle and a configurable push-to-talk hotkey", async () => {
     const { engine } = createSession();
     expect(engine.snapshot().hotkey).toBe("Ctrl+Space");
     expect(engine.listInputDevices().map((device) => device.id)).toEqual(["default"]);
 
-    engine.handleKey({ type: "keydown", key: " ", ctrlKey: true });
+    await engine.handleKey({ type: "keydown", key: " ", ctrlKey: true });
     expect(engine.snapshot().micOn).toBe(true);
-    engine.handleKey({ type: "keyup", key: "Space", ctrlKey: true });
+    await engine.handleKey({ type: "keyup", key: "Space", ctrlKey: true });
     expect(engine.snapshot().micOn).toBe(false);
 
-    engine.toggle();
+    await engine.toggle();
     expect(engine.snapshot().micOn).toBe(true);
-    engine.handleKey({ type: "keyup", key: " ", ctrlKey: true });
+    await engine.handleKey({ type: "keyup", key: " ", ctrlKey: true });
     expect(engine.snapshot().micOn).toBe(true);
-    engine.toggle();
+    await engine.toggle();
     expect(engine.snapshot().micOn).toBe(false);
 
     engine.setHotkey({ ctrl: true, alt: false, shift: true, meta: false, key: "d" }, "toggle");
     expect(engine.snapshot().hotkey).toBe("Ctrl+Shift+d");
-    engine.handleKey({ type: "keydown", key: "d", ctrlKey: true, shiftKey: true });
+    await engine.handleKey({ type: "keydown", key: "d", ctrlKey: true, shiftKey: true });
     expect(engine.snapshot().micOn).toBe(true);
-    engine.handleKey({ type: "keydown", key: "D", ctrlKey: true, shiftKey: true });
+    await engine.handleKey({ type: "keydown", key: "D", ctrlKey: true, shiftKey: true });
     expect(engine.snapshot().micOn).toBe(false);
 
     engine.selectInputDevice("missing");
-    engine.toggle();
+    await engine.toggle();
     expect(engine.snapshot().status).toBe(MIC_DISCONNECTED);
     expect(engine.snapshot().micOn).toBe(false);
   });
 
-  it("selects the quantized model from RAM and VRAM", () => {
-    expect(selectWhisperModel({ totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "Green" })).toBe("medium");
-    expect(selectWhisperModel({ totalRamMb: 16_384, gpuVramMb: 0, pressure: "Green" })).toBe("small.en");
-    expect(selectWhisperModel({ totalRamMb: 8_192, gpuVramMb: 0, pressure: "Yellow" })).toBe("base.en");
-    expect(selectWhisperModel({ totalRamMb: 12_288, gpuVramMb: 4_096, pressure: "Orange" })).toBe("medium");
-    expect(selectWhisperModel({ totalRamMb: 8_192, gpuVramMb: 2_048, pressure: "Green" })).toBe("small.en");
+  it("selects the quantized model from RAM and VRAM", async () => {
+    expect(selectWhisperModel({ totalRamMb: 32_768, gpuVramMb: 8_192, pressure: "GREEN" })).toBe("medium");
+    expect(selectWhisperModel({ totalRamMb: 16_384, gpuVramMb: 0, pressure: "GREEN" })).toBe("small.en");
+    expect(selectWhisperModel({ totalRamMb: 8_192, gpuVramMb: 0, pressure: "YELLOW" })).toBe("base.en");
+    expect(selectWhisperModel({ totalRamMb: 12_288, gpuVramMb: 4_096, pressure: "ORANGE" })).toBe("medium");
+    expect(selectWhisperModel({ totalRamMb: 8_192, gpuVramMb: 2_048, pressure: "GREEN" })).toBe("small.en");
 
     const args = buildWhisperCppArgs({
       modelPath: "components/whisper/ggml-small.en.bin",

@@ -12,13 +12,17 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.json --pretty false && node --input-type=module -e \"import fs from 'node:fs'; import path from 'node:path'; const from = path.join('src','vocabulary','gpt2.tiktoken'); const to = path.join('dist','vocabulary','gpt2.tiktoken'); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to);\"",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/db": "workspace:*",
+    "@ef-harness/governor": "workspace:*",
+    "@ef-harness/sandbox": "workspace:*",
+    "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/shared-observability": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

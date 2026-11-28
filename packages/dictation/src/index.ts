@@ -7,3 +7,10 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export * from "./stt/index.js";
+export * from "./vocabulary/index.js";
+
+import { warmWhisperBpe } from "./vocabulary/whisper-bpe.js";
+
+warmWhisperBpe();

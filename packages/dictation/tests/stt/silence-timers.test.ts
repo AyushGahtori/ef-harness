@@ -7,12 +7,12 @@ describe("exact 3s hint and 60s mic-off", () => {
     vi.useRealTimers();
   });
 
-  it("shows the pause hint at 3s, keeps the mic, and continues the same draft at 8s", () => {
+  it("shows the pause hint at 3s, keeps the mic, and continues the same draft at 8s", async () => {
     vi.useFakeTimers();
     const { engine, decoder, composer, gpu } = createSession();
     decoder.queue(words("we should use sqlite"));
     decoder.queue(words("we should use sqlite"));
-    engine.start();
+    await engine.start();
     engine.pushPcm(speechPcm());
     engine.pushPcm(speechPcm());
     expect(engine.snapshot().confirmed).toBe("we should use sqlite");
@@ -43,12 +43,12 @@ describe("exact 3s hint and 60s mic-off", () => {
     expect(composer.lastSubmitted).toBeNull();
   });
 
-  it("turns the mic off at 60s, releases GPU priority, and keeps the draft", () => {
+  it("turns the mic off at 60s, releases GPU priority, and keeps the draft", async () => {
     vi.useFakeTimers();
     const { engine, decoder, composer, gpu, jobs } = createSession();
     decoder.queue(words("hello schema"));
     decoder.queue(words("hello schema"));
-    engine.start();
+    await engine.start();
     engine.pushPcm(speechPcm());
     engine.pushPcm(speechPcm());
     const jobId = engine.snapshot().jobId;
@@ -82,10 +82,10 @@ describe("exact 3s hint and 60s mic-off", () => {
     expect(composer.lastSubmitted).toBe("hello schema");
   });
 
-  it("turns a forgotten mic off at 60s even when nobody spoke", () => {
+  it("turns a forgotten mic off at 60s even when nobody spoke", async () => {
     vi.useFakeTimers();
     const { engine, gpu } = createSession();
-    engine.start();
+    await engine.start();
     expect(engine.snapshot().micOn).toBe(true);
     vi.advanceTimersByTime(60_000);
     expect(engine.snapshot().micOn).toBe(false);

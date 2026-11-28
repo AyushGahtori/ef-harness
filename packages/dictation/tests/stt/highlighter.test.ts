@@ -12,7 +12,7 @@ function token(text: string, probability: number, semanticClass?: HypothesisToke
 describe("amber low-confidence critical spans", () => {
   const highlighter = new LowConfidenceCriticalSpanHighlighter();
 
-  it("underlines the unsure negation and time and ignores the rest of the sentence", () => {
+  it("underlines the unsure negation and time and ignores the rest of the sentence", async () => {
     const spans = highlighter.mark([
       token("Make", 0.91),
       token("sure", 0.9),
@@ -30,7 +30,7 @@ describe("amber low-confidence critical spans", () => {
     expect(spans.every((span) => span.probability < LOW_CONFIDENCE_P)).toBe(true);
   });
 
-  it("flags prices, quantities, dates, quantifiers, and unknown domain names only", () => {
+  it("flags prices, quantities, dates, quantifiers, and unknown domain names only", async () => {
     const spans = highlighter.mark([
       token("$19", 0.4),
       token("5", 0.41),
@@ -70,7 +70,7 @@ describe("amber low-confidence critical spans", () => {
     expect(fifty?.probability).toBeCloseTo(0.5, 5);
   });
 
-  it("does not amber a domain name that is already in project vocabulary", () => {
+  it("does not amber a domain name that is already in project vocabulary", async () => {
     const known = new LowConfidenceCriticalSpanHighlighter(new MemoryVocabulary(["Stripe", "MenuItem"]));
     const spans = known.mark([
       token("Stripe", 0.4),
@@ -81,9 +81,9 @@ describe("amber low-confidence critical spans", () => {
     expect(spans.map((span) => span.text)).toEqual(["Playwright", "15"]);
   });
 
-  it("projects the same underlines onto the live draft", () => {
+  it("projects the same underlines onto the live draft", async () => {
     const { engine, decoder } = createSession();
-    engine.start();
+    await engine.start();
     const frame = [
       token("Make", 0.95),
       token("sure", 0.95),

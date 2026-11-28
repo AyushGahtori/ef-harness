@@ -8,7 +8,6 @@ export { TwoOccurrenceCorrectionLearner } from "./correction-learner.js";
 export type { CorrectionObservationInput } from "./correction-learner.js";
 export {
   FrozenGlobalVocabularyStore,
-  MemoryGlobalDbVocabularyDriver,
   VOCABULARY_SIDECAR_SETTING_KEY,
   entryFromFrozenRow,
   frozenSourceFor,
@@ -21,6 +20,7 @@ export type {
   GlobalDbVocabularyDriver,
   VocabularySidecarRow,
 } from "./frozen-schema-adapter.js";
+export { GlobalBrokerVocabularyDriver } from "./global-broker-driver.js";
 export { MemoryProjectStateCatalog, MemoryVocabularyStore, emptyProjectStateCatalog } from "./memory-store.js";
 export { parseSpokenAgentNumber, parseSpokenNumber } from "./number-words.js";
 export { WhisperInitialPromptBuilder } from "./prompt-builder.js";

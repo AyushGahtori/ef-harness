@@ -11,7 +11,7 @@ export {
   SPEECH_RMS,
   VERIFY_OR_EDIT,
 } from "./constants.js";
-export { DictationError } from "./errors.js";
+export { DictationError, WhisperComponentUnavailable } from "./errors.js";
 export { EditableDictationDraftController } from "./draft-controller.js";
 export type { DraftSnapshot } from "./draft-controller.js";
 export { LowConfidenceCriticalSpanHighlighter } from "./highlighter.js";
@@ -30,10 +30,16 @@ export {
   ScriptedWhisperDecoder,
   blockedWhisperComponent,
   readyWhisperComponent,
+  resolveWhisperInstall,
+  whisperComponentId,
+  whisperModelClass,
+  whisperModelFile,
 } from "./ports.js";
 export type {
   AudioCapturePort,
+  DictationGpuGrant,
   GpuWhisperPriorityArbiterPort,
+  InstalledSignedComponent,
   MachineCalibrationPort,
   OsSpeechRecognizerPort,
   SignedComponentDownloaderPort,
@@ -42,8 +48,11 @@ export type {
   VocabularyLookupPort,
   WhisperDecoderContext,
   WhisperDecoderPort,
-  WindowsJobSupervisorPort,
+  WindowsJobObjectManagerSatisfiesDictationPort,
+  WindowsJobObjectPort,
 } from "./ports.js";
+export { createDictationVocabularyPipeline } from "./vocabulary-pipeline.js";
+export type { DictationVocabularyPipeline } from "./vocabulary-pipeline.js";
 export { findRetractionPreviews } from "./retraction.js";
 export { DictationStabilityStream } from "./stability-stream.js";
 export { asProbability, audioLevelFromRms, classifyToken, renderTokens, rmsOf } from "./text.js";

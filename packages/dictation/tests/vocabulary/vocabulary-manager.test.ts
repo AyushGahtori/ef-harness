@@ -1,8 +1,12 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { GlobalBrokerDb } from "@ef-harness/db";
 import {
   FrozenGlobalVocabularyStore,
   GLOBAL_PROJECT_ID,
-  MemoryGlobalDbVocabularyDriver,
+  GlobalBrokerVocabularyDriver,
   VOCABULARY_PIPELINE_BUDGET_MS,
   WHISPER_PROMPT_TOKEN_LIMIT,
   createProjectDictationVocabularyManager,
@@ -171,9 +175,9 @@ describe("ProjectDictationVocabularyManager", () => {
 });
 
 describe("frozen global.db vocabulary adapter", () => {
-  it("round-trips logical rows onto the frozen vocabulary columns and sidecar", () => {
-    const driver = new MemoryGlobalDbVocabularyDriver();
-    const store = new FrozenGlobalVocabularyStore(driver);
+  it("round-trips logical rows onto GlobalBrokerDb vocabulary columns and sidecar", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dictation-vocab-"));
+    const identity = { pid: 158, processStartTime: 1, hostname: "dictation-test" };
     const original: VocabularyEntry = entry({
       term: "Postgres",
       project_id: "kitchen",
@@ -184,17 +188,31 @@ describe("frozen global.db vocabulary adapter", () => {
       occurrence_ids: ["a", "b"],
       suppressed: true,
     });
-    store.upsert(original);
-    const frozen = driver.listVocabulary()[0];
-    expect(frozen?.source).toBe("correction");
-    expect(frozen?.project).toBe("kitchen");
-    expect(frozen?.heard_as).toBe("post grass");
-    expect(frozen?.hits).toBe(2);
-    expect(frozen?.weight).toBe(800);
-    const loaded = store.get("kitchen", "Postgres");
-    expect(loaded?.source).toBe("user_correction");
-    expect(loaded?.suppressed).toBe(true);
-    expect(loaded?.occurrence_ids).toEqual(["a", "b"]);
-    expect(loaded?.correction_from).toBe("post grass");
+    try {
+      const first = GlobalBrokerDb.open({ root, identity, now: () => 1_700_000_000_000 });
+      const driver = new GlobalBrokerVocabularyDriver(first);
+      const store = new FrozenGlobalVocabularyStore(driver);
+      store.upsert(original);
+      const frozen = driver.listVocabulary()[0];
+      expect(frozen?.source).toBe("correction");
+      expect(frozen?.project).toBe("kitchen");
+      expect(frozen?.heard_as).toBe("post grass");
+      expect(frozen?.hits).toBe(2);
+      expect(frozen?.weight).toBe(800);
+      first.close();
+
+      const reopened = GlobalBrokerDb.open({ root, identity, now: () => 1_700_000_001_000 });
+      const loaded = new FrozenGlobalVocabularyStore(new GlobalBrokerVocabularyDriver(reopened)).get(
+        "kitchen",
+        "Postgres",
+      );
+      reopened.close();
+      expect(loaded?.source).toBe("user_correction");
+      expect(loaded?.suppressed).toBe(true);
+      expect(loaded?.occurrence_ids).toEqual(["a", "b"]);
+      expect(loaded?.correction_from).toBe("post grass");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

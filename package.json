@@ -14,7 +14,7 @@
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "node scripts/run-tests.mjs",
-    "build": "tsc -b --pretty false",
+    "build": "tsc -b --pretty false && node --input-type=module -e \"import fs from 'node:fs'; import path from 'node:path'; const from = path.join('packages','dictation','src','vocabulary','gpt2.tiktoken'); const to = path.join('packages','dictation','dist','vocabulary','gpt2.tiktoken'); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to);\"",
     "verify:diagrams": "node scripts/verify-diagrams.mjs",
     "worktree:create": "node scripts/agent-worktree.mjs create",
     "worktree:check": "node scripts/agent-worktree.mjs check",

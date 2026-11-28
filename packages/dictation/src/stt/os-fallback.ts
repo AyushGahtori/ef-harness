@@ -4,7 +4,7 @@ import type { HypothesisToken } from "./types.js";
 
 /**
  * Windows speech / Web Speech path used when whisper.cpp is missing, quarantined,
- * or the machine is in Red memory pressure. The mic stays usable.
+ * or the machine is in RED memory pressure. The mic stays usable.
  */
 export class OsFallbackDictationBridge {
   readonly badge = OS_DICTATION_BADGE;
