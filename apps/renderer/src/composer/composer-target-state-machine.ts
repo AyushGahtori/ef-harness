@@ -279,6 +279,15 @@ export class ComposerTargetStateMachine {
     this.publish();
   }
 
+  replaceDraft(text: string, cursor: number): void {
+    const at = Math.max(0, Math.min(cursor, text.length));
+    this.caret = caretFrom(text, at, at);
+    this.historyIndex = null;
+    if (!this.snapshot && text.length > 0) this.lockSnapshot();
+    this.persist();
+    this.publish();
+  }
+
   handleKey(key: string, modifiers?: KeyModifiers): KeyResult {
     if (key === "Enter" && modifiers?.shift) {
       this.insertText("\n");

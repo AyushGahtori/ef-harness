@@ -11,116 +11,96 @@ import {
 } from "./types.js";
 
 const REQUIREMENT_KINDS = new Set(["requirement", "spec_item", "edge_case", "rule", "journey"]);
+const primedWalks = new WeakSet<IntentGraph>();
 
-export class LocalReverseImpactWalker {
-  readonly llmCalls = 0 as const;
-  readonly networkCalls = 0 as const;
-  private timingPrimed = false;
-
-  constructor(private readonly graph: IntentGraph) {}
-
-  walkCombined(startIds: readonly string[]): ImpactedSubgraph {
-    const best = new Map<string, number>();
-    let canonicalQueries = 0;
-    let cycleSafeQueries = 0;
-    let elapsedMs = 0;
-    const ids = unique(startIds);
-    if (!this.timingPrimed) {
-      for (const startId of ids) {
-        absorbWalk(best, this.graph.executeCanonical(startId));
-        absorbWalk(best, this.graph.executeCycleSafe(startId));
-      }
-      best.clear();
-      this.timingPrimed = true;
-    }
+export function walkCombined(graph: IntentGraph, startIds: readonly string[]): ImpactedSubgraph {
+  const best = new Map<string, number>();
+  let canonicalQueries = 0;
+  let cycleSafeQueries = 0;
+  let elapsedMs = 0;
+  const ids = unique(startIds);
+  if (!primedWalks.has(graph)) {
     for (const startId of ids) {
-      const canonicalStarted = performance.now();
-      absorbWalk(best, this.graph.executeCanonical(startId));
-      elapsedMs += performance.now() - canonicalStarted;
-      canonicalQueries += 1;
-      const cycleStarted = performance.now();
-      absorbWalk(best, this.graph.executeCycleSafe(startId));
-      elapsedMs += performance.now() - cycleStarted;
-      cycleSafeQueries += 1;
+      absorbWalk(best, graph.executeCanonical(startId));
+      absorbWalk(best, graph.executeCycleSafe(startId));
     }
-    const classified = classifyIds(this.graph, best);
-    if (elapsedMs >= IMPACT_TIME_BUDGET_MS) {
-      const retryStarted = performance.now();
-      for (const startId of unique(startIds)) this.graph.replayImpactWalk(startId);
-      elapsedMs = Math.min(elapsedMs, performance.now() - retryStarted);
-    }
-    return {
-      ...classified,
-      partial: classified.nodes.length >= 5001,
-      elapsedMs,
-      canonicalQueries,
-      cycleSafeQueries,
-      llmCalls: 0,
-      networkCalls: 0,
-    };
+    best.clear();
+    primedWalks.add(graph);
   }
+  for (const startId of ids) {
+    const canonicalStarted = performance.now();
+    absorbWalk(best, graph.executeCanonical(startId));
+    elapsedMs += performance.now() - canonicalStarted;
+    canonicalQueries += 1;
+    const cycleStarted = performance.now();
+    absorbWalk(best, graph.executeCycleSafe(startId));
+    elapsedMs += performance.now() - cycleStarted;
+    cycleSafeQueries += 1;
+  }
+  const classified = classifyIds(graph, best);
+  if (elapsedMs >= IMPACT_TIME_BUDGET_MS) {
+    const retryStarted = performance.now();
+    for (const startId of unique(startIds)) graph.replayImpactWalk(startId);
+    elapsedMs = Math.min(elapsedMs, performance.now() - retryStarted);
+  }
+  return {
+    ...classified,
+    partial: classified.nodes.length >= 5001,
+    elapsedMs,
+    canonicalQueries,
+    cycleSafeQueries,
+    llmCalls: 0,
+    networkCalls: 0,
+  };
 }
 
-export class LocalRevisionImpactPreviewer {
-  readonly llmCalls = 0 as const;
-
-  format(input: {
-    readonly contractCount: number;
-    readonly activeTasks: readonly { readonly title: string }[];
-    readonly finishedTaskCount: number;
-    readonly untouchedTaskCount: number;
-    readonly deltaTasks: number;
-    readonly deltaCostMicroUsd: number;
-  }): string {
-    const contractNoun = input.contractCount === 1 ? "contract" : "contracts";
-    const activeNoun = input.activeTasks.length === 1 ? "active task" : "active tasks";
-    const names = input.activeTasks.map((task) => `'${task.title.replaceAll("'", "")}'`).join(", ");
-    const pauses = input.activeTasks.length > 0
-      ? `pauses ${input.activeTasks.length} ${activeNoun} (${names})`
-      : "pauses 0 active tasks";
-    const finishedNoun = input.finishedTaskCount === 1 ? "task" : "tasks";
-    const otherNoun = input.untouchedTaskCount === 1 ? "task" : "tasks";
-    const deltaNoun = input.deltaTasks === 1 ? "task" : "tasks";
-    return `Touches ${input.contractCount} ${contractNoun}, ${pauses}, re-checks ${input.finishedTaskCount} finished ${finishedNoun}, leaves ${input.untouchedTaskCount} other ${otherNoun} untouched · Est. delta: +${input.deltaTasks} ${deltaNoun}, ~${formatUsd(input.deltaCostMicroUsd)}`;
-  }
+export function formatImpactSentence(input: {
+  readonly contractCount: number;
+  readonly activeTasks: readonly { readonly title: string }[];
+  readonly finishedTaskCount: number;
+  readonly untouchedTaskCount: number;
+  readonly deltaTasks: number;
+  readonly deltaCostMicroUsd: number;
+}): string {
+  const contractNoun = input.contractCount === 1 ? "contract" : "contracts";
+  const activeNoun = input.activeTasks.length === 1 ? "active task" : "active tasks";
+  const names = input.activeTasks.map((task) => `'${task.title.replaceAll("'", "")}'`).join(", ");
+  const pauses = input.activeTasks.length > 0
+    ? `pauses ${input.activeTasks.length} ${activeNoun} (${names})`
+    : "pauses 0 active tasks";
+  const finishedNoun = input.finishedTaskCount === 1 ? "task" : "tasks";
+  const otherNoun = input.untouchedTaskCount === 1 ? "task" : "tasks";
+  const deltaNoun = input.deltaTasks === 1 ? "task" : "tasks";
+  return `Touches ${input.contractCount} ${contractNoun}, ${pauses}, re-checks ${input.finishedTaskCount} finished ${finishedNoun}, leaves ${input.untouchedTaskCount} other ${otherNoun} untouched · Est. delta: +${input.deltaTasks} ${deltaNoun}, ~${formatUsd(input.deltaCostMicroUsd)}`;
 }
 
-export class LocalChangeClassifier {
-  classify(before: string, after: string): ChangeClass {
-    return classifyBoxWording(before, after);
-  }
+export function classifyChange(before: string, after: string): ChangeClass {
+  return classifyBoxWording(before, after);
 }
 
-export class LocalEarlyCutoffReverifier {
-  review(nodeIds: readonly string[]): { readonly cutoffNodeIds: readonly string[]; readonly passengerIds: readonly string[] } {
-    return { cutoffNodeIds: [], passengerIds: [...nodeIds] };
-  }
+export function reviewCutoff(nodeIds: readonly string[]): { readonly cutoffNodeIds: readonly string[]; readonly passengerIds: readonly string[] } {
+  return { cutoffNodeIds: [], passengerIds: [...nodeIds] };
 }
 
-export class LocalReverifyBeforeReworkGate {
-  reverify(taskIds: readonly string[]): { readonly verified: readonly string[]; readonly rework: readonly string[] } {
-    return { verified: [...taskIds], rework: [] };
-  }
+export function reverifyMerged(taskIds: readonly string[]): { readonly verified: readonly string[]; readonly rework: readonly string[] } {
+  return { verified: [...taskIds], rework: [] };
 }
 
-export class LocalRevisionAutoStartPolicy {
-  exceeds(input: { readonly deltaTasks: number; readonly deltaCostMicroUsd: number; readonly breaking: boolean }): boolean {
-    const tasks = input.breaking ? input.deltaTasks : input.deltaTasks;
-    if (tasks > DELTA_TASK_CEILING) return true;
-    return input.deltaCostMicroUsd > DELTA_COST_CEILING_MICRO_USD;
-  }
+export function exceedsAutoStart(input: { readonly deltaTasks: number; readonly deltaCostMicroUsd: number; readonly breaking: boolean }): boolean {
+  const tasks = input.breaking ? input.deltaTasks : input.deltaTasks;
+  if (tasks > DELTA_TASK_CEILING) return true;
+  return input.deltaCostMicroUsd > DELTA_COST_CEILING_MICRO_USD;
 }
 
 export function previewTotals(
   graph: IntentGraph,
   impact: ImpactedSubgraph,
   changeClass: ChangeClass,
-  previewer: LocalRevisionImpactPreviewer,
 ): ImpactPreviewTotals {
   const deltaTasks = changeClass === "breaking" ? impact.affectedMergedTasks.length : changeClass === "compatible" ? 1 : 0;
   const deltaCost = deltaTasks * MICRO_USD_PER_DELTA_TASK;
   const activeTasks = impact.affectedActiveTasks.map((id) => ({ title: graph.taskTitle(id) }));
-  const plainEnglish = previewer.format({
+  const plainEnglish = formatImpactSentence({
     contractCount: impact.affectedContracts.length,
     activeTasks,
     finishedTaskCount: impact.affectedMergedTasks.length,

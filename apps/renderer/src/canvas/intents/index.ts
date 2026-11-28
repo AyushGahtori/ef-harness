@@ -1,27 +1,20 @@
 export { runAxeCoreKeyboardFocusTrapAudit } from "./a11y.js";
 export type { A11yAudit, A11yElement, A11yKeyTarget } from "./a11y.js";
 export { classifyWording, formatPair, misheardPair, projectWording } from "./classify.js";
-export {
-  BoxChatIntentController,
-  LocalAskOwnerResponder,
-  LocalDictationVocabulary,
-  LocalPostSendChangeHighlighter,
-  LocalPremiseSupersessionReopener,
-  createBoxChatIntentController,
-} from "./controller.js";
+export { BoxChatIntentController, createBoxChatIntentController } from "./controller.js";
 export { driftMessage, RevisionDriftConflictPrompt } from "./drift.js";
 export type { DriftView } from "./drift.js";
 export { IntentGraph } from "./graph.js";
 export {
-  LocalChangeClassifier,
-  LocalEarlyCutoffReverifier,
-  LocalReverseImpactWalker,
-  LocalRevisionAutoStartPolicy,
-  LocalRevisionImpactPreviewer,
-  LocalReverifyBeforeReworkGate,
+  classifyChange,
+  exceedsAutoStart,
+  formatImpactSentence,
   formatUsd,
   needsConfirmation,
   previewTotals,
+  reviewCutoff,
+  reverifyMerged,
+  walkCombined,
 } from "./impact.js";
 export { ZeroTokenImpactPreviewModal } from "./modal.js";
 export { availableIntents, isBuiltFeature, isPreBuildSpec, presetMode, smartIntent } from "./selection.js";

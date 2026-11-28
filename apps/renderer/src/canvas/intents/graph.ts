@@ -1,6 +1,3 @@
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-
-import { CANONICAL_IMPACT_WALK_SQL, CYCLE_SAFE_IMPACT_WALK_SQL, INTENT_GRAPH_SCHEMA_SQL } from "./sql.js";
 import {
   IMPACT_MAX_DEPTH,
   type BoxRecord,
@@ -14,6 +11,19 @@ import {
 
 const ACTIVE_STATES = new Set(["WORKING", "LEASED", "CODING"]);
 const MERGED_STATES = new Set(["DONE", "MERGED_TO_FEATURE", "ACCEPTED"]);
+const INVALIDATES = new Set([
+  "implements",
+  "verifies",
+  "consumes_contract",
+  "produces_contract",
+  "obeys",
+  "handles_edge_case",
+  "derived_from",
+  "depends_on",
+  "waives",
+]);
+const CYCLE_EXTRA = new Set(["belongs_to", "consumes"]);
+const WALK_LIMIT = 5001;
 
 interface VersionRow {
   readonly title: string;
@@ -24,62 +34,70 @@ interface VersionRow {
   readonly revisionSource: string;
 }
 
+interface NodeRow {
+  id: string;
+  kind: string;
+  title: string;
+  text: string;
+  value: string;
+  status: string;
+  version: number;
+  basis: string;
+  lifecycle: string;
+  built: boolean;
+  landed: boolean;
+  provenanceQuote: string;
+  codeStatus: string;
+  revisionSource: string;
+  amber: boolean;
+  dictationBadge: boolean;
+  freshlyDictated: boolean;
+  newlyExtracted: boolean;
+  age: "new" | "older";
+  fields: string;
+}
+
+interface EdgeRow {
+  src: string;
+  type: string;
+  dst: string;
+  validToRev: number | null;
+}
+
+interface TaskRow {
+  id: string;
+  state: string;
+  title: string;
+}
+
+/**
+ * In-renderer box graph. Impact walks follow the canonical `impact_walk`
+ * statement in `schema/queries.sql`. Persistence and the SQL itself run in
+ * `apps/daemon`.
+ */
 export class IntentGraph {
-  readonly db: DatabaseSync;
   mutationCount = 0;
   canonicalQueries = 0;
   cycleSafeQueries = 0;
-  private readonly canonical;
-  private readonly cycle;
-
-  constructor() {
-    this.db = new DatabaseSync(":memory:");
-    this.db.exec(INTENT_GRAPH_SCHEMA_SQL);
-    this.canonical = this.db.prepare(CANONICAL_IMPACT_WALK_SQL);
-    this.cycle = this.db.prepare(CYCLE_SAFE_IMPACT_WALK_SQL);
-    this.warmupImpactQueries();
-  }
-
-  private warmupImpactQueries(): void {
-    const id = "__impact-warmup__";
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.prepare(
-        `INSERT INTO nodes(
-          id, kind, title, text, value, status, version, basis, lifecycle, built, landed,
-          provenance_quote, code_status, revision_source, amber, dictation_badge,
-          freshly_dictated, newly_extracted, age, fields
-        ) VALUES (
-          :id, 'entity', 'warmup', '', '', 'active', 1, 'explicit', 'discovery', 0, 0,
-          '', '', '', 0, 0, 0, 0, 'new', '{}'
-        )`,
-      ).run({ id });
-      this.canonical.all({ start: id, max_depth: 1 });
-      this.cycle.all({ start: id, max_depth: 1 });
-    } finally {
-      this.db.exec("ROLLBACK");
-    }
-  }
+  private readonly nodes = new Map<string, NodeRow>();
+  private readonly versionIndex = new Map<string, VersionRow>();
+  private readonly edges: EdgeRow[] = [];
+  private readonly tasks = new Map<string, TaskRow>();
+  private readonly holds = new Set<string>();
+  private readonly correctionRows: MisheardPair[] = [];
+  private closed = false;
 
   close(): void {
-    this.db.close();
+    this.closed = true;
   }
 
   seedNode(seed: SeedNode): void {
+    this.assertOpen();
     const version = seed.version ?? 1;
     const fields = JSON.stringify(seed.fields ?? {});
     const text = seed.text ?? seed.title;
     const value = seed.value ?? "";
-    this.db.prepare(
-      `INSERT INTO nodes(
-        id, kind, title, text, value, status, version, basis, lifecycle, built, landed,
-        provenance_quote, code_status, revision_source, amber, dictation_badge,
-        freshly_dictated, newly_extracted, age, fields
-      ) VALUES (
-        :id, :kind, :title, :text, :value, :status, :version, :basis, :lifecycle, :built, :landed,
-        :quote, :code, :source, :amber, :badge, :fresh, :extracted, :age, :fields
-      )`,
-    ).run({
+    const row: NodeRow = {
       id: seed.id,
       kind: seed.kind,
       title: seed.title,
@@ -89,33 +107,34 @@ export class IntentGraph {
       version,
       basis: seed.basis ?? "",
       lifecycle: seed.lifecycle ?? "discovery",
-      built: seed.built ? 1 : 0,
-      landed: seed.landed ? 1 : 0,
-      quote: seed.provenanceQuote ?? "",
-      code: seed.codeStatus ?? "",
-      source: seed.revisionSource ?? "",
-      amber: seed.amberLowConfidence ? 1 : 0,
-      badge: seed.dictationBadge ? 1 : 0,
-      fresh: seed.freshlyDictated ? 1 : 0,
-      extracted: seed.newlyExtracted ? 1 : 0,
-      age: seed.age ?? "new",
+      built: seed.built === true,
+      landed: seed.landed === true,
+      provenanceQuote: seed.provenanceQuote ?? "",
+      codeStatus: seed.codeStatus ?? "",
+      revisionSource: seed.revisionSource ?? "",
+      amber: seed.amberLowConfidence === true,
+      dictationBadge: seed.dictationBadge === true,
+      freshlyDictated: seed.freshlyDictated === true,
+      newlyExtracted: seed.newlyExtracted === true,
+      age: seed.age === "older" ? "older" : "new",
       fields,
-    });
-    this.insertVersion(seed.id, version, seed.title, text, value, seed.status ?? "active", fields, seed.revisionSource ?? "");
+    };
+    this.nodes.set(seed.id, row);
+    this.insertVersion(seed.id, version, seed.title, text, value, row.status, fields, row.revisionSource);
   }
 
   seedEdge(edge: SeedEdge): void {
-    this.db.prepare(
-      "INSERT OR IGNORE INTO edges(src, type, dst, valid_to_rev) VALUES (:src, :type, :dst, NULL)",
-    ).run({ src: edge.src, type: edge.type, dst: edge.dst });
+    this.assertOpen();
+    const exists = this.edges.some(
+      (row) => row.src === edge.src && row.type === edge.type && row.dst === edge.dst && row.validToRev === null,
+    );
+    if (exists) return;
+    this.edges.push({ src: edge.src, type: edge.type, dst: edge.dst, validToRev: null });
   }
 
   seedTask(task: SeedTask): void {
-    this.db.prepare("INSERT INTO task_runtime(task, state, title) VALUES (:id, :state, :title)").run({
-      id: task.id,
-      state: task.state,
-      title: task.title,
-    });
+    this.assertOpen();
+    this.tasks.set(task.id, { id: task.id, state: task.state, title: task.title });
     this.seedNode({
       id: task.id,
       kind: "task",
@@ -133,91 +152,71 @@ export class IntentGraph {
   }
 
   getBox(id: string): BoxRecord | null {
-    const row = this.db.prepare("SELECT * FROM nodes WHERE id = :id").get({ id });
+    const row = this.nodes.get(id);
     if (!row) return null;
-    return this.readBox(row);
+    return readBox(row);
   }
 
   currentEdges(id: string): readonly { readonly src: string; readonly type: string; readonly dst: string }[] {
-    return this.db
-      .prepare(
-        "SELECT src, type, dst FROM edges WHERE (src = :id OR dst = :id) AND valid_to_rev IS NULL ORDER BY src, type, dst",
-      )
-      .all({ id })
-      .map((row) => ({ src: text(row.src), type: text(row.type), dst: text(row.dst) }));
+    return this.edges
+      .filter((edge) => edge.validToRev === null && (edge.src === id || edge.dst === id))
+      .map((edge) => ({ src: edge.src, type: edge.type, dst: edge.dst }))
+      .sort((left, right) => left.src.localeCompare(right.src) || left.type.localeCompare(right.type) || left.dst.localeCompare(right.dst));
   }
 
   listTasks(): readonly { readonly id: string; readonly state: string; readonly title: string }[] {
-    return this.db
-      .prepare("SELECT task, state, title FROM task_runtime ORDER BY task")
-      .all()
-      .map((row) => ({
-        id: text(row.task),
-        state: text(row.state),
-        title: text(row.title),
-      }));
+    return [...this.tasks.values()]
+      .map((task) => ({ id: task.id, state: task.state, title: task.title }))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 
   taskTitle(id: string): string {
-    const row = this.db.prepare("SELECT title FROM task_runtime WHERE task = :id").get({ id });
-    return row ? text(row.title) : id;
+    return this.tasks.get(id)?.title ?? id;
   }
 
   isActiveTask(id: string): boolean {
-    const row = this.db.prepare("SELECT state FROM task_runtime WHERE task = :id").get({ id });
-    return row ? ACTIVE_STATES.has(text(row.state)) : false;
+    const state = this.tasks.get(id)?.state;
+    return state ? ACTIVE_STATES.has(state) : false;
   }
 
   isMergedTask(id: string): boolean {
-    const row = this.db.prepare("SELECT state FROM task_runtime WHERE task = :id").get({ id });
-    return row ? MERGED_STATES.has(text(row.state)) : false;
+    const state = this.tasks.get(id)?.state;
+    return state ? MERGED_STATES.has(state) : false;
   }
 
   holdCount(): number {
-    const row = this.db.prepare("SELECT count(*) AS n FROM task_holds").get();
-    return row ? number(row.n) : 0;
+    return this.holds.size;
   }
 
   holdsFor(taskId: string): number {
-    const row = this.db.prepare("SELECT count(*) AS n FROM task_holds WHERE task = :task").get({ task: taskId });
-    return row ? number(row.n) : 0;
+    let count = 0;
+    for (const key of this.holds) {
+      if (key.startsWith(`${taskId}\u0000`)) count += 1;
+    }
+    return count;
   }
 
   corrections(): readonly MisheardPair[] {
-    return this.db
-      .prepare("SELECT heard, intended, pair FROM vocabulary_corrections ORDER BY id")
-      .all()
-      .map((row) => ({ heard: text(row.heard), intended: text(row.intended), pair: text(row.pair) }));
+    return this.correctionRows.map((pair) => ({ ...pair }));
   }
 
   versionRow(id: string, version: number): VersionRow | null {
-    const row = this.db.prepare(
-      "SELECT title, text, value, status, fields, revision_source FROM node_versions WHERE id = :id AND version = :version",
-    ).get({ id, version });
-    if (!row) return null;
-    return {
-      title: text(row.title),
-      text: text(row.text),
-      value: text(row.value),
-      status: text(row.status),
-      fields: text(row.fields),
-      revisionSource: text(row.revision_source),
-    };
+    return this.versionIndex.get(versionKey(id, version)) ?? null;
   }
 
   executeCanonical(startId: string, maxDepth = IMPACT_MAX_DEPTH): ImpactNode[] {
     this.canonicalQueries += 1;
-    return this.readWalk(this.canonical.all({ start: startId, max_depth: maxDepth }));
+    return this.walk(startId, maxDepth, false);
   }
 
   executeCycleSafe(startId: string, maxDepth = IMPACT_MAX_DEPTH): ImpactNode[] {
     this.cycleSafeQueries += 1;
-    return this.readWalk(this.cycle.all({ start: startId, max_depth: maxDepth }));
+    return this.walk(startId, maxDepth, true);
   }
 
   replayImpactWalk(startId: string, maxDepth = IMPACT_MAX_DEPTH): void {
-    this.canonical.all({ start: startId, max_depth: maxDepth });
-    this.cycle.all({ start: startId, max_depth: maxDepth });
+    this.walk(startId, maxDepth, false);
+    this.walk(startId, maxDepth, true);
   }
 
   importExternalRevision(id: string, patch: { readonly value: string; readonly text?: string; readonly source: string }): void {
@@ -280,59 +279,55 @@ export class IntentGraph {
     this.mutate(() => {
       const parent = this.requireBox(input.parentId);
       const fields = JSON.stringify({ parentId: parent.id, attachedBy: "box-chat" });
-      this.db.prepare(
-        `INSERT INTO nodes(
-          id, kind, title, text, value, status, version, basis, lifecycle, built, landed,
-          provenance_quote, code_status, revision_source, amber, dictation_badge,
-          freshly_dictated, newly_extracted, age, fields
-        ) VALUES (
-          :id, :kind, :title, :text, '', 'proposed', 1, 'explicit', :lifecycle, 0, 0,
-          '', '', 'box-chat', 0, 0, 0, 1, 'new', :fields
-        )`,
-      ).run({
+      const row: NodeRow = {
         id: input.childId,
         kind: input.kind,
         title: input.title,
         text: input.text,
+        value: "",
+        status: "proposed",
+        version: 1,
+        basis: "explicit",
         lifecycle: parent.lifecycle,
+        built: false,
+        landed: false,
+        provenanceQuote: "",
+        codeStatus: "",
+        revisionSource: "box-chat",
+        amber: false,
+        dictationBadge: false,
+        freshlyDictated: false,
+        newlyExtracted: true,
+        age: "new",
         fields,
-      });
+      };
+      this.nodes.set(input.childId, row);
       this.insertVersion(input.childId, 1, input.title, input.text, "", "proposed", fields, "box-chat");
-      this.db.prepare(
-        "INSERT INTO edges(src, type, dst, valid_to_rev) VALUES (:src, 'belongs_to', :dst, NULL)",
-      ).run({ src: input.childId, dst: parent.id });
-      this.db.prepare(
-        "INSERT INTO edges(src, type, dst, valid_to_rev) VALUES (:src, 'derived_from', :dst, NULL)",
-      ).run({ src: input.childId, dst: parent.id });
+      this.edges.push({ src: input.childId, type: "belongs_to", dst: parent.id, validToRev: null });
+      this.edges.push({ src: input.childId, type: "derived_from", dst: parent.id, validToRev: null });
     });
   }
 
   placeHolds(taskIds: readonly string[]): void {
     if (taskIds.length === 0) return;
     this.mutate(() => {
-      const insert = this.db.prepare(
-        "INSERT OR IGNORE INTO task_holds(task, reason, source) VALUES (:task, 'revision_in_flight', 'box-chat')",
-      );
-      for (const taskId of taskIds) insert.run({ task: taskId });
+      for (const taskId of taskIds) this.holds.add(`${taskId}\u0000revision_in_flight\u0000box-chat`);
     });
   }
 
   recordCorrection(pair: MisheardPair): void {
     this.mutate(() => {
-      this.db.prepare(
-        "INSERT INTO vocabulary_corrections(heard, intended, pair) VALUES (:heard, :intended, :pair)",
-      ).run({ heard: pair.heard, intended: pair.intended, pair: pair.pair });
+      this.correctionRows.push({ heard: pair.heard, intended: pair.intended, pair: pair.pair });
     });
   }
 
   cleanupFalseDerivations(premiseId: string, falseValue: string): string[] {
     if (!falseValue) return [];
-    const rows = this.db.prepare(
-      "SELECT src FROM edges WHERE dst = :premise AND type = 'derived_from' AND valid_to_rev IS NULL",
-    ).all({ premise: premiseId });
+    const sources = this.edges
+      .filter((edge) => edge.dst === premiseId && edge.type === "derived_from" && edge.validToRev === null)
+      .map((edge) => edge.src);
     const cleaned: string[] = [];
-    for (const row of rows) {
-      const id = text(row.src);
+    for (const id of sources) {
       const box = this.getBox(id);
       if (!box) continue;
       if (!box.text.includes(falseValue) && !box.value.includes(falseValue)) continue;
@@ -362,6 +357,7 @@ export class IntentGraph {
   revertChild(childId: string): void {
     this.mutate(() => {
       const box = this.requireBox(childId);
+      const nextVersion = box.version + 1;
       this.writeNode(box, {
         text: box.text,
         value: box.value,
@@ -369,9 +365,9 @@ export class IntentGraph {
         fields: JSON.stringify(box.fields),
         source: "undo",
       });
-      this.db.prepare(
-        "UPDATE edges SET valid_to_rev = :rev WHERE src = :src AND valid_to_rev IS NULL",
-      ).run({ src: childId, rev: box.version + 1 });
+      for (const edge of this.edges) {
+        if (edge.src === childId && edge.validToRev === null) edge.validToRev = nextVersion;
+      }
     });
   }
 
@@ -379,21 +375,15 @@ export class IntentGraph {
     box: BoxRecord,
     next: { readonly text: string; readonly value: string; readonly status: string; readonly fields: string; readonly source: string },
   ): number {
+    const current = this.nodes.get(box.id);
+    if (!current) throw new Error(`Unknown canvas box ${box.id}`);
     const version = box.version + 1;
-    this.db.prepare(
-      `UPDATE nodes
-          SET text = :text, value = :value, status = :status, version = :version,
-              fields = :fields, revision_source = :source
-        WHERE id = :id`,
-    ).run({
-      text: next.text,
-      value: next.value,
-      status: next.status,
-      version,
-      fields: next.fields,
-      source: next.source,
-      id: box.id,
-    });
+    current.text = next.text;
+    current.value = next.value;
+    current.status = next.status;
+    current.version = version;
+    current.fields = next.fields;
+    current.revisionSource = next.source;
     this.insertVersion(box.id, version, box.title, next.text, next.value, next.status, next.fields, next.source);
     return version;
   }
@@ -408,73 +398,91 @@ export class IntentGraph {
     fields: string,
     source: string,
   ): void {
-    this.db.prepare(
-      `INSERT INTO node_versions(id, version, title, text, value, status, fields, revision_source)
-       VALUES (:id, :version, :title, :text, :value, :status, :fields, :source)`,
-    ).run({
-      id,
-      version,
+    const row: VersionRow = {
       title,
       text: textValue,
       value,
       status,
       fields,
-      source,
-    });
+      revisionSource: source,
+    };
+    this.versionIndex.set(versionKey(id, version), row);
   }
 
   private mutate(fn: () => void): void {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      fn();
-      this.db.exec("COMMIT");
-      this.mutationCount += 1;
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+    this.assertOpen();
+    fn();
+    this.mutationCount += 1;
   }
 
-  private readWalk(rows: readonly Record<string, SQLOutputValue>[]): ImpactNode[] {
-    const nodes: ImpactNode[] = [];
-    for (const row of rows) {
-      const id = text(row.id);
-      if (!id) continue;
-      nodes.push({ id, depth: number(row.depth) });
+  private walk(startId: string, maxDepth: number, cycleSafe: boolean): ImpactNode[] {
+    const best = new Map<string, number>();
+    const queue: { id: string; depth: number; seen: string }[] = [
+      { id: startId, depth: 0, seen: `\u0001${startId}\u0001` },
+    ];
+    let produced = 0;
+    while (queue.length > 0 && produced < WALK_LIMIT) {
+      const current = queue.shift();
+      if (!current) break;
+      const previous = best.get(current.id);
+      if (previous === undefined || current.depth < previous) best.set(current.id, current.depth);
+      produced += 1;
+      if (current.depth >= maxDepth || produced >= WALK_LIMIT) continue;
+      for (const edge of this.edges) {
+        if (edge.dst !== current.id || edge.validToRev !== null) continue;
+        if (!edgeAllowed(edge.type, cycleSafe)) continue;
+        const marker = `\u0001${edge.src}\u0001`;
+        if (cycleSafe && current.seen.includes(marker)) continue;
+        queue.push({
+          id: edge.src,
+          depth: current.depth + 1,
+          seen: `${current.seen}${edge.src}\u0001`,
+        });
+      }
     }
-    nodes.sort((left, right) => left.depth - right.depth || left.id.localeCompare(right.id));
-    return nodes;
+    return [...best.entries()]
+      .map(([id, depth]) => ({ id, depth }))
+      .sort((left, right) => left.depth - right.depth || left.id.localeCompare(right.id));
   }
 
-  private readBox(row: Record<string, SQLOutputValue>): BoxRecord {
-    return {
-      id: text(row.id),
-      kind: text(row.kind),
-      title: text(row.title),
-      text: text(row.text),
-      value: text(row.value),
-      status: text(row.status),
-      version: number(row.version),
-      basis: text(row.basis),
-      lifecycle: stage(text(row.lifecycle)),
-      built: number(row.built) === 1,
-      landed: number(row.landed) === 1,
-      provenanceQuote: text(row.provenance_quote),
-      codeStatus: text(row.code_status),
-      revisionSource: text(row.revision_source),
-      amberLowConfidence: number(row.amber) === 1,
-      dictationBadge: number(row.dictation_badge) === 1,
-      freshlyDictated: number(row.freshly_dictated) === 1,
-      newlyExtracted: number(row.newly_extracted) === 1,
-      age: text(row.age) === "older" ? "older" : "new",
-      fields: parseFields(text(row.fields)),
-    };
+  private assertOpen(): void {
+    if (this.closed) throw new Error("Intent graph is closed");
   }
+}
+
+function edgeAllowed(type: string, cycleSafe: boolean): boolean {
+  if (INVALIDATES.has(type)) return true;
+  return cycleSafe && CYCLE_EXTRA.has(type);
 }
 
 function replaceValue(text: string, previous: string, next: string): string {
   if (previous && text.includes(previous)) return text.replaceAll(previous, next);
   return text;
+}
+
+function readBox(row: NodeRow): BoxRecord {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    text: row.text,
+    value: row.value,
+    status: row.status,
+    version: row.version,
+    basis: row.basis,
+    lifecycle: stage(row.lifecycle),
+    built: row.built,
+    landed: row.landed,
+    provenanceQuote: row.provenanceQuote,
+    codeStatus: row.codeStatus,
+    revisionSource: row.revisionSource,
+    amberLowConfidence: row.amber,
+    dictationBadge: row.dictationBadge,
+    freshlyDictated: row.freshlyDictated,
+    newlyExtracted: row.newlyExtracted,
+    age: row.age,
+    fields: parseFields(row.fields),
+  };
 }
 
 function parseFields(raw: string): Record<string, unknown> {
@@ -496,15 +504,6 @@ function stage(value: string): ProjectStage {
   return "discovery";
 }
 
-function text(value: SQLOutputValue | undefined): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "bigint") return String(value);
-  return "";
-}
-
-function number(value: SQLOutputValue | undefined): number {
-  if (typeof value === "number") return value;
-  if (typeof value === "bigint") return Number(value);
-  if (typeof value === "string") return Number(value);
-  return 0;
+function versionKey(id: string, version: number): string {
+  return `${id}\u0000${version}`;
 }

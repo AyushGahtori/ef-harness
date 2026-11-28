@@ -1,4 +1,4 @@
-import { CanonicalStateDb } from "../../src/canvas/tabs/index.js";
+import { CanonicalStateDb } from "../../../daemon/src/canvas/canonical-state-db.js";
 import type { MatrixFillStatus, NodeDraft, RuntimeDraft } from "../../src/canvas/tabs/index.js";
 
 const EARS = "When the cook clicks Print, the kitchen shall show a confirmation dialog.";

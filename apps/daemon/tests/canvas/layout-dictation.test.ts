@@ -72,4 +72,56 @@ describe("canvas daemon session", () => {
       { nodeId: "F1", viewLevel: 2, x: 220, y: 120, pinnedByUser: true },
     ]);
   });
+
+  it("reads spec outline and canonical impact_walk through canvas IPC", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "ef-canvas-tabs-"));
+    dirs.push(rootDir);
+    const state = openProjectStateDb({ projectId: "C65Daemon", rootDir });
+    closers.unshift(() => {
+      if (!state.isClosed()) state.close();
+    });
+    const session = openCanvasDaemonSession({ state, profileDir: path.join(rootDir, "profile") });
+    closers.unshift(() => session.close());
+    const inserted = dispatchCanvasDaemon(session, "canvas.tabs.insertNodes", {
+      nodes: [
+        { id: "F-Orders", kind: "feature", title: "Orders", fields: { feature: "F-Orders", slug: "orders" } },
+        {
+          id: "R17",
+          kind: "decision",
+          title: "Cutoff",
+          text: "Orders stop at cutoff",
+          fields: { feature: "F-Orders", basis: "explicit" },
+        },
+        { id: "T-05", kind: "task", title: "Order form", fields: { feature: "F-Orders" } },
+      ],
+    });
+    expect(inserted.handled && inserted.result).toEqual({ inserted: 3 });
+    const linked = dispatchCanvasDaemon(session, "canvas.tabs.linkEdge", {
+      src: "T-05",
+      type: "depends_on",
+      dst: "R17",
+    });
+    expect(linked.handled && linked.result).toEqual({ linked: true });
+    const outline = dispatchCanvasDaemon(session, "canvas.tabs.readOutline", {});
+    expect(outline.handled).toBe(true);
+    if (!outline.handled) return;
+    const body = outline.result as { decisions: { id: string }[]; features: { id: string }[] };
+    expect(body.decisions.map((item) => item.id)).toContain("R17");
+    expect(body.features.map((item) => item.id)).toContain("F-Orders");
+    const impact = dispatchCanvasDaemon(session, "canvas.intent.impact", { startId: "R17" });
+    expect(impact.handled && impact.result).toMatchObject({
+      nodes: expect.arrayContaining([
+        { id: "R17", depth: 0 },
+        { id: "T-05", depth: 1 },
+      ]),
+    });
+    const vocab = dispatchCanvasDaemon(session, "canvas.intent.vocabulary", { heard: "11:15", intended: "11:50" });
+    expect(vocab.handled && vocab.result).toMatchObject({ promoted: false, occurrenceCount: 1 });
+    const policy = dispatchCanvasDaemon(session, "canvas.intent.autoStart", {
+      deltaTasks: 9,
+      deltaCostMicroUsd: 0,
+      needsOwner: true,
+    });
+    expect(policy.handled && policy.result).toMatchObject({ needsOwner: true });
+  });
 });

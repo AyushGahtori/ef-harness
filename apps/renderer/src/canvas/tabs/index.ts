@@ -5,7 +5,7 @@ export { MediumRiskProposalReviewPanel } from "./proposal-review-panel.js";
 export { PlanTreeAndPreviewTab } from "./plan-tree-tab.js";
 export type { PlanTreeOptions } from "./plan-tree-tab.js";
 export { RuntimeTasksTableTab } from "./runtime-tasks-tab.js";
-export { CanonicalStateDb } from "./state-db.js";
+export type { CanonicalStateDb } from "./state-db.js";
 export { CrossTabSelectionContext } from "./selection.js";
 export type { SelectionSnapshot, SelectionUpdate } from "./selection.js";
 export { LocalProposedRequirementReviewQueue } from "./review-queue.js";

@@ -1,4 +1,6 @@
 import { ComposerTargetStateMachine } from "../composer/composer-target-state-machine.js";
+import { createBoxChatIntentController, type BoxChatIntentController } from "./intents/controller.js";
+import { IntentGraph } from "./intents/graph.js";
 import {
   LocalBrandAssetSanitizer,
   LocalDocumentIntake,
@@ -33,6 +35,7 @@ export interface CanvasComposerBinding extends ArchitectureCanvasMount {
   readonly composer: ComposerTargetStateMachine;
   readonly positions: SavedNodePositionStore;
   readonly shellSlice: LandedShellCanvasPort;
+  readonly intents: BoxChatIntentController;
   readonly lastPopover: PopoverModel | null;
   select(node: CanvasNode): ReturnType<ComposerTargetStateMachine["projection"]>;
   pressMic(): void;
@@ -68,6 +71,11 @@ export function bindCanvasComposer(options: {
   const popovers = new NodeTypePopoverRegistry();
   const positions = new SavedNodePositionStore(new DaemonCanvasLayoutPersistence(options.dispatch));
   const shellSlice = new LandedShellCanvasPort(options.shell.context);
+  const intents = createBoxChatIntentController({
+    graph: new IntentGraph(),
+    composer,
+    dispatch: options.dispatch,
+  });
   let lastPopover: PopoverModel | null = null;
   const binding: CanvasComposerBinding = {
     kind: "architecture-canvas",
@@ -77,6 +85,7 @@ export function bindCanvasComposer(options: {
     composer,
     positions,
     shellSlice,
+    intents,
     get lastPopover() {
       return lastPopover;
     },

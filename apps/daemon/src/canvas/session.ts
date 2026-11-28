@@ -11,6 +11,7 @@ import {
 import { GpuWhisperPriorityArbiter } from "@ef-harness/governor";
 import { WindowsJobObjectManager } from "@ef-harness/sandbox";
 import { router } from "@ef-harness/steering";
+import { CanvasIntentDaemon } from "./intent-daemon.js";
 import {
   LocalWhisperSttEngine,
   WhisperComponentUnavailable,
@@ -36,6 +37,7 @@ export interface CanvasDaemonSessionOptions {
 
 export class CanvasDaemonSession {
   readonly layout: CanvasLayoutRepo;
+  readonly intents: CanvasIntentDaemon;
   private readonly focusStore: router.RouterStore;
   private readonly jobs: WindowsJobObjectManager;
   private engine: LocalWhisperSttEngine | null = null;
@@ -44,6 +46,7 @@ export class CanvasDaemonSession {
   constructor(options: CanvasDaemonSessionOptions) {
     fs.mkdirSync(options.profileDir, { recursive: true });
     this.layout = new CanvasLayoutRepo(options.state.writer);
+    this.intents = new CanvasIntentDaemon();
     this.focusStore = router.RouterStore.open(path.join(options.profileDir, "steering-focus.sqlite"));
     this.jobs = new WindowsJobObjectManager({
       stateDbPath: path.join(options.profileDir, "job-objects.sqlite"),
@@ -115,6 +118,7 @@ export class CanvasDaemonSession {
   async close(): Promise<void> {
     this.engine?.stop();
     this.engine = null;
+    this.intents.close();
     await this.jobs.dispose();
     this.focusStore.close();
   }
@@ -169,6 +173,33 @@ export function dispatchCanvasDaemon(
     const active = params.active === true;
     void session.setRecording(active);
     return { handled: true, result: { accepted: true, active } };
+  }
+  if (method === "canvas.intent.ask") {
+    return { handled: true, result: session.intents.ask(params) };
+  }
+  if (method === "canvas.intent.impact") {
+    return { handled: true, result: session.intents.impact(params) };
+  }
+  if (method === "canvas.intent.vocabulary") {
+    return { handled: true, result: session.intents.vocabularyPair(params) };
+  }
+  if (method === "canvas.intent.autoStart") {
+    return { handled: true, result: session.intents.autoStartDecision(params) };
+  }
+  if (method === "canvas.intent.reopen" || method === "canvas.intent.highlight") {
+    return { handled: true, result: { accepted: true } };
+  }
+  if (method === "canvas.tabs.readOutline") {
+    return { handled: true, result: session.intents.readOutline() };
+  }
+  if (method === "canvas.tabs.readiness") {
+    return { handled: true, result: session.intents.readiness() };
+  }
+  if (method === "canvas.tabs.insertNodes") {
+    return { handled: true, result: session.intents.insertNodes(params) };
+  }
+  if (method === "canvas.tabs.linkEdge") {
+    return { handled: true, result: session.intents.linkEdge(params) };
   }
   return { handled: false };
 }

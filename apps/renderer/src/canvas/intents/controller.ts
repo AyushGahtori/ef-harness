@@ -1,15 +1,18 @@
+import { PostSendChangeHighlighter } from "../popovers/highlighter.js";
+import type { CanvasNodeCatalog, CanvasViewportPort, MotionPreferencePort } from "../popovers/ports.js";
+import type { ComposerTargetStateMachine } from "../../composer/composer-target-state-machine.js";
+import type { CanvasDaemonDispatch } from "../graph/daemon-persistence.js";
 import { formatPair, misheardPair, projectWording } from "./classify.js";
 import { RevisionDriftConflictPrompt, type DriftView } from "./drift.js";
 import type { IntentGraph } from "./graph.js";
 import {
-  LocalChangeClassifier,
-  LocalEarlyCutoffReverifier,
-  LocalReverseImpactWalker,
-  LocalRevisionAutoStartPolicy,
-  LocalRevisionImpactPreviewer,
-  LocalReverifyBeforeReworkGate,
+  classifyChange,
+  exceedsAutoStart,
   needsConfirmation,
   previewTotals,
+  reviewCutoff,
+  reverifyMerged,
+  walkCombined,
 } from "./impact.js";
 import { ZeroTokenImpactPreviewModal } from "./modal.js";
 import { availableIntents, isBuiltFeature, isPreBuildSpec, presetMode, smartIntent } from "./selection.js";
@@ -53,60 +56,9 @@ interface UndoEntry {
   readonly nodes: readonly { readonly id: string; readonly version: number }[];
 }
 
-export class LocalPostSendChangeHighlighter {
-  readonly highlighted: string[][] = [];
-
-  highlight(ids: readonly string[]): void {
-    this.highlighted.push([...ids]);
-  }
-}
-
-export class LocalAskOwnerResponder {
-  readonly responderId = ASK_OWNER_RESPONDER_ID;
-
-  answer(boxes: readonly BoxRecord[], question: string, dependentTitles: readonly string[]): string {
-    const body = boxes.map((box) => {
-      const parts = [
-        box.provenanceQuote ? `Provenance: ${box.provenanceQuote}` : "",
-        box.text ? `Why: ${box.text}` : "",
-        box.codeStatus ? `Code status: ${box.codeStatus}` : "",
-      ].filter((part) => part.length > 0);
-      return parts.join(" ");
-    });
-    const dependents = dependentTitles.length > 0
-      ? `Dependent tasks: ${dependentTitles.join(", ")}`
-      : "Dependent tasks: none";
-    return [`${ASK_OWNER_RESPONDER_ID}`, question, ...body, dependents].filter((line) => line.length > 0).join("\n");
-  }
-}
-
-export class LocalPremiseSupersessionReopener {
-  constructor(private readonly graph: IntentGraph) {}
-
-  reopenDependents(premiseId: string, falseValue: string): readonly string[] {
-    return this.graph.cleanupFalseDerivations(premiseId, falseValue);
-  }
-}
-
-export class LocalDictationVocabulary {
-  constructor(private readonly graph: IntentGraph) {}
-
-  recordMisheardPair(pair: MisheardPair): void {
-    this.graph.recordCorrection(pair);
-  }
-}
-
 export class BoxChatIntentController {
-  readonly walker: LocalReverseImpactWalker;
-  readonly previewer = new LocalRevisionImpactPreviewer();
-  readonly classifier = new LocalChangeClassifier();
-  readonly cutoff = new LocalEarlyCutoffReverifier();
-  readonly reverify = new LocalReverifyBeforeReworkGate();
-  readonly policy = new LocalRevisionAutoStartPolicy();
-  readonly asker = new LocalAskOwnerResponder();
-  readonly reopener: LocalPremiseSupersessionReopener;
-  readonly vocabulary: LocalDictationVocabulary;
-  readonly highlighter = new LocalPostSendChangeHighlighter();
+  readonly highlighter: { readonly highlighted: string[][] };
+  private readonly postSend: PostSendChangeHighlighter;
   lastResult: object | null = null;
   private draft = "";
   private cursor = 0;
@@ -116,18 +68,29 @@ export class BoxChatIntentController {
   private sequence = 0;
   private childSequence = 0;
   private undoEntry: UndoEntry | null = null;
+  private readonly highlighted: string[][] = [];
 
   constructor(
     readonly graph: IntentGraph,
     private readonly model: ModelPort | null,
     private readonly network: NetworkPort | null,
+    private readonly composerMachine: ComposerTargetStateMachine | null = null,
+    private readonly dispatch: CanvasDaemonDispatch | null = null,
   ) {
-    this.walker = new LocalReverseImpactWalker(graph);
-    this.reopener = new LocalPremiseSupersessionReopener(graph);
-    this.vocabulary = new LocalDictationVocabulary(graph);
+    this.highlighter = { highlighted: this.highlighted };
+    this.postSend = new PostSendChangeHighlighter(
+      { now: () => Date.now() },
+      quietViewport,
+      quietCatalog,
+      quietMotion,
+    );
   }
 
   get composer(): { readonly draft: string; readonly cursor: number; readonly focused: boolean } {
+    if (this.composerMachine) {
+      const caret = this.composerMachine.projection().caret;
+      return { draft: caret.text, cursor: caret.cursor, focused: this.focused };
+    }
     return { draft: this.draft, cursor: this.cursor, focused: this.focused };
   }
 
@@ -137,14 +100,13 @@ export class BoxChatIntentController {
       const box = this.graph.requireBox(nodeId);
       this.locks.set(nodeId, { nodeId, baseRevision: box.version, baseValue: box.value || box.text });
     }
-    this.draft = draft;
-    this.cursor = cursor;
+    this.writeDraft(draft, cursor);
     this.focused = true;
+    this.captureFocus(nodeIds);
   }
 
   setDraft(draft: string, cursor: number): void {
-    this.draft = draft;
-    this.cursor = cursor;
+    this.writeDraft(draft, cursor);
     this.focused = true;
   }
 
@@ -164,9 +126,9 @@ export class BoxChatIntentController {
 
   submit(input: BoxChatSubmission): object {
     const boxes = input.nodeIds.map((id) => this.graph.requireBox(id));
-    if (input.draft !== undefined) this.draft = input.draft;
-    if (input.cursor !== undefined) this.cursor = input.cursor;
-    const draft = this.draft;
+    if (input.draft !== undefined) this.writeDraft(input.draft, input.cursor ?? this.cursor);
+    else if (input.cursor !== undefined) this.writeDraft(this.draft, input.cursor);
+    const draft = this.composer.draft;
     if (input.intent === "ask") return this.remember(this.answer(boxes, draft));
     if (input.intent === "explain_impact") return this.remember(this.explain(boxes, input));
     if (input.intent === "resolve_conflict" || input.intent === "approve_edit") {
@@ -207,7 +169,7 @@ export class BoxChatIntentController {
     const pending = this.pending.get(id);
     this.pending.delete(id);
     this.focused = true;
-    this.cursor = this.draft.length;
+    this.writeDraft(this.draft, this.draft.length);
     return this.remember(this.sideEffectFree("edit_instruction", pending?.cursor ?? this.cursor));
   }
 
@@ -215,7 +177,7 @@ export class BoxChatIntentController {
     const pending = this.pending.get(id);
     this.pending.delete(id);
     this.focused = true;
-    this.cursor = pending?.cursor ?? this.cursor;
+    this.writeDraft(this.draft, pending?.cursor ?? this.cursor);
     return this.remember({
       kind: "cancelled",
       mutations: this.graph.mutationCount,
@@ -273,13 +235,15 @@ export class BoxChatIntentController {
 
   private answer(boxes: readonly BoxRecord[], question: string): object {
     const before = this.graph.mutationCount;
-    const impact = this.walker.walkCombined(boxes.map((box) => box.id));
+    const impact = walkCombined(this.graph, boxes.map((box) => box.id));
     const titles = [...impact.affectedActiveTasks, ...impact.affectedMergedTasks].map((id) => this.graph.taskTitle(id));
+    const text = answerFromBoxes(boxes, question, titles);
+    this.notify("canvas.intent.ask", { question, nodeIds: boxes.map((box) => box.id), text });
     return {
       kind: "answer",
       routedTo: ["task-102"],
       responderId: ASK_OWNER_RESPONDER_ID,
-      text: this.asker.answer(boxes, question, titles),
+      text,
       mutations: this.graph.mutationCount,
       mutationDelta: this.graph.mutationCount - before,
       holds: this.graph.holdCount(),
@@ -373,11 +337,12 @@ export class BoxChatIntentController {
     const routes = ["task-087", "task-108"];
     const deltaTasks = changeClass === "breaking" ? impact.affectedMergedTasks.length : 0;
     const deltaCost = deltaTasks * MICRO_USD_PER_DELTA_TASK;
-    this.policy.exceeds({
+    const needsOwner = exceedsAutoStart({
       deltaTasks,
       deltaCostMicroUsd: deltaCost,
       breaking: intent !== "remove_defer" && changeClass === "breaking",
     });
+    this.notify("canvas.intent.autoStart", { deltaTasks, deltaCostMicroUsd: deltaCost, needsOwner });
     const confirm = !force && needsConfirmation({
       intent,
       changeClass,
@@ -393,7 +358,7 @@ export class BoxChatIntentController {
   private openPreview(pending: PendingEdit, impact: ImpactedSubgraph, routes: string[]): object {
     this.pending.set(pending.id, pending);
     this.focused = false;
-    const totals = previewTotals(this.graph, impact, pending.changeClass, this.previewer);
+    const totals = previewTotals(this.graph, impact, pending.changeClass);
     const modal = new ZeroTokenImpactPreviewModal(pending.id, totals, {
       apply: () => {
         this.lastResult = this.applyPreview(pending.id);
@@ -449,12 +414,15 @@ export class BoxChatIntentController {
           const heard = misheardPair(`${snap.text} ${snap.value}`, `${next.text} ${next.value}`);
           if (heard) {
             const pair = { heard: heard.heard, intended: heard.intended, pair: formatPair(heard.heard, heard.intended) };
-            this.vocabulary.recordMisheardPair(pair);
+            this.graph.recordCorrection(pair);
+            this.notify("canvas.intent.vocabulary", { ...pair });
             corrections.push(pair);
             input.routes.push("task-158");
           }
           if (input.changeClass !== "cosmetic") {
-            cleaned.push(...this.reopener.reopenDependents(snap.id, snap.value || heard?.heard || ""));
+            const falseValue = snap.value || heard?.heard || "";
+            cleaned.push(...this.graph.cleanupFalseDerivations(snap.id, falseValue));
+            this.notify("canvas.intent.reopen", { premiseId: snap.id, falseValue });
             input.routes.push("task-071");
           }
         }
@@ -468,11 +436,11 @@ export class BoxChatIntentController {
         holdsPlaced.push(...input.active);
       }
       if (input.merged.length > 0) {
-        const checked = this.reverify.reverify(input.merged);
+        const checked = reverifyMerged(input.merged);
         restarts.push(...checked.rework);
       }
     } else {
-      this.highlighter.highlight(input.nodeIds);
+      this.noteHighlight(input.nodeIds);
       input.routes.push("task-154");
     }
     const toast = snapshots.every((snap) => snap.preBuild);
@@ -564,15 +532,15 @@ export class BoxChatIntentController {
     const rank: Record<ChangeClass, number> = { cosmetic: 0, clarifying: 1, compatible: 2, breaking: 3 };
     for (const box of boxes) {
       const next = projectWording(box.text, box.value, draft);
-      const change = this.classifier.classify(`${box.text}\n${box.value}`, `${next.text}\n${next.value}`);
+      const change = classifyChange(`${box.text}\n${box.value}`, `${next.text}\n${next.value}`);
       if (rank[change] > rank[best]) best = change;
     }
     return best;
   }
 
   private walk(nodeIds: readonly string[]): ImpactedSubgraph {
-    const impact = this.walker.walkCombined(nodeIds);
-    this.cutoff.review(impact.nodes.map((node) => node.id));
+    const impact = walkCombined(this.graph, nodeIds);
+    reviewCutoff(impact.nodes.map((node) => node.id));
     return impact;
   }
 
@@ -586,8 +554,7 @@ export class BoxChatIntentController {
   ): object {
     if (choice === "edit_again") {
       this.focused = true;
-      this.cursor = draft.length;
-      this.draft = draft;
+      this.writeDraft(draft, draft.length);
       return {
         ...this.sideEffectFree("edit_again", this.cursor),
         driftNodeId: view.nodeId,
@@ -596,7 +563,7 @@ export class BoxChatIntentController {
     }
     if (choice === "keep_current") {
       this.focused = true;
-      this.cursor = this.draft.length;
+      this.writeDraft(this.draft, this.draft.length);
       return {
         kind: "kept_current",
         driftNodeId: view.nodeId,
@@ -630,15 +597,94 @@ export class BoxChatIntentController {
     this.sequence += 1;
     return `${prefix}-${this.sequence}`;
   }
+
+  private writeDraft(draft: string, cursor: number): void {
+    this.draft = draft;
+    this.cursor = cursor;
+    this.composerMachine?.replaceDraft(draft, cursor);
+  }
+
+  private noteHighlight(ids: readonly string[]): void {
+    const copy = [...ids];
+    this.highlighted.push(copy);
+    this.postSend.commit({ added: [], updated: copy, impacted: [], removed: [] });
+    this.notify("canvas.intent.highlight", { nodeIds: copy });
+  }
+
+  private captureFocus(nodeIds: readonly string[]): void {
+    this.notify("composer.focus.begin", {
+      draftId: "single-composer",
+      inputStartedAt: new Date(0).toISOString(),
+      activeTab: "canvas",
+      selectedCanvasNodeIds: [...nodeIds],
+      openQuestionCardId: null,
+      openQuestionOptionsVersion: null,
+      focusedFeatureId: nodeIds[0] ?? null,
+      inspectedTaskId: null,
+      previewSelectedElement: null,
+    });
+  }
+
+  private notify(method: string, params: Record<string, unknown>): void {
+    if (!this.dispatch) return;
+    this.dispatch(method, params);
+  }
 }
 
 export function createBoxChatIntentController(options: {
   readonly graph: IntentGraph;
   readonly model?: ModelPort;
   readonly network?: NetworkPort;
+  readonly composer?: ComposerTargetStateMachine;
+  readonly dispatch?: CanvasDaemonDispatch;
 }): BoxChatIntentController {
-  return new BoxChatIntentController(options.graph, options.model ?? null, options.network ?? null);
+  return new BoxChatIntentController(
+    options.graph,
+    options.model ?? null,
+    options.network ?? null,
+    options.composer ?? null,
+    options.dispatch ?? null,
+  );
 }
+
+function answerFromBoxes(boxes: readonly BoxRecord[], question: string, dependentTitles: readonly string[]): string {
+  const body = boxes.map((box) => {
+    const parts = [
+      box.provenanceQuote ? `Provenance: ${box.provenanceQuote}` : "",
+      box.text ? `Why: ${box.text}` : "",
+      box.codeStatus ? `Code status: ${box.codeStatus}` : "",
+    ].filter((part) => part.length > 0);
+    return parts.join(" ");
+  });
+  const dependents = dependentTitles.length > 0
+    ? `Dependent tasks: ${dependentTitles.join(", ")}`
+    : "Dependent tasks: none";
+  return [`${ASK_OWNER_RESPONDER_ID}`, question, ...body, dependents].filter((line) => line.length > 0).join("\n");
+}
+
+const quietCatalog: CanvasNodeCatalog = {
+  get: () => null,
+  list: () => [],
+  archive: () => undefined,
+  label: (id) => id,
+};
+
+const quietViewport: CanvasViewportPort = {
+  viewport: () => ({ x: 0, y: 0, width: 1, height: 1 }),
+  setViewport: () => undefined,
+  panZoomTo: (nodeId) => ({ nodeId, x: 0, y: 0, zoom: 1 }),
+  focusConnected: () => [],
+  isOffscreen: () => false,
+  setOffscreen: () => undefined,
+  setEdges: () => undefined,
+  lastPan: () => null,
+  neighborhood: () => [],
+};
+
+const quietMotion: MotionPreferencePort = {
+  prefersReducedMotion: () => false,
+  setPrefersReducedMotion: () => undefined,
+};
 
 function featureInventory(box: BoxRecord): FeatureUndoLaunch {
   const shared = stringList(box.fields, "sharedHelpers");
