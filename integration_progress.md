@@ -64,7 +64,7 @@
 | C51 | Wave 4 | done | 085db78 | F-066 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); desktop 12 files 57/57; daemon 15 files 73/73; renderer diagnostics command 25 files 121/121; schema 67/67 |
 | C52 | Wave 4 | done | 13e7138 | F-056 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); e2e m3-exit-gate 7/7, 0 skipped; schema 67/67 |
 | C53 | Wave 5 | done | e5bee6c | F-057 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); db 67 files 374/374; providers policy+api-keys+siwc 13 files 68/68, 0 skipped; schema 67/67 |
-| C54 | Wave 5 | pending | - | F-057, F-065 | - |
+| C54 | Wave 5 | done | b465bfd | F-057, F-065 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); providers 31 files 158/158, 0 skipped; steering budget-stops 21 files 122/122; planner crew-levels 69 files 377/377; schema 67/67 |
 | C55 | Wave 5 | pending | - | F-058, F-059, F-060 | - |
 | C56 | Wave 5 | pending | - | F-059, F-060 | - |
 | C57 | Wave 5 | pending | - | F-059, F-060, F-061 | - |
