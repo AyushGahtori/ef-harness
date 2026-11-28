@@ -1,0 +1,14 @@
+{
+  "schema": "m3-machine-profile@1",
+  "ramGb": 64,
+  "thinkingPool": 20,
+  "warmSlots": 4,
+  "sessionCap": 8,
+  "pacingCap": 8,
+  "worktreeSlots": 6,
+  "preset": "Balanced",
+  "presetCap": 5,
+  "orangeEnterMs": 10000,
+  "greenRecoverMs": 30000,
+  "spikeIgnoredMs": 3000
+}

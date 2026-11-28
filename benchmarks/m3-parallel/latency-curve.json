@@ -1,0 +1,10 @@
+{
+  "schema": "m3-provider-latency-curve@1",
+  "rule": "Model-task seconds equal tokens divided by that task's tokensPerSec. Parallelism changes the makespan, not the per-task token time. Merge tasks are integration seconds and carry zero provider tokens.",
+  "coding": { "tokens": 20500, "seconds": 592.5 },
+  "paperworkTokens": 18000,
+  "codingTokens": 82000,
+  "totalTokens": 100000,
+  "jitterRetrySec": 40,
+  "jitterTaskId": "print-build"
+}

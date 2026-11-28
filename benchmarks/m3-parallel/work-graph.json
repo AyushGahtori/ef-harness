@@ -1,0 +1,20 @@
+{
+  "schema": "m3-kitchen-work-graph@1",
+  "note": "Sequential sum of avgExecSec is the Task 105 cassette totalWallClockSec (2820). Model seconds are token generation time. Merge seconds are the serialized integration tax.",
+  "tasks": [
+    { "id": "discovery", "phase": "phase0", "feature": "phase0", "kind": "model", "tokens": 1000, "avgExecSec": 40, "deps": [] },
+    { "id": "spec", "phase": "phase0", "feature": "phase0", "kind": "model", "tokens": 3000, "avgExecSec": 45, "deps": ["discovery"] },
+    { "id": "research", "phase": "phase0", "feature": "phase0", "kind": "model", "tokens": 5000, "avgExecSec": 55, "deps": ["discovery"] },
+    { "id": "architecture", "phase": "phase0", "feature": "phase0", "kind": "model", "tokens": 5000, "avgExecSec": 60, "deps": ["spec", "research"] },
+    { "id": "planning", "phase": "phase0", "feature": "phase0", "kind": "model", "tokens": 3000, "avgExecSec": 40, "deps": ["architecture"] },
+    { "id": "menu-build", "phase": "wave", "feature": "F-Menu", "kind": "model", "tokens": 20500, "avgExecSec": 592.5, "deps": ["planning"] },
+    { "id": "orders-build", "phase": "wave", "feature": "F-Orders", "kind": "model", "tokens": 20500, "avgExecSec": 592.5, "deps": ["planning"] },
+    { "id": "print-build", "phase": "wave", "feature": "F-Print", "kind": "model", "tokens": 20500, "avgExecSec": 592.5, "deps": ["planning"] },
+    { "id": "catering-build", "phase": "wave", "feature": "F-CateringEmail", "kind": "model", "tokens": 20500, "avgExecSec": 592.5, "deps": ["planning"] },
+    { "id": "menu-merge", "phase": "merge", "feature": "F-Menu", "kind": "merge", "tokens": 0, "avgExecSec": 30, "deps": ["menu-build"] },
+    { "id": "orders-merge", "phase": "merge", "feature": "F-Orders", "kind": "merge", "tokens": 0, "avgExecSec": 30, "deps": ["orders-build"] },
+    { "id": "print-merge", "phase": "merge", "feature": "F-Print", "kind": "merge", "tokens": 0, "avgExecSec": 30, "deps": ["print-build"] },
+    { "id": "catering-merge", "phase": "merge", "feature": "F-CateringEmail", "kind": "merge", "tokens": 0, "avgExecSec": 30, "deps": ["catering-build"] },
+    { "id": "audit", "phase": "audit", "feature": "audit", "kind": "model", "tokens": 1000, "avgExecSec": 90, "deps": ["menu-merge", "orders-merge", "print-merge", "catering-merge"] }
+  ]
+}
