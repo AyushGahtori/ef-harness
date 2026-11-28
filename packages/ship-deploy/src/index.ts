@@ -7,3 +7,15 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export * as effects from "./effects/index.js";
+export * as github from "./github/index.js";
+export * as ciLoop from "./ci-loop/index.js";
+export {
+  adaptLedgerForCi,
+  bindShipDeploy,
+  createGitSafetyScannerPort,
+  createMinGitRepoInspector,
+  landingParagraph,
+  type ShipDeployBindings,
+} from "./wire.js";

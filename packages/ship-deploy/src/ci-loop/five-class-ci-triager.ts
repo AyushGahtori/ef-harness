@@ -1,9 +1,27 @@
-import { computeFailureFingerprint } from "./canonical-hash.js";
+import { CiTriageV1Schema } from "@ef-harness/shared-contracts";
+import { computeFailureFingerprint } from "./failure-fingerprint.js";
 import type { BaseBranchCiSnapshot } from "./contracts.js";
 import type { CiClassification, CiFailureInput, CiOperationalClass, CiTriageV1Class } from "./types.js";
 
 function quoteEvidence(lines: readonly string[], max = 5): string[] {
-  return lines.slice(0, max).map((line) => line.trim()).filter(Boolean);
+  const quoted = lines.slice(0, max).map((line) => line.trim()).filter(Boolean);
+  return quoted.length > 0 ? quoted : ["ci"];
+}
+
+function freezeTriage(value: {
+  readonly class: CiClassification["triage"]["class"];
+  readonly evidence_lines: readonly string[];
+  readonly suggested_owner: string;
+}): CiClassification["triage"] {
+  const parsed = CiTriageV1Schema.parse(value);
+  if ("blocked" in parsed) {
+    throw new Error("ci triage was blocked");
+  }
+  return {
+    class: parsed.class,
+    evidence_lines: parsed.evidence_lines,
+    suggested_owner: parsed.suggested_owner,
+  };
 }
 
 function mapToOperational(v1: CiTriageV1Class): CiOperationalClass {
@@ -47,11 +65,11 @@ export class FiveClassCiTriager {
     const evidence_lines = quoteEvidence(input.logExcerpt);
 
     if (baseSnapshot?.failingCheckNames.includes(input.jobName)) {
-      const triage = {
-        class: "infrastructure" as const,
+      const triage = freezeTriage({
+        class: "infrastructure",
         evidence_lines,
         suggested_owner: "harness/ship",
-      };
+      });
       return {
         operationalClass: "class_5_preexisting_main",
         triage,
@@ -73,7 +91,7 @@ export class FiveClassCiTriager {
       message: evidence_lines.join(" | "),
     });
 
-    const triage = {
+    const triage = freezeTriage({
       class: v1,
       evidence_lines,
       suggested_owner:
@@ -82,7 +100,7 @@ export class FiveClassCiTriager {
           : operationalClass === "class_2_portability"
             ? "harness/ci-repair"
             : "feature-owner",
-    };
+    });
 
     return {
       operationalClass,

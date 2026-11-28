@@ -1,28 +1,17 @@
-import { DatabaseSync } from "node:sqlite";
+import {
+  EFFECT_STATES,
+  EffectsRepo,
+  loadCanonicalSqlAsset,
+  openDatabase,
+  type EffectRecord as StoredEffect,
+  type EffectState,
+  type SqliteConnection,
+} from "@ef-harness/db";
 import type { ApprovalStatus, EffectExecStatus, EffectRecord, TargetEnv } from "./types.js";
 
-/** Frozen `effects` table from `schema/state.sql`. */
-const EFFECTS_SCHEMA = `
-CREATE TABLE IF NOT EXISTS effects (
-  id              TEXT PRIMARY KEY,
-  kind            TEXT NOT NULL,
-  target          TEXT NOT NULL,
-  payload_hash    TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  approval        TEXT,
-  lease_epoch     INTEGER,
-  state           TEXT NOT NULL CHECK (state IN ('intended','approved','sent','confirmed','failed','unknown')),
-  receipt         TEXT,
-  created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL
-) STRICT;
-CREATE TABLE IF NOT EXISTS project_runtime (
-  singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-  writer_epoch INTEGER NOT NULL,
-  state TEXT NOT NULL
-);
-INSERT OR IGNORE INTO project_runtime (singleton, writer_epoch, state) VALUES (1, 1, 'RUNNING');
-`;
+/** Live stop bit written by the steering kernel stop controller. */
+export const STEERING_CONTROL_STATE_KEY = "steering.control_state";
+export const WRITER_EPOCH_META_KEY = "writer_epoch";
 
 interface ApprovalSidecar {
   approvalStatus: ApprovalStatus;
@@ -33,19 +22,20 @@ interface ApprovalSidecar {
 }
 
 export interface SqliteEffectStoreOptions {
-  readonly database?: DatabaseSync;
+  readonly connection?: SqliteConnection;
   readonly now?: () => number;
 }
 
 export class SqliteEffectStore {
-  private readonly db: DatabaseSync;
+  readonly connection: SqliteConnection;
+  private readonly repo: EffectsRepo;
   private readonly now: () => number;
   private injectDispatchFault = false;
 
   constructor(options: SqliteEffectStoreOptions = {}) {
-    this.db = options.database ?? new DatabaseSync(":memory:");
+    this.connection = options.connection ?? openEffectConnection();
+    this.repo = new EffectsRepo(this.connection);
     this.now = options.now ?? (() => Date.now());
-    this.db.exec(EFFECTS_SCHEMA);
   }
 
   /** Test hook: the next dispatch transition throws after BEGIN IMMEDIATE. */
@@ -61,159 +51,157 @@ export class SqliteEffectStore {
       dispatchedAt: null,
       finishedAt: null,
     });
-    this.db
-      .prepare(
-        `INSERT INTO effects (
-           id, kind, target, payload_hash, idempotency_key, approval, lease_epoch, state, receipt, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        record.effectId,
-        record.effectType,
-        record.targetEnv,
-        record.canonicalPayloadHash,
-        record.idempotencyKey,
+    const drafted = this.repo.record({
+      id: record.effectId,
+      kind: record.effectType,
+      target: record.targetEnv,
+      payloadHash: record.canonicalPayloadHash,
+      idempotencyKey: record.idempotencyKey,
+      approval,
+      ...(record.writerEpoch === null ? {} : { leaseEpoch: record.writerEpoch }),
+      now: record.createdAt,
+    });
+    const dbState = mapExecToDbState(record.execStatus, record.approvalStatus);
+    if (dbState !== "intended" && drafted.state !== dbState) {
+      this.repo.transition(record.effectId, dbState, record.createdAt, {
         approval,
-        record.writerEpoch,
-        mapExecToDbState(record.execStatus, record.approvalStatus),
-        record.remoteReceiptJson === null ? null : JSON.stringify(record.remoteReceiptJson),
-        record.createdAt,
-        record.createdAt,
-      );
+        ...(record.writerEpoch === null ? {} : { leaseEpoch: record.writerEpoch }),
+      });
+    }
   }
 
   findByIdempotency(idempotencyKey: string): EffectRecord | null {
-    const row = this.db
-      .prepare(
-        `SELECT id, kind, target, payload_hash, idempotency_key, approval, lease_epoch, state, receipt, created_at, updated_at
-         FROM effects WHERE idempotency_key = ?`,
-      )
-      .get(idempotencyKey) as Record<string, unknown> | undefined;
-    return row ? decodeRow(row) : null;
+    const row = this.repo.findByIdempotencyKey(idempotencyKey);
+    return row ? decodeStored(row) : null;
   }
 
   get(effectId: string): EffectRecord | null {
-    const row = this.db
-      .prepare(
-        `SELECT id, kind, target, payload_hash, idempotency_key, approval, lease_epoch, state, receipt, created_at, updated_at
-         FROM effects WHERE id = ?`,
-      )
-      .get(effectId) as Record<string, unknown> | undefined;
-    return row ? decodeRow(row) : null;
+    const row = this.repo.get(effectId);
+    return row ? decodeStored(row) : null;
   }
 
   listAudit(): EffectRecord[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, kind, target, payload_hash, idempotency_key, approval, lease_epoch, state, receipt, created_at, updated_at
-         FROM effects ORDER BY created_at ASC`,
-      )
-      .all() as Record<string, unknown>[];
-    return rows.map((row) => decodeRow(row));
+    const rows = this.connection.all("SELECT id FROM effects ORDER BY created_at ASC");
+    const records: EffectRecord[] = [];
+    for (const row of rows) {
+      const id = readText(row, "id");
+      const record = this.get(id);
+      if (record) records.push(record);
+    }
+    return records;
   }
 
   updateApproval(effectId: string, approvalStatus: ApprovalStatus, boundPayloadHash: string | null): void {
-    const existing = this.get(effectId);
+    const existing = this.repo.get(effectId);
     if (!existing) return;
-    const sidecar = decodeApproval(
-      this.db.prepare("SELECT approval FROM effects WHERE id = ?").get(effectId) as { approval: string | null },
-    );
+    const sidecar = decodeApproval(existing.approval);
     const approval = encodeApproval({
       ...sidecar,
       approvalStatus,
       boundPayloadHash,
     });
-    const dbState =
+    const dbState: EffectState =
       approvalStatus === "approved" || approvalStatus === "auto_allowed" ? "approved" : "intended";
-    this.db
-      .prepare(`UPDATE effects SET approval = ?, state = ?, updated_at = ? WHERE id = ?`)
-      .run(approval, dbState, this.now(), effectId);
+    this.repo.transition(effectId, dbState, this.now(), { approval });
   }
 
   /**
    * Write-ahead: atomically transition planned/approved → dispatched (`sent`) before network I/O.
+   * The fence is the live `meta` writer epoch and steering stop bit, read inside the transaction.
    */
   atomicDispatchTransition(effectId: string, writerEpoch: number, runtimeState: string): void {
-    if (runtimeState === "STOPPED") {
-      throw new Error("project runtime STOPPED");
-    }
-    const fence = this.db
-      .prepare(`SELECT writer_epoch FROM project_runtime WHERE singleton = 1`)
-      .get() as { writer_epoch: number };
-    if (writerEpoch < fence.writer_epoch) {
-      throw new Error("stale writer_epoch");
-    }
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    this.connection.transaction(() => {
+      const fence = this.readRuntimeFence();
+      if (runtimeState === "STOPPED" || fence.state === "STOPPED") {
+        throw new Error("project runtime STOPPED");
+      }
+      if (writerEpoch < fence.writerEpoch) {
+        throw new Error("stale writer_epoch");
+      }
       if (this.injectDispatchFault) {
         this.injectDispatchFault = false;
         throw new Error("injected dispatch fault");
       }
-      const row = this.db
-        .prepare(`SELECT state, approval FROM effects WHERE id = ?`)
-        .get(effectId) as { state: string; approval: string | null } | undefined;
+      const row = this.repo.get(effectId);
       if (!row) {
         throw new Error("effect not found");
       }
       if (row.state !== "approved" && row.state !== "intended") {
         throw new Error(`cannot dispatch from state ${row.state}`);
       }
-      const sidecar = decodeApproval(row);
+      const sidecar = decodeApproval(row.approval);
       const approval = encodeApproval({
         ...sidecar,
         dispatchedAt: this.now(),
       });
-      this.db
-        .prepare(`UPDATE effects SET state = 'sent', lease_epoch = ?, approval = ?, updated_at = ? WHERE id = ?`)
-        .run(writerEpoch, approval, this.now(), effectId);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+      this.repo.transition(effectId, "sent", this.now(), { approval, leaseEpoch: writerEpoch });
+    });
   }
 
   markSucceeded(effectId: string, receipt: unknown): void {
-    const sidecar = decodeApproval(
-      this.db.prepare(`SELECT approval FROM effects WHERE id = ?`).get(effectId) as { approval: string | null },
-    );
+    const existing = this.repo.get(effectId);
+    if (!existing) throw new Error("effect not found");
+    const sidecar = decodeApproval(existing.approval);
     const approval = encodeApproval({ ...sidecar, finishedAt: this.now() });
-    this.db
-      .prepare(`UPDATE effects SET state = 'confirmed', receipt = ?, approval = ?, updated_at = ? WHERE id = ?`)
-      .run(JSON.stringify(receipt), approval, this.now(), effectId);
+    this.repo.transition(effectId, "confirmed", this.now(), {
+      approval,
+      receipt: JSON.stringify(receipt),
+    });
   }
 
   markFailed(effectId: string, receipt: unknown): void {
-    const sidecar = decodeApproval(
-      this.db.prepare(`SELECT approval FROM effects WHERE id = ?`).get(effectId) as { approval: string | null },
-    );
+    const existing = this.repo.get(effectId);
+    if (!existing) throw new Error("effect not found");
+    const sidecar = decodeApproval(existing.approval);
     const approval = encodeApproval({ ...sidecar, finishedAt: this.now() });
-    this.db
-      .prepare(`UPDATE effects SET state = 'failed', receipt = ?, approval = ?, updated_at = ? WHERE id = ?`)
-      .run(JSON.stringify(receipt), approval, this.now(), effectId);
+    this.repo.transition(effectId, "failed", this.now(), {
+      approval,
+      receipt: JSON.stringify(receipt),
+    });
   }
 
   markUnknownOutcome(effectId: string): void {
-    this.db
-      .prepare(`UPDATE effects SET state = 'unknown', updated_at = ? WHERE id = ?`)
-      .run(this.now(), effectId);
+    this.repo.transition(effectId, "unknown", this.now());
   }
 
   setRuntimeFence(writerEpoch: number, state: "RUNNING" | "STOPPED"): void {
-    this.db
-      .prepare(`UPDATE project_runtime SET writer_epoch = ?, state = ? WHERE singleton = 1`)
-      .run(writerEpoch, state);
+    this.writeMeta(WRITER_EPOCH_META_KEY, String(writerEpoch));
+    this.writeMeta(STEERING_CONTROL_STATE_KEY, state);
   }
 
   readRuntimeFence(): { writerEpoch: number; state: "RUNNING" | "STOPPED" } {
-    const row = this.db
-      .prepare(`SELECT writer_epoch, state FROM project_runtime WHERE singleton = 1`)
-      .get() as { writer_epoch: number; state: "RUNNING" | "STOPPED" };
-    return { writerEpoch: row.writer_epoch, state: row.state };
+    const epochRaw = this.readMeta(WRITER_EPOCH_META_KEY);
+    const parsed = epochRaw === null ? 1 : Number(epochRaw);
+    const writerEpoch = Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
+    const control = this.readMeta(STEERING_CONTROL_STATE_KEY);
+    return { writerEpoch, state: control === "STOPPED" ? "STOPPED" : "RUNNING" };
+  }
+
+  private writeMeta(key: string, value: string): void {
+    this.connection.run(
+      "INSERT INTO meta(key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      { key, value },
+    );
+  }
+
+  private readMeta(key: string): string | null {
+    const row = this.connection.get("SELECT value FROM meta WHERE key = :key", { key });
+    if (row === undefined || row === null) return null;
+    const value = readCell(row, "value");
+    if (value === null || value === undefined) return null;
+    return String(value);
   }
 }
 
-function mapExecToDbState(exec: EffectExecStatus, approval: ApprovalStatus): string {
+export function openEffectConnection(): SqliteConnection {
+  const db = openDatabase({ location: ":memory:", role: "state" });
+  db.exec(loadCanonicalSqlAsset("stateSql"));
+  db.run("INSERT INTO meta(key, value) VALUES (:key, '1')", { key: WRITER_EPOCH_META_KEY });
+  db.run("INSERT INTO meta(key, value) VALUES (:key, 'RUNNING')", { key: STEERING_CONTROL_STATE_KEY });
+  return db;
+}
+
+function mapExecToDbState(exec: EffectExecStatus, approval: ApprovalStatus): EffectState {
   if (exec === "dispatched") return "sent";
   if (exec === "succeeded") return "confirmed";
   if (exec === "failed") return "failed";
@@ -241,8 +229,8 @@ function encodeApproval(sidecar: ApprovalSidecar): string {
   return JSON.stringify(sidecar);
 }
 
-function decodeApproval(row: { approval: string | null }): ApprovalSidecar {
-  if (!row.approval) {
+function decodeApproval(approval: string | null): ApprovalSidecar {
+  if (!approval) {
     return {
       approvalStatus: "pending_approval",
       boundPayloadHash: null,
@@ -251,28 +239,74 @@ function decodeApproval(row: { approval: string | null }): ApprovalSidecar {
       finishedAt: null,
     };
   }
-  const parsed = JSON.parse(row.approval) as ApprovalSidecar;
-  return parsed;
+  const parsed: unknown = JSON.parse(approval);
+  if (parsed === null || typeof parsed !== "object") {
+    return {
+      approvalStatus: "pending_approval",
+      boundPayloadHash: null,
+      payloadJson: {},
+      dispatchedAt: null,
+      finishedAt: null,
+    };
+  }
+  const row = parsed as Record<string, unknown>;
+  const status = row.approvalStatus;
+  return {
+    approvalStatus: isApprovalStatus(status) ? status : "pending_approval",
+    boundPayloadHash: typeof row.boundPayloadHash === "string" ? row.boundPayloadHash : null,
+    payloadJson: row.payloadJson ?? {},
+    dispatchedAt: typeof row.dispatchedAt === "number" ? row.dispatchedAt : null,
+    finishedAt: typeof row.finishedAt === "number" ? row.finishedAt : null,
+  };
 }
 
-function decodeRow(row: Record<string, unknown>): EffectRecord {
-  const sidecar = decodeApproval({ approval: row.approval as string | null });
-  const dbState = String(row.state);
+function isApprovalStatus(value: unknown): value is ApprovalStatus {
+  return (
+    value === "pending_approval" ||
+    value === "approved" ||
+    value === "denied" ||
+    value === "auto_allowed" ||
+    value === "approval_stale_payload_changed"
+  );
+}
+
+function decodeStored(row: StoredEffect): EffectRecord {
+  const sidecar = decodeApproval(row.approval);
+  if (!(EFFECT_STATES as readonly string[]).includes(row.state)) {
+    throw new Error(`unsupported effect state: ${row.state}`);
+  }
   return {
-    effectId: String(row.id),
-    effectType: String(row.kind),
-    targetEnv: String(row.target) as TargetEnv,
-    canonicalPayloadHash: String(row.payload_hash),
-    idempotencyKey: String(row.idempotency_key),
-    writerEpoch: row.lease_epoch === null ? null : Number(row.lease_epoch),
+    effectId: row.id,
+    effectType: row.kind,
+    targetEnv: row.target as TargetEnv,
+    canonicalPayloadHash: row.payloadHash,
+    idempotencyKey: row.idempotencyKey,
+    writerEpoch: row.leaseEpoch,
     approvalStatus: sidecar.approvalStatus,
     boundApprovalPayloadHash: sidecar.boundPayloadHash,
-    execStatus: mapDbToExec(dbState),
+    execStatus: mapDbToExec(row.state),
     payloadJson: sidecar.payloadJson,
-    remoteReceiptJson:
-      row.receipt === null || row.receipt === undefined ? null : JSON.parse(String(row.receipt)),
-    createdAt: Number(row.created_at),
+    remoteReceiptJson: parseReceipt(row.receipt),
+    createdAt: row.createdAt,
     dispatchedAt: sidecar.dispatchedAt,
     finishedAt: sidecar.finishedAt,
   };
+}
+
+function parseReceipt(receipt: string | null): unknown {
+  if (receipt === null) return null;
+  return JSON.parse(receipt);
+}
+
+function readCell(row: unknown, key: string): unknown {
+  if (row === null || typeof row !== "object") return undefined;
+  return Reflect.get(row, key);
+}
+
+function readText(row: unknown, key: string): string {
+  const value = readCell(row, key);
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`effects.${key} is not text`);
+  }
+  return value;
 }

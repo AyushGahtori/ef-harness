@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { canonicalPayloadHash } from "./canonical-hash.js";
+import { canonicalPayloadHash } from "./payload-hash.js";
 import { EnvApprovalPolicyEngine } from "./approval-policy.js";
 import { LeaseEpochFencingGuard } from "./fencing.js";
 import { PayloadHashMismatchError } from "./errors.js";
-import { assertNoRawSecretsInPayload, redactEffectPayload } from "./redactor.js";
+import { assertNoRawSecretsInPayload, redactEffectPayload } from "./payload-redaction.js";
 import { SqliteEffectStore } from "./store.js";
 import { UnknownOutcomeReconciler } from "./reconciler.js";
 import type { LeaseEpochFencingGuardPort } from "./fencing.js";

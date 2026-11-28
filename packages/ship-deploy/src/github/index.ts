@@ -10,6 +10,13 @@ export {
   type GitHubTransport,
   type GitHubRateAwareQueueOptions,
 } from "./rate-queue.js";
+export {
+  SqliteGitHubRateStateStore,
+  githubRateStoreForBroker,
+  openMemoryGitHubRateStore,
+  type GitHubRateSnapshot,
+  type GitHubRateStateStore,
+} from "./rate-state.js";
 export { ConditionalEtagPoller, type ConditionalEtagPollerOptions, type PollTarget, type PollProgress } from "./etag-poller.js";
 export { PrePushGuard, type PrePushGuardOptions } from "./pre-push.js";
 export {

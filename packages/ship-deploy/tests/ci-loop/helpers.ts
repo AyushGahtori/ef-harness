@@ -17,19 +17,19 @@ export function removeSandbox(root: string): void {
   fs.rmSync(root, { recursive: true, force: true });
 }
 
-export function initRepo(sandbox: Sandbox): string {
+export async function initRepo(sandbox: Sandbox): Promise<string> {
   const repo = path.join(sandbox.root, "repo");
   fs.mkdirSync(repo, { recursive: true });
-  runGit(repo, ["init", "-b", "main"]);
-  runGit(repo, ["config", "user.email", "ship@test.local"]);
-  runGit(repo, ["config", "user.name", "Ship Test"]);
+  await runGit(repo, ["init", "-b", "main"]);
+  await runGit(repo, ["config", "user.email", "ship@test.local"]);
+  await runGit(repo, ["config", "user.name", "Ship Test"]);
   return repo;
 }
 
-export function writeAndCommit(repo: string, relativePath: string, content: string, message: string): void {
+export async function writeAndCommit(repo: string, relativePath: string, content: string, message: string): Promise<void> {
   const full = path.join(repo, relativePath);
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, content, "utf8");
-  runGit(repo, ["add", relativePath]);
-  runGit(repo, ["commit", "-m", message]);
+  await runGit(repo, ["add", relativePath]);
+  await runGit(repo, ["commit", "-m", message]);
 }

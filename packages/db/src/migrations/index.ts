@@ -31,7 +31,7 @@ export {
   readProjectStatus,
 } from "./needs-repair.js";
 export { PRODUCTION_SCHEMA_VERSION, productionMigrations } from "./production.js";
-export { stateV2Sql } from "./v2.js";
+export { GITHUB_RATE_STATE_SQL, stateV2Sql } from "./v2.js";
 export {
   FTS_PENDING_META_KEY,
   STATE_GRAPH_VIEWS,

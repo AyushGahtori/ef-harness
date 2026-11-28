@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { GlobalBrokerDb } from "@ef-harness/db";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   GitHubRateAwareQueue,
   MAX_MUTATIONS_PER_MINUTE,
   MIN_MUTATION_SPACING_MS,
-  resetSharedGitHubQueuesForTests,
-  sharedGitHubQueue,
 } from "../../src/github/rate-queue.js";
+import { githubRateStoreForBroker, openMemoryGitHubRateStore } from "../../src/github/rate-state.js";
 import { MockGitHubApi } from "./mock-github-api.js";
 
 describe("GitHubRateAwareQueue", () => {
@@ -57,16 +60,53 @@ describe("GitHubRateAwareQueue", () => {
     vi.useRealTimers();
   });
 
-  it("shares one queue per GitHub account across projects", async () => {
-    resetSharedGitHubQueuesForTests();
+  it("shares mutation counters per GitHub account through global.db", async () => {
+    const store = openMemoryGitHubRateStore();
     const api = new MockGitHubApi();
-    const a = sharedGitHubQueue({ accountKey: "octocat", transport: api });
-    const b = sharedGitHubQueue({ accountKey: "octocat", transport: api });
-    expect(a).toBe(b);
-    api.route("/a", { status: 200, body: {} });
-    await a.request({ method: "GET", path: "/a" });
-    await b.request({ method: "GET", path: "/a" });
+    api.route("/mut", { status: 201, body: { ok: true } });
+    let clock = 10_000;
+    const a = new GitHubRateAwareQueue({
+      accountKey: "octocat",
+      transport: api,
+      rateStore: store,
+      now: () => clock,
+    });
+    await a.request({ method: "POST", path: "/mut", mutating: true });
+    clock = 12_000;
+    const b = new GitHubRateAwareQueue({
+      accountKey: "octocat",
+      transport: api,
+      rateStore: store,
+      now: () => clock,
+    });
+    await b.request({ method: "POST", path: "/mut", mutating: true });
+    expect(store.load("octocat")?.mutationsThisMinute).toBe(2);
     expect(api.requests.length).toBe(2);
+  });
+
+  it("reloads GitHub rate counters after GlobalBrokerDb reopen", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-github-rate-"));
+    try {
+      const first = GlobalBrokerDb.open({ root });
+      const api = new MockGitHubApi();
+      api.route("/mut", { status: 201, body: { ok: true } });
+      const queue = new GitHubRateAwareQueue({
+        accountKey: "octocat",
+        transport: api,
+        rateStore: githubRateStoreForBroker(first),
+        now: () => 10_000,
+      });
+      await queue.request({ method: "POST", path: "/mut", mutating: true });
+      first.close();
+      const second = GlobalBrokerDb.open({ root });
+      try {
+        expect(githubRateStoreForBroker(second).load("octocat")?.mutationsThisMinute).toBe(1);
+      } finally {
+        second.close();
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("tracks mutation ceilings", () => {

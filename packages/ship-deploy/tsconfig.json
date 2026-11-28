@@ -10,7 +10,25 @@
   ],
   "references": [
     {
+      "path": "../db"
+    },
+    {
+      "path": "../git-engine"
+    },
+    {
+      "path": "../governor"
+    },
+    {
+      "path": "../integrator"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../shared-observability"
+    },
+    {
+      "path": "../verifier"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import type { BaseBranchCiSnapshot, CiRepairDependencies } from "./contracts.js";
-import { computeFailureFingerprint } from "./canonical-hash.js";
+import { computeFailureFingerprint } from "./failure-fingerprint.js";
 import { extractSecretName, FiveClassCiTriager } from "./five-class-ci-triager.js";
 import type { CiClassification, CiFailureInput, RepairLoopDecision } from "./types.js";
 

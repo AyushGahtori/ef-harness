@@ -10,9 +10,15 @@ export {
   summarizeReconcileProbe,
   type ReconcileResolution,
 } from "./reconciler.js";
-export { SqliteEffectStore, type SqliteEffectStoreOptions } from "./store.js";
-export { canonicalPayloadHash, canonicalizeJson } from "./canonical-hash.js";
-export { redactEffectPayload, assertNoRawSecretsInPayload } from "./redactor.js";
+export {
+  STEERING_CONTROL_STATE_KEY,
+  SqliteEffectStore,
+  WRITER_EPOCH_META_KEY,
+  openEffectConnection,
+  type SqliteEffectStoreOptions,
+} from "./store.js";
+export { canonicalPayloadHash, canonicalizeJson } from "./payload-hash.js";
+export { redactEffectPayload, assertNoRawSecretsInPayload } from "./payload-redaction.js";
 export {
   EffectLedgerError,
   PayloadHashMismatchError,

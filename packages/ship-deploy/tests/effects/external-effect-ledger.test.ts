@@ -6,7 +6,9 @@ import {
   LeaseEpochFenceError,
   PayloadHashMismatchError,
   ProductionAlwaysRequiresExplicitApprovalError,
+  STEERING_CONTROL_STATE_KEY,
   SqliteEffectStore,
+  openEffectConnection,
   UnknownOutcomeReconciler,
   assertNoRawSecretsInPayload,
   canonicalPayloadHash,
@@ -206,5 +208,33 @@ describe("PacketSecurityRedactor", () => {
   it("rejects raw secret literals before SQLite insert", () => {
     const marker = ["ghp", "_", "abcdefghijklmnopqrstuvwxyz1234567890"].join("");
     expect(() => assertNoRawSecretsInPayload({ token: marker })).toThrow(/raw secret/);
+  });
+});
+
+describe("live meta fence", () => {
+  it("reads STOP and writer_epoch from state meta, not a private project_runtime fence", async () => {
+    const connection = openEffectConnection();
+    const columns = connection.all("PRAGMA table_info(project_runtime)");
+    const names = columns.map((row) => {
+      if (row === null || typeof row !== "object") return "";
+      const name = Reflect.get(row, "name");
+      return typeof name === "string" ? name : "";
+    });
+    expect(names).toContain("paused");
+    expect(names.includes("writer_epoch")).toBe(false);
+    const store = new SqliteEffectStore({ connection, now: () => 1 });
+    store.setRuntimeFence(5, "RUNNING");
+    const ledger = new ExternalEffectLedger({ store, now: () => 1 });
+    const record = ledger.recordPlanned({
+      effectType: "git_push",
+      targetEnv: "git_remote",
+      payload: { commitSha: "abc" },
+      idempotencyKey: "push-live-stop",
+      writerEpoch: 5,
+    });
+    ledger.approveEffect(record.effectId, record.canonicalPayloadHash);
+    connection.run("UPDATE meta SET value = 'STOPPED' WHERE key = :key", { key: STEERING_CONTROL_STATE_KEY });
+    await expect(ledger.dispatchEffect(record.effectId, 5, async () => ({ ok: true }))).rejects.toThrow(/STOPPED/);
+    expect(ledger.getNetworkCallCount()).toBe(0);
   });
 });

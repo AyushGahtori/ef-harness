@@ -1,3 +1,4 @@
+import type { GitHubRateSnapshot, GitHubRateStateStore } from "./rate-state.js";
 import type { GitHubHttpRequest, GitHubHttpResponse, RateLimitPauseEvent } from "./types.js";
 
 export const MIN_MUTATION_SPACING_MS = 1_000;
@@ -13,6 +14,8 @@ export interface GitHubRateAwareQueueOptions {
   readonly transport: GitHubTransport;
   readonly now?: () => number;
   readonly onPause?: (event: RateLimitPauseEvent) => void;
+  /** Durable counters in `global.db.github_rate_state`. Required for cross-process sharing. */
+  readonly rateStore?: GitHubRateStateStore;
 }
 
 function parseRetryAfterMs(headers: Readonly<Record<string, string>>, now: number): number | null {
@@ -48,6 +51,7 @@ export class GitHubRateAwareQueue {
   private readonly transport: GitHubTransport;
   private readonly now: () => number;
   private readonly onPause?: (event: RateLimitPauseEvent) => void;
+  private readonly rateStore?: GitHubRateStateStore;
   private mutationChain: Promise<unknown> = Promise.resolve();
   private lastMutationAt = 0;
   private minuteWindowStart = 0;
@@ -61,9 +65,15 @@ export class GitHubRateAwareQueue {
     this.transport = options.transport;
     this.now = options.now ?? (() => Date.now());
     if (options.onPause) this.onPause = options.onPause;
+    if (options.rateStore) this.rateStore = options.rateStore;
+    const loaded = this.rateStore?.load(this.accountKey);
     const t = this.now();
-    this.minuteWindowStart = t;
-    this.hourWindowStart = t;
+    this.minuteWindowStart = loaded?.minuteWindowStart ?? t;
+    this.hourWindowStart = loaded?.hourWindowStart ?? t;
+    this.lastMutationAt = loaded?.lastMutationAt ?? 0;
+    this.mutationsThisMinute = loaded?.mutationsThisMinute ?? 0;
+    this.mutationsThisHour = loaded?.mutationsThisHour ?? 0;
+    this.pausedUntil = loaded?.pausedUntil ?? 0;
   }
 
   async request(input: GitHubHttpRequest): Promise<GitHubHttpResponse> {
@@ -95,6 +105,7 @@ export class GitHubRateAwareQueue {
   }
 
   private async enforceSpacingAndCeilings(): Promise<void> {
+    this.reload();
     while (true) {
       const t = this.now();
       if (t - this.minuteWindowStart >= 60_000) {
@@ -128,10 +139,12 @@ export class GitHubRateAwareQueue {
   }
 
   private recordMutation(): void {
+    this.reload();
     const t = this.now();
     this.lastMutationAt = t;
     this.mutationsThisMinute += 1;
     this.mutationsThisHour += 1;
+    this.persist();
   }
 
   private async sendWithBackoff(input: GitHubHttpRequest, attempt = 0): Promise<GitHubHttpResponse> {
@@ -152,20 +165,46 @@ export class GitHubRateAwareQueue {
 
   private emitPause(reason: RateLimitPauseEvent["reason"], resumeAtMs: number, message: string): void {
     this.pausedUntil = Math.max(this.pausedUntil, resumeAtMs);
+    this.persist();
     this.onPause?.({ reason, resumeAtMs, message });
+  }
+
+  private reload(): void {
+    const loaded = this.rateStore?.load(this.accountKey);
+    if (!loaded) return;
+    this.apply(loaded);
+  }
+
+  private persist(): void {
+    this.rateStore?.save(this.accountKey, this.snapshot());
+  }
+
+  private snapshot(): GitHubRateSnapshot {
+    return {
+      lastMutationAt: this.lastMutationAt,
+      minuteWindowStart: this.minuteWindowStart,
+      hourWindowStart: this.hourWindowStart,
+      mutationsThisMinute: this.mutationsThisMinute,
+      mutationsThisHour: this.mutationsThisHour,
+      pausedUntil: this.pausedUntil,
+    };
+  }
+
+  private apply(loaded: GitHubRateSnapshot): void {
+    this.lastMutationAt = loaded.lastMutationAt;
+    this.minuteWindowStart = loaded.minuteWindowStart;
+    this.hourWindowStart = loaded.hourWindowStart;
+    this.mutationsThisMinute = loaded.mutationsThisMinute;
+    this.mutationsThisHour = loaded.mutationsThisHour;
+    this.pausedUntil = loaded.pausedUntil;
   }
 }
 
-const sharedQueues = new Map<string, GitHubRateAwareQueue>();
-
+/** Each call returns a queue. Counters are shared only through `rateStore`, not a process-local map. */
 export function sharedGitHubQueue(options: GitHubRateAwareQueueOptions): GitHubRateAwareQueue {
-  const existing = sharedQueues.get(options.accountKey);
-  if (existing) return existing;
-  const created = new GitHubRateAwareQueue(options);
-  sharedQueues.set(options.accountKey, created);
-  return created;
+  return new GitHubRateAwareQueue(options);
 }
 
 export function resetSharedGitHubQueuesForTests(): void {
-  sharedQueues.clear();
+  /* Counters live in github_rate_state. Tests use a fresh store instead of a process map. */
 }

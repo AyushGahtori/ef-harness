@@ -922,9 +922,27 @@ importers:
 
   packages/ship-deploy:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
+      '@ef-harness/governor':
+        specifier: workspace:*
+        version: link:../governor
+      '@ef-harness/integrator':
+        specifier: workspace:*
+        version: link:../integrator
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../shared-observability
+      '@ef-harness/verifier':
+        specifier: workspace:*
+        version: link:../verifier
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

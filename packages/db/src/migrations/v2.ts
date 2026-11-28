@@ -546,6 +546,13 @@ CREATE TABLE IF NOT EXISTS human_fix_workers (
   pid INTEGER NOT NULL,
   paths_json TEXT NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS ship_run_details (
+  id TEXT PRIMARY KEY REFERENCES ship_runs(id) ON DELETE CASCADE,
+  phase TEXT NOT NULL,
+  repair_pushes_json TEXT NOT NULL CHECK (json_valid(repair_pushes_json)),
+  total_repair_pushes INTEGER NOT NULL
+) STRICT;
 `;
 
 const CODE_INDEX_MODULE_CARDS_DDL = `
@@ -600,6 +607,7 @@ const STATE_V2_TABLES = [
   "human_fix_tasks",
   "human_fix_contracts",
   "human_fix_workers",
+  "ship_run_details",
   "human_steps",
   "human_step_counter",
   "vault_secret_metadata",
@@ -779,6 +787,19 @@ CREATE TABLE IF NOT EXISTS adapter_conformance (
 ) STRICT;
 `;
 
+/** Per-account GitHub mutation counters. Created by the global v2 migration. */
+export const GITHUB_RATE_STATE_SQL = `
+CREATE TABLE IF NOT EXISTS github_rate_state (
+  account_key TEXT PRIMARY KEY,
+  last_mutation_at INTEGER NOT NULL,
+  minute_window_start INTEGER NOT NULL,
+  hour_window_start INTEGER NOT NULL,
+  mutations_this_minute INTEGER NOT NULL,
+  mutations_this_hour INTEGER NOT NULL,
+  paused_until INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+`;
+
 export const globalFootprintsV2Migration: MigrationDefinition = {
   kind: "additive",
   version: 2,
@@ -788,6 +809,7 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
     conn.exec(GLOBAL_FOOTPRINTS_V2_SQL);
     conn.exec(VAULT_SECRET_METADATA_SQL);
     conn.exec(PROVIDER_GLOBAL_V2_SQL);
+    conn.exec(GITHUB_RATE_STATE_SQL);
   },
   check(conn) {
     const rows = conn.prepare("PRAGMA table_info(footprints)").all();
@@ -800,5 +822,6 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
     assertTable(conn, "connection_profiles");
     assertTable(conn, "model_weights");
     assertTable(conn, "adapter_conformance");
+    assertTable(conn, "github_rate_state");
   },
 };

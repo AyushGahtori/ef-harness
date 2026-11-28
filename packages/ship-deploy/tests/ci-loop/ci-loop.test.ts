@@ -1,12 +1,15 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { openProjectStateDb } from "@ef-harness/db";
 import {
   BoundedCiRepairLoop,
   FailedCiLogFetcher,
   FiveClassCiTriager,
   GraphGeneratedPrBuilder,
   InMemoryShipRunStore,
+  SqliteShipRunStore,
   LinuxCaseSensitivityAutoRepair,
   MAX_PUSHES_PER_FINGERPRINT,
   PrePushSafetyGate,
@@ -88,6 +91,33 @@ describe("ci-loop Task 178", () => {
     expect(resumed?.record.runId).toBe("gh-run-9001");
   });
 
+  it("persists ship_runs across ProjectStateDb reopen", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-ship-run-"));
+    const projectId = "ship-proof";
+    try {
+      const first = openProjectStateDb({ projectId, rootDir: root });
+      const store = new SqliteShipRunStore(first.writer);
+      const machine = new ShipRunStateMachine(store);
+      store.upsert(createShipRunRecord({ id: "ship-1", feature: "F12", repo: "ef/demo" }));
+      machine.transition("ship-1", "PUSH_APPROVAL");
+      machine.transition("ship-1", "PUSHING");
+      machine.attachPr("ship-1", 42, "https://example.test/pull/42");
+      machine.markCiWatching("ship-1", "gh-run-9001");
+      first.close();
+      const second = openProjectStateDb({ projectId, rootDir: root });
+      try {
+        const resumed = new ShipRunStateMachine(new SqliteShipRunStore(second.writer)).resumeAfterCrash("ship-1");
+        expect(resumed?.resumedAt).toBe("CI_WATCHING");
+        expect(resumed?.record.prNumber).toBe(42);
+        expect(resumed?.record.runId).toBe("gh-run-9001");
+      } finally {
+        second.close();
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("FiveClassCiTriager classifies all five operational classes", () => {
     const triager = new FiveClassCiTriager();
     const class1 = triager.classify(regressionFailure());
@@ -159,16 +189,30 @@ describe("ci-loop Task 178", () => {
       "src/components/header.tsx",
     );
     expect(rewritten).toContain("./header");
+    expect(
+      repair.applyImportRewrite(
+        "import { formatDate } from '../utils/DateFormat';",
+        "../utils/DateFormat",
+        "src/utils/dateFormat.ts",
+      ),
+    ).toBe("import { formatDate } from '../utils/dateFormat';");
+    expect(
+      repair.applyImportRewrite(
+        "import { Header } from './Components/Header';",
+        "./Components/Header",
+        "src/ui/Components/header.tsx",
+      ),
+    ).toBe("import { Header } from './Components/header';");
   });
 
-  it("performs two-step git mv on Windows for case-only rename", () => {
+  it("performs two-step git mv on Windows for case-only rename", async () => {
     const sandbox = makeSandbox();
-    const repo = initRepo(sandbox);
+    const repo = await initRepo(sandbox);
     try {
-      writeAndCommit(repo, "src/Header.tsx", "export const Header = 1;\n", "seed");
+      await writeAndCommit(repo, "src/Header.tsx", "export const Header = 1;\n", "seed");
       const tracked = fs.readFileSync(path.join(repo, "src/Header.tsx"), "utf8");
       expect(tracked).toContain("Header");
-      twoStepCaseRename(repo, "src/Header.tsx", "src/header.tsx");
+      await twoStepCaseRename(repo, "src/Header.tsx", "src/header.tsx");
       const listing = fs.readdirSync(path.join(repo, "src"));
       expect(listing).toContain("header.tsx");
       expect(listing).not.toContain("Header.tsx");

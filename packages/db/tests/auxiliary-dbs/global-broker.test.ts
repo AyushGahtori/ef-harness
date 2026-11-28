@@ -76,6 +76,7 @@ describe("global broker database", () => {
       [
         ...schemaTableNames(canonical),
         "vault_secret_metadata",
+        "github_rate_state",
         "adapter_conformance",
         "policy_history",
         "connection_profiles",

@@ -275,6 +275,7 @@ export {
   migrateDatabase,
   openNodeSqliteConnection,
   productionMigrations,
+  GITHUB_RATE_STATE_SQL,
   stateV2Sql,
   readProjectStatus,
   rebuildNodesSearchIndexes,

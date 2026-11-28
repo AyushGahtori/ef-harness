@@ -1,24 +1,31 @@
-import { spawnSync } from "node:child_process";
+import { execGit } from "@ef-harness/git-engine";
 
-export function runGit(cwd: string, args: string[]): { readonly ok: boolean; readonly stdout: string; readonly stderr: string } {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8", windowsHide: true });
+export async function runGit(
+  cwd: string,
+  args: string[],
+): Promise<{ readonly ok: boolean; readonly stdout: string; readonly stderr: string }> {
+  const result = await execGit({
+    cwd,
+    args,
+    developerCheckout: false,
+  });
   return {
-    ok: result.status === 0,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
+    ok: result.exitCode === 0,
+    stdout: result.stdout,
+    stderr: result.stderr,
   };
 }
 
-export function runGitOrThrow(cwd: string, args: string[]): string {
-  const result = runGit(cwd, args);
+export async function runGitOrThrow(cwd: string, args: string[]): Promise<string> {
+  const result = await runGit(cwd, args);
   if (!result.ok) {
     throw new Error(result.stderr || result.stdout || `git ${args.join(" ")} failed`);
   }
   return result.stdout;
 }
 
-export function twoStepCaseRename(cwd: string, fromPath: string, toPath: string): void {
+export async function twoStepCaseRename(cwd: string, fromPath: string, toPath: string): Promise<void> {
   const tmp = `${fromPath}.__tmp`;
-  runGitOrThrow(cwd, ["mv", fromPath, tmp]);
-  runGitOrThrow(cwd, ["mv", tmp, toPath]);
+  await runGitOrThrow(cwd, ["mv", fromPath, tmp]);
+  await runGitOrThrow(cwd, ["mv", tmp, toPath]);
 }
