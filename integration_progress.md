@@ -54,7 +54,7 @@
 | C43 | Wave 4 | done | 95062f7 | F-049, F-050 | build/typecheck/lint OK; db 67 files 374/374; integrator `-- merge-queue ccr undo feature-integrator final-audit` 29 files 179/179; schema 67/67 |
 | C44 | Wave 4 | done | 8024fce | F-053, F-054 | build/typecheck/lint OK; db 67 files 374/374; steering `-- router dispatcher` 5 files 35/35; schema 67/67 |
 | C45 | Wave 4 | done | 3e8e9c1 | F-053, F-054 | build/typecheck/lint OK; db 67 files 374/374; steering 16 files 102/102; renderer 2 files 4/4; schema 67/67 |
-| C46 | Wave 4 | pending | - | F-045, F-055 | - |
+| C46 | Wave 4 | done | 0185622 | F-045, F-055 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); governor 17 files 81 passed, 1 skipped (live-win32); planner 69 files 377/377; db 67 files 374/374; schema 67/67 |
 | C47 | Wave 4 | pending | - | F-055 | - |
 | C48 | Wave 4 | pending | - | F-027, F-063 | - |
 | C49 | Wave 4 | pending | - | F-064 | - |
