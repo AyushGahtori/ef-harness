@@ -2,7 +2,7 @@
 
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
-- **Current Verified `harness/integration` `HEAD`:** `13287657feb0d679779119b278a8de6039e8710d` (`integrate: reconcile duplicate C39 with local C40 and C41`; merge parents `658248a` + `4457ba9`)
+- **Current Verified `harness/integration` `HEAD`:** `0d365707cb3be5ab3b9c30699c3327b8240b8c7c` (`integrate: wire handoffs/feature-branches`; parents include Task 109 `136cf39` and Task 110 `efaeed4` on top of reconcile `1328765`)
 - **Reconcile 2026-11-28:** the 096/101/102/C39 work existed twice with different SHAs (`origin` = `a3134a1`/`221c378`/`4522aa2`/`4457ba9`, local = `8010128`/`784e592`/`4aafbc5`/`09525f2`), so the branches had diverged (local 14 ahead / 4 behind). Merged `origin/harness/integration` into local `harness/integration` as `1328765`; 22 content conflicts were resolved to the local C41 tree, and `git diff --stat 658248a` is **empty**, i.e. the merged tree is byte-identical to pre-merge `658248a`, so no product content was lost and the C41 proof below still holds. Pushed fast-forward `4457ba9..1328765`. Behind/ahead = 0/0. `main` untouched (`6497730`).
 - **Wave 2 proof gate:** pass at `40201d11ab38446c014f0065a3e4565f1a76e6cf`. No product commit. Workspace build/typecheck/lint OK (lint needed `NODE_OPTIONS=--max-old-space-size=4096` after a default-heap OOM). git-engine 17 files 121/121; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17/17; test-env 87 passed, 3 skipped; worker-loop 25 files 146/146; completeness-gate 7 files 50/50; verifier 34 files 188/188 after `pnpm exec playwright install chromium` (first run exit 1, missing Chromium); daemon 3 files 18/18; desktop 2 files 2/2; e2e `-- m1` 2 files 3/3; schema 67/67; diagrams 31 merged, 1219 lines. `git status --short` clean.
 - **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
@@ -50,7 +50,7 @@
 | C39 | Wave 3 | done | 4457ba9 | F-044, F-047, F-054 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); integrator `-- feature-integrator completion-wave` 15 files 48/48; planner `-- specialists` 3 files 23/23; schema 67/67 |
 | C40 | Wave 3 | done | b7ec2cc | F-039, F-040, F-045 | build/typecheck/lint OK; db 67 files 374/374; planner 64 files 343/343; schema 67/67 (reachable from `1328765`) |
 | C41 | Wave 3 | done | 658248a | F-040, F-045, F-048 | build/typecheck/lint OK; planner 68 files 376/376; e2e `-- m2` 4/4 (gate exit 0, hidden 29/29, paperwork 0.18, leakedPids 0, certified, deterministic traceDigest); schema 67/67; tree clean (reachable from `1328765`) |
-| C42 | Wave 4 | pending | - | F-049, F-050 | - |
+| C42 | Wave 4 | done | 0d36570 | F-049, F-050 | build/typecheck/lint OK; db 67 files 374/374; mcp-server 2 files 18/18; integrator `-- handoffs feature-branches` 24 files 100/100; schema 67/67 |
 | C43 | Wave 4 | pending | - | F-049, F-050 | - |
 | C44 | Wave 4 | pending | - | F-053, F-054 | - |
 | C45 | Wave 4 | pending | - | F-053, F-054 | - |
