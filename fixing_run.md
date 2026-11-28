@@ -1827,3 +1827,53 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - What It Fixed: F-052 — `web_saas` no longer returns `not_applicable_no_ui`, and captured Playwright screenshots are pinned in `CasBlobStore`. F-075 — the M5 gate opens a real SQLite code index, scans a temp git checkout with `BrownfieldL0RepoScanner`, and drives the landed office, dictation, preview, and baseline classes. Both suites passed with zero skipped tests.
 - Verification Run & Results: pnpm install exit 0; pnpm exec playwright install chromium exit 0; pnpm build exit 0 (`tsc -b --pretty false` plus the gpt2.tiktoken copy); pnpm typecheck (`tsc -b --pretty false`) exit 0; NODE_OPTIONS=--max-old-space-size=4096 pnpm lint exit 0 (0 errors, 4 pre-existing unused-disable warnings in packages/planner/src/system-arch/vendor/mermaid-parse.mjs); pnpm --filter @ef-harness/integrator test -- ui-checks exit 0, Test Files 35 passed (35), Tests 214 passed (214), 0 skipped (extra arguments did not narrow); pnpm exec vitest run tests/m5-exit-gate.test.ts exit 0, Test Files 1 passed (1), Tests 4 passed (4), 0 skipped; pnpm --filter @ef-harness/e2e test exit 0, Test Files 6 passed (6), Tests 22 passed (22), 0 skipped; node schema/schema-test.js exit 0, 67/67 passed, SQLite 3.53.4. `pnpm test` (`scripts/run-tests.mjs`) exited 1 in `@ef-harness/spikes` on this Linux host because Windows Job Objects, powershell.exe, and Electron are absent. Those spike tests were not stubbed or skipped. The product packages were rerun: brownfield 10 files 54/54 after one parallel timeout flake; steering 21 files 122/122 after one parallel timeout flake; integrator 35/214; renderer 66/299; daemon 21/97; e2e 6/22; dictation 11/37; planner 70/382; db 68/377; verifier 34/188. EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit exit 0, harmony ok.
 - Not done: Wave 6 proof gate not started. C70 not started. main not merged. The empty task/162 floorplan branch and task/164 astar branch were not merged.
+
+## [Wave 6 Proof Gate] — C60–C69 fail on a Node sqlite spike check
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `a4547404df6941be18e8cb5c80f0e09a16392034` (`integrate: wire ui-checks + m5-exit-gate`)
+- **Product fix SHA:** none
+- **Result:** fail. No product patch. The named proof gate and every Wave 6 package filter passed. `pnpm test` exited `1`. That failure is not only the Windows-host limit.
+
+### What Was Done
+- Verified `harness/integration` at `a4547404df6941be18e8cb5c80f0e09a16392034` (C69). Did not start C70. Did not merge `main`. Did not open a pull request. Did not merge `task/162-office-pixijs-floorplan-sprites` or `task/164-office-animation-director-astar`. Did not edit product code. Did not commit on `harness/integration`.
+- The Wave 6 proof-gate command in `combination_task.md` is `pnpm --filter @ef-harness/e2e test -- m5-exit-gate`. The run also executed the Wave 6 package filters from C60–C69, plus the C69 workspace command `pnpm test` (`node scripts/run-tests.mjs`). Extra arguments after `--` did not narrow brownfield, integrator, daemon, renderer, planner, or e2e. Each of those commands ran that package's full suite.
+- `pnpm exec playwright install chromium` exited 0 and downloaded Chrome for Testing 159.0.8154.6 (Playwright Chromium v1255) to `/home/ubuntu/.cache/ms-playwright/chromium-1255`, plus ffmpeg v1013 and Chrome Headless Shell 159.0.8154.6. No product file changed.
+- `pnpm test` stopped at the first recursive failure, `@ef-harness/spikes`. Seven of the eight failed spike tests are the Windows-host limit (Job Objects, `powershell.exe`, and a `job: true` process tree that stayed alive). The eighth is not: on Node v22.23.4, `named-parameter-prefixes` and `bigint` failed, while the same checks passed under Electron 45.3.4 (`passed: true`). Electron is installed on this host. Those spike tests were not stubbed, skipped, or weakened. No timing flake was rerun; none of the wave filters failed.
+- The spike run rewrote `spikes/node-sqlite-electron/REPORT.md` and `spikes/node-sqlite-electron/report.json`. Restored both with `git checkout --`. They were not committed. `git status --short` was empty after the restore.
+
+### Verification Run & Results
+- `git rev-parse HEAD`: `a4547404df6941be18e8cb5c80f0e09a16392034` (branch `harness/integration`)
+- `pnpm install`: exit `0`
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm build` (`tsc -b --pretty false` plus the gpt2.tiktoken copy): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
+- `pnpm --filter @ef-harness/db test` (C60): exit `0` — `Test Files 68 passed (68)`, `Tests 377 passed (377)`, 0 skipped
+- `pnpm --filter @ef-harness/brownfield test -- l0-scan l1-codemap l2-cards`: exit `0` — `Test Files 10 passed (10)`, `Tests 54 passed (54)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/discovery test`: exit `0` — `Test Files 30 passed (30)`, `Tests 196 passed (196)`, 0 skipped
+- `pnpm --filter @ef-harness/brownfield test`: exit `0` — `Test Files 10 passed (10)`, `Tests 54 passed (54)`, 0 skipped
+- `pnpm --filter @ef-harness/db test` (C62): exit `0` — `Test Files 68 passed (68)`, `Tests 377 passed (377)`, 0 skipped
+- `pnpm --filter @ef-harness/integrator test -- coexistence-watcher landing human-fix`: exit `0` — `Test Files 35 passed (35)`, `Tests 214 passed (214)`, 0 skipped (extra arguments did not narrow)
+- `node -e "import('./packages/dictation/dist/index.js')"`: exit `0`
+- `pnpm --filter @ef-harness/dictation test`: exit `0` — `Test Files 11 passed (11)`, `Tests 37 passed (37)`, 0 skipped
+- `pnpm --filter @ef-harness/db test` (C64): exit `0` — `Test Files 68 passed (68)`, `Tests 377 passed (377)`, 0 skipped
+- `pnpm --filter @ef-harness/daemon test` (C64): exit `0` — `Test Files 21 passed (21)`, `Tests 97 passed (97)`, 0 skipped
+- `pnpm --filter @ef-harness/renderer test -- canvas-graph canvas-popovers composer`: exit `0` — `Test Files 66 passed (66)`, `Tests 299 passed (299)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/daemon test` (C65): exit `0` — `Test Files 21 passed (21)`, `Tests 97 passed (97)`, 0 skipped
+- `pnpm --filter @ef-harness/renderer test -- canvas-intents canvas-tabs composer`: exit `0` — `Test Files 66 passed (66)`, `Tests 299 passed (299)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/planner test -- jsx-source-plugin phase0`: exit `0` — `Test Files 70 passed (70)`, `Tests 382 passed (382)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/daemon test -- preview`: exit `0` — `Test Files 21 passed (21)`, `Tests 97 passed (97)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/renderer test -- preview-host preview-point-to-fix`: exit `0` — `Test Files 66 passed (66)`, `Tests 299 passed (299)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/renderer test -- office-renderer office-cast`: exit `0` — `Test Files 66 passed (66)`, `Tests 299 passed (299)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/renderer test -- office-renderer office-cast office-director office-a11y`: exit `0` — `Test Files 66 passed (66)`, `Tests 299 passed (299)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/integrator test -- ui-checks`: exit `0` — `Test Files 35 passed (35)`, `Tests 214 passed (214)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/e2e test -- m5-exit-gate`: exit `0` — `Test Files 6 passed (6)`, `Tests 22 passed (22)`, 0 skipped (full e2e package; extra arguments did not narrow)
+- `pnpm test`: exit `1`. `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL` `@ef-harness/spikes@0.0.0 test` (`vitest run --config vitest.config.ts`). Spike result: `Test Files 5 failed | 4 passed (9)`, `Tests 8 failed | 36 passed (44)`, `Errors 1`. Finished before that stop, all exit 0: shared-contracts 30 files 171/171; benchmarks 1/1; investigations 1/1; portability 1/1; corpus 2 files 7/7; meta-lab 6 files 18/18; shared-observability 1 file 3/3; ship-deploy 1/1; sandbox 30 passed | 2 skipped (32 files), 169 passed | 14 skipped (183); db 68 files 377/377. Packages not started by that recursive run were already covered by the Wave 6 filters above where they belong to C60–C69.
+- Windows-host spike failures (recorded, tests not changed): `test-services-windows/tests/job-object.test.ts` both cases throw `SpikeError` `unsupported_platform` (`Windows Job Objects are only available on win32`); `tests/windows-sandbox.test.ts` live probe `spawn ... powershell.exe ENOENT`; `tests/execution-capacity.test.ts` three cases (`spawn powershell.exe ENOENT`, `job holder timed out`, `no ready line`); `tests/foreign-runtimes.test.ts` `kills a Windows process tree after the cancel timeout` with `job: true` left the child pids alive (`expected false to be true`). One unhandled `spawn powershell.exe ENOENT` from `execution-capacity/lib/win32.ps1` `-Action job-hold`.
+- Not a Windows-host limit: `tests/node-sqlite-electron.test.ts` `passes WAL, FTS5, VACUUM INTO, and the 67 schema scenarios on Node and ELECTRON_RUN_AS_NODE`. Thrown summary: `node named-parameter-prefixes: bare names were accepted when allowBareNamedParameters was false` and `node bigint: Value is too large to be represented as a JavaScript number: 9007199254740993`. `report.json` before restore: `systemNode.passed` false on Node v22.23.4; `electron.passed` true (`electron=45.3.4`, `node=24.22.3`).
+- `git status --short`: exit `0` — clean after `git checkout -- spikes/node-sqlite-electron/REPORT.md spikes/node-sqlite-electron/report.json`
+- Product code changed: no
+- Not done: C70 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened. No commit on `harness/integration`.
