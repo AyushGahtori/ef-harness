@@ -1,8 +1,10 @@
-import fs from "node:fs";
-
-import { ROOM_IDS, type OfficeRoomId } from "./room-ids.js";
-import { floorPlanAssetPath } from "./asset-paths.js";
+import {
+  decodeOfficeAssetText,
+  fetchOfficeAsset,
+  OFFICE_FLOOR_PLAN_FILE,
+} from "./asset-paths.js";
 import { representativeWalkableTile, tilesReachable } from "./floorplan-bfs.js";
+import { ROOM_IDS, type OfficeRoomId } from "./room-ids.js";
 import type { DeskAnchor, LoadedFloorPlan, RoomBounds } from "./types.js";
 
 type TiledProperty = { readonly name: string; readonly value: string | number | boolean };
@@ -45,8 +47,7 @@ function isRoomId(value: string): value is OfficeRoomId {
 export class TiledFloorPlanLoader {
   static readonly floorPlanFileName = "floorplan-v1.tmj";
 
-  loadFromPath(filePath: string = floorPlanAssetPath()): LoadedFloorPlan {
-    const raw = fs.readFileSync(filePath, "utf8");
+  loadFromText(raw: string): LoadedFloorPlan {
     const map = JSON.parse(raw) as TiledMap;
     const walkLayer = map.layers.find((l) => l.type === "tilelayer" && l.name === "walkable");
     const anchorLayer = map.layers.find((l) => l.type === "objectgroup" && l.name === "anchors");
@@ -98,6 +99,31 @@ export class TiledFloorPlanLoader {
       rooms,
       deskAnchors,
     };
+  }
+
+  /** Load `floorplan-v1.tmj` by fetch, or from an injected JSON string / byte buffer. */
+  async loadFromPath(source?: string | Uint8Array | URL): Promise<LoadedFloorPlan> {
+    if (source instanceof Uint8Array) {
+      return this.loadFromText(decodeOfficeAssetText(source));
+    }
+    if (typeof source === "string") {
+      if (source.trimStart().startsWith("{")) {
+        return this.loadFromText(source);
+      }
+      const response = await fetch(source);
+      if (!response.ok) {
+        throw new Error(`floorplan fetch failed with status ${response.status}`);
+      }
+      return this.loadFromText(await response.text());
+    }
+    if (source instanceof URL) {
+      const response = await fetch(source);
+      if (!response.ok) {
+        throw new Error(`floorplan fetch failed with status ${response.status}`);
+      }
+      return this.loadFromText(await response.text());
+    }
+    return this.loadFromText(decodeOfficeAssetText(await fetchOfficeAsset(OFFICE_FLOOR_PLAN_FILE)));
   }
 
   /** Verify every pair of rooms is connected via walkable tiles (BFS). */

@@ -235,6 +235,9 @@ importers:
       elkjs:
         specifier: ^0.10.0
         version: 0.10.2
+      pixi.js:
+        specifier: ^8.6.0
+        version: 8.23.0
       react:
         specifier: ^19.0.0
         version: 19.3.1

@@ -1,7 +1,10 @@
-import fs from "node:fs";
-
-import { spriteAtlasImagePath, spriteAtlasJsonPath } from "./asset-paths.js";
-import { sortByDepthAndY, SPRITE_DEPTH_ORDER } from "./sprite-depth-order.js";
+import {
+  decodeOfficeAssetText,
+  fetchOfficeAsset,
+  OFFICE_ATLAS_IMAGE_FILE,
+  OFFICE_ATLAS_JSON_FILE,
+} from "./asset-paths.js";
+import { sortByDepthAndY } from "./sprite-depth-order.js";
 import type { AsepriteFrame, SpriteDepthLayer } from "./types.js";
 
 export const COZY_ATLAS_MAX_BYTES = 24 * 1024 * 1024;
@@ -57,16 +60,12 @@ export class CozyPixelSpriteAtlasEngine {
   private metaWidth = 0;
   private metaHeight = 0;
 
-  loadFromDisk(jsonPath: string = spriteAtlasJsonPath(), imagePath: string = spriteAtlasImagePath()): void {
-    const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8")) as AsepriteJson;
+  loadFromParts(jsonText: string, imageByteLength: number): void {
+    const parsed = JSON.parse(jsonText) as AsepriteJson;
+    this.frames.clear();
     this.metaWidth = parsed.meta.size.w;
     this.metaHeight = parsed.meta.size.h;
-    this.imageBytes = fs.statSync(imagePath).size;
-    for (const layer of SPRITE_DEPTH_ORDER) {
-      if (!parsed.meta.layers?.some((l) => l.name === layer || l.name === layer.replace("-", "_"))) {
-        /* meta.layers documents Aseprite export bands; optional for v1 stub atlas */
-      }
-    }
+    this.imageBytes = imageByteLength;
     for (const [name, frame] of Object.entries(parsed.frames)) {
       this.frames.set(name, {
         name,
@@ -75,6 +74,17 @@ export class CozyPixelSpriteAtlasEngine {
       });
     }
     this.assertIntegrity(parsed);
+  }
+
+  /** Load the cozy atlas JSON and PNG sheet by fetch, or from injected parts. */
+  async loadFromDisk(injected?: { readonly jsonText: string; readonly imageByteLength: number }): Promise<void> {
+    if (injected) {
+      this.loadFromParts(injected.jsonText, injected.imageByteLength);
+      return;
+    }
+    const jsonBytes = await fetchOfficeAsset(OFFICE_ATLAS_JSON_FILE);
+    const imageBytes = await fetchOfficeAsset(OFFICE_ATLAS_IMAGE_FILE);
+    this.loadFromParts(decodeOfficeAssetText(jsonBytes), imageBytes.byteLength);
   }
 
   listFrames(): ReadonlyArray<AtlasFrameRecord> {

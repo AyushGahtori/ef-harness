@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { HelperSpriteClusterManager, OfficeCastProjector } from "../../src/office/cast/index.js";
-import { makeHelper, makeSnapshot, makeWorker } from "./fixtures.js";
+import { HelperSpriteClusterManager } from "../../src/office/cast/index.js";
+import { makeHelper, makeProjector, makeSnapshot, makeWorker } from "./fixtures.js";
 
 describe("HelperSpriteClusterManager", () => {
   it("caps visible helpers at 3 plus +N under a 14-shard burst", () => {
     const lead = makeWorker({ agentId: "A9000", taskId: "T-lead" });
     const helpers = Array.from({ length: 14 }, (_, index) => makeHelper("A9000", index));
-    const projector = new OfficeCastProjector();
+    const projector = makeProjector();
     const scene = projector.project(makeSnapshot([{ ...lead, helpers }]));
     expect(scene.helpers).toHaveLength(3);
     expect(scene.helperPills).toHaveLength(1);

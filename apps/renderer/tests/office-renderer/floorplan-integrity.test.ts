@@ -1,13 +1,18 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { TiledFloorPlanLoader } from "../../src/office/renderer/tiled-floor-plan-loader.js";
-import { ROOM_IDS } from "../../src/office/renderer/room-ids.js";
 import { CozyPixelSpriteAtlasEngine } from "../../src/office/renderer/cozy-pixel-sprite-atlas-engine.js";
+import { ROOM_IDS } from "../../src/office/renderer/room-ids.js";
+import { TiledFloorPlanLoader } from "../../src/office/renderer/tiled-floor-plan-loader.js";
+
+function readOffice(name: string): Buffer {
+  return readFileSync(new URL(`../../assets/office/${name}`, import.meta.url));
+}
 
 describe("office-renderer floorplan", () => {
   it("loads floorplan-v1.tmj with all 11 rooms, desk anchors, and full connectivity", () => {
     const loader = new TiledFloorPlanLoader();
-    const plan = loader.loadFromPath();
+    const plan = loader.loadFromText(readOffice("floorplan-v1.tmj").toString("utf8"));
     expect(plan.rooms).toHaveLength(ROOM_IDS.length);
     expect(plan.deskAnchors).toHaveLength(ROOM_IDS.length);
     for (const id of ROOM_IDS) {
@@ -21,7 +26,8 @@ describe("office-renderer floorplan", () => {
 describe("office-renderer atlas", () => {
   it("validates Aseprite frames, nearest 16-px sizing, depth order, and < 24 MB budget", () => {
     const atlas = new CozyPixelSpriteAtlasEngine();
-    atlas.loadFromDisk();
+    const image = readOffice("cozy-office-atlas.png");
+    atlas.loadFromParts(readOffice("cozy-office-atlas.json").toString("utf8"), image.byteLength);
     const frames = atlas.listFrames();
     expect(frames.length).toBeGreaterThan(10);
     expect(atlas.withinBudget()).toBe(true);

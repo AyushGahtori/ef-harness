@@ -13,7 +13,7 @@ export const SIBLING_PORT_SWAPS = [
   {
     local: "deskAnchor",
     owner: "Task 162",
-    swapTo: "TiledFloorPlanLoader desk anchors via OfficePixiViewport",
+    swapTo: "LoadedFloorPlan.deskAnchors",
   },
   {
     local: "formatOfficeStatusLine",

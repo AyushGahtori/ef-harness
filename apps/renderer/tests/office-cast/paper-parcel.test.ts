@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { OfficeCastProjector, PaperAndParcelFlowVisuals } from "../../src/office/cast/index.js";
-import { makeSnapshot } from "./fixtures.js";
+import { PaperAndParcelFlowVisuals } from "../../src/office/cast/index.js";
+import { makeProjector, makeSnapshot } from "./fixtures.js";
 
 describe("PaperAndParcelFlowVisuals", () => {
   const visuals = new PaperAndParcelFlowVisuals();
@@ -39,7 +39,7 @@ describe("PaperAndParcelFlowVisuals", () => {
   });
 
   it("clears CEO tray and parcel when idle", () => {
-    const projector = new OfficeCastProjector();
+    const projector = makeProjector();
     const scene = projector.project(makeSnapshot([]));
     expect(scene.idle).toBe(true);
     expect(scene.tray.clean).toBe(true);

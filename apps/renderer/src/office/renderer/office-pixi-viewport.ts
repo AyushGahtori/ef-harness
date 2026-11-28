@@ -1,25 +1,64 @@
-import { Application, Container } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 
-import { paletteForTheme } from "./office-theme-palette.js";
+import { CozyPixelSpriteAtlasEngine, type AtlasFrameRecord } from "./cozy-pixel-sprite-atlas-engine.js";
 import { OfficeCameraController } from "./office-camera-controller.js";
+import { paletteForTheme } from "./office-theme-palette.js";
 import { OfficeVisibilityController, type TickerLike } from "./office-visibility-controller.js";
-import { CozyPixelSpriteAtlasEngine } from "./cozy-pixel-sprite-atlas-engine.js";
-import { TiledFloorPlanLoader } from "./tiled-floor-plan-loader.js";
 import type { ShellThemePort } from "./ports.js";
-import type { LoadedFloorPlan, OfficeThemeMode } from "./types.js";
 import type { OfficeRoomId } from "./room-ids.js";
+import { TiledFloorPlanLoader } from "./tiled-floor-plan-loader.js";
+import type { LoadedFloorPlan, OfficeThemeMode, SpriteDepthLayer } from "./types.js";
 
 export const INTEGER_ZOOM_STEPS = [1, 2, 3, 4] as const;
 export const PIXEL_SCALE_MODE_NEAREST = "nearest" as const;
 
-export type PixiApplicationLike = Pick<Application, "init" | "destroy" | "renderer" | "stage" | "ticker" | "canvas">;
+const LAYER_IDS = ["tile", "prop", "character", "badge", "label"] as const;
+type OfficeLayerId = (typeof LAYER_IDS)[number];
+
+export type OfficePixiInitOptions = {
+  readonly width: number;
+  readonly height: number;
+  readonly antialias: boolean;
+  readonly resolution?: number;
+  readonly autoDensity?: boolean;
+  readonly preference: "webgl" | "webgpu" | "canvas";
+  readonly roundPixels: boolean;
+  readonly hello: boolean;
+};
+
+export type PixiStageLike = {
+  addChild(child: Container): void;
+};
+
+export type PixiRendererLike = {
+  resize(width: number, height: number): void;
+  background: { color: number };
+};
+
+export type PixiApplicationLike = {
+  init(options: OfficePixiInitOptions): Promise<void>;
+  destroy(removeView?: boolean): void;
+  renderer: PixiRendererLike;
+  stage: PixiStageLike;
+  ticker: TickerLike;
+  canvas: WebGlCanvas;
+};
+
+export type FloorPlanSource = {
+  loadFromPath(): Promise<LoadedFloorPlan>;
+};
+
+export type AtlasSource = {
+  loadFromDisk(): Promise<void>;
+  listFrames(): ReadonlyArray<AtlasFrameRecord>;
+};
 
 export type OfficePixiViewportOptions = {
   readonly shellTheme: ShellThemePort;
   readonly width: number;
   readonly height: number;
-  readonly floorPlanLoader?: TiledFloorPlanLoader;
-  readonly atlasEngine?: CozyPixelSpriteAtlasEngine;
+  readonly floorPlanLoader?: FloorPlanSource;
+  readonly atlasEngine?: AtlasSource;
   readonly createApplication?: () => PixiApplicationLike;
 };
 
@@ -31,16 +70,24 @@ export type OfficeViewportHost = {
   appendChild(node: unknown): void;
 };
 
+const BADGE_DEPTHS: ReadonlySet<SpriteDepthLayer> = new Set(["status-icons"]);
+const LABEL_DEPTHS: ReadonlySet<SpriteDepthLayer> = new Set(["labels"]);
+
 export class OfficePixiViewport {
   readonly visibility = new OfficeVisibilityController();
   private readonly shellTheme: ShellThemePort;
-  private readonly floorPlanLoader: TiledFloorPlanLoader;
-  private readonly atlasEngine: CozyPixelSpriteAtlasEngine;
+  private readonly width: number;
+  private readonly height: number;
+  private readonly floorPlanLoader: FloorPlanSource;
+  private readonly atlasEngine: AtlasSource;
   private readonly createApplication: () => PixiApplicationLike;
+  private readonly world = new Container();
+  private readonly layers = new Map<OfficeLayerId, Container>(
+    LAYER_IDS.map((id) => [id, new Container()]),
+  );
   private app: PixiApplicationLike | null = null;
   private plan: LoadedFloorPlan | null = null;
   private camera: OfficeCameraController | null = null;
-  private world = new Container();
   private theme: OfficeThemeMode = "light";
   private themeUnsub: (() => void) | null = null;
   private contextLost = false;
@@ -49,10 +96,16 @@ export class OfficePixiViewport {
 
   constructor(options: OfficePixiViewportOptions) {
     this.shellTheme = options.shellTheme;
+    this.width = options.width;
+    this.height = options.height;
     this.floorPlanLoader = options.floorPlanLoader ?? new TiledFloorPlanLoader();
     this.atlasEngine = options.atlasEngine ?? new CozyPixelSpriteAtlasEngine();
-    this.createApplication = options.createApplication ?? (() => new Application() as PixiApplicationLike);
+    this.createApplication = options.createApplication ?? (() => new Application() as unknown as PixiApplicationLike);
     this.theme = options.shellTheme.readTheme();
+    for (const id of LAYER_IDS) {
+      const layer = this.layers.get(id);
+      if (layer) this.world.addChild(layer);
+    }
   }
 
   get loadedPlan(): LoadedFloorPlan | null {
@@ -61,6 +114,18 @@ export class OfficePixiViewport {
 
   get cameraController(): OfficeCameraController | null {
     return this.camera;
+  }
+
+  paneSize(): { readonly width: number; readonly height: number } {
+    return { width: this.width, height: this.height };
+  }
+
+  mountedLayerLabels(): readonly OfficeLayerId[] {
+    return LAYER_IDS;
+  }
+
+  mountedLayerChildCounts(): readonly number[] {
+    return LAYER_IDS.map((id) => this.layers.get(id)?.children.length ?? 0);
   }
 
   isContextLost(): boolean {
@@ -72,44 +137,38 @@ export class OfficePixiViewport {
   }
 
   async bootstrap(host: OfficeViewportHost): Promise<void> {
-    this.plan = this.floorPlanLoader.loadFromPath();
-    this.atlasEngine.loadFromDisk();
+    this.plan = await this.floorPlanLoader.loadFromPath();
+    await this.atlasEngine.loadFromDisk();
     this.camera = new OfficeCameraController({
-      viewportWidthPx: 800,
-      viewportHeightPx: 600,
+      viewportWidthPx: this.width,
+      viewportHeightPx: this.height,
       plan: this.plan,
     });
 
     const app = this.createApplication();
+    const initOptions = {
+      width: this.width,
+      height: this.height,
+      antialias: false,
+      resolution: Math.max(1, Math.round((globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1)),
+      autoDensity: true,
+      roundPixels: true,
+      hello: false,
+    } as const;
     try {
-      await app.init({
-        width: 800,
-        height: 600,
-        antialias: false,
-        resolution: Math.max(1, Math.round((globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1)),
-        autoDensity: true,
-        preference: "webgl",
-        roundPixels: true,
-        hello: false,
-      });
+      await app.init({ ...initOptions, preference: "webgl" });
     } catch {
       this.useCanvasFallback = true;
-      await app.init({
-        width: 800,
-        height: 600,
-        antialias: false,
-        preference: "canvas",
-        roundPixels: true,
-        hello: false,
-      });
+      await app.init({ ...initOptions, preference: "canvas" });
     }
 
     this.app = app;
-    const canvas = app.canvas as unknown as WebGlCanvas;
+    const canvas = app.canvas;
     host.appendChild(canvas);
     app.stage.addChild(this.world);
+    this.mountScene(this.plan);
     this.applyThemePalette(this.theme);
-    this.bindVisibilityTicker(app.ticker as TickerLike);
+    this.bindVisibilityTicker(app.ticker);
     this.attachContextHandlers(canvas);
     this.themeUnsub = this.shellTheme.onThemeChange((mode) => {
       this.theme = mode;
@@ -151,8 +210,78 @@ export class OfficePixiViewport {
     this.contextLost = false;
     this.visibility.setTabActive(true);
     if (this.plan) {
-      this.atlasEngine.loadFromDisk();
+      void this.atlasEngine.loadFromDisk();
     }
+  }
+
+  private layer(id: OfficeLayerId): Container {
+    const found = this.layers.get(id);
+    if (!found) {
+      throw new Error(`missing office layer ${id}`);
+    }
+    return found;
+  }
+
+  private mountScene(plan: LoadedFloorPlan): void {
+    for (const id of LAYER_IDS) {
+      this.layer(id).removeChildren();
+    }
+    this.layer("tile").addChild(this.paintTiles(plan));
+    this.layer("prop").addChild(this.paintRooms(plan));
+    this.layer("character").addChild(this.paintDesks(plan));
+    this.layer("badge").addChild(this.paintFrames(BADGE_DEPTHS, 0xffb300));
+    this.layer("label").addChild(this.paintFrames(LABEL_DEPTHS, 0xf5f5f5));
+  }
+
+  private paintTiles(plan: LoadedFloorPlan): Graphics {
+    const graphic = new Graphics();
+    let drawn = 0;
+    for (let y = 0; y < plan.height; y += 1) {
+      for (let x = 0; x < plan.width; x += 1) {
+        const gid = plan.walkable[y * plan.width + x] ?? 0;
+        if (gid === 0) continue;
+        graphic.rect(x * plan.tileSize, y * plan.tileSize, plan.tileSize, plan.tileSize);
+        drawn += 1;
+      }
+    }
+    if (drawn === 0) {
+      graphic.rect(0, 0, plan.tileSize, plan.tileSize);
+    }
+    graphic.fill(0xc4a574);
+    return graphic;
+  }
+
+  private paintRooms(plan: LoadedFloorPlan): Graphics {
+    const graphic = new Graphics();
+    for (const room of plan.rooms) {
+      graphic.rect(room.pixel.x, room.pixel.y, room.pixel.w, room.pixel.h);
+    }
+    graphic.fill({ color: 0x8d6e63, alpha: 0.35 });
+    return graphic;
+  }
+
+  private paintDesks(plan: LoadedFloorPlan): Graphics {
+    const graphic = new Graphics();
+    for (const anchor of plan.deskAnchors) {
+      graphic.rect(anchor.pixel.x, anchor.pixel.y, plan.tileSize, plan.tileSize);
+    }
+    graphic.fill(0x5d4037);
+    return graphic;
+  }
+
+  private paintFrames(depths: ReadonlySet<SpriteDepthLayer>, color: number): Graphics {
+    const graphic = new Graphics();
+    let drawn = 0;
+    for (const frame of this.atlasEngine.listFrames()) {
+      if (!depths.has(frame.depth)) continue;
+      graphic.rect(frame.frame.x, frame.frame.y, frame.frame.w, frame.frame.h);
+      drawn += 1;
+    }
+    if (drawn === 0) {
+      graphic.rect(0, 0, 16, 16);
+    }
+    graphic.fill(color);
+    return graphic;
   }
 
   private bindVisibilityTicker(ticker: TickerLike): void {
@@ -160,7 +289,7 @@ export class OfficePixiViewport {
     this.frameHook = () => {
       this.visibility.onTickerFrame();
     };
-    ticker.add?.(this.frameHook as () => void);
+    ticker.add?.(this.frameHook);
   }
 
   private attachContextHandlers(canvas: WebGlCanvas): void {
@@ -171,7 +300,7 @@ export class OfficePixiViewport {
     });
     canvas.addEventListener("webglcontextrestored", () => {
       this.contextLost = false;
-      this.atlasEngine.loadFromDisk();
+      void this.atlasEngine.loadFromDisk();
       this.visibility.setTabActive(true);
     });
   }

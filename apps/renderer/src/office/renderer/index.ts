@@ -10,7 +10,15 @@ export {
 } from "./office-pixi-viewport.js";
 export { OfficeVisibilityController, type TickerLike } from "./office-visibility-controller.js";
 export { paletteForTheme } from "./office-theme-palette.js";
-export { floorPlanAssetPath, spriteAtlasJsonPath, resolveOfficeAssetDir } from "./asset-paths.js";
+export {
+  decodeOfficeAssetText,
+  fetchOfficeAsset,
+  officeAssetCandidateUrls,
+  OFFICE_ATLAS_IMAGE_FILE,
+  OFFICE_ATLAS_JSON_FILE,
+  OFFICE_FLOOR_PLAN_FILE,
+  OFFICE_TILES_IMAGE_FILE,
+} from "./asset-paths.js";
 export { tilesReachable, isWalkable } from "./floorplan-bfs.js";
 export { sortByDepthAndY, SPRITE_DEPTH_ORDER } from "./sprite-depth-order.js";
 export type { LoadedFloorPlan, DeskAnchor, RoomBounds, OfficeThemeMode, CameraViewport } from "./types.js";

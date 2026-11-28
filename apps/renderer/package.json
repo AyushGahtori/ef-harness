@@ -12,7 +12,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false",
+    "build": "tsc -p tsconfig.json --pretty false && node --input-type=module -e \"import fs from 'node:fs'; fs.cpSync('assets/office', 'dist/assets/office', { recursive: true });\"",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts"
@@ -21,6 +21,7 @@
     "@ef-harness/shared-contracts": "workspace:*",
     "@xyflow/react": "^13.0.2",
     "elkjs": "^0.10.0",
+    "pixi.js": "^8.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

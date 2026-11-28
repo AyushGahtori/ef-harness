@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+
+import { OfficeCastProjector } from "../../src/office/cast/index.js";
 import type {
   OfficeCanonicalSnapshot,
   OfficeFeatureRecord,
@@ -6,6 +9,17 @@ import type {
   OfficeIntakeItem,
   OfficeWorkerRecord,
 } from "../../src/office/cast/index.js";
+import { TiledFloorPlanLoader } from "../../src/office/renderer/tiled-floor-plan-loader.js";
+import type { LoadedFloorPlan } from "../../src/office/renderer/types.js";
+
+export function loadFloorPlan(): LoadedFloorPlan {
+  const raw = readFileSync(new URL("../../assets/office/floorplan-v1.tmj", import.meta.url), "utf8");
+  return new TiledFloorPlanLoader().loadFromText(raw);
+}
+
+export function makeProjector(): OfficeCastProjector {
+  return new OfficeCastProjector(loadFloorPlan());
+}
 
 export function makeWorker(overrides: Partial<OfficeWorkerRecord> = {}): OfficeWorkerRecord {
   const base: OfficeWorkerRecord = {

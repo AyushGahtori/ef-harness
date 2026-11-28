@@ -1,25 +1,34 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+/** Bundled office art, loaded with fetch from the renderer origin. */
 
-const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+export const OFFICE_FLOOR_PLAN_FILE = "floorplan-v1.tmj";
+export const OFFICE_ATLAS_JSON_FILE = "cozy-office-atlas.json";
+export const OFFICE_ATLAS_IMAGE_FILE = "cozy-office-atlas.png";
+export const OFFICE_TILES_IMAGE_FILE = "office-tiles.png";
 
-/** Resolve bundled office assets from compiled `dist` or source tree. */
-export function resolveOfficeAssetDir(): string {
-  const fromDist = path.resolve(moduleDir, "../../../assets/office");
-  if (fromDist.includes(`${path.sep}dist${path.sep}`)) {
-    return path.resolve(moduleDir, "../../../../assets/office");
+const RELATIVE_ASSET_DIRS = ["../../assets/office/", "../../../assets/office/"] as const;
+
+/** `dist/office/renderer` uses `../../assets`; `src/office/renderer` uses `../../../assets`. */
+export function officeAssetCandidateUrls(fileName: string, moduleUrl: string = import.meta.url): URL[] {
+  return RELATIVE_ASSET_DIRS.map((dir) => new URL(`${dir}${fileName}`, moduleUrl));
+}
+
+export async function fetchOfficeAsset(fileName: string): Promise<Uint8Array> {
+  let lastFailure = "no candidate url";
+  for (const url of officeAssetCandidateUrls(fileName)) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        lastFailure = `status ${response.status}`;
+        continue;
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      lastFailure = error instanceof Error ? error.message : "fetch failed";
+    }
   }
-  return fromDist;
+  throw new Error(`Unable to fetch office asset ${fileName} (${lastFailure})`);
 }
 
-export function floorPlanAssetPath(): string {
-  return path.join(resolveOfficeAssetDir(), "floorplan-v1.tmj");
-}
-
-export function spriteAtlasJsonPath(): string {
-  return path.join(resolveOfficeAssetDir(), "cozy-office-atlas.json");
-}
-
-export function spriteAtlasImagePath(): string {
-  return path.join(resolveOfficeAssetDir(), "cozy-office-atlas.png");
+export function decodeOfficeAssetText(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
 }

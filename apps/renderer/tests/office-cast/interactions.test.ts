@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  OfficeCastProjector,
   OfficeInteractionController,
   createInteractionLog,
   createOfficeInteractionPorts,
 } from "../../src/office/cast/index.js";
-import { makeSnapshot, makeWorker } from "./fixtures.js";
+import { makeProjector, makeSnapshot, makeWorker } from "./fixtures.js";
 
 describe("OfficeInteractionController", () => {
   it("opens WorkerInspectorPanel when a worker is clicked", () => {
     const snapshot = makeSnapshot([makeWorker({ agentId: "A0014", taskId: "T-14" })]);
-    const scene = new OfficeCastProjector().project(snapshot);
+    const scene = makeProjector().project(snapshot);
     const log = createInteractionLog();
     const controller = new OfficeInteractionController(scene, snapshot, createOfficeInteractionPorts(log));
     const effect = controller.click({ kind: "worker", agentId: "A0014", taskId: "T-14" });
@@ -22,7 +21,7 @@ describe("OfficeInteractionController", () => {
   it("still opens inspector after a worker completes", () => {
     const worker = makeWorker({ agentId: "A0099", taskId: "T-done", status: "done" });
     const snapshot = makeSnapshot([worker]);
-    const scene = new OfficeCastProjector().project(snapshot);
+    const scene = makeProjector().project(snapshot);
     const log = createInteractionLog();
     const controller = new OfficeInteractionController(scene, snapshot, createOfficeInteractionPorts(log));
     controller.click({ kind: "worker", agentId: "A0099", taskId: "T-done" });
@@ -35,7 +34,7 @@ describe("OfficeInteractionController", () => {
         { cardId: "c1", kind: "Decision", title: "Ship?", actionable: true, resolved: false, priority: 1 },
       ],
     });
-    const scene = new OfficeCastProjector().project(snapshot);
+    const scene = makeProjector().project(snapshot);
     const log = createInteractionLog();
     const controller = new OfficeInteractionController(scene, snapshot, createOfficeInteractionPorts(log));
     const effect = controller.click({ kind: "inbox-tray" });

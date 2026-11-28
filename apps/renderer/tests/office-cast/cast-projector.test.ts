@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  OfficeCastProjector,
   ROOM_IDS,
   overheadIconFor,
   placeAgentLabels,
 } from "../../src/office/cast/index.js";
-import { makeSnapshot, makeWorker } from "./fixtures.js";
+import { makeProjector, makeSnapshot, makeWorker } from "./fixtures.js";
 
 const ROLE_SEQUENCE = [
   "discovery",
@@ -22,7 +21,7 @@ const ROLE_SEQUENCE = [
 ] as const;
 
 describe("OfficeCastProjector", () => {
-  const projector = new OfficeCastProjector();
+  const projector = makeProjector();
 
   it("renders zero sprites when the build is idle", () => {
     const scene = projector.project(makeSnapshot([]));
@@ -50,6 +49,10 @@ describe("OfficeCastProjector", () => {
       expect(seat.source).toBe("state.db");
     }
     expect(scene.rigs).toHaveLength(3);
+    const verifier = scene.seats.find((seat) => seat.agentId === "A1006");
+    expect(verifier?.roomId).toBe("qa-verification-lab");
+    expect(verifier?.x).toBe(688);
+    expect(verifier?.y).toBe(256);
   });
 
   it("switches loop overhead instantly from health kinds", () => {

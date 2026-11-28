@@ -1,4 +1,4 @@
-import type { OfficeCanonicalSnapshot, OfficeViewState, OfficeWorkerRecord, SeatedCastMember, TestRigVisual } from "./types.js";
+import type { LoadedFloorPlan } from "../renderer/types.js";
 import { AgentLabelAndDeskPinLayer } from "./agent-label-and-desk-pin-layer.js";
 import { mapStatusToBoardLane } from "./board-lane.js";
 import { resolveConnection } from "./connection-pins.js";
@@ -8,9 +8,18 @@ import { HelperSpriteClusterManager } from "./helper-sprite-cluster-manager.js";
 import { overheadIconFor } from "./overhead-icons.js";
 import { PaperAndParcelFlowVisuals } from "./paper-and-parcel-flow-visuals.js";
 import { rankOutfitFor } from "./rank-outfits.js";
-import { clampRigCount, deskAnchor, roomForWorker } from "./rooms.js";
-import { ROOM_IDS } from "./types.js";
-import type { OfficeCastScene, OfficeHelperRecord, RoomId } from "./types.js";
+import { clampRigCount, deskAnchor, QA_VERIFICATION_LAB, roomForWorker } from "./rooms.js";
+import {
+  ROOM_IDS,
+  type OfficeCanonicalSnapshot,
+  type OfficeCastScene,
+  type OfficeHelperRecord,
+  type OfficeViewState,
+  type OfficeWorkerRecord,
+  type RoomId,
+  type SeatedCastMember,
+  type TestRigVisual,
+} from "./types.js";
 
 function compareWorkers(roomId: RoomId, a: OfficeWorkerRecord, b: OfficeWorkerRecord): number {
   if (roomId === "engineering-bullpen") {
@@ -53,6 +62,8 @@ export class OfficeCastProjector {
   private readonly labels = new AgentLabelAndDeskPinLayer();
   private readonly helpers = new HelperSpriteClusterManager();
   private readonly flows = new PaperAndParcelFlowVisuals();
+
+  constructor(private readonly plan: LoadedFloorPlan) {}
 
   project(snapshot: OfficeCanonicalSnapshot, view: OfficeViewState = { zoom: 1 }): OfficeCastScene {
     const seats = this.seatWorkers(snapshot);
@@ -100,8 +111,8 @@ export class OfficeCastProjector {
     for (const [roomId, workers] of grouped) {
       const ordered = workers.slice().sort((a, b) => compareWorkers(roomId, a, b));
       ordered.forEach((worker, index) => {
-        const anchor = deskAnchor(roomId, index);
-        const rigIndex = roomId === "qa-lab" && index < rigCapacity ? index : null;
+        const anchor = deskAnchor(this.plan, roomId, index);
+        const rigIndex = roomId === QA_VERIFICATION_LAB && index < rigCapacity ? index : null;
         seats.push({
           source: "state.db",
           agentId: worker.agentId,
@@ -133,10 +144,10 @@ export class OfficeCastProjector {
     const capacity = clampRigCount(snapshot.pool2SlotCapacity);
     const rigs: TestRigVisual[] = [];
     for (let index = 0; index < capacity; index += 1) {
-      const occupant = seats.find((seat) => seat.roomId === "qa-lab" && seat.rigIndex === index);
-      const anchor = deskAnchor("qa-lab", index);
+      const occupant = seats.find((seat) => seat.roomId === QA_VERIFICATION_LAB && seat.rigIndex === index);
+      const anchor = deskAnchor(this.plan, QA_VERIFICATION_LAB, index);
       rigs.push({
-        roomId: "qa-lab",
+        roomId: QA_VERIFICATION_LAB,
         rigIndex: index,
         glowing: occupant !== undefined,
         occupantAgentId: occupant?.agentId ?? null,

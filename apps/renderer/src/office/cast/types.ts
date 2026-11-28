@@ -1,24 +1,13 @@
+import { ROOM_IDS, type OfficeRoomId } from "../renderer/room-ids.js";
+
 /**
  * Canonical office-cast shapes.
- * Room ids mirror Task 162's 11-room floor plan until that branch is wired.
+ * Room ids are Task 162's 11 kebab-case ROOM_IDS.
  * Crew tiers mirror Task 106. Health kinds mirror Task 125. Lanes mirror Task 124.
  */
 
-export const ROOM_IDS = [
-  "ceo-office",
-  "front-desk",
-  "discovery-lounge",
-  "research-library",
-  "architecture-studio",
-  "planning-war-room",
-  "engineering-bullpen",
-  "qa-lab",
-  "integration-merge-bay",
-  "shipping-dock",
-  "break-room",
-] as const;
-
-export type RoomId = (typeof ROOM_IDS)[number];
+export { ROOM_IDS };
+export type RoomId = OfficeRoomId;
 
 export type OfficeWorkerRole =
   | "discovery"
@@ -268,7 +257,7 @@ export interface FeaturePodPlinth {
 }
 
 export interface TestRigVisual {
-  readonly roomId: "qa-lab";
+  readonly roomId: "qa-verification-lab";
   readonly rigIndex: number;
   readonly glowing: boolean;
   readonly occupantAgentId: string | null;
