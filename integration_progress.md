@@ -51,7 +51,7 @@
 | C40 | Wave 3 | done | b7ec2cc | F-039, F-040, F-045 | build/typecheck/lint OK; db 67 files 374/374; planner 64 files 343/343; schema 67/67 (reachable from `1328765`) |
 | C41 | Wave 3 | done | 658248a | F-040, F-045, F-048 | build/typecheck/lint OK; planner 68 files 376/376; e2e `-- m2` 4/4 (gate exit 0, hidden 29/29, paperwork 0.18, leakedPids 0, certified, deterministic traceDigest); schema 67/67; tree clean (reachable from `1328765`) |
 | C42 | Wave 4 | done | 0d36570 | F-049, F-050 | build/typecheck/lint OK; db 67 files 374/374; mcp-server 2 files 18/18; integrator `-- handoffs feature-branches` 24 files 100/100; schema 67/67 |
-| C43 | Wave 4 | pending | - | F-049, F-050 | - |
+| C43 | Wave 4 | done | 95062f7 | F-049, F-050 | build/typecheck/lint OK; db 67 files 374/374; integrator `-- merge-queue ccr undo feature-integrator final-audit` 29 files 179/179; schema 67/67 |
 | C44 | Wave 4 | pending | - | F-053, F-054 | - |
 | C45 | Wave 4 | pending | - | F-053, F-054 | - |
 | C46 | Wave 4 | pending | - | F-045, F-055 | - |
