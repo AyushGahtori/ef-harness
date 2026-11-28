@@ -100,6 +100,13 @@ export {
   renameWithRetry,
   resolveProjectPaths,
 } from "./state-db/index.js";
+export {
+  CanvasLayoutInputError,
+  CanvasLayoutNodeMissingError,
+  CanvasLayoutRepo,
+  viewLevelOf,
+} from "./canvas/index.js";
+export type { CanvasLayoutRow, CanvasLayoutSql } from "./canvas/index.js";
 export type {
   DataVersionCheck,
   DatabaseMode,

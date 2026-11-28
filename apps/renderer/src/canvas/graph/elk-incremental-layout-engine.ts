@@ -16,37 +16,34 @@ interface ReadyReply {
 
 type HostMessage = LayoutReply | ReadyReply;
 
-const WORKER_SOURCE = `
-const { parentPort, workerData, threadId } = require("node:worker_threads");
-const imported = require(workerData.elkEntry);
-const ELK = imported.default || imported;
-const elk = new ELK();
-parentPort.postMessage({ kind: "ready", threadId });
-parentPort.on("message", async (msg) => {
-  if (!msg || msg.cmd === "stop") {
-    try { elk.terminateWorker(); } catch (error) { void error; }
-    return;
-  }
-  try {
-    const graph = await elk.layout(msg.graph);
-    const children = (graph.children || []).map((child) => ({
-      id: child.id,
-      x: typeof child.x === "number" ? child.x : 0,
-      y: typeof child.y === "number" ? child.y : 0,
-    }));
-    parentPort.postMessage({ id: msg.id, ok: true, threadId, children });
-  } catch (error) {
-    parentPort.postMessage({
-      id: msg.id,
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
-`;
+interface ElkLike {
+  layout(graph: unknown): Promise<{ children?: Array<{ id?: string; x?: number; y?: number }> }>;
+}
+
+export interface LayoutThread {
+  postMessage(message: unknown): void;
+  on(event: "message", listener: (message: HostMessage) => void): void;
+  on(event: "error", listener: (error: Error) => void): void;
+  off(event: "message", listener: (message: HostMessage) => void): void;
+  terminate(): void;
+  unref?(): void;
+}
+
+export interface LayoutThreadHost {
+  readonly script: string;
+  readonly elkEntry: string;
+  spawn(script: string, elkEntry: string): LayoutThread;
+}
+
+let layoutThreadHost: LayoutThreadHost | null = null;
+
+export function configureLayoutThreadHost(next: LayoutThreadHost | null): void {
+  layoutThreadHost = next;
+  sharedWorker.dispose();
+}
 
 class SharedElkWorker {
-  private worker: import("node:worker_threads").Worker | null = null;
+  private worker: LayoutThread | null = null;
   private ready: Promise<number> | null = null;
   private seq = 0;
   private chain: Promise<unknown> = Promise.resolve();
@@ -73,11 +70,12 @@ class SharedElkWorker {
     this.ready = null;
     if (!worker) return;
     worker.postMessage({ cmd: "stop" });
-    void worker.terminate();
+    worker.terminate();
   }
 
   private async dispatch(graph: ReturnType<typeof unpinnedElkGraph>): Promise<readonly ElkChildPoint[]> {
     if (graph.children.length === 0) return [];
+    if (!layoutThreadHost) return layoutOnCaller(graph);
     const worker = await this.ensure();
     const id = ++this.seq;
     const reply = new Promise<LayoutReply>((resolve, reject) => {
@@ -108,21 +106,16 @@ class SharedElkWorker {
     return result.children;
   }
 
-  private async ensure(): Promise<import("node:worker_threads").Worker> {
+  private async ensure(): Promise<LayoutThread> {
+    const host = layoutThreadHost;
+    if (!host) throw new Error("layout thread host is not configured");
     if (this.worker && this.ready) {
       await this.ready;
       return this.worker;
     }
-    const { Worker } = await import("node:worker_threads");
-    const { createRequire } = await import("node:module");
-    const elkEntry = createRequire(import.meta.url).resolve("elkjs");
-    const worker = new Worker(WORKER_SOURCE, {
-      eval: true,
-      workerData: { elkEntry },
-      execArgv: [],
-    });
-    worker.unref();
-    worker.on("message", (message: HostMessage) => {
+    const worker = host.spawn(host.script, host.elkEntry);
+    worker.unref?.();
+    worker.on("message", (message) => {
       if ("kind" in message && message.kind === "ready") {
         this.lastThreadId = message.threadId;
         return;
@@ -151,6 +144,18 @@ class SharedElkWorker {
     await this.ready;
     return worker;
   }
+}
+
+async function layoutOnCaller(graph: ReturnType<typeof unpinnedElkGraph>): Promise<readonly ElkChildPoint[]> {
+  const imported = (await import("elkjs")) as unknown as { default?: new () => ElkLike };
+  const Ctor = imported.default;
+  if (!Ctor) throw new Error("elkjs default export missing");
+  const elk = new Ctor();
+  const laidOut = await elk.layout(graph);
+  return (laidOut.children ?? []).flatMap((child) => {
+    if (!child.id) return [];
+    return [{ id: child.id, x: child.x ?? 0, y: child.y ?? 0 }];
+  });
 }
 
 const sharedWorker = new SharedElkWorker();

@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@ef-harness/shared-contracts": "workspace:*",
+    "@xyflow/react": "^13.0.2",
+    "elkjs": "^0.10.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

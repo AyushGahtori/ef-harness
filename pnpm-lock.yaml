@@ -146,6 +146,9 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ef-harness/dictation':
+        specifier: workspace:*
+        version: link:../../packages/dictation
       '@ef-harness/governor':
         specifier: workspace:*
         version: link:../../packages/governor
@@ -158,6 +161,9 @@ importers:
       '@ef-harness/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
@@ -214,6 +220,12 @@ importers:
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
+      '@xyflow/react':
+        specifier: ^13.0.2
+        version: 13.0.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      elkjs:
+        specifier: ^0.10.0
+        version: 0.10.2
       react:
         specifier: ^19.0.0
         version: 19.3.1

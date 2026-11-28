@@ -59,6 +59,7 @@ import {
 import { recordHealthMetric } from "../cockpit/telemetry.js";
 import { insertUsageReceipts, loadUsageLedger, saveConnectionKey } from "../connections/usage-and-keys.js";
 import { handleIntegratedMethod, handleLifecycleMethod } from "../server.js";
+import { openCanvasDaemonSession, type CanvasDaemonSession } from "../canvas/session.js";
 import { isM1View, sha256, SimulatedTask, type M1View } from "./task-run.js";
 
 export interface HarnessdOptions {
@@ -179,6 +180,10 @@ export class HarnessDaemon {
       this.insertEvent("task.parked");
     }
     for (const conn of [...this.clients]) this.drop(conn);
+    if (this.canvasSessionValue) {
+      await this.canvasSessionValue.close();
+      this.canvasSessionValue = null;
+    }
     const bundle = this.bundle;
     if (bundle) await bundle.queue.drainAndClose();
     const readersClosed = bundle ? bundle.readers.closeAll() : 0;
@@ -460,6 +465,18 @@ export class HarnessDaemon {
     return this.requireBundle().telemetry;
   }
 
+  private canvasSessionValue: CanvasDaemonSession | null = null;
+
+  private canvasSession(): CanvasDaemonSession {
+    if (this.canvasSessionValue) return this.canvasSessionValue;
+    const bundle = this.requireBundle();
+    this.canvasSessionValue = openCanvasDaemonSession({
+      state: bundle.project,
+      profileDir: this.opts.profileDir,
+    });
+    return this.canvasSessionValue;
+  }
+
   private integrationContext() {
     const bundle = this.requireBundle();
     return {
@@ -467,6 +484,7 @@ export class HarnessDaemon {
       appVersion: this.opts.daemonVersion,
       statePath: bundle.statePath,
       globalPath: bundle.globalPath,
+      canvasSession: () => this.canvasSession(),
       telemetry: () => this.telemetryDb(),
       replaceTelemetry: (next: TelemetryDb) => {
         this.telemetryOverride = next;

@@ -1,14 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { threadId } from "node:worker_threads";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ElkIncrementalLayoutEngine } from "../../src/canvas/graph/elk-incremental-layout-engine.js";
 import { InteractiveArchitectureCanvas } from "../../src/canvas/graph/interactive-architecture-canvas.js";
-import {
-  MemoryCanvasLayoutPersistence,
-  MemoryGraphEventStream,
-  MemoryKnowledgeGraphRepo,
-  MemoryShellLayoutContext,
-} from "../../src/canvas/graph/local-ports.js";
+import { MemoryGraphEventStream, MemoryKnowledgeGraphRepo } from "../../src/canvas/graph/local-ports.js";
+import { FixtureCanvasLayoutPersistence, FixtureShellLayoutContext } from "./memory-ports.js";
 import { SavedNodePositionStore } from "../../src/canvas/graph/saved-node-position-store.js";
 import { projectCanvasGraph } from "../../src/canvas/graph/graph-projection.js";
 import { SemanticZoomController } from "../../src/canvas/graph/semantic-zoom.js";
@@ -19,21 +15,26 @@ import { renderAccessibleCanvasList } from "../../src/canvas/graph/accessible-li
 import { renderCanvasSurface } from "../../src/canvas/graph/canvas-surface.js";
 import { projectStateDbNode } from "../../src/canvas/graph/state-db-node.js";
 import { buildSyntheticGraph, edge, node } from "./fixtures.js";
+import { installNodeLayoutHost } from "./layout-host.js";
+
+beforeAll(() => {
+  installNodeLayoutHost();
+});
 
 function canvasHarness(): {
   canvas: InteractiveArchitectureCanvas;
   graph: MemoryKnowledgeGraphRepo;
-  shell: MemoryShellLayoutContext;
+  shell: FixtureShellLayoutContext;
   events: MemoryGraphEventStream;
 } {
   const graph = new MemoryKnowledgeGraphRepo();
   const events = new MemoryGraphEventStream();
-  const shell = new MemoryShellLayoutContext();
+  const shell = new FixtureShellLayoutContext();
   const canvas = new InteractiveArchitectureCanvas({
     graph,
     events,
     shell,
-    positions: new SavedNodePositionStore(new MemoryCanvasLayoutPersistence()),
+    positions: new SavedNodePositionStore(new FixtureCanvasLayoutPersistence()),
     useLayoutWorker: false,
   });
   return { canvas, graph, shell, events };
@@ -139,7 +140,7 @@ describe("InteractiveArchitectureCanvas", () => {
   }, 30_000);
 
   it("keeps a saved shell viewport when the canvas is opened again", async () => {
-    const shell = new MemoryShellLayoutContext();
+    const shell = new FixtureShellLayoutContext();
     shell.writeCanvas({ viewport: { x: 40, y: 20, zoom: 0.72 }, filters: { searchQuery: "Orders", status: "held", nodeType: "task", brownfieldLayer: "change", phase: "build" } });
     const graph = new MemoryKnowledgeGraphRepo();
     graph.load([node({ id: "T1", kind: "task", title: "print", phase: "build", taskBadge: "held" })], []);
@@ -147,7 +148,7 @@ describe("InteractiveArchitectureCanvas", () => {
       graph,
       events: new MemoryGraphEventStream(),
       shell,
-      positions: new SavedNodePositionStore(new MemoryCanvasLayoutPersistence()),
+      positions: new SavedNodePositionStore(new FixtureCanvasLayoutPersistence()),
       useLayoutWorker: false,
     });
     await canvas.bootstrap();
@@ -189,7 +190,7 @@ describe("InteractiveArchitectureCanvas", () => {
 describe("large graph layout", () => {
   it("lays out 300 nodes and 600+ edges without losing pinned anchors", async () => {
     const engine = new ElkIncrementalLayoutEngine();
-    const store = new SavedNodePositionStore(new MemoryCanvasLayoutPersistence());
+    const store = new SavedNodePositionStore(new FixtureCanvasLayoutPersistence());
     const { nodes, edges } = buildSyntheticGraph(300);
     expect(edges.length).toBeGreaterThanOrEqual(600);
     const level = 2 as const;

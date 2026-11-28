@@ -20,6 +20,7 @@ import { RedactedDiagnosticsBundleExporter } from "./diagnostics/bundle-exporter
 import { DiagnosticsMetricsAggregator } from "./diagnostics/metrics-aggregator.js";
 import type { PacketSecurityRedactorPort } from "./diagnostics/ports.js";
 import { rebuildTelemetryDatabase } from "./diagnostics/telemetry-db.js";
+import { dispatchCanvasDaemon, type CanvasDaemonSession } from "./canvas/session.js";
 
 export interface IntegratedDaemonContext {
   readonly profileDir: string;
@@ -29,6 +30,7 @@ export interface IntegratedDaemonContext {
   telemetry(): TelemetryDb;
   replaceTelemetry(next: TelemetryDb): void;
   pauseBuild(): void;
+  canvasSession?: () => CanvasDaemonSession;
 }
 
 export type IntegratedDispatch =
@@ -51,6 +53,10 @@ export function handleIntegratedMethod(
   }
   if (method === "diagnostics.rebuildTelemetry") {
     return { handled: true, result: rebuild(ctx) };
+  }
+  if (ctx.canvasSession) {
+    const canvas = dispatchCanvasDaemon(ctx.canvasSession(), method, params);
+    if (canvas.handled) return canvas;
   }
   return { handled: false };
 }

@@ -1,16 +1,21 @@
-import { describe, expect, it } from "vitest";
 import { threadId } from "node:worker_threads";
+import { beforeAll, describe, expect, it } from "vitest";
 import { ElkIncrementalLayoutEngine } from "../../src/canvas/graph/elk-incremental-layout-engine.js";
 import { boxesOverlap } from "../../src/canvas/graph/elk-layout-math.js";
 import { SavedNodePositionStore } from "../../src/canvas/graph/saved-node-position-store.js";
-import { MemoryCanvasLayoutPersistence } from "../../src/canvas/graph/local-ports.js";
 import { edge } from "./fixtures.js";
+import { installNodeLayoutHost } from "./layout-host.js";
+import { FixtureCanvasLayoutPersistence } from "./memory-ports.js";
+
+beforeAll(() => {
+  installNodeLayoutHost();
+});
 
 describe("SavedNodePositionStore + ElkIncrementalLayoutEngine", () => {
   it(
     "keeps user-pinned coordinates while laying out new nodes in open space",
     async () => {
-      const persistence = new MemoryCanvasLayoutPersistence();
+      const persistence = new FixtureCanvasLayoutPersistence();
       const store = new SavedNodePositionStore(persistence);
       const engine = new ElkIncrementalLayoutEngine();
       const level = 2 as const;
@@ -58,7 +63,7 @@ describe("SavedNodePositionStore + ElkIncrementalLayoutEngine", () => {
   );
 
   it("auto-arrange clears pinned coordinates for an opt-in reset", () => {
-    const store = new SavedNodePositionStore(new MemoryCanvasLayoutPersistence());
+    const store = new SavedNodePositionStore(new FixtureCanvasLayoutPersistence());
     const level = 3 as const;
     store.hydrate(level);
     store.pinDragged("pinned", level, 12, 34);

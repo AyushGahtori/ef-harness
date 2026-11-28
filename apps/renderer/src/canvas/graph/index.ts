@@ -17,13 +17,16 @@ export { renderCanvasSurface } from "./canvas-surface.js";
 export { projectStateDbEdge, projectStateDbNode } from "./state-db-node.js";
 export { cullNodesToViewport } from "./react-flow-canvas-view.js";
 export {
-  MemoryCanvasLayoutPersistence,
   MemoryGraphEventStream,
   MemoryKnowledgeGraphRepo,
-  MemoryShellLayoutContext,
   defaultCanvasFilters,
   defaultViewport,
 } from "./local-ports.js";
+export { DaemonCanvasLayoutPersistence } from "./daemon-persistence.js";
+export type { CanvasDaemonDispatch } from "./daemon-persistence.js";
+export { LandedShellCanvasPort } from "./landed-shell.js";
+export { configureLayoutThreadHost } from "./elk-incremental-layout-engine.js";
+export type { LayoutThread, LayoutThreadHost } from "./elk-incremental-layout-engine.js";
 export type {
   KnowledgeGraphRepoPort,
   GraphEventStreamPort,

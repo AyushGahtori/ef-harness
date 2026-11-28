@@ -129,6 +129,7 @@ export class SingleAppShell {
   private cachedHtml = "";
   private readonly releaseStore: () => void;
   private readonly releasePressure: () => void;
+  private architectureCanvas: ArchitectureCanvasMount | null = null;
 
   constructor(options: SingleAppShellOptions) {
     this.windowId = options.windowId ?? "main";
@@ -488,6 +489,14 @@ export class SingleAppShell {
     this.refresh();
   }
 
+  mountArchitectureCanvas(binding: ArchitectureCanvasMount): void {
+    this.architectureCanvas = binding;
+  }
+
+  readArchitectureCanvas(): ArchitectureCanvasMount | null {
+    return this.architectureCanvas;
+  }
+
   readCanvas(): CanvasViewportState {
     return {
       x: this.canvasState.x,
@@ -636,6 +645,10 @@ const PRESET_TAB: Readonly<Record<string, CenterTabId>> = {
 
 function shellTabForPreset(tab: string): CenterTabId | null {
   return PRESET_TAB[tab] ?? null;
+}
+
+export interface ArchitectureCanvasMount {
+  readonly kind: "architecture-canvas";
 }
 
 export class ShellLayoutContext {

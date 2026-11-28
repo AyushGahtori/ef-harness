@@ -19,7 +19,9 @@
   },
   "dependencies": {
     "@ef-harness/db": "workspace:*",
+    "@ef-harness/dictation": "workspace:*",
     "@ef-harness/governor": "workspace:*",
+    "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/ipc": "workspace:*",
     "@ef-harness/planner": "workspace:*",
     "@ef-harness/providers": "workspace:*",
