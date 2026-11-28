@@ -1,8 +1,9 @@
-import { spawnSync } from "node:child_process";
-import type { AccountQuotaSnapshot, ByokProvider, ByokSpend, CheckpointStopCard, CopilotModelDescriptor, CopilotTransport, LeasedMcpServer, ResolvedByok, RuntimePosture, SandboxLease } from "./types.js";
+import { OsWindowsJob, sharedAllowlistProxy } from "../acp/os-boundary.js";
+import type { AccountQuotaSnapshot, ByokProvider, ByokSpend, CheckpointStopCard, CopilotModelDescriptor, CopilotTransport, DeterministicSupervisionPolicyEngine, LeasedMcpServer, ResolvedByok, RuntimePosture, SandboxLease } from "./types.js";
 import { AttemptCheckpointStore } from "./checkpoints.js";
 import { ConnectionWindowStore } from "./connection-windows.js";
-import { LocalDeterministicSupervisionPolicyEngine } from "./policy.js";
+import { CopilotGenericAcp } from "./generic-acp.js";
+import { CoreCopilotPolicy } from "./policy.js";
 
 /**
  * Local ports for sibling tasks that are not on this foundation base.
@@ -121,10 +122,12 @@ export class LocalSandboxTierSelector implements SandboxTierSelectorPort {
 
 /** Task 041 Windows Job Object. Sibling primitive is Task 040 `WindowsJobManager`. */
 export interface WindowsJobObjectPort {
-  create(sessionId: string): { readonly jobObjectId: string };
-  attach(jobObjectId: string, pid: number): void;
-  terminate(jobObjectId: string): { readonly lingeringProcesses: number; readonly elapsedMs: number };
-  list(jobObjectId: string): readonly number[];
+  create(sessionId: string): { readonly jobObjectId: string } | Promise<{ readonly jobObjectId: string }>;
+  attach(jobObjectId: string, pid: number): void | Promise<void>;
+  terminate(jobObjectId: string):
+    | { readonly lingeringProcesses: number; readonly elapsedMs: number }
+    | Promise<{ readonly lingeringProcesses: number; readonly elapsedMs: number }>;
+  list(jobObjectId: string): readonly number[] | Promise<readonly number[]>;
 }
 
 export class LocalWindowsJobObject implements WindowsJobObjectPort {
@@ -149,37 +152,56 @@ export class LocalWindowsJobObject implements WindowsJobObjectPort {
   terminate(jobObjectId: string): { readonly lingeringProcesses: number; readonly elapsedMs: number } {
     const started = performance.now();
     const pids = [...(this.pids.get(jobObjectId) ?? [])];
-    for (const pid of pids) killProcessTree(pid);
+    for (const pid of pids) signalPid(pid);
     this.pids.set(jobObjectId, new Set());
     return { lingeringProcesses: 0, elapsedMs: performance.now() - started };
   }
 }
 
-export function killProcessTree(pid: number): void {
+export class OsCopilotJob implements WindowsJobObjectPort {
+  private readonly inner = new OsWindowsJob();
+
+  create(sessionId: string): Promise<{ readonly jobObjectId: string }> {
+    return this.inner.create(sessionId).then((job) => ({ jobObjectId: job.jobId }));
+  }
+
+  attach(jobObjectId: string, pid: number): Promise<void> {
+    return this.inner.attach(jobObjectId, pid);
+  }
+
+  list(jobObjectId: string): readonly number[] {
+    return this.inner.list(jobObjectId);
+  }
+
+  async terminate(jobObjectId: string): Promise<{ readonly lingeringProcesses: number; readonly elapsedMs: number }> {
+    const started = performance.now();
+    await this.inner.kill(jobObjectId, "terminate");
+    return { lingeringProcesses: this.list(jobObjectId).length, elapsedMs: performance.now() - started };
+  }
+}
+
+function signalPid(pid: number): void {
   if (!Number.isInteger(pid) || pid <= 0) return;
   try {
     process.kill(pid, "SIGKILL");
   } catch (error) {
     if (isMissingProcess(error)) return;
-    if (process.platform === "win32") {
-      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      return;
-    }
     throw error;
   }
 }
 
 /** Task 046 loopback allowlist proxy. */
 export interface LoopbackAllowlistProxyPort {
-  bind(sessionId: string): { readonly proxyUrl: string };
+  bind(sessionId: string): { readonly proxyUrl: string } | Promise<{ readonly proxyUrl: string }>;
 }
 
-export class LocalLoopbackAllowlistProxy implements LoopbackAllowlistProxyPort {
-  bind(sessionId: string): { readonly proxyUrl: string } {
-    return { proxyUrl: `http://127.0.0.1:9/proxy/${sessionId}` };
+export class AllowlistLoopbackProxy implements LoopbackAllowlistProxyPort {
+  private pending: Promise<{ readonly proxyUrl: string }> | null = null;
+
+  bind(sessionId: string): Promise<{ readonly proxyUrl: string }> {
+    void sessionId;
+    this.pending ??= sharedAllowlistProxy("copilot").then((server) => ({ proxyUrl: server.proxyUrl }));
+    return this.pending;
   }
 }
 
@@ -192,7 +214,7 @@ export class LocalLeasedMcpServer implements LeasedMcpServerPort {
   lease(input: { readonly attemptId: string; readonly tools: readonly string[] }): LeasedMcpServer {
     return {
       name: "ef-harness",
-      url: `http://127.0.0.1:9/mcp/${input.attemptId}`,
+      url: `http://127.0.0.1/mcp/${input.attemptId}`,
       tools: input.tools,
       bearerRef: `lease:${input.attemptId}`,
     };
@@ -508,7 +530,7 @@ export interface GenericAcpAdapterPort {
 export interface CopilotRuntimeDeps {
   readonly sdk: CopilotSdkClientPort;
   readonly acp: GenericAcpAdapterPort;
-  readonly engine: LocalDeterministicSupervisionPolicyEngine;
+  readonly engine: DeterministicSupervisionPolicyEngine;
   readonly versionGate: CliMinVersionGatePort;
   readonly policy: CopilotRuntimePolicyPort;
   readonly sandbox: SandboxTierSelectorPort;
@@ -530,17 +552,17 @@ export interface CopilotRuntimeDeps {
 }
 
 export function localCopilotDeps(
-  input: Pick<CopilotRuntimeDeps, "sdk" | "acp"> & Partial<Omit<CopilotRuntimeDeps, "sdk" | "acp">>,
+  input: Pick<CopilotRuntimeDeps, "sdk"> & Partial<Omit<CopilotRuntimeDeps, "sdk">>,
 ): CopilotRuntimeDeps {
   return {
     sdk: input.sdk,
-    acp: input.acp,
-    engine: input.engine ?? new LocalDeterministicSupervisionPolicyEngine(),
+    acp: input.acp ?? new CopilotGenericAcp(),
+    engine: input.engine ?? new CoreCopilotPolicy(),
     versionGate: input.versionGate ?? new LocalCliMinVersionGate(),
     policy: input.policy ?? new LocalCopilotRuntimePolicy(),
     sandbox: input.sandbox ?? new LocalSandboxTierSelector(),
-    jobs: input.jobs ?? new LocalWindowsJobObject(),
-    proxy: input.proxy ?? new LocalLoopbackAllowlistProxy(),
+    jobs: input.jobs ?? new OsCopilotJob(),
+    proxy: input.proxy ?? new AllowlistLoopbackProxy(),
     mcp: input.mcp ?? new LocalLeasedMcpServer(),
     tokens: input.tokens ?? new LocalGitHubTokenVault(),
     byokVault: input.byokVault ?? new LocalByokVault(),

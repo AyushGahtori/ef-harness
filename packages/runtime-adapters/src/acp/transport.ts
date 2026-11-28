@@ -112,6 +112,10 @@ export class AcpJsonRpcTransport {
     this.countUnknown(method);
   }
 
+  failure(): Error | null {
+    return this.fatal;
+  }
+
   private onStdout(chunk: Buffer): void {
     const parsed = this.parser.push(chunk);
     for (const message of parsed.messages) this.dispatch(message);

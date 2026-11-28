@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -130,10 +130,6 @@ export class FakeCopilotSdk implements CopilotSdkClientPort {
   killChild(): void {
     const pid = this.child?.pid;
     if (!pid) return;
-    if (process.platform === "win32") {
-      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-      return;
-    }
     try {
       process.kill(pid, "SIGKILL");
     } catch {

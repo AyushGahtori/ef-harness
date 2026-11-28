@@ -1,9 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { killPid, nodeSpawn, type SpawnRequest } from "../../src/codex/process.js";
+import { nodeSpawn, signalProcess, type SpawnRequest } from "../../src/codex/process.js";
 import type { CodexConnection } from "../../src/codex/types.js";
 
 export const appServerScript = fileURLToPath(new URL("./fake-app-server.mjs", import.meta.url));
@@ -82,15 +81,13 @@ export function recordingSpawn(
 }
 
 export function killRecords(records: readonly SpawnRecord[]): void {
-  for (const record of records) killPid(record.pid);
+  for (const record of records) signalProcess(record.pid);
 }
 
 export function killPidFile(file: string): void {
   if (!existsSync(file)) return;
   const pid = Number(readFileSync(file, "utf8").trim());
-  if (Number.isInteger(pid) && pid > 0) {
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-  }
+  if (Number.isInteger(pid) && pid > 0) signalProcess(pid);
 }
 
 export async function waitFor(predicate: () => boolean, timeoutMs = 4000): Promise<void> {

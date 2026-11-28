@@ -83,7 +83,7 @@ describe("Copilot onPermissionRequest", () => {
       }
       const forced = await env.adapter.respondPermission(ref.sessionId, "push", { effect: "allow" });
       expect(forced.effect).toBe("deny");
-      expect(forced.reason).toMatch(/git push/);
+      expect(forced.reason).toMatch(/Destructive git commands are disabled/);
     } finally {
       disposeHarness(env);
     }
@@ -102,7 +102,7 @@ describe("Copilot onPermissionRequest", () => {
         command: "pnpm test",
       });
       expect(shell.kind).toBe("denied");
-      expect(shell.reason).toMatch(/harness\.run/);
+      expect(shell.reason).toMatch(/Stripped mode disables native file, shell, and web tools/);
       const web = await config.onPermissionRequest({
         requestId: "stripped-web",
         kind: "web",
@@ -114,7 +114,7 @@ describe("Copilot onPermissionRequest", () => {
         kind: "write",
         path: path.join(env.worktree, "src", "app.ts"),
       });
-      expect(edit.kind).toBe("approved");
+      expect(edit.kind).toBe("denied");
       const mcp = await config.onPermissionRequest({
         requestId: "stripped-mcp",
         kind: "mcp",

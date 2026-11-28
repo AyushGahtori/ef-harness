@@ -1,3 +1,4 @@
+import type { AllowlistProxyServer } from "@ef-harness/sandbox";
 import fs from "node:fs";
 import path from "node:path";
 import { AcpMcpAndSkillBinder, DEFAULT_MCP_TOOLS, LocalLeasedMcpServer, LocalSkillMounter } from "./binder.js";
@@ -15,11 +16,11 @@ import {
 import { makeEvent, NormalizedRuntimeEventBus, textFromContent, usageFromUpdate } from "./events.js";
 import { LocalHarnessRunEngine } from "./harness.js";
 import type { HarnessRunPort } from "./harness.js";
-import { isAlive, killProcessTree, LocalWindowsJob } from "./job.js";
+import { isAlive, settleJob, signalProcess } from "./job.js";
 import type { WindowsJobPort } from "./job.js";
+import { CoreSupervisionPolicy, OsWindowsJob, sharedAllowlistProxy } from "./os-boundary.js";
 import { LocalWarmExecutionPool } from "./pool.js";
 import type { WarmExecutionPoolPort } from "./pool.js";
-import { LocalSupervisionPolicy } from "./policy.js";
 import type { SupervisionPolicyPort } from "./policy.js";
 import { ACP_RUNTIME_PROFILES, scrubSpawnEnv } from "./profiles.js";
 import type { AcpRuntimeProfile } from "./profiles.js";
@@ -97,6 +98,7 @@ interface LiveSession {
  * Framing, permission, filesystem, and terminal security live here once.
  */
 export class GenericAcpAdapter {
+  readonly runtime = "acp" as const;
   readonly eventsBus: NormalizedRuntimeEventBus;
   readonly turnLog: LocalTurnLog;
   readonly bridge: AcpHostFsAndTerminalBridge;
@@ -111,12 +113,13 @@ export class GenericAcpAdapter {
   private readonly cancelGraceMs: number;
   private readonly promptTimeoutMs: number;
   private readonly sessions = new Map<string, LiveSession>();
+  private proxyServer: AllowlistProxyServer | null = null;
 
   constructor(options: GenericAcpAdapterOptions = {}) {
     this.profile = options.profile ?? ACP_RUNTIME_PROFILES.generic;
-    this.policy = options.policy ?? new LocalSupervisionPolicy();
+    this.policy = options.policy ?? new CoreSupervisionPolicy();
     this.eventsBus = options.events ?? new NormalizedRuntimeEventBus();
-    this.jobs = options.jobs ?? new LocalWindowsJob();
+    this.jobs = options.jobs ?? new OsWindowsJob();
     this.redactor = options.redactor ?? new LocalPacketSecurityRedactor();
     this.harness =
       options.harness ?? new LocalHarnessRunEngine({ jobs: this.jobs, redact: (text) => this.redactor.redact(text) });
@@ -154,7 +157,7 @@ export class GenericAcpAdapter {
     return {
       installed,
       version: this.profile.version,
-      status: installed ? "ok" : "missing",
+      status: installed ? "ready" : "missing",
       modes: ["wrapped", "stripped"],
       runtime: this.profile.id,
       capabilities: {
@@ -174,8 +177,23 @@ export class GenericAcpAdapter {
     return Promise.resolve({ status: "not_required", signedIn: true, scrapedHome: false });
   }
 
-  async startSession(spec: AcpSessionSpec): Promise<SessionRef> {
-    const session = this.openSession(spec);
+  async startSession(spec: AcpSessionSpec): Promise<SessionRef & {
+    readonly runtime: "acp";
+    readonly mode: "wrapped" | "stripped";
+    readonly modeReason: string;
+    readonly jobId: string;
+    readonly sandboxTier: "A";
+    readonly proxyEndpoint: string;
+    readonly mcpLeaseId: string;
+    readonly mcpEndpoint: string;
+    readonly mcpTools: readonly string[];
+    readonly pid: number;
+    readonly nativeFileTools: boolean;
+    readonly nativeShell: boolean;
+    readonly nativeWeb: boolean;
+    readonly environment: Readonly<Record<string, string>>;
+  }> {
+    const session = await this.openSession(spec);
     try {
       const child = this.spawnProcess({
         command: this.profile.command,
@@ -185,7 +203,7 @@ export class GenericAcpAdapter {
       });
       session.child = child;
       session.pid = child.pid;
-      this.jobs.attach(session.jobId, child.pid);
+      await settleJob(this.jobs.attach(session.jobId, child.pid));
       const transport = new AcpJsonRpcTransport(
         { stdin: child.stdin, stdout: child.stdout, stderr: child.stderr },
         {
@@ -214,6 +232,9 @@ export class GenericAcpAdapter {
         },
         this.initializeTimeoutMs,
       );
+      await drainTransport();
+      const startupFailure = transport.failure();
+      if (startupFailure) throw startupFailure;
       const negotiated = negotiate(initialized);
       if (!this.profile.quirks.tolerateStdoutBanner && transport.startupBanners.length > 0) {
         throw new AcpProtocolError("framing_corruption", "stdout banner is not allowed for this runtime");
@@ -250,7 +271,28 @@ export class GenericAcpAdapter {
       for (const line of transport.stderrLines) {
         this.turnLog.append({ sessionId: session.id, kind: "acp_stderr", text: line });
       }
-      return { sessionId: session.id, agentSessionId: created.sessionId, cwd: spec.cwd ?? spec.worktreeRoot };
+      const settled = transport.failure();
+      if (settled) throw settled;
+      const proxyEndpoint = await this.proxyEndpoint();
+      return {
+        sessionId: session.id,
+        agentSessionId: created.sessionId,
+        cwd: spec.cwd ?? spec.worktreeRoot,
+        runtime: this.runtime,
+        mode: session.mode,
+        modeReason: session.mode,
+        jobId: session.jobId,
+        sandboxTier: "A" as const,
+        proxyEndpoint,
+        mcpLeaseId: session.leaseId ?? "",
+        mcpEndpoint: proxyEndpoint,
+        mcpTools: spec.mcpTools ?? DEFAULT_MCP_TOOLS,
+        pid: child.pid,
+        nativeFileTools: true,
+        nativeShell: false,
+        nativeWeb: false,
+        environment: scrubSpawnEnv(this.profile.envAllowlist, spec.env ?? {}),
+      };
     } catch (error) {
       await this.failStartup(session, error);
       throw error;
@@ -309,7 +351,7 @@ export class GenericAcpAdapter {
       }
     }
     const grace = setTimeout(() => {
-      if (session.pid !== null && isAlive(session.pid)) this.jobs.kill(session.jobId, "cancel_grace");
+      if (session.pid !== null && isAlive(session.pid)) void settleJob(this.jobs.kill(session.jobId, "cancel_grace"));
     }, this.cancelGraceMs);
     if (session.child) {
       session.child.once("exit", () => clearTimeout(grace));
@@ -341,7 +383,7 @@ export class GenericAcpAdapter {
     return this.eventsBus.stream(sessionId);
   }
 
-  respondPermission(sessionId: string, requestId: string, decision: PermissionDecisionInput): Promise<void> {
+  respondPermission(sessionId: string, requestId: string, decision: PermissionDecisionInput): Promise<PermissionDecisionInput> {
     const session = this.require(sessionId);
     session.manualDecisions.set(requestId, decision);
     if (decision.effect === "deny") {
@@ -350,7 +392,31 @@ export class GenericAcpAdapter {
         slot.outcome = { outcome: "cancelled", kind: "reject_once", optionId: "reject_once" };
       }
     }
-    return Promise.resolve();
+    return Promise.resolve(decision);
+  }
+
+  async terminate(sessionId: string): Promise<{ readonly sessionId: string; readonly denied: readonly []; readonly killedPids: readonly number[]; readonly elapsedMs: number }> {
+    const started = Date.now();
+    const session = this.sessions.get(sessionId);
+    const pid = session?.pid ?? null;
+    await this.stop(sessionId);
+    return {
+      sessionId,
+      denied: [],
+      killedPids: pid === null ? [] : [pid],
+      elapsedMs: Date.now() - started,
+    };
+  }
+
+  async dispose(): Promise<void> {
+    const ids = [...this.sessions.keys()];
+    for (const id of ids) await this.stop(id);
+    this.proxyServer = null;
+  }
+
+  private async proxyEndpoint(): Promise<string> {
+    if (!this.proxyServer) this.proxyServer = await sharedAllowlistProxy(this.runtime);
+    return this.proxyServer.proxyUrl;
   }
 
   usage(sessionId: string): Promise<NormalizedUsage> {
@@ -395,11 +461,11 @@ export class GenericAcpAdapter {
     return this.bridge.securityEvents;
   }
 
-  private openSession(spec: AcpSessionSpec): LiveSession {
+  private async openSession(spec: AcpSessionSpec): Promise<LiveSession> {
     const id = spec.sessionId ?? `acp-${spec.attemptId}`;
     if (this.sessions.has(id)) throw new AcpProtocolError("spawn_failed", `session ${id} already exists`);
     registerSecrets(this.redactor, spec.secrets ?? []);
-    const job = this.jobs.create(id);
+    const job = await settleJob(this.jobs.create(id));
     const session: LiveSession = {
       id,
       spec,
@@ -497,13 +563,16 @@ export class GenericAcpAdapter {
       return { outcome };
     }
     const manual = session.manualDecisions.get(requestId);
-    const decision = this.policy.decide(supervisionContext(session), mapPermission(params));
+    const mapped = mapPermission(params);
+    const decision = this.policy.decide(supervisionContext(session), mapped);
+    const located = permissionLocation(mapped);
     this.eventsBus.publish(
       makeEvent("permission_decided", session.id, {
         requestId,
         effect: decision.effect,
-        ...(decision.effect === "deny" ? { reason: decision.reason } : {}),
+        ...(decision.effect === "deny" || decision.effect === "redirect" ? { reason: decision.reason } : {}),
         elapsedMs: decision.elapsedMs,
+        ...located,
       }),
     );
     session.pendingPermissions.delete(slot);
@@ -567,7 +636,7 @@ export class GenericAcpAdapter {
   private onTransportFatal(session: LiveSession, error: Error): void {
     if (session.exited) return;
     this.eventsBus.publish(makeEvent("session_error", session.id, { message: error.message }));
-    if (session.pid !== null && isAlive(session.pid)) this.jobs.kill(session.jobId, error.message);
+    if (session.pid !== null && isAlive(session.pid)) void settleJob(this.jobs.kill(session.jobId, error.message));
   }
 
   private async onChildExit(session: LiveSession, code: number | null): Promise<void> {
@@ -587,8 +656,8 @@ export class GenericAcpAdapter {
     session.cleaned = true;
     if (session.leaseId) this.redactor.forget("mcp-bearer");
     try {
-      if (session.pid !== null) killProcessTree(session.pid);
-      this.jobs.close(session.jobId);
+      if (session.pid !== null) signalProcess(session.pid);
+      await settleJob(this.jobs.close(session.jobId));
     } catch (error) {
       if (!(error instanceof Error)) throw error;
     }
@@ -607,7 +676,7 @@ export class GenericAcpAdapter {
       makeEvent("session_error", session.id, { message: error instanceof Error ? error.message : "startup failed" }),
     );
     await this.finishExit(session, session.exitCode);
-    if (session.pid !== null && isAlive(session.pid)) this.jobs.kill(session.jobId, "startup_failed");
+    if (session.pid !== null && isAlive(session.pid)) await settleJob(this.jobs.kill(session.jobId, "startup_failed"));
   }
 
   private require(sessionId: string): LiveSession {
@@ -663,10 +732,10 @@ function supervisionContext(session: LiveSession) {
 
 function mapPermission(params: Record<string, unknown>): SupervisionRequest {
   const toolCall = isRecord(params.toolCall) ? params.toolCall : params;
-  const raw = isRecord(toolCall.rawInput) ? toolCall.rawInput : {};
+    const raw = isRecord(toolCall.rawInput) ? toolCall.rawInput : {};
   const kind = typeof toolCall.kind === "string" ? toolCall.kind.toLowerCase() : "";
-  const filePath = firstString(raw, ["path", "file", "file_path", "filePath"]);
-  const command = firstString(raw, ["command", "cmd"]);
+  const filePath = firstString(raw, ["path", "file", "file_path", "filePath"]) ?? firstString(toolCall, ["path", "file", "file_path", "filePath"]);
+  const command = firstString(raw, ["command", "cmd"]) ?? firstString(toolCall, ["command", "cmd"]);
   if (kind === "read" || kind === "search") {
     return { kind: "read", path: filePath ?? "" };
   }
@@ -681,6 +750,14 @@ function mapPermission(params: Record<string, unknown>): SupervisionRequest {
   }
   const tool = firstString(raw, ["name", "tool"]) ?? (typeof toolCall.title === "string" ? toolCall.title : "unknown");
   return { kind: "mcp", tool };
+}
+
+function permissionLocation(request: SupervisionRequest): { readonly path?: string; readonly command?: string } {
+  if (request.kind === "shell") return { command: request.command };
+  if (request.kind === "read" || request.kind === "edit" || request.kind === "write" || request.kind === "delete") {
+    return { path: request.path };
+  }
+  return {};
 }
 
 function permissionRequestId(params: Record<string, unknown>): string {
@@ -735,10 +812,16 @@ function hasOwn(record: Record<string, unknown>, ...keys: string[]): boolean {
   return keys.some((key) => Object.prototype.hasOwnProperty.call(record, key));
 }
 
+function drainTransport(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
 async function waitUntilDead(pid: number): Promise<void> {
   const started = Date.now();
   while (isAlive(pid) && Date.now() - started < 2_000) {
-    killProcessTree(pid);
+    signalProcess(pid);
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }

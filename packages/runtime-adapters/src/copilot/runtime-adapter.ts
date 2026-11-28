@@ -21,6 +21,7 @@ import type {
 } from "./types.js";
 
 export class CopilotRuntimeAdapter implements AgentRuntimeAdapter {
+  readonly runtime = "copilot" as const;
   readonly sdk: CopilotSdkBridge;
   readonly acp: CopilotAcpFallbackAdapter;
   private readonly route = new Map<string, CopilotSessionRuntime>();
@@ -58,8 +59,9 @@ export class CopilotRuntimeAdapter implements AgentRuntimeAdapter {
     return this.owner(sessionId).interrupt(sessionId);
   }
 
-  async resume(sessionId: string, checkpointRef: CopilotCheckpointRef): Promise<CopilotResumeResult> {
-    const row = this.deps.checkpoints.get(checkpointRef.attemptId);
+  async resume(sessionId: string, checkpointRef: CopilotCheckpointRef | string): Promise<CopilotResumeResult> {
+    const ref = typeof checkpointRef === "string" ? { attemptId: checkpointRef } : checkpointRef;
+    const row = this.deps.checkpoints.get(ref.attemptId);
     const bridge = row?.transport === "acp" ? this.acp : this.route.get(sessionId) ?? this.sdk;
     const result = await bridge.resume(sessionId, checkpointRef);
     if (result.sessionId) this.route.set(result.sessionId, bridge);
@@ -80,6 +82,21 @@ export class CopilotRuntimeAdapter implements AgentRuntimeAdapter {
 
   usage(sessionId: string): Promise<NormalizedUsage> {
     return this.owner(sessionId).usage(sessionId);
+  }
+
+  terminate(sessionId: string): Promise<CopilotInterruptResult> {
+    return this.interrupt(sessionId);
+  }
+
+  async dispose(): Promise<void> {
+    const ids = [...this.route.keys()];
+    for (const id of ids) {
+      try {
+        await this.interrupt(id);
+      } catch {
+        continue;
+      }
+    }
   }
 
   recordedEvents(sessionId: string): readonly NormalizedRuntimeEvent[] {

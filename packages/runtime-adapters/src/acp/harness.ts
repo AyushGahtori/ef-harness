@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { settleJob, signalProcess } from "./job.js";
 import type { WindowsJobPort } from "./job.js";
 import type { RegisteredSecret } from "./types.js";
 
@@ -56,7 +57,7 @@ export class LocalHarnessRunEngine implements HarnessRunPort {
         stdio: ["ignore", "pipe", "pipe"],
         env: scrubbedProcessEnv(),
       });
-      if (request.jobId && child.pid && this.deps.jobs) this.deps.jobs.attach(request.jobId, child.pid);
+      if (request.jobId && child.pid && this.deps.jobs) void settleJob(this.deps.jobs.attach(request.jobId, child.pid));
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
@@ -67,10 +68,10 @@ export class LocalHarnessRunEngine implements HarnessRunPort {
           ? null
           : setTimeout(() => {
               timedOut = true;
-              if (child.pid) killQuiet(child.pid);
+              if (child.pid) stopChild(this.deps.jobs, request.jobId, child.pid);
             }, request.timeoutMs);
       const onAbort = () => {
-        if (child.pid) killQuiet(child.pid);
+        if (child.pid) stopChild(this.deps.jobs, request.jobId, child.pid);
       };
       if (request.signal) {
         if (request.signal.aborted) onAbort();
@@ -136,19 +137,12 @@ function scrubbedProcessEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function killQuiet(pid: number): void {
-  if (process.platform === "win32") {
-    spawn(process.env.COMSPEC ?? "cmd.exe", ["/d", "/s", "/c", "taskkill", "/PID", String(pid), "/T", "/F"], {
-      windowsHide: true,
-      stdio: "ignore",
-    });
+function stopChild(jobs: WindowsJobPort | undefined, jobId: string | undefined, pid: number): void {
+  if (jobId && jobs) {
+    void settleJob(jobs.kill(jobId, "timeout"));
     return;
   }
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch {
-    return;
-  }
+  signalProcess(pid);
 }
 
 export function splitCommand(command: string): { file: string; args: string[] } {

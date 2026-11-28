@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CodexRuntimeAdapter } from "../../src/codex/adapter.js";
 import { CodexRateLimitBridge } from "../../src/codex/rate-limit.js";
 import { LABELED_WIP_HEADER } from "../../src/codex/types.js";
-import { LocalWindowsJob } from "../../src/codex/process.js";
+import type { WindowsJobPort } from "../../src/codex/ports.js";
 import {
   LocalBurnRateWindowTracker,
   LocalLabeledWipRebuilder,
@@ -133,7 +133,7 @@ describe("codex app-server runtime adapter", () => {
     expect(usage.currency).toBe("ppm");
     expect(usage.inputTokens).toBe(12);
     expect(usage.costMicroUsd).toBeUndefined();
-    expect(adapter.authStatus()).toMatchObject({ kind: "sign_in_with_chatgpt", currency: "ppm", readsPersonalCodexHome: false });
+    expect(await adapter.authStatus()).toMatchObject({ kind: "sign_in_with_chatgpt", currency: "ppm", readsPersonalCodexHome: false });
     expect(checkpoints.read("attempt-stream")?.session_ref).toBe("thread-1");
     expect(records[0]?.args).toEqual([appServerScript]);
     expect(records[0]?.env.ACCESS_TOKEN).toBe("siwc-access-1");
@@ -445,7 +445,7 @@ describe("codex app-server runtime adapter", () => {
     const usage = await api.usage(handle.sessionId);
     expect(usage.currency).toBe("micro-USD");
     expect(usage.quotaPpm).toBeUndefined();
-    expect(api.authStatus().kind).toBe("openai_api_key");
+    expect((await api.authStatus()).kind).toBe("openai_api_key");
   });
 
   it("reaps an unexpected exit, preserves WIP, and hands the thread to the resume coordinator", async () => {
@@ -455,7 +455,7 @@ describe("codex app-server runtime adapter", () => {
     const wip = new LocalWipSnapshot();
     const handoff = new LocalResumeHandoff();
     const fresh = new LocalLabeledWipRebuilder();
-    const jobs = new LocalWindowsJob();
+    const jobs = new TrackingJob();
     const originalKill = jobs.kill.bind(jobs);
     jobs.kill = (jobId, reason) => {
       if (existsSync(childPid)) {
@@ -666,3 +666,48 @@ describe("codex app-server runtime adapter", () => {
     expect(records).toHaveLength(0);
   });
 });
+
+class TrackingJob implements WindowsJobPort {
+  private readonly jobs = new Map<string, Set<number>>();
+
+  create(sessionId: string): { readonly jobId: string } {
+    const jobId = `job-${sessionId}`;
+    if (this.jobs.has(jobId)) throw new Error(`job ${jobId} already exists`);
+    this.jobs.set(jobId, new Set());
+    return { jobId };
+  }
+
+  attach(jobId: string, pid: number): void {
+    const pids = this.jobs.get(jobId);
+    if (!pids) throw new Error(`unknown job ${jobId}`);
+    pids.add(pid);
+  }
+
+  list(jobId: string): readonly number[] {
+    return [...(this.jobs.get(jobId) ?? [])];
+  }
+
+  kill(jobId: string, reason: string): readonly number[] {
+    void reason;
+    const pids = [...(this.jobs.get(jobId) ?? [])];
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        continue;
+      }
+    }
+    const deadline = Date.now() + 500;
+    for (const pid of pids) {
+      while (Date.now() < deadline) {
+        try {
+          process.kill(pid, 0);
+        } catch {
+          break;
+        }
+      }
+    }
+    this.jobs.set(jobId, new Set());
+    return pids;
+  }
+}

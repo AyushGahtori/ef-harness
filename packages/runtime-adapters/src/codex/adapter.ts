@@ -2,12 +2,12 @@ import { rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CodexAppServerClient, type ApprovalHandler } from "./app-server.js";
-import { CodexAcpFallbackTransport } from "./acp-fallback.js";
+import { CodexGenericAcpBridge } from "./acp-fallback.js";
+import { CoreCodexPolicy, OsWindowsJob, sharedAllowlistProxy } from "../acp/os-boundary.js";
 import { prepareCodexHome } from "./codex-home.js";
 import { CodexAllowanceWindDownError, CodexRuntimeError, isCodexRuntimeError } from "./errors.js";
 import { asRecord, asString } from "./jsonrpc.js";
 import { isPersonalCodexPath } from "./paths.js";
-import { LocalDeterministicSupervisionPolicyEngine } from "./policy.js";
 import {
   LocalAllowancePacingController,
   LocalCliMinVersionGate,
@@ -35,7 +35,6 @@ import {
 import {
   assertSafeCodexArgs,
   buildCodexEnv,
-  LocalWindowsJob,
   nodeSpawn,
   readCommandVersion,
   type ProcessSpawner,
@@ -129,10 +128,10 @@ interface LiveSession {
   mcpBearer: string;
 }
 
-const DEFAULT_PROXY = "http://127.0.0.1:9";
 const DEFAULT_MIN_VERSION = "0.42.0";
 
 export class CodexRuntimeAdapter {
+  readonly runtime = "codex" as const;
   private readonly sessions = new Map<string, LiveSession>();
   private readonly decisions = new Map<string, "allow" | "deny">();
   private readonly versionGate: CliMinVersionGatePort;
@@ -157,7 +156,8 @@ export class CodexRuntimeAdapter {
   private readonly acpCommand: string;
   private readonly acpArgs: readonly string[];
   private readonly transportPreference: "auto" | CodexTransport;
-  private readonly loopbackProxy: string;
+  private loopbackProxy: string | null;
+  private proxyServer: { stop(): Promise<void>; readonly proxyUrl: string } | null = null;
   private readonly hostEnv: NodeJS.ProcessEnv;
   private readonly interruptGraceMs: number;
   private readonly versionReader: () => Promise<string | null>;
@@ -166,9 +166,9 @@ export class CodexRuntimeAdapter {
   constructor(options: CodexRuntimeAdapterOptions = {}) {
     const controller = new LocalAllowancePacingController();
     this.versionGate = options.versionGate ?? new LocalCliMinVersionGate(options.minVersion ?? DEFAULT_MIN_VERSION);
-    this.policy = options.policy ?? new LocalDeterministicSupervisionPolicyEngine();
+    this.policy = options.policy ?? new CoreCodexPolicy();
     this.sandbox = options.sandbox ?? new LocalTierAMxcSandbox();
-    this.jobs = options.jobs ?? new LocalWindowsJob();
+    this.jobs = options.jobs ?? new OsWindowsJob();
     this.checkpoints = options.checkpoints ?? new MemoryCheckpointStore();
     this.wip = options.wip ?? new LocalWipSnapshot();
     this.resumeHandoff = options.resumeHandoff ?? new LocalResumeHandoff();
@@ -185,7 +185,7 @@ export class CodexRuntimeAdapter {
     this.acpCommand = options.acpCommand ?? "codex-acp";
     this.acpArgs = options.acpArgs ?? [];
     this.transportPreference = options.transportPreference ?? "auto";
-    this.loopbackProxy = options.loopbackProxy ?? DEFAULT_PROXY;
+    this.loopbackProxy = options.loopbackProxy ?? null;
     this.hostEnv = options.hostEnv ?? process.env;
     this.interruptGraceMs = options.interruptGraceMs ?? 200;
     this.tokens = options.tokenRefresher ?? null;
@@ -197,7 +197,7 @@ export class CodexRuntimeAdapter {
       },
       now: () => this.clock(),
     };
-    this.acp = options.genericAcp ?? new CodexAcpFallbackTransport(this.spawner, sink, this.policy);
+    this.acp = options.genericAcp ?? new CodexGenericAcpBridge(this.spawner, sink);
   }
 
   async probe(): Promise<CodexProbe> {
@@ -214,7 +214,8 @@ export class CodexRuntimeAdapter {
     };
   }
 
-  authStatus(): CodexAuthStatus {
+  async authStatus(connectionId?: string): Promise<CodexAuthStatus> {
+    void connectionId;
     const session = [...this.sessions.values()].at(-1);
     const connection = session?.connection;
     if (!connection) {
@@ -248,7 +249,7 @@ export class CodexRuntimeAdapter {
       throw new CodexRuntimeError(probe.status, detail);
     }
     this.sealConnection(spec.connection);
-    const proxy = spec.loopbackProxy ?? this.loopbackProxy;
+    const proxy = await this.resolveProxy(spec.loopbackProxy);
     const alignment = this.sandbox.align({ worktreeRoot: spec.worktreeRoot, loopbackProxy: proxy });
     const home = prepareCodexHome({
       codexHomeRoot: this.codexHomeRoot,
@@ -259,7 +260,7 @@ export class CodexRuntimeAdapter {
       mcpEndpoint: spec.mcpEndpoint,
       skills: spec.skills ?? [],
     });
-    const job = this.jobs.create(spec.attemptId);
+    const job = await Promise.resolve(this.jobs.create(spec.attemptId));
     const session: LiveSession = {
       sessionId: `codex-${spec.attemptId}`,
       attemptId: spec.attemptId,
@@ -295,7 +296,7 @@ export class CodexRuntimeAdapter {
         session.client?.kill();
         session.client = null;
         if (preference !== "auto" || !isProtocolFailure(error)) {
-          this.jobs.kill(session.jobId, "start_failed");
+          await Promise.resolve(this.jobs.kill(session.jobId, "start_failed"));
           throw error;
         }
         await this.openAcp(session);
@@ -362,23 +363,24 @@ export class CodexRuntimeAdapter {
       await session.client.turnInterrupt(session.threadId, session.activeTurnId, this.interruptGraceMs);
     } catch (error) {
       if (!isCodexRuntimeError(error)) throw error;
-      this.jobs.kill(session.jobId, "interrupt");
+      await Promise.resolve(this.jobs.kill(session.jobId, "interrupt"));
       session.client.kill();
     }
   }
 
-  async resume(sessionId: string, checkpointRef: { readonly threadId: string }): Promise<ResumeReceipt> {
+  async resume(sessionId: string, checkpointRef: string | { readonly threadId: string }): Promise<ResumeReceipt> {
+    const threadId = typeof checkpointRef === "string" ? checkpointRef : checkpointRef.threadId;
     const session = this.require(sessionId);
     if (session.transport === "codex-acp") {
-      const loaded = await this.acp.resume(sessionId, checkpointRef.threadId);
-      if (!loaded.ok) return this.freshResume(session, checkpointRef.threadId);
+      const loaded = await this.acp.resume(sessionId, threadId);
+      if (!loaded.ok) return this.freshResume(session, threadId);
       session.threadId = loaded.threadId;
       this.checkpoint(session, null, null);
       return { ok: true, threadId: loaded.threadId, fallback: "native", label: null };
     }
     if (!session.client) throw new CodexRuntimeError("no_client", "codex app-server is not running");
-    const loaded = await session.client.threadResume(checkpointRef.threadId);
-    if (!loaded.ok) return this.freshResume(session, checkpointRef.threadId);
+    const loaded = await session.client.threadResume(threadId);
+    if (!loaded.ok) return this.freshResume(session, threadId);
     session.threadId = loaded.threadId;
     this.checkpoint(session, null, null);
     return { ok: true, threadId: loaded.threadId, fallback: "native", label: null };
@@ -443,7 +445,7 @@ export class CodexRuntimeAdapter {
     if (!session) return;
     session.client?.kill();
     if (session.transport === "codex-acp") await this.acp.close(sessionId);
-    this.jobs.kill(session.jobId, "shutdown");
+    await Promise.resolve(this.jobs.kill(session.jobId, "shutdown"));
     this.bus.close(sessionId);
     if (!isPersonalCodexPath(session.codexHome, this.userHome)) {
       rmSync(session.codexHome, { recursive: true, force: true });
@@ -514,7 +516,7 @@ export class CodexRuntimeAdapter {
         };
       }
       if (isCodexRuntimeError(error) && error.code === "process_exit") {
-        this.handoffCrash(session);
+        await this.handoffCrash(session);
         return {
           turnId: session.activeTurnId ?? "turn",
           threadId,
@@ -551,7 +553,7 @@ export class CodexRuntimeAdapter {
       cwd: session.worktreeRoot,
       env: this.envFor(session),
     });
-    this.jobs.attach(session.jobId, proc.pid);
+    await Promise.resolve(this.jobs.attach(session.jobId, proc.pid));
     const client = new CodexAppServerClient(
       proc,
       (approval) => this.decideFor(session, approval),
@@ -604,7 +606,7 @@ export class CodexRuntimeAdapter {
       mcpEndpoint: session.mcpEndpoint,
       brief: session.brief,
     });
-    this.jobs.attach(session.jobId, started.pid);
+    await Promise.resolve(this.jobs.attach(session.jobId, started.pid));
     session.threadId = started.nativeSessionId;
     session.transport = "codex-acp";
     session.client = null;
@@ -714,13 +716,13 @@ export class CodexRuntimeAdapter {
     };
     session.currency = "ppm";
     session.client?.kill();
-    this.jobs.kill(session.jobId, "token_refresh");
+    await Promise.resolve(this.jobs.kill(session.jobId, "token_refresh"));
     session.client = null;
     await this.openAppServer(session, threadId);
   }
 
-  private handoffCrash(session: LiveSession): void {
-    this.jobs.kill(session.jobId, "unexpected_exit");
+  private async handoffCrash(session: LiveSession): Promise<void> {
+    await Promise.resolve(this.jobs.kill(session.jobId, "unexpected_exit"));
     const wip = this.wip.capture(session.worktreeRoot);
     this.checkpoint(session, null, wip.wipTreeSha);
     const handoff = this.resumeHandoff.onChildExit({
@@ -803,6 +805,25 @@ export class CodexRuntimeAdapter {
       codexHome: session.codexHome,
       currency: session.currency,
     };
+  }
+
+  async terminate(sessionId: string): Promise<void> {
+    await this.shutdown(sessionId);
+  }
+
+  async dispose(): Promise<void> {
+    const ids = [...this.sessions.keys()];
+    for (const id of ids) await this.shutdown(id);
+    this.proxyServer = null;
+  }
+
+  private async resolveProxy(override?: string): Promise<string> {
+    if (override) return override;
+    if (this.loopbackProxy) return this.loopbackProxy;
+    const server = await sharedAllowlistProxy(this.runtime);
+    this.proxyServer = server;
+    this.loopbackProxy = server.proxyUrl;
+    return server.proxyUrl;
   }
 
   private require(sessionId: string): LiveSession {

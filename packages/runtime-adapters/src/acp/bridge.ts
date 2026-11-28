@@ -4,6 +4,7 @@ import path from "node:path";
 import { AcpRpcError, JSON_RPC_INVALID_PARAMS, JSON_RPC_PERMISSION_DENIED } from "./errors.js";
 import { makeEvent, type NormalizedRuntimeEventBus } from "./events.js";
 import type { HarnessRunPort, SandboxedCommandResult } from "./harness.js";
+import { settleJob } from "./job.js";
 import type { WindowsJobPort } from "./job.js";
 import { resolveAgainstWorktree } from "./paths.js";
 import type { SupervisionContext, SupervisionPolicyPort } from "./policy.js";
@@ -125,7 +126,7 @@ export class AcpHostFsAndTerminalBridge {
   async createTerminal(session: BridgeSession, params: TerminalCreateParams): Promise<{ terminalId: string }> {
     this.authorize(session, { kind: "shell", command: params.command }, "terminal/create");
     const terminalId = `term-${randomBytes(4).toString("hex")}`;
-    const commandJob = this.jobs.create(`${session.sessionId}-${terminalId}`);
+    const commandJob = await settleJob(this.jobs.create(`${session.sessionId}-${terminalId}`));
     const abort = new AbortController();
     let resolveDone: () => void = () => undefined;
     const done = new Promise<void>((resolve) => {
@@ -178,8 +179,9 @@ export class AcpHostFsAndTerminalBridge {
       .finally(() => {
         if (record.leaseId) this.pool.release(record.leaseId);
         record.leaseId = null;
-        this.jobs.close(record.commandJobId);
-        record.resolveDone();
+        void settleJob(this.jobs.close(record.commandJobId)).then(() => {
+          record.resolveDone();
+        });
       });
     void run;
     return { terminalId };
@@ -197,11 +199,11 @@ export class AcpHostFsAndTerminalBridge {
     return { exitCode: record.exitCode ?? 1 };
   }
 
-  kill(session: BridgeSession, terminalId: string): { killed: true } {
+  async kill(session: BridgeSession, terminalId: string): Promise<{ killed: true }> {
     const record = this.requireTerminal(session, terminalId);
     record.abort.abort();
     record.status = "killed";
-    this.jobs.kill(record.commandJobId, "terminal/kill");
+    await settleJob(this.jobs.kill(record.commandJobId, "terminal/kill"));
     return { killed: true };
   }
 

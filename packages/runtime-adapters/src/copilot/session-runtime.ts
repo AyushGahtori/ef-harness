@@ -319,7 +319,7 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
       if (vendor) {
         await Promise.race([vendor.interrupt(), delay(50)]);
       }
-      this.deps.jobs.terminate(session.jobObjectId);
+      await Promise.resolve(this.deps.jobs.terminate(session.jobObjectId));
       cleanupCopilotAttempt(session.worktree);
       session.closed = true;
       session.partialInterrupted = true;
@@ -329,22 +329,23 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
     return {
       sessionId,
       interrupted: true,
-      lingeringProcesses: this.deps.jobs.list(session.jobObjectId).length,
+      lingeringProcesses: (await Promise.resolve(this.deps.jobs.list(session.jobObjectId))).length,
       elapsedMs: performance.now() - started,
     };
   }
 
-  async resume(sessionId: string, checkpointRef: CopilotCheckpointRef): Promise<CopilotResumeResult> {
-    const row = this.deps.checkpoints.get(checkpointRef.attemptId);
+  async resume(sessionId: string, checkpointRef: CopilotCheckpointRef | string): Promise<CopilotResumeResult> {
+    const ref = typeof checkpointRef === "string" ? { attemptId: checkpointRef } : checkpointRef;
+    const row = this.deps.checkpoints.get(ref.attemptId);
     if (!row || !row.sessionRef) {
       return { supported: false, fallback: "fresh_session", sessionId: null, reason: "missing_checkpoint" };
     }
-    if (checkpointRef.contradiction || row.contradiction || !row.resumeSupported) {
+    if (ref.contradiction || row.contradiction || !row.resumeSupported) {
       return {
         supported: false,
         fallback: "fresh_session",
         sessionId: null,
-        reason: checkpointRef.contradiction || row.contradiction ? "contradiction" : "unsupported_resume",
+        reason: ref.contradiction || row.contradiction ? "contradiction" : "unsupported_resume",
       };
     }
     if (row.transport !== this.launcher.transport) {
@@ -357,14 +358,14 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
     }
     const token = this.readToken(spec.connectionId);
     const byok = existing?.byok ?? this.resolveByok(spec);
-    const reopened = await this.launcher.resume(row.sessionRef, this.openInput(existing, token, byok));
+    const reopened = await this.launcher.resume(row.sessionRef, await this.openInput(existing, token, byok));
     if (!reopened) {
       return { supported: false, fallback: "fresh_session", sessionId: null, reason: "unsupported_resume" };
     }
     existing.vendor = reopened;
     existing.closed = false;
     if (existing.queue.isClosed) existing.queue = new SessionEventQueue();
-    if (reopened.pid) this.deps.jobs.attach(existing.jobObjectId, reopened.pid);
+    if (reopened.pid) await Promise.resolve(this.deps.jobs.attach(existing.jobObjectId, reopened.pid));
     this.remember(existing);
     return { supported: true, fallback: "native", sessionId: existing.id, reason: "native" };
   }
@@ -449,8 +450,8 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
     byok: ResolvedByok | null,
   ): Promise<CopilotSessionRef> {
     const sessionId = `copilot-${this.launcher.transport}-${spec.attemptId}`;
-    const job = this.deps.jobs.create(sessionId);
-    const proxy = this.deps.proxy.bind(sessionId);
+    const job = await Promise.resolve(this.deps.jobs.create(sessionId));
+    const proxy = await Promise.resolve(this.deps.proxy.bind(sessionId));
     const sandbox = this.deps.sandbox.select({
       runtime: "copilot",
       posture,
@@ -495,7 +496,7 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
       });
       mounted = true;
       const opened = await this.launcher.open(
-        this.openInput(
+        await this.openInput(
           session,
           token,
           byok,
@@ -507,7 +508,7 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
         ),
       );
       session.vendor = opened;
-      if (opened.pid) this.deps.jobs.attach(job.jobObjectId, opened.pid);
+      if (opened.pid) await Promise.resolve(this.deps.jobs.attach(job.jobObjectId, opened.pid));
       this.emit(session, {
         type: "session_started",
         sessionId,
@@ -525,12 +526,12 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
     } catch (error) {
       this.sessions.delete(sessionId);
       if (mounted) cleanupCopilotAttempt(spec.worktree);
-      this.deps.jobs.terminate(job.jobObjectId);
+      await Promise.resolve(this.deps.jobs.terminate(job.jobObjectId));
       throw error;
     }
   }
 
-  private openInput(
+  private async openInput(
     session: LiveSession,
     token: string,
     byok: ResolvedByok | null,
@@ -539,7 +540,7 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
     sandboxTier?: string,
     excludedTools?: readonly string[],
     mcpServers?: readonly LeasedMcpServer[],
-  ): VendorOpenInput {
+  ): Promise<VendorOpenInput> {
     const excluded = excludedTools ?? (session.posture === "stripped" ? [...STRIPPED_EXCLUDED_TOOLS] : []);
     const servers = mcpServers ?? session.spec.mcpServers;
     return {
@@ -552,7 +553,7 @@ export class CopilotSessionRuntime implements AgentRuntimeAdapter {
       mcpServers: servers,
       leasedTools: session.leasedTools,
       configDir: configDir ?? path.join(session.worktree, ".ef-copilot"),
-      proxyUrl: proxyUrl ?? this.deps.proxy.bind(session.id).proxyUrl,
+      proxyUrl: proxyUrl ?? (await Promise.resolve(this.deps.proxy.bind(session.id))).proxyUrl,
       sandboxTier: sandboxTier ?? "A",
       jobObjectId: session.jobObjectId,
       onPermission: (request) => this.handlePermission(session, request),

@@ -1,100 +1,99 @@
-import { CodexRuntimeError, isCodexRuntimeError } from "./errors.js";
-import { asRecord, asString, StdioJsonRpcPeer, type JsonRpcRequest } from "./jsonrpc.js";
-import { LocalDeterministicSupervisionPolicyEngine } from "./policy.js";
-import type { DeterministicSupervisionPolicyEnginePort, GenericAcpAdapterPort, GenericAcpSessionSpec } from "./ports.js";
-import { assertSafeCodexArgs, type ProcessSpawner } from "./process.js";
-import { parseUsage } from "./app-server.js";
-import { emptyUsage, type NormalizedRuntimeEvent, type NormalizedUsage } from "./types.js";
+import { GenericAcpAdapter } from "../acp/adapter.js";
+import type { NormalizedRuntimeEvent as AcpEvent } from "../acp/types.js";
+import { CodexRuntimeError } from "./errors.js";
+import type { GenericAcpAdapterPort, GenericAcpSessionSpec } from "./ports.js";
+import type { ProcessSpawner } from "./process.js";
+import type { NormalizedRuntimeEvent, NormalizedUsage } from "./types.js";
+import { emptyUsage } from "./types.js";
 
 export interface AcpEventSink {
   publish(event: NormalizedRuntimeEvent): void;
   now(): number;
 }
 
-interface AcpLive {
-  readonly spec: GenericAcpSessionSpec;
-  peer: StdioJsonRpcPeer;
-  readonly procPid: number;
+interface LiveAcp {
+  readonly adapter: GenericAcpAdapter;
+  readonly sessionId: string;
   nativeSessionId: string;
-  usage: NormalizedUsage;
-  kill: () => void;
+  pid: number;
 }
 
 /**
- * Local stand-in for Task 143 `GenericAcpAdapter` driving `codex-acp`.
- * Swap the class for the real adapter at integration; keep this spawn shape.
+ * Codex ACP fallback. Framing, permission, and process supervision stay on `GenericAcpAdapter`.
  */
-export class CodexAcpFallbackTransport implements GenericAcpAdapterPort {
-  private readonly sessions = new Map<string, AcpLive>();
-  private readonly policy: DeterministicSupervisionPolicyEnginePort;
+export class CodexGenericAcpBridge implements GenericAcpAdapterPort {
+  private readonly sessions = new Map<string, LiveAcp>();
 
   constructor(
     private readonly spawner: ProcessSpawner,
     private readonly sink: AcpEventSink,
-    policy?: DeterministicSupervisionPolicyEnginePort,
-  ) {
-    this.policy = policy ?? new LocalDeterministicSupervisionPolicyEngine();
-  }
+  ) {}
 
   async startSession(
     spec: GenericAcpSessionSpec,
   ): Promise<{ readonly sessionId: string; readonly nativeSessionId: string; readonly pid: number }> {
-    assertSafeCodexArgs([spec.command, ...spec.args]);
-    const proc = this.spawner({
-      command: spec.command,
-      args: spec.args,
-      cwd: spec.cwd,
-      env: spec.env,
+    const adapter = new GenericAcpAdapter({
+      profile: {
+        id: "codex-acp",
+        command: spec.command,
+        args: spec.args,
+        version: "0.0.0",
+        envAllowlist: ["PATH", "Path", "PATHEXT", "SystemRoot", "SYSTEMROOT", "COMSPEC", "WINDIR", "TEMP", "TMP"],
+        quirks: {
+          protocolVersion: 1,
+          mcpTransport: "http",
+          tolerateStdoutBanner: false,
+          steerMethod: "queue",
+        },
+      },
+      spawn: (request) => {
+        const proc = this.spawner({
+          command: request.command,
+          args: request.args,
+          cwd: request.cwd,
+          env: request.env,
+        });
+        return {
+          pid: proc.pid,
+          stdin: proc.stdin,
+          stdout: proc.stdout,
+          stderr: proc.stderr,
+          once(event, listener) {
+            if (event === "exit") proc.onExit((code) => listener(code, null));
+          },
+          kill() {
+            proc.kill();
+            return true;
+          },
+        };
+      },
     });
-    const live: AcpLive = {
-      spec,
-      peer: null as unknown as StdioJsonRpcPeer,
-      procPid: proc.pid,
-      nativeSessionId: "",
-      usage: emptyUsage(),
-      kill: () => {
-        proc.kill();
-      },
-    };
-    const peer = new StdioJsonRpcPeer(proc, {
-      onRequest: (request) => {
-        this.handleRequest(spec, peer, request);
-      },
-      onNotification: (notification) => {
-        this.handleNotification(spec, live, notification.method, notification.params);
-      },
-      onProtocolError: () => {
-        live.kill();
-      },
+    adapter.eventsBus.subscribe((event) => {
+      this.forward(spec.harnessSessionId, event);
     });
-    live.peer = peer;
-    this.sessions.set(spec.harnessSessionId, live);
     try {
-      const init = asRecord(
-        await peer.request("initialize", {
-          clientInfo: { name: "ef-harness", version: "0.0.0" },
-          capabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true },
-        }),
-      );
-      if (!init || init.protocolVersion === undefined) {
-        throw new CodexRuntimeError("protocol_failed", "codex-acp initialize failed");
-      }
-      const created = asRecord(
-        await peer.request("session/new", {
-          cwd: spec.cwd,
-          mcpServers: [{ name: "ef-harness", url: spec.mcpEndpoint }],
-        }),
-      );
-      const nativeSessionId = asString(created?.sessionId);
-      if (!nativeSessionId) {
-        throw new CodexRuntimeError("protocol_failed", "codex-acp session/new did not return sessionId");
-      }
-      live.nativeSessionId = nativeSessionId;
-      return { sessionId: spec.harnessSessionId, nativeSessionId, pid: proc.pid };
+      const opened = await adapter.startSession({
+        attemptId: spec.harnessSessionId,
+        taskId: spec.harnessSessionId,
+        sessionId: spec.harnessSessionId,
+        worktreeRoot: spec.worktreeRoot,
+        writeScope: spec.writeScope,
+        cwd: spec.cwd,
+        brief: spec.brief,
+        env: definedEnv(spec.env),
+        mcpTools: ["kb.*", "harness.run", "harness.read_result"],
+      });
+      const live: LiveAcp = {
+        adapter,
+        sessionId: spec.harnessSessionId,
+        nativeSessionId: opened.agentSessionId,
+        pid: opened.pid,
+      };
+      this.sessions.set(spec.harnessSessionId, live);
+      return { sessionId: spec.harnessSessionId, nativeSessionId: opened.agentSessionId, pid: opened.pid };
     } catch (error) {
-      proc.kill();
-      this.sessions.delete(spec.harnessSessionId);
-      if (isCodexRuntimeError(error)) throw error;
+      await adapter.dispose();
+      if (error instanceof CodexRuntimeError) throw error;
       throw new CodexRuntimeError("protocol_failed", "codex-acp failed to start");
     }
   }
@@ -110,22 +109,8 @@ export class CodexAcpFallbackTransport implements GenericAcpAdapterPort {
       atMs: this.sink.now(),
       threadId: live.nativeSessionId,
     });
-    const result = asRecord(
-      await live.peer.request("session/prompt", {
-        sessionId: live.nativeSessionId,
-        prompt: [{ type: "text", text: prompt }],
-      }),
-    );
-    const stopRaw = asString(result?.stopReason);
-    const stopReason = stopRaw === "cancelled" ? "interrupted" : stopRaw === "error" ? "failed" : "completed";
-    const turnId = asString(result?.turnId) ?? `acp-turn-${live.nativeSessionId}`;
-    this.sink.publish({
-      type: "usage_reported",
-      sessionId,
-      atMs: this.sink.now(),
-      usage: live.usage,
-      threadId: live.nativeSessionId,
-    });
+    const result = await live.adapter.sendTurn(sessionId, prompt);
+    const stopReason = result.stopReason === "cancelled" ? "interrupted" : result.stopReason === "error" ? "failed" : "completed";
     this.sink.publish({
       type: "turn_completed",
       sessionId,
@@ -133,7 +118,7 @@ export class CodexAcpFallbackTransport implements GenericAcpAdapterPort {
       stopReason,
       threadId: live.nativeSessionId,
     });
-    return { turnId, stopReason };
+    return { turnId: `acp-turn-${live.nativeSessionId}`, stopReason };
   }
 
   async steer(sessionId: string, note: string): Promise<void> {
@@ -141,103 +126,75 @@ export class CodexAcpFallbackTransport implements GenericAcpAdapterPort {
   }
 
   async interrupt(sessionId: string): Promise<void> {
-    const live = this.require(sessionId);
-    try {
-      await live.peer.request("session/cancel", { sessionId: live.nativeSessionId }, 400);
-    } catch (error) {
-      if (!isCodexRuntimeError(error)) throw error;
-      live.kill();
-    }
+    await this.require(sessionId).adapter.interrupt(sessionId);
   }
 
   async resume(sessionId: string, nativeSessionId: string): Promise<{ readonly ok: boolean; readonly threadId: string }> {
     const live = this.require(sessionId);
-    try {
-      const result = asRecord(await live.peer.request("session/load", { sessionId: nativeSessionId }));
-      const loaded = asString(result?.sessionId) ?? nativeSessionId;
-      if (result?.ok === false) return { ok: false, threadId: nativeSessionId };
-      live.nativeSessionId = loaded;
-      return { ok: true, threadId: loaded };
-    } catch (error) {
-      if (isCodexRuntimeError(error) && error.code === "rpc_error") return { ok: false, threadId: nativeSessionId };
-      throw error;
-    }
+    const loaded = await live.adapter.resume(sessionId, nativeSessionId);
+    if (!loaded.supported) return { ok: false, threadId: nativeSessionId };
+    live.nativeSessionId = nativeSessionId;
+    return { ok: true, threadId: nativeSessionId };
   }
 
-  usage(sessionId: string): Promise<NormalizedUsage> {
-    return Promise.resolve(this.require(sessionId).usage);
+  async usage(sessionId: string): Promise<NormalizedUsage> {
+    const usage = await this.require(sessionId).adapter.usage(sessionId);
+    return {
+      inputTokens: usage.inputTokens,
+      cachedInputTokens: usage.cachedInputTokens,
+      outputTokens: usage.outputTokens,
+      reasoningTokens: usage.reasoningTokens,
+    };
   }
 
   async close(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId);
     if (!live) return;
-    live.kill();
+    await live.adapter.dispose();
     this.sessions.delete(sessionId);
   }
 
-  private require(sessionId: string): AcpLive {
+  private require(sessionId: string): LiveAcp {
     const live = this.sessions.get(sessionId);
     if (!live) throw new CodexRuntimeError("unknown_session", `unknown codex-acp session ${sessionId}`);
     return live;
   }
 
-  private handleRequest(spec: GenericAcpSessionSpec, peer: StdioJsonRpcPeer, request: JsonRpcRequest): void {
-    if (request.method !== "session/request_permission") {
-      peer.respond(request.id, { outcome: "reject_once" });
+  private forward(sessionId: string, event: AcpEvent): void {
+    if (event.sessionId !== sessionId) return;
+    if (event.type === "assistant_delta") {
+      const text = typeof event.payload.text === "string" ? event.payload.text : "";
+      this.sink.publish({ type: "assistant_delta", sessionId, atMs: this.sink.now(), text });
       return;
     }
-    const params = asRecord(request.params);
-    const tool = asRecord(params?.toolCall);
-    const kind = asString(tool?.kind);
-    const filePath = asString(tool?.path);
-    const command = asString(tool?.command);
-    const requestId = String(request.id);
-    this.sink.publish({
-      type: "permission_requested",
-      sessionId: spec.harnessSessionId,
-      atMs: this.sink.now(),
-      requestId,
-      ...(filePath ? { path: filePath } : {}),
-      ...(command ? { command } : {}),
-    });
-    const decision = this.policy.decide({
-      worktreeRoot: spec.worktreeRoot,
-      writeScope: spec.writeScope,
-      request:
-        kind === "execute" || command
-          ? { kind: "shell", command: command ?? "" }
-          : { kind: "edit", path: filePath ?? "" },
-    });
-    this.sink.publish({
-      type: "permission_decided",
-      sessionId: spec.harnessSessionId,
-      atMs: this.sink.now(),
-      requestId,
-      decision: decision.effect,
-      reason: decision.reason,
-      elapsedMs: decision.elapsedMs,
-      ...(filePath ? { path: filePath } : {}),
-      ...(command ? { command } : {}),
-    });
-    peer.respond(request.id, { outcome: decision.effect === "allow" ? "allow_once" : "reject_once" });
-  }
-
-  private handleNotification(spec: GenericAcpSessionSpec, live: AcpLive, method: string, params: unknown): void {
-    if (method !== "session/update") return;
-    const update = asRecord(asRecord(params)?.update);
-    const kind = asString(update?.sessionUpdate);
-    if (kind === "agent_message_chunk") {
-      const text = asString(asRecord(update?.content)?.text) ?? "";
+    if (event.type === "permission_requested" || event.type === "permission_decided") {
+      const requestId = typeof event.payload.requestId === "string" ? event.payload.requestId : "";
+      const path = typeof event.payload.path === "string" ? event.payload.path : "";
+      const command = typeof event.payload.command === "string" ? event.payload.command : "";
+      const effect = event.payload.effect === "allow" ? "allow" : "deny";
+      const reason = typeof event.payload.reason === "string" ? event.payload.reason : "";
+      const elapsedMs = typeof event.payload.elapsedMs === "number" ? event.payload.elapsedMs : 0;
       this.sink.publish({
-        type: "assistant_delta",
-        sessionId: spec.harnessSessionId,
+        type: event.type,
+        sessionId,
         atMs: this.sink.now(),
-        text,
+        requestId,
+        ...(path ? { path } : {}),
+        ...(command ? { command } : {}),
+        ...(event.type === "permission_decided" ? { decision: effect, reason, elapsedMs } : {}),
       });
-      return;
-    }
-    if (kind === "usage_update") {
-      live.usage = parseUsage(update?.usage ?? update);
     }
   }
+}
+
+function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const defined: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === "string") defined[key] = value;
+  }
+  return defined;
+}
+
+export function emptyAcpUsage(): NormalizedUsage {
+  return emptyUsage();
 }

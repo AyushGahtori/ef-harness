@@ -132,7 +132,7 @@ export function wrapChild(child: ChildProcess): SpawnedProcess {
     stdout: child.stdout,
     stderr: child.stderr,
     kill() {
-      killPid(pid);
+      signalProcess(pid);
     },
     onExit(listener) {
       if (settled) listener(exitCode);
@@ -142,19 +142,12 @@ export function wrapChild(child: ChildProcess): SpawnedProcess {
   };
 }
 
-export function killPid(pid: number): void {
+export function signalProcess(pid: number): void {
   if (!Number.isInteger(pid) || pid <= 0) return;
   try {
-    process.kill(pid);
+    process.kill(pid, "SIGKILL");
   } catch (error) {
     if (isMissingProcess(error)) return;
-    if (process.platform === "win32") {
-      spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      return;
-    }
     throw error;
   }
 }
@@ -173,39 +166,4 @@ export function readCommandVersion(command: string, args: readonly string[]): st
 
 function isMissingProcess(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ESRCH";
-}
-
-/** Local stand-in for Task 041 `WindowsJobSupervisor`. `taskkill /T /F` reaps the recorded tree. */
-export class LocalWindowsJob {
-  private readonly jobs = new Map<string, Set<number>>();
-
-  create(sessionId: string): { readonly jobId: string } {
-    const jobId = `job-${sessionId}`;
-    if (this.jobs.has(jobId)) {
-      throw new CodexRuntimeError("job_exists", `job ${jobId} already exists`);
-    }
-    this.jobs.set(jobId, new Set());
-    return { jobId };
-  }
-
-  attach(jobId: string, pid: number): void {
-    const pids = this.jobs.get(jobId);
-    if (!pids) throw new CodexRuntimeError("unknown_job", `unknown job ${jobId}`);
-    if (!Number.isInteger(pid) || pid <= 0) {
-      throw new CodexRuntimeError("invalid_pid", "job attach requires a positive pid");
-    }
-    pids.add(pid);
-  }
-
-  list(jobId: string): readonly number[] {
-    return [...(this.jobs.get(jobId) ?? [])];
-  }
-
-  kill(jobId: string, reason: string): readonly number[] {
-    const pids = [...(this.jobs.get(jobId) ?? [])];
-    for (const pid of pids) killPid(pid);
-    this.jobs.set(jobId, new Set());
-    if (reason.length === 0) return pids;
-    return pids;
-  }
 }

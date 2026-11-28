@@ -1,6 +1,9 @@
+import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-import type { PolicyContext, PolicyDecision } from "./types.js";
+import { DeterministicSupervisionPolicyEngine as CoreSupervisionEngine } from "../core/policy.js";
+import type { SupervisionRequest } from "../core/types.js";
+import type { CopilotPermissionRequest, PolicyContext, PolicyDecision } from "./types.js";
 
 const SECRET_SEGMENTS = new Set([
   ".ssh",
@@ -132,6 +135,45 @@ export class LocalDeterministicSupervisionPolicyEngine {
     this.resolved.set(target, resolved);
     return resolved;
   }
+}
+
+/**
+ * Copilot permission checks delegated to the frozen supervision kernel.
+ * Redirects stay off the vendor: the SDK callback only accepts allow or deny.
+ */
+export class CoreCopilotPolicy {
+  private readonly engine = new CoreSupervisionEngine();
+
+  decide(input: PolicyContext): PolicyDecision {
+    const decision = this.engine.decide(toCoreRequest(input.request), {
+      sessionId: "copilot",
+      worktreeRoot: input.worktree,
+      cwd: input.worktree,
+      writeScope: input.writeScope,
+      readOnlyPaths: [],
+      sealedPaths: [],
+      mode: input.posture,
+      homeDir: os.homedir(),
+      appData: "",
+      leasedTools: input.leasedTools,
+    });
+    if (decision.effect === "allow") return { effect: "allow", reason: "allow" };
+    return { effect: "deny", reason: decision.reason };
+  }
+}
+
+function toCoreRequest(request: CopilotPermissionRequest): SupervisionRequest {
+  if (request.kind === "shell") return { kind: "shell", command: request.command ?? "" };
+  if (request.kind === "web") {
+    return {
+      kind: "web",
+      ...(request.tool !== undefined ? { tool: request.tool } : {}),
+      ...(request.url !== undefined ? { url: request.url } : {}),
+    };
+  }
+  if (request.kind === "mcp") return { kind: "mcp", tool: request.tool ?? "" };
+  if (request.kind === "read") return { kind: "read", path: request.path ?? "" };
+  return { kind: "edit", path: request.path ?? "" };
 }
 
 function allow(reason: string): PolicyDecision {

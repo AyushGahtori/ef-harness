@@ -16,7 +16,6 @@ import {
   LocalSupervisionPolicy,
   LocalTurnLog,
   LocalWarmExecutionPool,
-  LocalWindowsJob,
   NormalizedRuntimeEventBus,
   SkillMountDeniedError,
   WAITING_FOR_RUN_SLOT,
@@ -24,7 +23,7 @@ import {
   createGenericAcpAdapter,
   isAlive,
 } from "../../src/acp/index.js";
-import type { AcpRuntimeProfile, HarnessRunPort, SandboxedCommandResult } from "../../src/acp/index.js";
+import type { AcpRuntimeProfile, HarnessRunPort, SandboxedCommandResult, WindowsJobPort } from "../../src/acp/index.js";
 
 const fakeServer = fileURLToPath(new URL("./fake-acp-server.mjs", import.meta.url));
 
@@ -362,7 +361,7 @@ describe("generic ACP child process", () => {
 
   it("cancels a pending permission in under 500 ms and reaps the child", async () => {
     root = worktree();
-    const jobs = new LocalWindowsJob();
+    const jobs = new TrackingJob();
     const events = new NormalizedRuntimeEventBus();
     adapter = createGenericAcpAdapter({
       profile: profile(),
@@ -393,6 +392,7 @@ describe("generic ACP child process", () => {
     const turn = await adapter.sendTurn(sessionId, "wait for permission");
     expect(performance.now() - started).toBeLessThan(500);
     expect(turn).toEqual({ stopReason: "cancelled", cancelled: true });
+    await waitForText(adapter, sessionId, '"outcome":"cancelled"');
     const stderr = adapter.inspect(sessionId).stderr.join("\n");
     expect(stderr).toContain('"outcome":"cancelled"');
     expect(stderr).toContain('"kind":"reject_once"');
@@ -472,8 +472,20 @@ async function removeTree(target: string): Promise<void> {
   fs.rmSync(target, { recursive: true, force: true });
 }
 
+async function waitForText(
+  adapter: { inspect(sessionId: string): { stderr: readonly string[] } },
+  sessionId: string,
+  needle: string,
+): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    if (adapter.inspect(sessionId).stderr.join("\n").includes(needle)) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function startBroken(root: string, scenario: string): Promise<void> {
-  const jobs = new LocalWindowsJob();
+  const jobs = new TrackingJob();
   const adapter = createGenericAcpAdapter({ profile: profile(), jobs, initializeTimeoutMs: 2_000 });
   try {
     await adapter.startSession({
@@ -497,7 +509,7 @@ describe("host fs bridge byte cap", () => {
     const bridge = new AcpHostFsAndTerminalBridge(
       new LocalSupervisionPolicy(),
       recordingHarness(),
-      new LocalWindowsJob(),
+      new TrackingJob(),
       events,
       new LocalPacketSecurityRedactor(),
       new LocalWarmExecutionPool(2),
@@ -525,6 +537,50 @@ describe("host fs bridge byte cap", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 });
+
+class TrackingJob implements WindowsJobPort {
+  private readonly jobs = new Map<string, Set<number>>();
+
+  create(sessionId: string): { readonly jobId: string } {
+    const jobId = `job-${sessionId}`;
+    if (this.jobs.has(jobId)) throw new Error(`Job ${jobId} already exists`);
+    this.jobs.set(jobId, new Set());
+    return { jobId };
+  }
+
+  attach(jobId: string, pid: number): void {
+    const pids = this.jobs.get(jobId);
+    if (!pids) throw new Error(`Unknown job ${jobId}`);
+    pids.add(pid);
+  }
+
+  list(jobId: string): readonly number[] {
+    return [...(this.jobs.get(jobId) ?? [])].filter((pid) => isAlive(pid));
+  }
+
+  activeChildCount(jobId: string): number {
+    return this.list(jobId).length;
+  }
+
+  kill(jobId: string, reason: string): readonly number[] {
+    void reason;
+    const pids = [...(this.jobs.get(jobId) ?? [])];
+    for (const pid of pids) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        continue;
+      }
+    }
+    this.jobs.set(jobId, new Set());
+    return pids;
+  }
+
+  close(jobId: string): void {
+    this.kill(jobId, "close");
+    this.jobs.delete(jobId);
+  }
+}
 
 describe("turn log redaction", () => {
   it("stores only redacted wire text", () => {

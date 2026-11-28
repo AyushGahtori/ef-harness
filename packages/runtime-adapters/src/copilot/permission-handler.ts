@@ -1,9 +1,8 @@
-import type { PermissionApplyResult, PermissionKind, PolicyContext } from "./types.js";
-import type { LocalDeterministicSupervisionPolicyEngine } from "./policy.js";
+import type { DeterministicSupervisionPolicyEngine, PermissionApplyResult, PermissionKind, PolicyContext } from "./types.js";
 import type { CopilotSdkPermissionRequest } from "./ports.js";
 
 export function onPermissionRequest(
-  engine: LocalDeterministicSupervisionPolicyEngine,
+  engine: DeterministicSupervisionPolicyEngine,
   context: Omit<PolicyContext, "request">,
   request: CopilotSdkPermissionRequest,
 ): PermissionApplyResult {

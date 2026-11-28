@@ -41,7 +41,7 @@ export class LocalLeasedMcpServer implements LeasedMcpPort {
     this.nextId += 1;
     const lease: McpLease & { revoked: boolean } = {
       leaseId,
-      endpoint: `http://127.0.0.1:9/mcp/${input.attemptId}`,
+      endpoint: `http://127.0.0.1/mcp/${input.attemptId}`,
       bearerToken: `ef_attempt_${input.attemptId}_${this.nextId}`,
       tools: input.tools,
       revoked: false,

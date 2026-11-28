@@ -12,7 +12,7 @@ export { assertNotPersonalCopilotHome, cleanupCopilotAttempt, mountCopilotAttemp
 export { CopilotMetricsAndQuotaTracker } from "./metrics-quota-tracker.js";
 export { isBadCredentials, normalizeAccountQuota, normalizeSessionMetrics, readSessionMetrics } from "./normalize.js";
 export { normalizeSdkPermission, onPermissionRequest } from "./permission-handler.js";
-export { LocalDeterministicSupervisionPolicyEngine, NodePathResolver } from "./policy.js";
+export { CoreCopilotPolicy, LocalDeterministicSupervisionPolicyEngine, NodePathResolver } from "./policy.js";
 export type { PathResolver } from "./policy.js";
 export {
   LocalAllowancePacingController,
@@ -22,10 +22,11 @@ export {
   LocalCopilotRuntimePolicy,
   LocalGitHubTokenVault,
   LocalLeasedMcpServer,
-  LocalLoopbackAllowlistProxy,
+  AllowlistLoopbackProxy,
   LocalMicroUsdPriceTable,
   LocalSandboxTierSelector,
   LocalWindowsJobObject,
+  OsCopilotJob,
   OverageApprovalStore,
   RecordingByokLedger,
   RecordingCardSink,

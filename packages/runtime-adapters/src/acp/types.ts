@@ -131,7 +131,7 @@ export interface ResumeResult {
 export interface ProbeResult {
   readonly installed: boolean;
   readonly version: string;
-  readonly status: "ok" | "missing";
+  readonly status: "ready" | "missing";
   readonly modes: readonly ["wrapped", "stripped"];
   readonly runtime: AcpRuntimeId;
   readonly capabilities: {
