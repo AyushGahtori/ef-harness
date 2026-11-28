@@ -142,9 +142,9 @@ export interface WindowsDpapiSecretsVault {
     readonly name: "gitHubToken" | "cursorUserApiKey";
     readonly plaintext: string;
     readonly providerHint: "github_copilot" | "cursor";
-  }): SecretWriteResult;
-  readSecret(secretId: string): string | null;
-  deleteSecret(secretId: string): void;
+  }): Promise<SecretWriteResult>;
+  readSecret(secretId: string): Promise<string | null>;
+  deleteSecret(secretId: string): Promise<void>;
   exportAtRest(): string;
   listPublicMetadata(): readonly SecretPublicMetadata[];
 }
@@ -196,19 +196,6 @@ export interface GlobalConnectionRecord {
   readonly enabled: 0 | 1;
   readonly createdAt: number;
   readonly metadata: ConnectionMetadata;
-}
-
-export interface SqlConnectionRow {
-  readonly id: string;
-  readonly provider: string;
-  readonly route: string;
-  readonly plan: string | null;
-  readonly vault_ref: string | null;
-  readonly currency: string;
-  readonly scale: number;
-  readonly enabled: 0 | 1;
-  readonly created_at: number;
-  readonly metadata_json: string;
 }
 
 export interface GlobalDbConnectionsPort {

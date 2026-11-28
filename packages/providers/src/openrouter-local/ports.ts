@@ -2,7 +2,7 @@ import type { ExplicitNumCtx, LocalServerKind } from "./constants.js";
 
 /**
  * Task 120 `WindowsDpapiSecretsVault`.
- * Plaintext stays in the vault. Callers persist `secretId` / `lastFourMasked` only.
+ * `BrokerOpenRouterVault` is the production adapter. Plaintext stays in the vault.
  */
 export interface DpapiPutInput {
   readonly projectId: string;
@@ -31,8 +31,8 @@ export interface DpapiSecretsVaultPort {
 }
 
 /**
- * Task 014 `GlobalDbRepo.connections`.
- * Column names match `schema/global.sql`. The secret itself is never a column.
+ * Task 014 `GlobalBrokerDb.connections`.
+ * Column names match `schema/global.sql`. Profile metadata lives in `connection_profiles`.
  */
 export type ConnectionRoute =
   | "api_key"

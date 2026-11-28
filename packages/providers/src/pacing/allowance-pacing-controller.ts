@@ -151,6 +151,14 @@ export class AllowancePacingController {
     return this.repo.listRows(connectionId);
   }
 
+  async learnedFeeds(connectionId: string): Promise<SubscriptionWeightFeed[]> {
+    return this.repo.withTransaction((tx) => {
+      const state = tx.get(connectionId);
+      if (!state) return [];
+      return ModelAllowanceWeightLearner.restore(connectionId, state.weights).feeds();
+    });
+  }
+
   async weight(connectionId: string, modelId: string): Promise<ModelWeightView> {
     return this.repo.withTransaction((tx) => {
       const state = tx.require(connectionId);

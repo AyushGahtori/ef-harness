@@ -1,5 +1,6 @@
 import { PPM_SCALE } from "./constants.js";
 import { PacingError } from "./errors.js";
+import { harnessCeilingPpm } from "./format.js";
 import type { ConnectionWindowRow, PersistedConnection, WindowKind } from "./types.js";
 
 export interface ConsumeResult {
@@ -29,6 +30,8 @@ export interface GlobalConnectionWindowRepo {
   withTransaction<T>(body: (tx: ConnectionWindowTx) => T | Promise<T>): Promise<T>;
   read(connectionId: string): Promise<PersistedConnection | undefined>;
   listRows(connectionId: string): Promise<ConnectionWindowRow[]>;
+  /** Ppm left under the harness ceiling. `BudgetWindDownController` reads this synchronously. */
+  remainingPpm(connectionId: string): number | null;
 }
 
 /**
@@ -57,6 +60,11 @@ export class InMemoryGlobalConnectionWindowRepo implements GlobalConnectionWindo
     const row = this.rows.get(connectionId);
     if (!row) return [];
     return row.windows.map((window) => toSchemaRow(connectionId, window));
+  }
+
+  remainingPpm(connectionId: string): number | null {
+    const row = this.rows.get(connectionId);
+    return row ? remainingPpmFor(row) : null;
   }
 
   private async run<T>(body: (tx: ConnectionWindowTx) => T | Promise<T>): Promise<T> {
@@ -136,6 +144,13 @@ export class ConnectionWindowTransaction implements ConnectionWindowTx {
   rollback(): void {
     this.draft.clear();
   }
+}
+
+export function remainingPpmFor(state: PersistedConnection): number | null {
+  const window = state.windows.find((item) => item.kind === "5h") ?? state.windows[0];
+  if (!window) return null;
+  const ceiling = harnessCeilingPpm(state.reserveFraction);
+  return Math.max(0, ceiling - window.usedPpm - window.reservedInFlightPpm);
 }
 
 function toSchemaRow(

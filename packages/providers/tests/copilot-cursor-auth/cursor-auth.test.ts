@@ -6,8 +6,6 @@ import {
   CursorKeyExpiryReminderScheduler,
   CursorUnauthorizedError,
   DAY_MS,
-  LocalGlobalDbConnections,
-  LocalWindowsDpapiSecretsVault,
   ManualClock,
   ManualTimerRegistry,
   RedactingAuditLog,
@@ -21,6 +19,7 @@ import {
   RecordingParker,
   RecordingReminders,
   ScriptedCursor,
+  openCopilotStores,
 } from "./fakes.js";
 
 const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
@@ -28,8 +27,7 @@ const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
 function setup() {
   const clock = new ManualClock(0);
   const timers = new ManualTimerRegistry();
-  const vault = new LocalWindowsDpapiSecretsVault();
-  const connections = new LocalGlobalDbConnections();
+  const { vault, connections } = openCopilotStores();
   const log = new RedactingAuditLog();
   const agent = new RecordingAgent();
   const cursor = new ScriptedCursor();
@@ -81,7 +79,7 @@ describe("Cursor browser auth and 7-day expiry reminder", () => {
     expect(metadata.authMode).toBe("cursor_browser");
     expect(established.connection.route).toBe("cursor_sdk");
     expect(established.connection.currency).toBe(`allowance:${established.connection.id}`);
-    expect(kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(CURSOR_KEY);
+    expect(await kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(CURSOR_KEY);
     expect(persisted(kit)).not.toContain(CURSOR_KEY);
     expect(JSON.stringify(kit.vault.listPublicMetadata())).not.toContain(CURSOR_KEY);
     expect(kit.timers.activeCount()).toBe(0);
@@ -174,8 +172,8 @@ describe("Cursor browser auth and 7-day expiry reminder", () => {
     expect(metadata.status).toBe("active");
     expect(refreshed.connection.enabled).toBe(1);
     expect(refreshed.connection.createdAt).toBe(0);
-    expect(kit.vault.readSecret(previousVault)).toBeNull();
-    expect(kit.vault.readSecret(refreshed.connection.vaultRef ?? "")).toBe(CURSOR_KEY_NEXT);
+    expect(await kit.vault.readSecret(previousVault)).toBeNull();
+    expect(await kit.vault.readSecret(refreshed.connection.vaultRef ?? "")).toBe(CURSOR_KEY_NEXT);
     expect(kit.scheduler.onColdOpen()).toEqual([]);
     expect(persisted(kit)).not.toContain(CURSOR_KEY);
     expect(persisted(kit)).not.toContain(CURSOR_KEY_NEXT);
@@ -227,9 +225,9 @@ describe("Cursor browser auth and 7-day expiry reminder", () => {
     const kit = setup();
     const established = await kit.flow.login();
     const vaultRef = established.connection.vaultRef ?? "";
-    kit.flow.disconnect(established.connection.id);
+    await kit.flow.disconnect(established.connection.id);
     expect(kit.connections.list()).toHaveLength(0);
-    expect(kit.vault.readSecret(vaultRef)).toBeNull();
+    expect(await kit.vault.readSecret(vaultRef)).toBeNull();
     expect(kit.vault.exportAtRest()).not.toContain(CURSOR_KEY);
     expect(kit.log.text()).not.toContain(CURSOR_KEY);
   });

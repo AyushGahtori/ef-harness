@@ -1,4 +1,13 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach } from "vitest";
 import { CursorAuthCancelledError, DeviceFlowCancelledError } from "../../src/copilot-cursor-auth/errors.js";
+import {
+  LocalGlobalDbConnections,
+  LocalWindowsDpapiSecretsVault,
+} from "../../src/copilot-cursor-auth/index.js";
+import { MemoryMaterialStore } from "../memory-material.js";
 import {
   GITHUB_DEVICE_CODE_URL,
   GITHUB_DEVICE_TOKEN_URL,
@@ -28,6 +37,29 @@ import type {
   UserAgentActions,
 } from "../../src/copilot-cursor-auth/types.js";
 import { ManualClock } from "../../src/copilot-cursor-auth/local-ports.js";
+
+const closers: Array<() => Promise<void> | void> = [];
+
+afterEach(async () => {
+  while (closers.length > 0) {
+    const close = closers.pop();
+    if (close) await close();
+  }
+});
+
+export function openCopilotStores(): {
+  vault: LocalWindowsDpapiSecretsVault;
+  connections: LocalGlobalDbConnections;
+} {
+  const directory = mkdtempSync(path.join(tmpdir(), "ef-c54-auth-"));
+  const vault = new LocalWindowsDpapiSecretsVault(directory, { materialStore: new MemoryMaterialStore() });
+  const connections = new LocalGlobalDbConnections(path.join(directory, "broker"));
+  closers.push(async () => {
+    await vault.close();
+    connections.close();
+  });
+  return { vault, connections };
+}
 
 export const COPILOT_TOKEN = "fixture-copilot-user-token-alpha";
 export const COPILOT_TOKEN_OTHER = "fixture-copilot-user-token-bravo";

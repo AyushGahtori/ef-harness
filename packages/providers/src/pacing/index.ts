@@ -36,6 +36,10 @@ export {
   windDownThresholdPpm,
 } from "./format.js";
 export {
+  BrokerGlobalConnectionWindowRepo,
+  PacingAllowanceWindow,
+} from "./broker-window-repo.js";
+export {
   ConnectionWindowTransaction,
   InMemoryGlobalConnectionWindowRepo,
 } from "./global-connection-window-repo.js";
@@ -67,6 +71,7 @@ export type {
   OpaqueResetObservation,
   WeightObservation,
 } from "./model-allowance-weight-learner.js";
+export { applyAllowanceWeights, rosterWithPolicyAndPacing, subscriptionWeightsFromFeeds } from "./roster-feed.js";
 export { simulateFiveHourChatGptPlusWindow } from "./pacing-simulator.js";
 export type { FiveHourSimulationOptions } from "./pacing-simulator.js";
 export {

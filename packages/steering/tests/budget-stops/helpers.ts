@@ -1,6 +1,7 @@
 import {
   AtomicBudgetReservationLedger,
   BudgetWindDownController,
+  type AllowanceWindowPort,
   InMemoryCheckpointStore,
   InMemoryIntegration,
   LocalKernelStop,
@@ -23,6 +24,8 @@ export interface HarnessParts {
 export function createHarness(input?: {
   readonly microUsdLimit?: number | null;
   readonly ppmLimit?: number | null;
+  readonly allowance?: AllowanceWindowPort;
+  readonly allowanceConnectionId?: string;
   readonly connections?: readonly ConnectionAccount[];
   readonly activeConnectionId?: string;
   readonly finishedFeatures?: readonly string[];
@@ -31,7 +34,12 @@ export function createHarness(input?: {
 }): HarnessParts {
   const microUsdLimit = input && "microUsdLimit" in input ? input.microUsdLimit ?? null : 10_000_000;
   const ppmLimit = input && "ppmLimit" in input ? input.ppmLimit ?? null : null;
-  const ledger = new AtomicBudgetReservationLedger({ microUsdLimit, ppmLimit });
+  const ledger = new AtomicBudgetReservationLedger({
+    microUsdLimit,
+    ppmLimit,
+    ...(input?.allowance ? { allowance: input.allowance } : {}),
+    ...(input?.allowanceConnectionId ? { connectionId: input.allowanceConnectionId } : {}),
+  });
   const integration = new InMemoryIntegration(
     input?.commits ?? [{ sha: "base", featureId: null, subject: "base" }],
   );

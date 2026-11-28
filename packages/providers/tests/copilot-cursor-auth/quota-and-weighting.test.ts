@@ -4,16 +4,14 @@ import {
   CopilotPlanCostWeighting,
   CopilotPremiumExhaustedError,
   CopilotQuotaReader,
-  LocalGlobalDbConnections,
   LocalSignedProviderPolicy,
-  LocalWindowsDpapiSecretsVault,
   ManualClock,
   ManualTimerRegistry,
   RedactingAuditLog,
   exhaustedPremiumMessage,
 } from "../../src/copilot-cursor-auth/index.js";
 import type { CopilotBillingMode, CopilotQuota, GlobalConnectionRecord } from "../../src/copilot-cursor-auth/index.js";
-import { COPILOT_TOKEN, RecordingCheckpoints, RecordingPacing, ScriptedQuota } from "./fakes.js";
+import { COPILOT_TOKEN, RecordingCheckpoints, RecordingPacing, ScriptedQuota, openCopilotStores } from "./fakes.js";
 
 const RESET = "2026-12-01T00:00:00.000Z";
 
@@ -28,7 +26,7 @@ function quota(partial: Partial<CopilotQuota> = {}): CopilotQuota {
   };
 }
 
-function seed(input: {
+async function seed(input: {
   billingMode?: CopilotBillingMode;
   token?: string;
   overageApprovedForReset?: string | null;
@@ -36,10 +34,9 @@ function seed(input: {
   const billingMode = input.billingMode ?? "copilot_subscription";
   const token = input.token ?? COPILOT_TOKEN;
   const id = "copilot-octocat";
-  const vault = new LocalWindowsDpapiSecretsVault();
-  const connections = new LocalGlobalDbConnections();
+  const { vault, connections } = openCopilotStores();
   const secretId = `vault:gitHubToken:${id}:1`;
-  const written = vault.writeSecret({
+  const written = await vault.writeSecret({
     secretId,
     name: "gitHubToken",
     plaintext: token,
@@ -89,7 +86,7 @@ function seed(input: {
 
 describe("Copilot quota reader and plan-aware weights", () => {
   it("reads account.getQuota on verify, build start, and a periodic tick", async () => {
-    const kit = seed({});
+    const kit = await seed({});
     await kit.reader.read(kit.id, "connection_verify");
     await kit.reader.read(kit.id, "build_start");
     kit.reader.startPeriodic(kit.id, 60_000);
@@ -118,7 +115,7 @@ describe("Copilot quota reader and plan-aware weights", () => {
   });
 
   it("opens the checkpoint card when premium requests are exhausted without overage", async () => {
-    const kit = seed({});
+    const kit = await seed({});
     kit.account.quota = quota({ remaining: 0, percentRemaining: 0, overageEnabled: false });
     const outcome = await kit.reader.read(kit.id, "build_start");
     const message = exhaustedPremiumMessage(RESET);
@@ -143,7 +140,7 @@ describe("Copilot quota reader and plan-aware weights", () => {
   });
 
   it("pauses for explicit confirmation before paid overage and allows it only after approval", async () => {
-    const kit = seed({});
+    const kit = await seed({});
     kit.account.quota = quota({ remaining: 0, percentRemaining: 0, overageEnabled: true });
     const outcome = await kit.reader.read(kit.id, "build_start");
     expect(outcome.kind).toBe("paid_overage_confirmation_required");
@@ -170,7 +167,7 @@ describe("Copilot quota reader and plan-aware weights", () => {
   });
 
   it("tags bring-your-own-key usage as api dollars instead of subscription quota", async () => {
-    const kit = seed({ billingMode: "byok_api_key" });
+    const kit = await seed({ billingMode: "byok_api_key" });
     kit.account.quota = quota({ remaining: 0, percentRemaining: 0, overageEnabled: true });
     const outcome = await kit.reader.read(kit.id, "connection_verify");
     expect(outcome.kind).toBe("ok");

@@ -40,6 +40,9 @@ export type { DiscoveryTarget } from "./loopback-url.js";
 export { LoopbackCallbackServer } from "./loopback-server.js";
 export type { LoopbackCallback } from "./loopback-server.js";
 
+export { BrokerOpenRouterConnections, BrokerOpenRouterVault } from "./broker-ports.js";
+export type { OpenRouterVaultOptions } from "./broker-ports.js";
+
 export {
   InMemoryCreditWindDown,
   InMemoryDpapiSecretsVault,

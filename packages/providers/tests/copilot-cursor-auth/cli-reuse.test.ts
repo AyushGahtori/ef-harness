@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   GitHubCopilotDeviceAuthFlow,
-  LocalGlobalDbConnections,
-  LocalWindowsDpapiSecretsVault,
   ManualClock,
   ManualTimerRegistry,
   OfficialCliAuthProbe,
@@ -17,6 +15,7 @@ import {
   ScriptedGitHub,
   ScriptedRunner,
   ScriptedSeat,
+  openCopilotStores,
   subscribedSeat,
 } from "./fakes.js";
 
@@ -25,8 +24,7 @@ const COPILOT_STATUS = "Logged in as octocat\n";
 
 function setup(runner: ScriptedRunner) {
   const clock = new ManualClock();
-  const vault = new LocalWindowsDpapiSecretsVault();
-  const connections = new LocalGlobalDbConnections();
+  const { vault, connections } = openCopilotStores();
   const log = new RedactingAuditLog();
   const seat = new ScriptedSeat(subscribedSeat("octocat"));
   const flow = new GitHubCopilotDeviceAuthFlow({
@@ -78,7 +76,7 @@ describe("existing Copilot and GitHub CLI auth reuse", () => {
       accountLogin: "octocat",
       billingMode: "copilot_subscription",
     });
-    expect(kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
+    expect(await kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
     const persisted = [kit.connections.exportSnapshot(), kit.log.text(), kit.vault.exportAtRest()].join(
       "\n",
     );
@@ -103,7 +101,7 @@ describe("existing Copilot and GitHub CLI auth reuse", () => {
     expect(offers[0]?.label).toBe("Use your signed-in GitHub account (@octocat)");
     const established = await kit.flow.acceptCliReuse("copilot", "octocat");
     expect(established.connection.metadata).toMatchObject({ authMode: "github_cli_reuse" });
-    expect(kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
+    expect(await kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
   });
 
   it("does not offer an account when the official token command is empty", async () => {
@@ -126,7 +124,7 @@ describe("existing Copilot and GitHub CLI auth reuse", () => {
     runner.scripts.set("copilot --version", { exitCode: 127, stdout: "", stderr: "not found" });
     const kit = setup(runner);
     await kit.flow.probeCliReuse();
-    kit.flow.disconnect("copilot-not-saved");
+    await kit.flow.disconnect("copilot-not-saved");
     await expect(kit.flow.acceptCliReuse("gh", "octocat")).rejects.toThrow(/No signed-in CLI/);
     expect(kit.vault.listPublicMetadata()).toHaveLength(0);
     expect(kit.log.text()).not.toContain(COPILOT_TOKEN);

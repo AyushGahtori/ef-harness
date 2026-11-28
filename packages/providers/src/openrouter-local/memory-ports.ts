@@ -22,8 +22,8 @@ interface StoredSecret extends DpapiSecretHandle {
 }
 
 /**
- * In-memory stand-in for Task 120. Plaintext never appears on connection rows.
- * Swap the constructor argument for `WindowsDpapiSecretsVault` at integration.
+ * Test double for Task 120. Production callers use `BrokerOpenRouterVault`.
+ * Plaintext never appears on connection rows.
  */
 export class InMemoryDpapiSecretsVault implements DpapiSecretsVaultPort {
   private readonly secrets = new Map<string, StoredSecret>();

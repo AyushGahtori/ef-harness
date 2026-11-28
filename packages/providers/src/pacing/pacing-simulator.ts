@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { AllowancePacingController } from "./allowance-pacing-controller.js";
+import { BrokerGlobalConnectionWindowRepo } from "./broker-window-repo.js";
 import { FIVE_HOUR_MS } from "./constants.js";
-import { InMemoryGlobalConnectionWindowRepo } from "./global-connection-window-repo.js";
 import {
   RecordingAllowanceWeightSink,
   RecordingBoardHealth,
@@ -34,7 +37,8 @@ export async function simulateFiveHourChatGptPlusWindow(
   const reserveFraction = options.reserveFraction ?? 0.2;
   const windowEndMs = windowStartMs + FIVE_HOUR_MS;
   const clock = { t: windowStartMs };
-  const repo = new InMemoryGlobalConnectionWindowRepo();
+  const root = mkdtempSync(path.join(tmpdir(), "ef-pacing-sim-"));
+  const repo = new BrokerGlobalConnectionWindowRepo(root);
   const controller = new AllowancePacingController({
     projectId: "sim-project",
     repo,
@@ -52,6 +56,7 @@ export async function simulateFiveHourChatGptPlusWindow(
     random: () => 0,
   });
   const connectionId = "chatgpt-plus";
+  try {
   await controller.registerConnection({
     connectionId,
     provider: "chatgpt",
@@ -179,6 +184,10 @@ export async function simulateFiveHourChatGptPlusWindow(
     crossedReserve: finalTelemetry.windowUsedPpm > finalTelemetry.reserveCeilingPpm,
     windowMs: FIVE_HOUR_MS,
   };
+  } finally {
+    repo.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 interface SimTask {

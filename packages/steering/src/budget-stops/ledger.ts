@@ -14,7 +14,8 @@ const PPM_CURRENCY = "allowance:window";
 
 /**
  * Subscription ppm left on the active connection.
- * C54 binds this to `GlobalConnectionWindowRepo`. Until then the project ppm scope is the window.
+ * `PacingAllowanceWindow` in `@ef-harness/providers` is the Task 140 binding.
+ * The ledger takes that object as `allowance` so steering does not import providers.
  */
 export interface AllowanceWindowPort {
   remainingPpm(connectionId: string): number | null;

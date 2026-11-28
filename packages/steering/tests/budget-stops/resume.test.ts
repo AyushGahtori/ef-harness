@@ -240,4 +240,23 @@ describe("stop receipts, resume validation, and parked preservation", () => {
     expect(parked.cpu).toBe(0);
     expect(parked.spendPerHourMicroUsd).toBe(0);
   });
+
+  it("refuses resume when the pacing allowance window has no ppm left", () => {
+    const start = 1_700_000_000_000;
+    const harness = createHarness({
+      microUsdLimit: null,
+      ppmLimit: 1_000_000,
+      allowanceConnectionId: "plus",
+      allowance: { remainingPpm: (connectionId) => (connectionId === "plus" ? 0 : null) },
+      connections: [plusConnection(start)],
+      activeConnectionId: "plus",
+    });
+    harness.now = start;
+    expect(harness.ledger.remaining("ppm")).toBe(0);
+    expect(harness.controller.resumeFromReset("user")).toMatchObject({
+      resumed: false,
+      reason: "allowance_not_positive",
+    });
+    harness.stopEvents.close();
+  });
 });

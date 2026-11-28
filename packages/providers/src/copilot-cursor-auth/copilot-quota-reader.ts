@@ -72,7 +72,7 @@ export class CopilotQuotaReader {
     if (!record || record.metadata.kind !== "copilot" || !record.vaultRef) {
       throw new Error("Copilot connection was not found");
     }
-    const token = this.deps.vault.readSecret(record.vaultRef);
+    const token = await this.deps.vault.readSecret(record.vaultRef);
     if (!token) throw new Error("Copilot credential is missing from the DPAPI vault");
     this.deps.log.seal(token);
     const quota = normalizeQuota(await this.deps.account.accountGetQuota(token));

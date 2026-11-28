@@ -138,12 +138,12 @@ export class GitHubCopilotDeviceAuthFlow {
     return this.sessions.size;
   }
 
-  disconnect(connectionId: string): void {
+  async disconnect(connectionId: string): Promise<void> {
     this.cancelPendingDeviceFlows();
     for (const token of this.pendingCliTokens.values()) this.deps.log.seal(token);
     this.pendingCliTokens.clear();
     const row = this.deps.connections.get(connectionId);
-    if (row?.vaultRef) this.deps.vault.deleteSecret(row.vaultRef);
+    if (row?.vaultRef) await this.deps.vault.deleteSecret(row.vaultRef);
     if (row) this.deps.connections.delete(connectionId);
     this.deps.log.record("copilot_disconnected", { connectionId });
   }
@@ -203,7 +203,7 @@ export class GitHubCopilotDeviceAuthFlow {
     if (!isVaultReference(secretId)) throw new Error("Vault reference was rejected");
     const secrets = input.deviceCode ? [input.token, input.deviceCode] : [input.token];
     for (const secret of secrets) this.deps.log.seal(secret);
-    const written = this.deps.vault.writeSecret({
+    const written = await this.deps.vault.writeSecret({
       secretId,
       name: "gitHubToken",
       plaintext: input.token,
@@ -245,7 +245,7 @@ export class GitHubCopilotDeviceAuthFlow {
       assertNoRawCredential("logs", this.deps.log.text(), secrets);
       assertNoRawCredential("dpapi at rest", this.deps.vault.exportAtRest(), secrets);
     } catch (error) {
-      this.deps.vault.deleteSecret(written.secretId);
+      await this.deps.vault.deleteSecret(written.secretId);
       this.deps.connections.delete(connectionId);
       throw error;
     }

@@ -53,7 +53,7 @@ export class CursorBrowserAuthFlow {
       const models = await this.deps.cursor.probeModels(result.userApiKey);
       if (!models.ok) throw this.probeFailure(models.status, models.message);
       if (controller.signal.aborted) throw new CursorAuthCancelledError();
-      return this.persist({
+      return await this.persist({
         connectionId: options?.connectionId ?? null,
         userApiKey: result.userApiKey,
         chargedCents: usage.chargedCents,
@@ -77,10 +77,10 @@ export class CursorBrowserAuthFlow {
     return this.login({ connectionId });
   }
 
-  disconnect(connectionId: string): void {
+  async disconnect(connectionId: string): Promise<void> {
     this.cancel();
     const row = this.deps.connections.get(connectionId);
-    if (row?.vaultRef) this.deps.vault.deleteSecret(row.vaultRef);
+    if (row?.vaultRef) await this.deps.vault.deleteSecret(row.vaultRef);
     if (row) this.deps.connections.delete(connectionId);
     this.deps.log.record("cursor_disconnected", { connectionId });
   }
@@ -90,12 +90,12 @@ export class CursorBrowserAuthFlow {
     return new Error(message);
   }
 
-  private persist(input: {
+  private async persist(input: {
     readonly connectionId: string | null;
     readonly userApiKey: string;
     readonly chargedCents: number;
     readonly modelCount: number;
-  }): EstablishedCursorConnection {
+  }): Promise<EstablishedCursorConnection> {
     const now = this.deps.clock.now();
     const existing = input.connectionId ? this.deps.connections.get(input.connectionId) : null;
     const createdAt =
@@ -105,7 +105,7 @@ export class CursorBrowserAuthFlow {
     const secretId = `vault:cursorUserApiKey:${id}:${now}`;
     if (!isVaultReference(secretId)) throw new Error("Vault reference was rejected");
     this.deps.log.seal(input.userApiKey);
-    const written = this.deps.vault.writeSecret({
+    const written = await this.deps.vault.writeSecret({
       secretId,
       name: "cursorUserApiKey",
       plaintext: input.userApiKey,
@@ -147,10 +147,10 @@ export class CursorBrowserAuthFlow {
       assertNoRawCredential("logs", this.deps.log.text(), [input.userApiKey]);
       assertNoRawCredential("dpapi at rest", this.deps.vault.exportAtRest(), [input.userApiKey]);
       if (previousVault && previousVault !== written.secretId) {
-        this.deps.vault.deleteSecret(previousVault);
+        await this.deps.vault.deleteSecret(previousVault);
       }
     } catch (error) {
-      this.deps.vault.deleteSecret(written.secretId);
+      await this.deps.vault.deleteSecret(written.secretId);
       if (existing) this.deps.connections.upsert(existing);
       else this.deps.connections.delete(id);
       throw error;

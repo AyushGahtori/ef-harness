@@ -6,8 +6,6 @@ import {
   GITHUB_DEVICE_TOKEN_URL,
   GITHUB_DEVICE_VERIFICATION_URL,
   GitHubCopilotDeviceAuthFlow,
-  LocalGlobalDbConnections,
-  LocalWindowsDpapiSecretsVault,
   ManualClock,
   ManualTimerRegistry,
   OrgPolicyBlockedError,
@@ -30,6 +28,7 @@ import {
   ScriptedGitHub,
   ScriptedSeat,
   deviceCodeBody,
+  openCopilotStores,
   releasePoll,
   subscribedSeat,
 } from "./fakes.js";
@@ -38,8 +37,7 @@ function setup(seat = new ScriptedSeat(subscribedSeat("octocat"))) {
   const clock = new ManualClock();
   const sleep = new ControllableSleep();
   const timers = new ManualTimerRegistry();
-  const vault = new LocalWindowsDpapiSecretsVault();
-  const connections = new LocalGlobalDbConnections();
+  const { vault, connections } = openCopilotStores();
   const log = new RedactingAuditLog();
   const http = new ScriptedGitHub();
   const agent = new RecordingAgent();
@@ -114,7 +112,7 @@ describe("GitHub Copilot device flow", () => {
     expect(tokenPosts[0]?.body.device_code).toBe(DEVICE_CODE);
     expect(kit.seat.seen).toEqual([COPILOT_TOKEN]);
     expect(established.connection.vaultRef).toMatch(/^vault:gitHubToken:copilot-octocat:/);
-    expect(kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
+    expect(await kit.vault.readSecret(established.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
     expect(established.connection.route).toBe("copilot_sdk");
     expect(established.connection.currency).toBe(`allowance:${established.connection.id}`);
     expect(established.connection.metadata).toMatchObject({
@@ -343,8 +341,8 @@ describe("GitHub Copilot device flow", () => {
     const second = await secondPending;
     expect(first.connection.id).toBe("copilot-octocat");
     expect(second.connection.id).toBe("copilot-hubot");
-    expect(kit.vault.readSecret(first.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
-    expect(kit.vault.readSecret(second.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN_OTHER);
+    expect(await kit.vault.readSecret(first.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN);
+    expect(await kit.vault.readSecret(second.connection.vaultRef ?? "")).toBe(COPILOT_TOKEN_OTHER);
     secretFree(kit.connections.exportSnapshot(), COPILOT_TOKEN, COPILOT_TOKEN_OTHER);
   });
 
@@ -360,10 +358,10 @@ describe("GitHub Copilot device flow", () => {
     const hanging = await kit.flow.beginDeviceFlow();
     const hangingResult = hanging.waitForAuthorization();
     expect(kit.timers.activeCount()).toBe(1);
-    kit.flow.disconnect(established.connection.id);
+    await kit.flow.disconnect(established.connection.id);
     await expect(hangingResult).rejects.toBeInstanceOf(DeviceFlowCancelledError);
     expect(kit.connections.get(established.connection.id)).toBeNull();
-    expect(kit.vault.readSecret(vaultRef)).toBeNull();
+    expect(await kit.vault.readSecret(vaultRef)).toBeNull();
     expect(kit.vault.exportAtRest()).not.toContain(COPILOT_TOKEN);
     expect(kit.connections.exportSnapshot()).not.toContain(COPILOT_TOKEN);
     expect(kit.timers.activeCount()).toBe(0);
