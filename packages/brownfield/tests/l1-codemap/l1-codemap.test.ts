@@ -87,7 +87,7 @@ describe("l1-codemap", () => {
 
     const indexer = new WasmTreeSitterIndexer();
     await indexer.init();
-    const indexed = indexer.index({ repoRoot: root, commitSha: commit, dbPath });
+    const indexed = await indexer.index({ repoRoot: root, commitSha: commit, dbPath });
     expect(indexed.indexedFiles).toBeGreaterThanOrEqual(6);
     expect(indexed.skippedFiles).toBeGreaterThanOrEqual(2);
 
@@ -109,7 +109,7 @@ describe("l1-codemap", () => {
     30_000,
   );
 
-  it("re-indexes only changed files in under 50ms", () => {
+  it("re-indexes only changed files in under 50ms", async () => {
     const root = track(tempRepo("incr"));
     const commit = "0000000000000000000000000000000000000001";
     writeFile(
@@ -126,7 +126,7 @@ describe("l1-codemap", () => {
     const dbPath = path.join(root, "code-index.db");
 
     const indexer = new WasmTreeSitterIndexer();
-    indexer.index({ repoRoot: root, commitSha: commit, dbPath, keepDbOpen: true });
+    await indexer.index({ repoRoot: root, commitSha: commit, dbPath, keepDbOpen: true });
 
     const durations: number[] = [];
     for (let version = 2; version <= 6; version += 1) {
@@ -136,13 +136,15 @@ describe("l1-codemap", () => {
         `export function renderResumePdf(): Buffer { return Buffer.from('v${version}'); }\nexport const version = ${version};\n`,
       );
       durations.push(
-        indexer.incrementalIndex({
-          repoRoot: root,
-          commitSha: commit,
-          dbPath,
-          changedOnly: ["src/lib/pdf.ts"],
-          keepDbOpen: true,
-        }).durationMs,
+        (
+          await indexer.incrementalIndex({
+            repoRoot: root,
+            commitSha: commit,
+            dbPath,
+            changedOnly: ["src/lib/pdf.ts"],
+            keepDbOpen: true,
+          })
+        ).durationMs,
       );
     }
     expect(Math.min(...durations)).toBeLessThan(50);

@@ -44,8 +44,10 @@ export interface FileRankRow {
   readonly score: number;
 }
 
+export type GovernorLevel = "GREEN" | "ORANGE" | "RED";
+
 export interface GovernorSignal {
-  readonly level: "green" | "orange" | "red";
+  readonly level: GovernorLevel;
 }
 
 export interface GovernorPort {
@@ -54,6 +56,10 @@ export interface GovernorPort {
 
 export const DEFAULT_GOVERNOR: GovernorPort = {
   readSignal() {
-    return { level: "green" };
+    return { level: "GREEN" };
   },
 };
+
+export function governorPauses(level: string): boolean {
+  return level === "ORANGE" || level === "RED";
+}

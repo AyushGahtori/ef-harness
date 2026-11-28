@@ -64,11 +64,20 @@ export {
   CHANGE_CLASSES,
   CHANGE_SET_ORIGINS,
   EDGE_TYPES,
+  ADDITIVE_NODE_KINDS,
   NODE_KINDS,
   NODE_STATUSES,
   SETTLED_BASES,
 } from "./vocab.js";
-export type { ChangeClass, ChangeSetOrigin, EdgeTypeName, NodeKindName, NodeStatus, SettledBasis } from "./vocab.js";
+export type {
+  AdditiveNodeKind,
+  ChangeClass,
+  ChangeSetOrigin,
+  EdgeTypeName,
+  NodeKindName,
+  NodeStatus,
+  SettledBasis,
+} from "./vocab.js";
 
 export function openKnowledgeGraph(options: OpenStateConnectionOptions = {}): KnowledgeGraphRepo {
   const connection = openStateConnection(options);

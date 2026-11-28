@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CodeEgressSecretMasker,
@@ -9,9 +12,11 @@ import {
   InMemoryRepoCloudEgressLedger,
   L2BrownfieldSummarizer,
   L2PreSpendEstimator,
+  MODULE_CARD_PROMPT_VERSION,
   ModuleCardCacheEngine,
   PRE_SPEND_TOKEN_THRESHOLD,
   RequestDrivenFocusSelector,
+  SqliteModuleCardStore,
   StaleDocsDetector,
 } from "../../src/l2-cards/index.js";
 import { buildLargeFixture, TestL0GroundTruth } from "./fixtures.js";
@@ -240,5 +245,36 @@ describe("L2BrownfieldSummarizer integration", () => {
     });
     expect(result.skippedCloud).toBe(true);
     expect(result.modelCalls).toBe(0);
+  });
+});
+
+describe("SqliteModuleCardStore", () => {
+  it("reloads a module card from code-index.db", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "l2-cards-"));
+    const dbPath = path.join(dir, "code-index.db");
+    const key = {
+      filePath: "src/pdf.ts",
+      fileContentSha256: "abc123",
+      promptVersion: MODULE_CARD_PROMPT_VERSION,
+    };
+    const store = new SqliteModuleCardStore(dbPath);
+    store.put({
+      key,
+      createdAtMs: 10,
+      card: {
+        module: "src/pdf.ts",
+        purpose: "render a resume",
+        key_exports: [{ name: "renderResumePdf" }],
+        reads: ["src/doc.ts"],
+        writes: [],
+        side_effects: [],
+        tests: ["pdf.test.ts"],
+        confidence: "high",
+      },
+    });
+    const loaded = new SqliteModuleCardStore(dbPath).get(key);
+    fs.rmSync(dir, { recursive: true, force: true });
+    expect(loaded?.card.purpose).toBe("render a resume");
+    expect(loaded?.card.key_exports[0]?.name).toBe("renderResumePdf");
   });
 });

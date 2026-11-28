@@ -42,6 +42,7 @@ export { ModuleCardCacheEngine } from "./module-card-cache-engine.js";
 export { StaleDocsDetector } from "./stale-docs-detector.js";
 export { L2BrownfieldSummarizer } from "./l2-batch-runner.js";
 export { repairHallucinatedExports } from "./symbol-parity.js";
+export { SqliteModuleCardStore } from "./sqlite-module-card-store.js";
 
 export {
   FakeModelAdapter,

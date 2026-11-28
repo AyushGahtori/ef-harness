@@ -89,7 +89,14 @@ export const EVIDENCE_SOURCE_KINDS = ["turn", "source", "repo", "research"] as c
 
 export const UPDATE_CLASSES = ["cosmetic", "clarifying", "compatible", "breaking"] as const;
 
+/**
+ * Brownfield L0 writes package components. The v1 seed stays 17 kinds;
+ * the row is inserted on the state connection before the node commit.
+ */
+export const ADDITIVE_NODE_KINDS = [{ kind: "component", isRequirement: false }] as const;
+
 export type NodeKindName = (typeof NODE_KINDS)[number]["kind"];
+export type AdditiveNodeKind = (typeof ADDITIVE_NODE_KINDS)[number]["kind"];
 export type EdgeTypeName = (typeof EDGE_TYPES)[number]["type"];
 export type AdditiveEdgeType = (typeof ADDITIVE_EDGE_TYPES)[number]["type"];
 export type SettledBasis = (typeof SETTLED_BASES)[number];
@@ -100,7 +107,10 @@ export type TurnAuthor = (typeof TURN_AUTHORS)[number];
 export type EvidenceSourceKind = (typeof EVIDENCE_SOURCE_KINDS)[number];
 export type UpdateClass = (typeof UPDATE_CLASSES)[number];
 
-const nodeKindSet = new Set<string>(NODE_KINDS.map((row) => row.kind));
+const nodeKindSet = new Set<string>([
+  ...NODE_KINDS.map((row) => row.kind),
+  ...ADDITIVE_NODE_KINDS.map((row) => row.kind),
+]);
 const edgeTypeSet = new Set<string>(EDGE_TYPES.map((row) => row.type));
 const additiveEdgeTypeSet = new Set<string>(ADDITIVE_EDGE_TYPES.map((row) => row.type));
 const basisSet = new Set<string>(SETTLED_BASES);
@@ -110,7 +120,7 @@ const updateClassSet = new Set<string>(UPDATE_CLASSES);
 const turnAuthorSet = new Set<string>(TURN_AUTHORS);
 const evidenceSourceSet = new Set<string>(EVIDENCE_SOURCE_KINDS);
 
-export function isNodeKind(value: string): value is NodeKindName {
+export function isNodeKind(value: string): value is NodeKindName | AdditiveNodeKind {
   return nodeKindSet.has(value);
 }
 

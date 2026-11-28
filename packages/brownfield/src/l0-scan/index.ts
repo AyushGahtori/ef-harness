@@ -28,4 +28,5 @@ export type {
   ObservedNodeInput,
 } from "./knowledge-graph-port.js";
 export type { MinGitRepoInspectorPort, MinGitCommandRunner } from "./git-exec.js";
+export { openSqliteObservedFacts, type SqliteObservedFacts } from "./sqlite-observed-store.js";
 export { isSensitivePath } from "./sensitive.js";

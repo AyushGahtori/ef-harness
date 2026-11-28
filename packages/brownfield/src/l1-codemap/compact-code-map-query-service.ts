@@ -81,10 +81,7 @@ export class CompactCodeMapQueryService {
         }
       }
     }
-    const edges = global.slice(0, -1).flatMap((row, i) => {
-      const to = global[i + 1]?.path;
-      return to ? [{ from: row.path, to, weight: 0.5 }] : [];
-    });
+    const edges = db.listReferenceEdges(this.commitSha);
     const scores = this.pagerank.computePersonalized(paths, edges, seedPaths, 4);
     for (const [pathKey, score] of scores) {
       boost.set(pathKey, score * (boost.get(pathKey) ?? 1));

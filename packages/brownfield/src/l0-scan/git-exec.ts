@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { scrubGitEnv } from "@ef-harness/git-engine";
 
 export interface GitRunResult {
   readonly exitCode: number;
@@ -16,14 +19,44 @@ function splitNul(stdout: string): string[] {
   return trimmed.split("\0").filter(Boolean);
 }
 
+let cachedBinary: string | undefined;
+
+/**
+ * Resolve the git binary through `@ef-harness/git-engine` `resolveGitBinary`
+ * (bundled MinGit, then the unpackaged fallback that resolver already defines).
+ */
+export function resolveHermeticGitBinary(): string {
+  if (cachedBinary) return cachedBinary;
+  const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  const script = [
+    'import { resolveGitBinary } from "@ef-harness/git-engine";',
+    "const resolved = await resolveGitBinary();",
+    "process.stdout.write(resolved.gitPath);",
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: packageRoot,
+    encoding: "utf8",
+    windowsHide: true,
+    env: scrubGitEnv(process.env),
+  });
+  const gitPath = (result.stdout ?? "").trim();
+  if (result.status !== 0 || gitPath.length === 0) {
+    const detail = (result.stderr ?? "").trim();
+    throw new Error(detail.length > 0 ? detail : "hermetic MinGit binary was not resolved");
+  }
+  cachedBinary = gitPath;
+  return gitPath;
+}
+
 export function createNodeGitRunner(): MinGitCommandRunner {
   return {
     run(args, cwd) {
-      const result = spawnSync("git", [...args], {
+      const binary = resolveHermeticGitBinary();
+      const result = spawnSync(binary, [...args], {
         cwd,
         encoding: "utf8",
         windowsHide: true,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        env: scrubGitEnv(process.env),
       });
       return {
         exitCode: result.status ?? 1,
@@ -48,6 +81,7 @@ export interface MinGitRepoInspectorPort {
   lsFiles(root: string): readonly string[];
   lsOthers(root: string): readonly string[];
   logLastCommitForFile(root: string, file: string): string | null;
+  statusPaths(root: string): readonly string[];
 }
 
 export function createMinGitRepoInspector(runner: MinGitCommandRunner = createNodeGitRunner()): MinGitRepoInspectorPort {
@@ -71,6 +105,17 @@ export function createMinGitRepoInspector(runner: MinGitCommandRunner = createNo
     },
     logLastCommitForFile(root, file) {
       return gitOk(runner, root, ["log", "-1", "--format=%cI", "--", file]);
+    },
+    statusPaths(root) {
+      const out = gitOk(runner, root, ["status", "--porcelain"]);
+      if (out === null) return [];
+      const paths: string[] = [];
+      for (const line of out.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        const rel = line.slice(3).trim().replace(/^"(.*)"$/, "$1");
+        if (rel) paths.push(rel);
+      }
+      return paths;
     },
   };
 }

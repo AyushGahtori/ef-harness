@@ -202,6 +202,28 @@ export class CodeIndexDatabase {
       .all(name) as Array<{ fileHash: string; line: number }>;
   }
 
+  listReferenceEdges(commitSha: string): Array<{ from: string; to: string; weight: number }> {
+    const files = this.listCommitFiles(commitSha);
+    const owners = new Map<string, string>();
+    for (const file of files) {
+      for (const symbol of this.symbolsForFile(file.fileHash)) {
+        if (!owners.has(symbol.name)) owners.set(symbol.name, file.path);
+      }
+    }
+    const edges: Array<{ from: string; to: string; weight: number }> = [];
+    for (const file of files) {
+      for (const ref of this.refsForFile(file.fileHash)) {
+        if (ref.name.startsWith("import:")) {
+          edges.push({ from: file.path, to: ref.name.slice("import:".length), weight: 1 });
+          continue;
+        }
+        const owner = owners.get(ref.name);
+        if (owner && owner !== file.path) edges.push({ from: file.path, to: owner, weight: 1 });
+      }
+    }
+    return edges;
+  }
+
   refsForFile(fileHash: string): Array<{ name: string; line: number }> {
     return this.db
       .prepare(`SELECT name, line FROM refs WHERE file_hash = ?`)

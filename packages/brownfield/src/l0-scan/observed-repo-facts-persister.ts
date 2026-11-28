@@ -78,5 +78,18 @@ export class ObservedRepoFactsPersister {
       text: `${result.docs.length} docs`,
       fields: { basis: "observed", docs: result.docs },
     });
+    const primary = result.monorepo.packages[0]?.name ?? pathLabel(result.repoRoot);
+    this.graph.upsertObservedNode({
+      id: "brownfield:l0:component",
+      kind: "component",
+      title: "L0 primary component",
+      text: primary,
+      fields: { basis: "observed", role: "component" },
+    });
   }
+}
+
+function pathLabel(repoRoot: string): string {
+  const parts = repoRoot.split(/[\\/]/);
+  return parts[parts.length - 1] ?? repoRoot;
 }

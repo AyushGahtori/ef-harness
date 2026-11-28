@@ -7,6 +7,7 @@ import {
   InMemoryStateMetaStore,
   MonorepoWorkspacePicker,
   isSensitivePath,
+  openSqliteObservedFacts,
 } from "../../src/l0-scan/index.js";
 import {
   gitAddCommit,
@@ -186,5 +187,24 @@ describe("l0-scan matrix", () => {
     const result = new BrownfieldL0RepoScanner().scan({ repoRoot: root });
     expect(result.churn.churnAvailable).toBe(true);
     expect(result.churn.hotspotFiles.some((h) => h.path === "src/index.ts")).toBe(true);
+  });
+
+  it("reopens observed research_fact and component nodes from state.db", () => {
+    const root = track(tempRepo("state"));
+    seedNextApp(root);
+    gitInit(root);
+    gitAddCommit(root, "init");
+    const dataRoot = track(tempRepo("state-db"));
+    const opened = openSqliteObservedFacts({ projectId: "l0-facts", rootDir: dataRoot });
+    const scanner = new BrownfieldL0RepoScanner({ graph: opened.graph, meta: opened.meta });
+    scanner.scan({ repoRoot: root });
+    opened.close();
+
+    const again = openSqliteObservedFacts({ projectId: "l0-facts", rootDir: dataRoot });
+    const nodes = again.graph.listObserved();
+    again.close();
+    expect(nodes.some((node) => node.kind === "research_fact" && node.fields.basis === "observed")).toBe(true);
+    expect(nodes.some((node) => node.kind === "component" && node.fields.basis === "observed")).toBe(true);
+    expect(nodes.every((node) => node.kind !== "brownfield_module")).toBe(true);
   });
 });

@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { inventoryDocs } from "./docs-inventory.js";
@@ -69,7 +68,7 @@ export class BrownfieldL0RepoScanner {
 
     const isGit = this.git.isGitRepo(root);
     const headSha = isGit ? this.git.headSha(root) : null;
-    const dirtyMtimes = options.dirtyMtimes ?? collectDirtyMtimes(root, isGit);
+    const dirtyMtimes = options.dirtyMtimes ?? collectDirtyMtimes(root, isGit, this.git);
     const hash = this.persister.computeSnapshotHash(headSha, dirtyMtimes);
 
     if (options.useCache !== false) {
@@ -113,32 +112,18 @@ export class BrownfieldL0RepoScanner {
   }
 }
 
-function collectDirtyMtimes(root: string, isGit: boolean): number[] {
+function collectDirtyMtimes(root: string, isGit: boolean, git: MinGitRepoInspectorPort): number[] {
   if (!isGit) return [];
-  const status = spawnStatus(root);
-  if (!status) return [];
   const mtimes: number[] = [];
-  for (const rel of status) {
+  for (const rel of git.statusPaths(root)) {
     const full = path.join(root, rel);
     try {
       mtimes.push(fs.statSync(full).mtimeMs);
     } catch {
-      /* ignore */
+      /* ignore missing status paths */
     }
   }
   return mtimes;
-}
-
-function spawnStatus(root: string): string[] | null {
-  const result = spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", windowsHide: true });
-  if (result.status !== 0) return null;
-  const paths: string[] = [];
-  for (const line of (result.stdout ?? "").split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    const rel = line.slice(3).trim().replace(/^"(.*)"$/, "$1");
-    if (rel) paths.push(rel);
-  }
-  return paths;
 }
 
 export {

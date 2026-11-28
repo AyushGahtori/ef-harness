@@ -6,8 +6,11 @@ import { sha256Hex } from "./hash.js";
 import { parseStructurally } from "./structural-parser.js";
 import { loadTsPathAliases, resolveImportSpecifier, type PathAliasMap } from "./tsconfig-paths.js";
 import { AiderPageRankCalculator, type GraphEdge } from "./aider-pagerank-calculator.js";
+import type { Parser } from "web-tree-sitter";
 import type { FileIndexRecord, GovernorPort } from "./types.js";
-import { ensureWebTreeSitterInitialized } from "./web-tree-sitter-loader.js";
+import { governorPauses } from "./types.js";
+import { parseWithWasm, supportsWasm } from "./wasm-ast.js";
+import { createWasmParser, ensureWebTreeSitterInitialized, type LoadedGrammars } from "./web-tree-sitter-loader.js";
 
 const SOURCE_GLOBS = [
   ".ts",
@@ -48,9 +51,14 @@ export class WasmTreeSitterIndexer {
   private readonly openDbs = new Map<string, CodeIndexDatabase>();
   private aliasCache = new Map<string, PathAliasMap>();
   private wasmReady = false;
+  private wasmParser: Parser | null = null;
+  private grammars: LoadedGrammars | null = null;
 
   async init(): Promise<void> {
-    this.wasmReady = await ensureWebTreeSitterInitialized();
+    const loaded = await createWasmParser();
+    this.wasmReady = loaded !== null && (await ensureWebTreeSitterInitialized());
+    this.wasmParser = loaded?.Parser ? new loaded.Parser() : null;
+    this.grammars = loaded?.grammars ?? null;
   }
 
   closeAll(): void {
@@ -58,10 +66,11 @@ export class WasmTreeSitterIndexer {
     this.openDbs.clear();
   }
 
-  index(options: IndexOptions): IndexResult {
+  async index(options: IndexOptions): Promise<IndexResult> {
     const started = performance.now();
+    if (!this.wasmParser) await this.init();
     const root = path.resolve(options.repoRoot);
-    const governor = options.governor ?? ({ readSignal: () => ({ level: "green" }) } as GovernorPort);
+    const governor = options.governor ?? { readSignal: () => ({ level: "GREEN" as const }) };
     let aliases = this.aliasCache.get(root);
     if (!aliases) {
       aliases = loadTsPathAliases(root);
@@ -86,10 +95,12 @@ export class WasmTreeSitterIndexer {
 
     for (let i = 0; i < targets.length; i += 1) {
       if (i > 0 && i % batchSize === 0) {
+        await yieldToEventLoop();
         const signal = governor.readSignal();
-        if (signal.level === "orange" || signal.level === "red") break;
+        if (governorPauses(signal.level)) break;
       }
-      const rel = targets[i]!;
+      const rel = targets[i];
+      if (!rel) continue;
       const abs = path.join(root, rel);
       if (!fs.existsSync(abs)) continue;
       const stat = fs.statSync(abs);
@@ -108,7 +119,7 @@ export class WasmTreeSitterIndexer {
         continue;
       }
 
-      const parsed = parseStructurally(rel, content);
+      const parsed = this.parseFile(rel, content);
       const resolvedRefs = parsed.imports
         .map((spec) => resolveImportSpecifier(root, rel, spec, aliases))
         .filter((p): p is string => Boolean(p));
@@ -150,8 +161,16 @@ export class WasmTreeSitterIndexer {
     };
   }
 
-  incrementalIndex(options: IndexOptions): IndexResult {
+  incrementalIndex(options: IndexOptions): Promise<IndexResult> {
     return this.index({ ...options, changedOnly: options.changedOnly });
+  }
+
+  private parseFile(rel: string, content: string) {
+    if (this.wasmParser && this.grammars && supportsWasm(rel)) {
+      const parsed = parseWithWasm(rel, content, this.wasmParser, this.grammars);
+      if (parsed) return parsed;
+    }
+    return parseStructurally(rel, content);
   }
 
   private buildRankings(nodes: readonly string[], edges: GraphEdge[]) {
@@ -178,6 +197,12 @@ export class WasmTreeSitterIndexer {
       refs: parsed.refs,
     };
   }
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 function loadStoredEdges(db: CodeIndexDatabase, commitSha: string): GraphEdge[] {
