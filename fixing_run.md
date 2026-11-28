@@ -1877,3 +1877,25 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `git status --short`: exit `0` — clean after `git checkout -- spikes/node-sqlite-electron/REPORT.md spikes/node-sqlite-electron/report.json`
 - Product code changed: no
 - Not done: C70 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened. No commit on `harness/integration`.
+
+## [Wave 6 Proof Gate rerun] — node:sqlite passes on Node 24.16.0
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `a4547404df6941be18e8cb5c80f0e09a16392034` (`integrate: wire ui-checks + m5-exit-gate`)
+- **Product fix SHA:** none
+- **Result:** pass. Windows-host spike limit. No product patch. The prior audit commit `35872fa0` was not rewritten.
+
+### What Was Done
+- Stayed on `harness/integration` at `a4547404df6941be18e8cb5c80f0e09a16392034`. Did not start C70. Did not merge `main`. Did not open a pull request. Did not merge `task/162-office-pixijs-floorplan-sprites` or `task/164-office-animation-director-astar`. Did not edit product code. Did not stub or skip tests. Did not commit on `harness/integration`.
+- `package.json` `engines.node` is `>=22.13`. There is no `.nvmrc` or `.node-version`. `spikes/node-sqlite-electron/REPORT.md` records the passing system runtime as Node 24.16.0 (SQLite 3.53.0). This VM was on Node v22.23.4, which is inside the engine floor and is the runtime that failed `named-parameter-prefixes` and `bigint`. Installed Node 24.16.0 with nvm and reran only `tests/node-sqlite-electron.test.ts` under that binary.
+- The rerun exited 0: `Test Files 1 passed (1)`, `Tests 1 passed (1)`. `report.json` before restore said `decision: go`, system Node `24.16.0` `passed: true` (`named-parameter-prefixes` and `bigint` both pass), and Electron 45.3.4 / Node 24.22.3 `passed: true`. Restored `spikes/node-sqlite-electron/REPORT.md` and `report.json` with `git checkout --`. They were not committed.
+- The seven Windows-host spike failures from the first gate stay recorded and were not rerun: Job Objects, `powershell.exe`, and the `job: true` process tree. The wave package filters from the first gate stay passed.
+
+### Verification Run & Results
+- `node -v` before the rerun: `v22.23.4`
+- Required spike runtime from `spikes/node-sqlite-electron/REPORT.md`: Node `24.16.0`
+- `/home/ubuntu/.nvm/versions/node/v24.16.0/bin/node -v`: `v24.16.0`
+- `/home/ubuntu/.nvm/versions/node/v24.16.0/bin/node /agent/repos/ef-harness/node_modules/vitest/vitest.mjs run --config vitest.config.ts tests/node-sqlite-electron.test.ts` (cwd `spikes/`): exit `0` — `Test Files 1 passed (1)`, `Tests 1 passed (1)`, 0 skipped
+- `git status --short`: exit `0` — clean after restoring the spike reports
+- Product code changed: no
+- Not done: C70 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened. No commit on `harness/integration`.
