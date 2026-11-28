@@ -712,6 +712,21 @@ CREATE TABLE IF NOT EXISTS model_weights (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (connection_id, model_id)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS adapter_conformance (
+  adapter_id TEXT NOT NULL,
+  cli_version TEXT NOT NULL,
+  os_sandbox_tier TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  suite_version TEXT NOT NULL,
+  trust TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  report_json TEXT NOT NULL CHECK (json_valid(report_json)),
+  active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0, 1)),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (adapter_id, cli_version, os_sandbox_tier, mode, suite_version)
+) STRICT;
 `;
 
 export const globalFootprintsV2Migration: MigrationDefinition = {
@@ -734,5 +749,6 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
     assertTable(conn, "policy_history");
     assertTable(conn, "connection_profiles");
     assertTable(conn, "model_weights");
+    assertTable(conn, "adapter_conformance");
   },
 };

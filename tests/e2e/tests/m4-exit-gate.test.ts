@@ -1,13 +1,13 @@
 import { expect, it } from "vitest";
-import { UsageReceiptsCsvExporter, buildUsageView, csvIsSafe, currenciesSeparated, sampleReceipts } from "../m4-exit-gate/analytics.ts";
-import { certifyClaude, certifyGemini } from "../m4-exit-gate/compliance.ts";
-import { decideTrust } from "../m4-exit-gate/conformance.ts";
-import { runCrossAdapterHandoff, runIdlePark } from "../m4-exit-gate/handoff.ts";
-import { KitchenHiddenAcceptanceSuite, loadM4Fixtures } from "../m4-exit-gate/kitchen.ts";
-import { runReserveBoundary } from "../m4-exit-gate/pacing.ts";
-import { M4ExitGateReport, signReport } from "../m4-exit-gate/report.ts";
-import { runLiveCertification, runM4Certification } from "../m4-exit-gate/runner.ts";
-import type { GateFacts, ProbeResult } from "../m4-exit-gate/types.ts";
+import { UsageReceiptsCsvExporter, buildUsageView, csvIsSafe, currenciesSeparated, sampleReceipts } from "../m4-exit-gate/analytics.js";
+import { certifyClaude, certifyGemini } from "../m4-exit-gate/compliance.js";
+import { decideTrust } from "../m4-exit-gate/conformance.js";
+import { runCrossAdapterHandoff, runIdlePark } from "../m4-exit-gate/handoff.js";
+import { KitchenHiddenAcceptanceSuite, loadM4Fixtures } from "../m4-exit-gate/kitchen.js";
+import { runReserveBoundary } from "../m4-exit-gate/pacing.js";
+import { M4ExitGateReport, signReport } from "../m4-exit-gate/report.js";
+import { runLiveCertification, runM4Certification } from "../m4-exit-gate/runner.js";
+import type { GateFacts, ProbeResult } from "../m4-exit-gate/types.js";
 
 function probes(failed: readonly string[]): ProbeResult[] {
   const ids = ["P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08", "P09", "P10"] as const;

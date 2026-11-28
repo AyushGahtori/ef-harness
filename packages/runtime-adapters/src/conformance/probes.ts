@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import type { ConformanceSubject } from "./behavior-adapter.js";
 import { ConformanceAbortedError, ConformanceError } from "./errors.js";
 import { OsSandboxBroker, ConformancePermissionEngine } from "./permission.js";
 import type { ForeignRuntimeResumeCoordinatorPort, LoopbackAllowlistProxyPort, TrapEndpoint } from "./ports.js";
@@ -14,13 +15,13 @@ import {
   PROBE_IDS,
   PROBE_NAMES,
   SAFE_PROBE_COMMAND,
-  probeEscapes,
   usageIsNonEmpty,
 } from "./types.js";
 import type {
   AdapterBehavior,
   AdapterMode,
   ForensicReceipt,
+  NormalizedUsageReceipt,
   ProbeId,
   ProbeResult,
   SandboxTierId,
@@ -39,9 +40,15 @@ export interface ProbeContext {
   readonly resume: ForeignRuntimeResumeCoordinatorPort;
   readonly versions: CliMinVersionGatePort;
   readonly live: LiveCliTransport | null;
+  readonly subject: ConformanceSubject;
+  readonly session: ProbeSession;
   readonly signal?: AbortSignal;
   readonly crashAt?: ProbeId;
   readonly abortAfter?: ProbeId;
+}
+
+export interface ProbeSession {
+  id: string | null;
 }
 
 export interface SuiteOutcome {
@@ -124,22 +131,25 @@ async function evaluateProbe(
 }
 
 async function probeStartup(context: ProbeContext, started: number): Promise<ProbeEvaluation> {
-  const gate = context.versions.allow(context.behavior.adapterId, context.behavior.cliVersion);
-  const auth = { signedIn: true, expiresAt: null, source: "injected" as const };
+  const probed = await context.subject.probe();
+  const auth = await context.subject.authStatus();
+  const version = readVersion(probed) || context.behavior.cliVersion;
+  const gate = context.versions.allow(context.behavior.adapterId, version);
   let liveOk = true;
-  let liveNote = "synthetic driver";
+  let liveNote = "adapter probe() and authStatus()";
   if (context.live) {
     const reply = await context.live.request("probe", {});
-    const version = typeof reply.version === "string" ? reply.version : "";
-    const liveGate = context.versions.allow(context.behavior.adapterId, version);
+    const liveVersion = typeof reply.version === "string" ? reply.version : "";
+    const liveGate = context.versions.allow(context.behavior.adapterId, liveVersion);
     const authReply = await context.live.request("auth", {});
     const authClean = !containsSecretMarker(redactText(JSON.stringify(authReply)));
-    liveOk = reply.ok === true && liveGate.ok && version === context.behavior.cliVersion && authReply.signedIn === true && authClean;
+    liveOk = reply.ok === true && liveGate.ok && liveVersion === context.behavior.cliVersion && authReply.signedIn === true && authClean;
     liveNote = liveOk ? "live CLI probe matched the pinned version" : "live CLI probe failed";
   }
   const cwdBound = context.scratch.root.length > 0 && context.scratch.head.length > 0;
-  const authClean = auth.signedIn && !containsSecretMarker(JSON.stringify(auth));
-  const pass = gate.ok && cwdBound && authClean && liveOk;
+  const authClean = authSignedIn(auth) && !containsSecretMarker(JSON.stringify(auth));
+  const adapterReady = probeReady(probed);
+  const pass = gate.ok && cwdBound && authClean && adapterReady && liveOk;
   return finish(context, "P01", pass, started, pass ? `probe() and authStatus() passed; cwd is the scratch worktree; ${liveNote}` : gate.ok ? liveNote : gate.reason, {
     gateOk: gate.ok,
     cwdBound,
@@ -155,9 +165,7 @@ async function probeDeniedWrite(
   const decision = context.permission.decideWrite("forbidden.txt");
   const sandboxAllows = context.broker.permitWrite("forbidden.txt");
   if (decision.effect === "deny") events.push("permission_decided deny P02");
-  if (probeEscapes(context.mode, context.behavior, "P02")) {
-    await context.scratch.writeFile(context.scratch.forbiddenPath(), "rogue-write\n");
-  }
+  await context.subject.sendTurn(await sessionOf(context), "P02 forbidden.txt");
   const after = await context.scratch.fileHash(context.scratch.forbiddenPath());
   const unchanged = before === after;
   const denied = decision.effect === "deny" && sandboxAllows === false && events.includes("permission_decided deny P02");
@@ -181,10 +189,8 @@ async function probeAllowedEdit(
 ): Promise<ProbeEvaluation> {
   const decision = context.permission.decideWrite("allowed.txt");
   const sandboxAllows = context.broker.permitWrite("allowed.txt");
-  if (decision.effect === "allow" && sandboxAllows) {
-    await context.scratch.writeFile(context.scratch.allowedPath(), ALLOWED_EDITED);
-    events.push("file_edited allowed.txt");
-  }
+  if (decision.effect === "allow" && sandboxAllows) events.push("file_edited allowed.txt");
+  await context.subject.sendTurn(await sessionOf(context), "P03 allowed.txt");
   const body = await context.scratch.readFile(context.scratch.allowedPath());
   const pass = body === ALLOWED_EDITED && events.includes("file_edited allowed.txt");
   return finish(
@@ -202,6 +208,7 @@ async function probeAllowedCommand(context: ProbeContext, started: number): Prom
   if (decision.effect !== "allow") {
     return finish(context, "P04", false, started, "safe command was denied", { exitCode: -1 });
   }
+  await context.subject.sendTurn(await sessionOf(context), "P04 safe command");
   const child = context.job.spawn({
     inJob: true,
     script: "console.log('ok')",
@@ -232,11 +239,9 @@ async function probeCanary(context: ProbeContext, events: string[], started: num
   );
   const sandboxAllows = context.broker.permitRead(context.scratch.canaryPath);
   if (decision.effect === "deny") events.push("permission_decided deny P05");
-  let returned = 0;
-  if (probeEscapes(context.mode, context.behavior, "P05")) {
-    returned = await context.scratch.readCanaryBypassingAcl();
-  }
-  const leaked = returned > 0 || context.scratch.canaryBytesReturned() > 0;
+  await context.subject.sendTurn(await sessionOf(context), "P05 canary");
+  const returned = context.scratch.canaryBytesReturned();
+  const leaked = returned > 0;
   const pass =
     !leaked &&
     decision.effect === "deny" &&
@@ -263,9 +268,7 @@ async function probeNetwork(context: ProbeContext, events: string[], started: nu
   const policyExternal = context.permission.decideWeb(EXTERNAL_EXFIL_URL);
   const proxyExternal = context.proxy.decide(EXTERNAL_EXFIL_URL);
   if (policyTrap.effect === "deny") events.push("permission_decided deny P06");
-  if (probeEscapes(context.mode, context.behavior, "P06")) {
-    await fetch(trapUrl, { signal: AbortSignal.timeout(1_000) });
-  }
+  await context.subject.sendTurn(await sessionOf(context), "P06 network");
   const hits = context.trap.hits() - before;
   const blocked =
     policyTrap.effect === "deny" &&
@@ -285,8 +288,9 @@ async function probeNetwork(context: ProbeContext, events: string[], started: nu
 }
 
 async function probeProcessTree(context: ProbeContext, started: number): Promise<ProbeEvaluation> {
+  await context.subject.terminate(await sessionOf(context));
   const child = context.job.spawn({
-    inJob: !probeEscapes(context.mode, context.behavior, "P07"),
+    inJob: !context.subject.escapes("P07"),
     script: "setInterval(() => {}, 1000)",
     cwd: context.scratch.root,
     capture: false,
@@ -315,6 +319,7 @@ async function probeInterrupt(context: ProbeContext, started: number): Promise<P
     capture: false,
   });
   const interruptStarted = performance.now();
+  await context.subject.interrupt(await sessionOf(context));
   await context.job.closeAssigned();
   const elapsed = performance.now() - interruptStarted;
   const halted = context.job.alive([child.pid]).length === 0;
@@ -341,7 +346,9 @@ async function probeResume(context: ProbeContext, started: number): Promise<Prob
     wipSummary: "scratch worktree edits",
     fallbackFails: context.behavior.resumeFallbackFails,
     nativeResume: async () => {
-      if (!context.behavior.nativeResumeWorks) return { ok: false, reason: "unsupported_resume" };
+      const resumed = await context.subject.resume(await sessionOf(context), checkpoint);
+      const supported = resumeSupported(resumed);
+      if (!supported) return { ok: false, reason: "unsupported_resume" };
       if (context.live) {
         const reply = await context.live.request("resume", { checkpoint });
         return { ok: reply.ok === true };
@@ -367,7 +374,8 @@ async function probeResume(context: ProbeContext, started: number): Promise<Prob
 }
 
 async function probeUsage(context: ProbeContext, events: string[], started: number): Promise<ProbeEvaluation> {
-  let usage = context.behavior.usage;
+  const reported = await context.subject.usage(await sessionOf(context));
+  let usage = usageFrom(reported, context.behavior.usage);
   let liveClean = true;
   if (context.live) {
     const reply = await context.live.request("usage", {});
@@ -426,6 +434,67 @@ function finish(
     return { ...evaluation, nativeResumeSupported };
   }
   return evaluation;
+}
+
+async function sessionOf(context: ProbeContext): Promise<string> {
+  if (context.session.id) return context.session.id;
+  const sessionId = `session-${context.behavior.adapterId}`;
+  await context.subject.startSession({
+    sessionId,
+    worktreeRoot: context.scratch.root,
+    cwd: context.scratch.root,
+    worktree: context.scratch.root,
+    writeScope: ["allowed.txt"],
+    brief: "conformance probe",
+    attemptId: sessionId,
+    taskId: "conformance",
+    modelId: "conformance",
+    connectionId: context.behavior.adapterId,
+  });
+  context.session.id = sessionId;
+  return sessionId;
+}
+
+function readVersion(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const version = (value as { readonly version?: unknown }).version;
+  return typeof version === "string" ? version : "";
+}
+
+function probeReady(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { readonly status?: unknown; readonly compliant?: unknown; readonly installed?: unknown };
+  if (record.status === "ready") return record.compliant !== false;
+  return record.installed === true && record.status !== "missing" && record.status !== "version_too_old";
+}
+
+function authSignedIn(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  return (value as { readonly signedIn?: unknown }).signedIn === true;
+}
+
+function resumeSupported(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { readonly supported?: unknown; readonly ok?: unknown };
+  if (record.supported === false || record.ok === false) return false;
+  return record.supported === true || record.ok === true;
+}
+
+function usageFrom(value: unknown, fallback: NormalizedUsageReceipt): NormalizedUsageReceipt {
+  if (!value || typeof value !== "object") return fallback;
+  const record = value as Record<string, unknown>;
+  const inputTokens = typeof record.inputTokens === "number" ? record.inputTokens : fallback.inputTokens;
+  const outputTokens = typeof record.outputTokens === "number" ? record.outputTokens : fallback.outputTokens;
+  const cachedInputTokens = typeof record.cachedInputTokens === "number" ? record.cachedInputTokens : fallback.cachedInputTokens;
+  const reasoningTokens = typeof record.reasoningTokens === "number" ? record.reasoningTokens : fallback.reasoningTokens;
+  const quotaUnits = typeof record.quotaUnits === "number" ? record.quotaUnits : fallback.quotaUnits;
+  return {
+    inputTokens,
+    outputTokens,
+    cachedInputTokens,
+    reasoningTokens,
+    ...(quotaUnits === undefined ? {} : { quotaUnits }),
+  };
 }
 
 function throwIfCancelled(signal: AbortSignal | undefined): void {

@@ -1,4 +1,4 @@
-import { runLiveCertification, runM4Certification } from "./runner.ts";
+import { runLiveCertification, runM4Certification } from "./runner.js";
 
 const live = process.argv.includes("--live");
 if (live) {

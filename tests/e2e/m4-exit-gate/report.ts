@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { PASS_RATE_FLOOR, PPM_SCALE, REPORT_SCHEMA } from "./constants.ts";
-import type { AdapterConformance, GateFacts, ProviderRow, SignedReport } from "./types.ts";
+import { PASS_RATE_FLOOR, PPM_SCALE, REPORT_SCHEMA } from "./constants.js";
+import type { AdapterConformance, GateFacts, ProviderRow, SignedReport } from "./types.js";
 
 export class M4ExitGateReport {
   readonly schema = REPORT_SCHEMA;
@@ -50,14 +50,14 @@ export class M4ExitGateReport {
       providers,
       scorecardMarkdown: "",
     };
-    draft.scorecardMarkdown = renderScorecard(draft);
-    const signature = signReport(draft);
+    const scorecardMarkdown = renderScorecard(draft);
+    const signature = signReport({ ...draft, scorecardMarkdown });
     return new M4ExitGateReport({
       exitCode,
       reasons,
       facts,
       providers,
-      scorecardMarkdown: draft.scorecardMarkdown,
+      scorecardMarkdown,
       signature,
       hostElapsedMs,
     });

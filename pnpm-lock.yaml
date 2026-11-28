@@ -1128,12 +1128,18 @@ importers:
       '@ef-harness/planner':
         specifier: workspace:*
         version: link:../../packages/planner
+      '@ef-harness/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@ef-harness/renderer':
         specifier: workspace:*
         version: link:../../apps/renderer
       '@ef-harness/research-engine':
         specifier: workspace:*
         version: link:../../packages/research-engine
+      '@ef-harness/runtime-adapters':
+        specifier: workspace:*
+        version: link:../../packages/runtime-adapters
       '@ef-harness/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox

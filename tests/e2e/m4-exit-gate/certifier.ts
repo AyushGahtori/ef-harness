@@ -1,9 +1,12 @@
 import http from "node:http";
-import { PAID_REQUEST_MICRO_USD } from "./constants.ts";
-import { closedPort, type MockPlane } from "./servers.ts";
-import type { ExhaustionScenario, GateFaults } from "./types.ts";
-import { getJson, postJson } from "./wire.ts";
+import { fallbackGuard, NoSilentPaidFallbackGuard as ProviderNoSilentPaidFallbackGuard } from "@ef-harness/providers";
+import { PAID_REQUEST_MICRO_USD } from "./constants.js";
+import { closedPort, type MockPlane } from "./servers.js";
+import type { ExhaustionScenario, GateFaults } from "./types.js";
+import { getJson, postJson } from "./wire.js";
 
+type FallbackTrigger = fallbackGuard.FallbackTrigger;
+type GuardConnection = fallbackGuard.GuardConnection;
 type Reason = "usage_limit" | "overage" | "expired" | "econnrefused" | "route_revoked";
 
 interface FallbackInput {
@@ -11,9 +14,52 @@ interface FallbackInput {
   readonly consent: boolean;
 }
 
+const ACTIVE_CONNECTION: GuardConnection = {
+  id: "chatgpt-plus",
+  label: "ChatGPT Plus",
+  provider: "openai",
+  family: "openai",
+  billingClass: "subscription",
+  costRank: 1,
+  costEstimate: "$0.00",
+  status: "exhausted",
+  routable: true,
+};
+
+const PAID_CANDIDATE: GuardConnection = {
+  id: "anthropic-api",
+  label: "Anthropic Console",
+  provider: "anthropic",
+  family: "anthropic",
+  billingClass: "pay_per_token",
+  costRank: 2,
+  costEstimate: "$0.25",
+  status: "healthy",
+  routable: true,
+};
+
+function triggerFor(reason: Reason): FallbackTrigger {
+  if (reason === "usage_limit") return "window_exhausted";
+  if (reason === "expired") return "expired";
+  if (reason === "route_revoked") return "route_revoked";
+  if (reason === "econnrefused") return "crashed";
+  return "selection";
+}
+
 export class NoSilentPaidFallbackGuard {
+  private readonly guard = new ProviderNoSilentPaidFallbackGuard();
+
   evaluate(input: FallbackInput): { readonly allowed: boolean; readonly park: string } {
-    if (input.consent) return { allowed: true, park: "consented" };
+    const decision = this.guard.evaluate({
+      active: ACTIVE_CONNECTION,
+      candidate: PAID_CANDIDATE,
+      reason: triggerFor(input.reason),
+      policy: { neverFallbackWithoutAsking: true, explicitFallbackOrder: [] },
+      spentMicroUsd: 0,
+      incomingMicroUsd: input.reason === "overage" ? 1 : 0,
+      userConsent: input.consent,
+    });
+    if (decision.outcome === "allow") return { allowed: true, park: "consented" };
     if (input.reason === "usage_limit") return { allowed: false, park: "CheckpointStopCard" };
     if (input.reason === "overage") return { allowed: false, park: "pause-before-overage" };
     if (input.reason === "expired") return { allowed: false, park: "AccountCard" };

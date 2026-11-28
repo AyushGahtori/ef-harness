@@ -1,6 +1,6 @@
 import http from "node:http";
-import { SIWC_FORBIDDEN_WIRE_FIELDS } from "./constants.ts";
-import { directAccessScope } from "./markers.ts";
+import { SIWC_FORBIDDEN_WIRE_FIELDS } from "./constants.js";
+import { directAccessScope } from "./markers.js";
 
 export interface DirectRequestInput {
   readonly model: string;

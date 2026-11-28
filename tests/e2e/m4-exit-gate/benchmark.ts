@@ -1,9 +1,9 @@
-import { FIVE_HOUR_WINDOW_MS, PPM_SCALE } from "./constants.ts";
-import { KitchenHiddenAcceptanceSuite, loadM4Fixtures } from "./kitchen.ts";
-import { AllowancePacingController, reservePpm, runReserveBoundary } from "./pacing.ts";
-import type { GateFaults, M4Fixtures } from "./types.ts";
-import { buildDirectRequest, postJson, SiwcTokenRefresher, wireProblems } from "./wire.ts";
-import type { MockPlane } from "./servers.ts";
+import { FIVE_HOUR_WINDOW_MS, PPM_SCALE } from "./constants.js";
+import { KitchenHiddenAcceptanceSuite, loadM4Fixtures, offlineHiddenFailures } from "./kitchen.js";
+import { AllowancePacingController, reservePpm, runReserveBoundary } from "./pacing.js";
+import type { GateFaults, M4Fixtures } from "./types.js";
+import { buildDirectRequest, postJson, SiwcTokenRefresher, wireProblems } from "./wire.js";
+import type { MockPlane } from "./servers.js";
 
 export interface PacedBuild {
   readonly passRate: number;
@@ -48,7 +48,8 @@ async function runPaced(plane: MockPlane, fixtures: M4Fixtures, faults: GateFaul
   const cwndCapHolds = probeCwnd(pacing);
   const boundary = runReserveBoundary(faults.ignoreWindDown === true);
   const suite = new KitchenHiddenAcceptanceSuite(fixtures.suite);
-  const score = suite.score(faults.failHiddenIds ?? []);
+  const offline = await offlineHiddenFailures();
+  const score = suite.score([...(faults.failHiddenIds ?? []), ...offline]);
   const refresher = new SiwcTokenRefresher();
   const sample = buildDirectRequest({
     model: profile.modelId,

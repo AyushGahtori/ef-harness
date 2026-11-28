@@ -1,13 +1,12 @@
+import { AimdConcurrencyRegulator, harnessCeilingPpm, windDownThresholdPpm } from "@ef-harness/providers";
 import {
-  AIMD_CLEAN_COMPLETIONS,
-  AIMD_COOLDOWN_MS,
   AIMD_START_CWND,
   PPM_SCALE,
   RESERVE_EDGE_ACTIVE_PPM,
   RESERVE_EDGE_QUEUED,
   RESERVE_EDGE_QUEUED_PPM,
   RESERVE_EDGE_USED_NUMERATOR,
-} from "./constants.ts";
+} from "./constants.js";
 
 export type SlotDecision = "granted" | "wind_down" | "cwnd" | "ceiling";
 
@@ -27,19 +26,26 @@ export class AllowancePacingController {
   usageLimitEvents = 0;
   windDownTriggers = 0;
   cwndAfter429: number | null = null;
-  private cleanCompletions = 0;
-  private cooldownUntilMs = 0;
   private guards = true;
+  private readonly clock = { t: 0 };
+  private readonly aimd: AimdConcurrencyRegulator;
 
   constructor(reserveFraction: number, startCwnd = AIMD_START_CWND) {
-    if (!(reserveFraction >= 0 && reserveFraction < 1)) {
-      throw new Error("Reserve fraction must be in [0, 1).");
+    this.ceilingPpm = harnessCeilingPpm(reserveFraction);
+    this.windDownPpm = windDownThresholdPpm(this.ceilingPpm);
+    this.aimd = new AimdConcurrencyRegulator({
+      connectionMaxCap: Math.max(startCwnd, 8),
+      hardwareCap: Math.max(startCwnd, 8),
+      now: () => this.clock.t,
+      random: () => 0,
+    });
+    if (startCwnd !== this.aimd.value) {
+      this.cwnd = startCwnd;
+      this.peakCwnd = startCwnd;
+    } else {
+      this.cwnd = this.aimd.value;
+      this.peakCwnd = this.aimd.value;
     }
-    const reservePpm = Math.round(reserveFraction * PPM_SCALE);
-    this.ceilingPpm = PPM_SCALE - reservePpm;
-    this.windDownPpm = Math.floor((this.ceilingPpm * 9) / 10);
-    this.cwnd = startCwnd;
-    this.peakCwnd = startCwnd;
   }
 
   disableGuards(): void {
@@ -79,19 +85,18 @@ export class AllowancePacingController {
   }
 
   noteClean(nowMs: number): void {
-    if (this.cwnd <= 0 || nowMs < this.cooldownUntilMs) return;
-    this.cleanCompletions += 1;
-    if (this.cleanCompletions < AIMD_CLEAN_COMPLETIONS) return;
-    this.cleanCompletions = 0;
-    this.cwnd += 1;
+    this.clock.t = nowMs;
+    if (this.cwnd <= 0) return;
+    this.aimd.noteCleanCompletion(true);
+    this.cwnd = this.aimd.value;
     if (this.cwnd > this.peakCwnd) this.peakCwnd = this.cwnd;
   }
 
   noteTransient429(nowMs: number): void {
+    this.clock.t = nowMs;
     if (this.cwnd <= 0) return;
-    this.cwnd = Math.max(1, Math.floor(this.cwnd / 2));
-    this.cooldownUntilMs = nowMs + AIMD_COOLDOWN_MS;
-    this.cleanCompletions = 0;
+    const halved = this.aimd.noteTransient429(20_000);
+    this.cwnd = halved.cwnd;
     this.cwndAfter429 = this.cwndAfter429 === null ? this.cwnd : Math.min(this.cwndAfter429, this.cwnd);
   }
 

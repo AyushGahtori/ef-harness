@@ -31,7 +31,11 @@ export {
   WalModeRequiredError,
 } from "./errors.js";
 export { GlobalBrokerDb, RESEARCH_CACHE_TTL_MS } from "./global-broker-db.js";
-export type { OpenGlobalBrokerDbOptions } from "./global-broker-db.js";
+export type {
+  AdapterConformanceKey,
+  AdapterConformanceWrite,
+  OpenGlobalBrokerDbOptions,
+} from "./global-broker-db.js";
 export { CodeIndexDb } from "./code-index-db.js";
 export type { CommitSymbol, OpenCodeIndexDbOptions } from "./code-index-db.js";
 export { createCollectingLogger, createStderrAuxiliaryLogger } from "./logger.js";

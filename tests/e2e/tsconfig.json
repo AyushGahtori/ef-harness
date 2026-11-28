@@ -9,7 +9,8 @@
   "include": [
     "src/**/*.ts",
     "m2-exit-gate/**/*.ts",
-    "m3-exit-gate/**/*.ts"
+    "m3-exit-gate/**/*.ts",
+    "m4-exit-gate/**/*.ts"
   ],
   "references": [
     {
@@ -41,6 +42,12 @@
     },
     {
       "path": "../../packages/planner"
+    },
+    {
+      "path": "../../packages/providers"
+    },
+    {
+      "path": "../../packages/runtime-adapters"
     },
     {
       "path": "../../packages/integrator"

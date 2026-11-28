@@ -208,6 +208,8 @@ export type {
   LeasePortInput,
   MachineProfileEntry,
   OpenCodeIndexDbOptions,
+  AdapterConformanceKey,
+  AdapterConformanceWrite,
   OpenGlobalBrokerDbOptions,
   OpenTelemetryDbOptions,
   PinHolderKind,

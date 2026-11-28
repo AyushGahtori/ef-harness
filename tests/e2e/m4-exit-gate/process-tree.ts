@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 
 const pause = new Int32Array(new SharedArrayBuffer(4));
 
@@ -24,9 +25,21 @@ export function runOkCommand(): { readonly code: number; readonly output: string
 
 export function isAlive(pid: number): boolean {
   if (pid <= 0) return false;
+  if (process.platform !== "win32" && zombie(pid)) return false;
   try {
     process.kill(pid, 0);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function zombie(pid: number): boolean {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    const after = stat.lastIndexOf(")");
+    const state = stat.slice(after + 1).trim().split(" ")[0];
+    return state === "Z";
   } catch {
     return false;
   }

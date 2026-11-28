@@ -133,11 +133,11 @@ function watchChild(child: ChildProcess): Promise<ChildWait> {
       });
     };
     child.once("error", () => {
-      finish(null);
+      setImmediate(() => finish(null));
     });
     child.once("exit", (code) => {
-      finish(code);
+      setImmediate(() => finish(code));
     });
-    if (!isAlive(child)) finish(child.exitCode);
+    if (!isAlive(child)) setImmediate(() => finish(child.exitCode));
   });
 }

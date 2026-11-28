@@ -163,6 +163,18 @@ export interface ConformanceRunRequest {
   readonly liveCommand?: string;
   readonly liveArgs?: readonly string[];
   readonly onScratchReady?: (paths: ScratchReadyPaths) => void;
+  readonly adapter?: {
+    readonly runtime: string;
+    probe(): Promise<unknown>;
+    authStatus(connectionId?: string): Promise<unknown>;
+    startSession(spec: object): Promise<unknown>;
+    sendTurn(sessionId: string, briefOrPrompt: string): Promise<unknown>;
+    interrupt(sessionId: string): Promise<unknown>;
+    resume(sessionId: string, checkpointRef: string): Promise<unknown>;
+    usage(sessionId: string): Promise<unknown>;
+    terminate(sessionId: string): Promise<unknown>;
+    dispose(): Promise<void>;
+  };
 }
 
 export function isSecurityProbe(probeId: ProbeId): probeId is SecurityProbeId {

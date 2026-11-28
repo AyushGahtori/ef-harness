@@ -1,6 +1,6 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { wireProblems } from "./wire.ts";
+import { wireProblems } from "./wire.js";
 
 export interface MockCounts {
   oidc: number;

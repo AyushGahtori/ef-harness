@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EPHEMERAL_DIR_NAMES, IDLE_PARK_AFTER_MS, IDLE_WAIT_OBSERVED_MS, PRIOR_UNVERIFIED_WIP } from "./constants.ts";
-import { isAlive, killTree, spawnSleeper, waitUntilAlive, waitUntilDead } from "./process-tree.ts";
+import { EPHEMERAL_DIR_NAMES, IDLE_PARK_AFTER_MS, IDLE_WAIT_OBSERVED_MS, PRIOR_UNVERIFIED_WIP } from "./constants.js";
+import { isAlive, killTree, spawnSleeper, waitUntilAlive, waitUntilDead } from "./process-tree.js";
 
 export interface HandoffResult {
   readonly ok: boolean;
@@ -19,7 +19,7 @@ export function runCrossAdapterHandoff(leaveEphemeral: boolean): HandoffResult {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "m4-handoff-"));
   try {
     fs.mkdirSync(path.join(root, "src"), { recursive: true });
-    fs.writeFileSync(path.join(root, "src", "order.ts"), 'export const cutoff = "11:00";\n');
+    fs.writeFileSync(path.join(root, "src", "order.js"), 'export const cutoff = "11:00";\n');
     const ephemeralFiles = [
       path.join(root, "CODEX_HOME", "session.json"),
       path.join(root, "codex-skills-tmp", "skill.md"),
@@ -70,6 +70,7 @@ export function runIdlePark(skip: boolean): IdleParkResult {
   try {
     const started = waitUntilAlive(pid);
     if (!started) {
+      console.log("idle sleeper missing", pid, child.exitCode, child.signalCode);
       return { ok: false, terminatedAtMs: null, checkpointPreserved: checkpoint.preserved, aliveAtObservedWait: false };
     }
     if (!skip) {

@@ -1,13 +1,18 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { createCollectingLogger, GlobalBrokerDb } from "@ef-harness/db";
+import { conformanceSubject } from "./behavior-adapter.js";
 import { ConformanceVersionCache, verdictPayload } from "./cache.js";
 import { AutomaticTrustDowngrader, needsStrippedRetry } from "./downgrade.js";
+import { BrokerAdapterConformanceDb } from "./global-db.js";
 import type { JobRun } from "./job.js";
 import { LocalWindowsJobSupervisor } from "./job.js";
 import { LiveCliTransport } from "./live.js";
 import { OsSandboxBroker, ConformancePermissionEngine } from "./permission.js";
 import { runProbeSuite } from "./probes.js";
-import type { SuiteOutcome } from "./probes.js";
+import type { ProbeSession, SuiteOutcome } from "./probes.js";
 import {
-  InMemoryAdapterConformanceDb,
   InMemoryAdapterRegistry,
   LocalCliMinVersionGate,
   LocalForeignRuntimeResumeCoordinator,
@@ -54,10 +59,11 @@ export interface ConformanceDependencies {
 
 export interface ConformanceStack {
   readonly runner: AdapterConformanceRunner;
-  readonly db: InMemoryAdapterConformanceDb;
+  readonly db: GlobalDbConformancePort;
   readonly cache: ConformanceVersionCache;
   readonly registry: InMemoryAdapterRegistry;
   readonly signer: LocalVerdictSigner;
+  readonly close: () => void;
 }
 
 const EMPTY_CLEANUP: CleanupProof = {
@@ -149,6 +155,9 @@ export class AdapterConformanceRunner {
     mode: AdapterMode,
     live: LiveCliTransport | null,
   ): Promise<SuiteOutcome> {
+    const subject = conformanceSubject(request.behavior, request.adapter);
+    subject.prepare(scratch, mode, trap.exfilUrl);
+    const session: ProbeSession = { id: null };
     return runProbeSuite({
       behavior: request.behavior,
       mode,
@@ -162,6 +171,8 @@ export class AdapterConformanceRunner {
       resume: this.deps.resume,
       versions: this.deps.versions,
       live,
+      subject,
+      session,
       ...(request.signal ? { signal: request.signal } : {}),
       ...(request.crashAt ? { crashAt: request.crashAt } : {}),
       ...(request.abortAfter ? { abortAfter: request.abortAfter } : {}),
@@ -222,8 +233,10 @@ export class AdapterConformanceRunner {
   }
 }
 
-export function createConformanceStack(): ConformanceStack {
-  const db = new InMemoryAdapterConformanceDb();
+export function createConformanceStack(options?: { readonly root?: string }): ConformanceStack {
+  const root = options?.root ?? mkdtempSync(path.join(tmpdir(), "ef-conformance-"));
+  const broker = GlobalBrokerDb.open({ root, logger: createCollectingLogger([]) });
+  const db = new BrokerAdapterConformanceDb(broker);
   const signer = new LocalVerdictSigner();
   const cache = new ConformanceVersionCache(db, signer);
   const registry = new InMemoryAdapterRegistry();
@@ -239,7 +252,7 @@ export function createConformanceStack(): ConformanceStack {
     versions: new LocalCliMinVersionGate(),
     downgrader: new AutomaticTrustDowngrader(),
   });
-  return { runner, db, cache, registry, signer };
+  return { runner, db, cache, registry, signer, close: () => broker.close() };
 }
 
 function missingBinarySuite(behavior: AdapterBehavior, reason: string): SuiteOutcome {

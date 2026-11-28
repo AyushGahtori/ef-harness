@@ -33,11 +33,16 @@ export {
   LocalWindowsDpapiSecretsVault,
 } from "./copilot-cursor-auth/index.js";
 export {
+  AIMD_START_CWND,
+  AimdConcurrencyRegulator,
   AllowancePacingController,
   BrokerGlobalConnectionWindowRepo,
   PacingAllowanceWindow,
   applyAllowanceWeights,
+  harnessCeilingPpm,
   rosterWithPolicyAndPacing,
+  simulateFiveHourChatGptPlusWindow,
+  windDownThresholdPpm,
 } from "./pacing/index.js";
 export * as apiKeys from "./api-keys/index.js";
 export * as copilotCursorAuth from "./copilot-cursor-auth/index.js";

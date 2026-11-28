@@ -8,7 +8,7 @@ import {
   subscriptionOauthPrefix,
   subscriptionSetupMarker,
   withdrawnVendorName,
-} from "./markers.ts";
+} from "./markers.js";
 
 export const PRODUCT_ROUTES = [
   "siwc",

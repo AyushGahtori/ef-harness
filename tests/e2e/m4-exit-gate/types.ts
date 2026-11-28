@@ -1,4 +1,4 @@
-import type { COMPLIANT_ADAPTER_IDS, PROBE_IDS } from "./constants.ts";
+import type { COMPLIANT_ADAPTER_IDS, PROBE_IDS } from "./constants.js";
 
 export type AdapterId = (typeof COMPLIANT_ADAPTER_IDS)[number];
 

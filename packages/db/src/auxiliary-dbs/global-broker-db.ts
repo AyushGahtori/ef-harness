@@ -109,6 +109,21 @@ export interface OpenGlobalBrokerDbOptions {
   readonly now?: () => number;
 }
 
+export interface AdapterConformanceKey {
+  readonly adapterId: string;
+  readonly cliVersion: string;
+  readonly osSandboxTier: string;
+  readonly suiteVersion: string;
+}
+
+export interface AdapterConformanceWrite extends AdapterConformanceKey {
+  readonly mode: string;
+  readonly trust: string;
+  readonly payload: string;
+  readonly signature: string;
+  readonly reportJson: string;
+}
+
 export class GlobalBrokerDb implements DbHandle {
   private closed = false;
   private readersPool: ReaderPool | undefined;
@@ -783,6 +798,101 @@ export class GlobalBrokerDb implements DbHandle {
         unknownUnits: optionalInt(row, "unknown_units"),
         closedAt: optionalInt(row, "closed_at"),
       }));
+  }
+
+  upsertAdapterConformance(input: AdapterConformanceWrite): void {
+    const reportJson = input.reportJson;
+    if (!reportJson.startsWith("{")) {
+      throw new InvalidSettingValueError("adapter conformance report must be a JSON object");
+    }
+    this.write(() => {
+      this.conn.run(
+        `INSERT INTO adapter_conformance(
+           adapter_id, cli_version, os_sandbox_tier, mode, suite_version,
+           trust, payload, signature, report_json, active, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+         ON CONFLICT(adapter_id, cli_version, os_sandbox_tier, mode, suite_version)
+         DO UPDATE SET
+           trust = excluded.trust,
+           payload = excluded.payload,
+           signature = excluded.signature,
+           report_json = excluded.report_json,
+           updated_at = excluded.updated_at`,
+        input.adapterId,
+        input.cliVersion,
+        input.osSandboxTier,
+        input.mode,
+        input.suiteVersion,
+        input.trust,
+        input.payload,
+        input.signature,
+        reportJson,
+        Date.now(),
+      );
+    });
+  }
+
+  activateAdapterConformance(input: AdapterConformanceKey & { readonly mode: string }): void {
+    this.write(() => {
+      this.conn.run(
+        `UPDATE adapter_conformance SET active = 0
+         WHERE adapter_id = ? AND cli_version = ? AND os_sandbox_tier = ? AND suite_version = ?`,
+        input.adapterId,
+        input.cliVersion,
+        input.osSandboxTier,
+        input.suiteVersion,
+      );
+      this.conn.run(
+        `UPDATE adapter_conformance SET active = 1
+         WHERE adapter_id = ? AND cli_version = ? AND os_sandbox_tier = ? AND suite_version = ? AND mode = ?`,
+        input.adapterId,
+        input.cliVersion,
+        input.osSandboxTier,
+        input.suiteVersion,
+        input.mode,
+      );
+    });
+  }
+
+  findActiveAdapterConformance(input: AdapterConformanceKey): AdapterConformanceWrite | null {
+    this.assertOpen();
+    const row = this.conn.get(
+      `SELECT adapter_id, cli_version, os_sandbox_tier, mode, suite_version,
+              trust, payload, signature, report_json
+       FROM adapter_conformance
+       WHERE adapter_id = ? AND cli_version = ? AND os_sandbox_tier = ? AND suite_version = ? AND active = 1`,
+      input.adapterId,
+      input.cliVersion,
+      input.osSandboxTier,
+      input.suiteVersion,
+    );
+    if (row === undefined) return null;
+    return {
+      adapterId: requiredText(row, "adapter_id"),
+      cliVersion: requiredText(row, "cli_version"),
+      osSandboxTier: requiredText(row, "os_sandbox_tier"),
+      mode: requiredText(row, "mode"),
+      suiteVersion: requiredText(row, "suite_version"),
+      trust: requiredText(row, "trust"),
+      payload: requiredText(row, "payload"),
+      signature: requiredText(row, "signature"),
+      reportJson: requiredText(row, "report_json"),
+    };
+  }
+
+  rewriteAdapterConformanceSignature(input: AdapterConformanceKey, signature: string): void {
+    this.write(() => {
+      this.conn.run(
+        `UPDATE adapter_conformance SET signature = ?, updated_at = ?
+         WHERE adapter_id = ? AND cli_version = ? AND os_sandbox_tier = ? AND suite_version = ? AND active = 1`,
+        signature,
+        Date.now(),
+        input.adapterId,
+        input.cliVersion,
+        input.osSandboxTier,
+        input.suiteVersion,
+      );
+    });
   }
 
   private write<T>(fn: () => T): T {

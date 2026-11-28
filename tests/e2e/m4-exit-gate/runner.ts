@@ -1,13 +1,13 @@
-import { UsageReceiptsCsvExporter, buildUsageView, csvIsSafe, currenciesSeparated, sampleReceipts } from "./analytics.ts";
-import { M4AllowancePacedBenchmark } from "./benchmark.ts";
-import { M4ComplianceAndFallbackCertifier } from "./certifier.ts";
-import { certifyTerms } from "./compliance.ts";
-import { AdapterConformanceRunner } from "./conformance.ts";
-import { runCrossAdapterHandoff, runIdlePark } from "./handoff.ts";
-import { M4ExitGateReport } from "./report.ts";
-import { startMockPlane } from "./servers.ts";
-import type { GateFacts, RunOptions } from "./types.ts";
-import { repoRoot } from "./paths.ts";
+import { UsageReceiptsCsvExporter, buildUsageView, csvIsSafe, currenciesSeparated, sampleReceipts } from "./analytics.js";
+import { M4AllowancePacedBenchmark } from "./benchmark.js";
+import { M4ComplianceAndFallbackCertifier } from "./certifier.js";
+import { certifyTerms } from "./compliance.js";
+import { AdapterConformanceRunner } from "./conformance.js";
+import { runCrossAdapterHandoff, runIdlePark } from "./handoff.js";
+import { M4ExitGateReport } from "./report.js";
+import { startMockPlane } from "./servers.js";
+import type { GateFacts, RunOptions } from "./types.js";
+import { repoRoot } from "./paths.js";
 
 export async function runM4Certification(options: RunOptions = {}): Promise<M4ExitGateReport> {
   const started = performance.now();
@@ -111,7 +111,7 @@ export function runLiveCertification(env: NodeJS.ProcessEnv = process.env): {
   const hasAccount = Boolean(env.EF_M4_LIVE_API_KEY || env.OPENROUTER_API_KEY);
   const reason =
     confirmed && hasAccount
-      ? "Live accounts are configured, but this base has no sibling provider adapters. Certification is not claimed and no network call is made."
-      : "Live certification is not claimed. Real accounts belong on an integration base that has the provider adapters.";
+      ? "Live accounts are configured. Certification is not claimed and no paid network call is made."
+      : "Live certification is not claimed. This replay does not call a paid provider.";
   return { exitCode: 2, claimedCertification: false, reason };
 }

@@ -49,3 +49,5 @@ export {
   M3SteeringAndUndoScenarioSuite,
 } from "../m3-exit-gate/index.js";
 export { M3_EXIT_GATE_REPORT_SCHEMA } from "../m3-exit-gate/report.js";
+export { runM4Certification } from "../m4-exit-gate/runner.js";
+export { M4AllowancePacedBenchmark } from "../m4-exit-gate/benchmark.js";
