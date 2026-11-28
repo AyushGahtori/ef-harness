@@ -42,8 +42,9 @@ export async function currentWindowsIdentity(): Promise<string> {
   return result.stdout.trim();
 }
 
-/** Leave a file with an owner-only allow ACE via icacls. */
+/** Leave a file with an owner-only allow ACE via icacls. NTFS ACLs are Windows-only. */
 export async function lockDownOwnerOnly(filePath: string): Promise<void> {
+  if (process.platform !== "win32") return;
   const icacls = systemTool("icacls.exe");
   await runTool(icacls, [filePath, "/inheritance:r"]);
   const who = await currentWindowsIdentity();

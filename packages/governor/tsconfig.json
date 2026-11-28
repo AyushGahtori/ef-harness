@@ -13,7 +13,16 @@
       "path": "../db"
     },
     {
+      "path": "../planner"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../shared-observability"
     }
   ]
 }

@@ -67,7 +67,9 @@ export {
   PLAYWRIGHT_HARD_BYPASS_MESSAGE,
   PLAYWRIGHT_INSTALL_COMMAND,
   PROBE_TIMEOUT_DIAGNOSIS,
+  GOVERNOR_HOLD_REASON,
   WAITING_ON_HUMAN_STEP_REASON,
+  humanStepHoldSource,
 } from "./types.js";
 export type {
   ConsentApproval,

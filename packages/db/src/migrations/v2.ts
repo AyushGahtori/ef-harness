@@ -550,11 +550,66 @@ const STATE_V2_TABLES = [
   "clarification_cards",
   "quarantined_candidates",
   "ambiguity_reminders",
+  "human_steps",
+  "human_step_counter",
+  "vault_secret_metadata",
 ] as const;
+
+/**
+ * `human_steps` lives on `state.db` through MigrationRunner.
+ * `task_holds` stays the canonical v1 table; human-step rows use reason `governor`.
+ */
+const HUMAN_STEPS_V2_SQL = `
+CREATE TABLE IF NOT EXISTS human_steps (
+  step_id TEXT PRIMARY KEY,
+  step_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  instructions_json TEXT NOT NULL,
+  probe_spec_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'probing', 'verified', 'attested', 'failed')),
+  last_probe_json TEXT,
+  attested_at INTEGER,
+  verified_at INTEGER,
+  attestation_note TEXT,
+  blocking_tasks_json TEXT NOT NULL,
+  question_id TEXT,
+  hard_local INTEGER NOT NULL CHECK (hard_local IN (0, 1)),
+  resolution TEXT,
+  graph_node_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS human_step_counter (
+  name TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+`;
+
+/** Same metadata shape on `global.db` and `state.db`. Callers write each file separately. */
+const VAULT_SECRET_METADATA_SQL = `
+CREATE TABLE IF NOT EXISTS vault_secret_metadata (
+  secret_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  env_scope TEXT NOT NULL,
+  name TEXT NOT NULL,
+  last_four_masked TEXT NOT NULL,
+  provider_hint TEXT,
+  created_at INTEGER NOT NULL,
+  rotated_at INTEGER,
+  verified_status TEXT NOT NULL,
+  credential_target TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  tagged_prod INTEGER NOT NULL CHECK (tagged_prod IN (0, 1)),
+  test_override INTEGER NOT NULL CHECK (test_override IN (0, 1))
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS vault_secret_name_scope
+  ON vault_secret_metadata(project_id, env_scope, name);
+`;
 
 /** Additive state v2 DDL, including handoff pointers, feature coordination, integrator m3, and steering messages. */
 export function stateV2Sql(): string {
-  return `${STATE_V2_SQL}\n${INTEGRATOR_M3_SQL}\n${STEERING_ROUTER_SQL}\n${STEERING_HOLDS_SQL}`;
+  return `${STATE_V2_SQL}\n${INTEGRATOR_M3_SQL}\n${STEERING_ROUTER_SQL}\n${STEERING_HOLDS_SQL}\n${HUMAN_STEPS_V2_SQL}\n${VAULT_SECRET_METADATA_SQL}`;
 }
 
 function flag(value: unknown): number {
@@ -637,6 +692,7 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
   targetDb: "global",
   apply(conn) {
     conn.exec(GLOBAL_FOOTPRINTS_V2_SQL);
+    conn.exec(VAULT_SECRET_METADATA_SQL);
   },
   check(conn) {
     const rows = conn.prepare("PRAGMA table_info(footprints)").all();
@@ -644,5 +700,6 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
     for (const column of FOOTPRINT_V2_COLUMNS) {
       if (!names.has(column)) throw new SchemaInvariantError(`footprints.${column} was not added`);
     }
+    assertTable(conn, "vault_secret_metadata");
   },
 };

@@ -11,6 +11,8 @@ export function packageIdentity(): {
 export * as telemetry from "./telemetry/index.js";
 export * as admission from "./admission/index.js";
 export * as capacityPools from "./capacity-pools/index.js";
+export * as vault from "./vault/index.js";
+export * as humanSteps from "./human-steps/index.js";
 
 export {
   DiskHeadroomGuard,
@@ -28,3 +30,9 @@ export {
 export { ThreePoolCapacityScheduler } from "./capacity-pools/index.js";
 export { applyGovernorPressure } from "./chain.js";
 export type { GovernorPressureSinks, GovernorPressureStep } from "./chain.js";
+export {
+  LiveKeyTestRefusalGuard,
+  RuntimeOnlyEnvInjector,
+  WindowsDpapiSecretsVault,
+} from "./vault/index.js";
+export { AttestedVsVerifiedBadgePolicy, HumanStepProbeRegistry, HumanStepStateStore } from "./human-steps/index.js";

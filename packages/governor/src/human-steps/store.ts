@@ -1,13 +1,15 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { ProjectStateDb } from "@ef-harness/db";
 
 import { HumanStepError } from "./errors.js";
 import { SqliteTaskHoldPort, nextCounter, withImmediateTransaction } from "./local-ports.js";
 import { assertStepType, parseProbeResult, parseProbeSpec } from "./parse.js";
 import { defaultHardLocal, isHumanStepStatus } from "./policy.js";
 import type { TaskHoldPort } from "./ports.js";
+import { positionalDb, type PositionalDb } from "./sql-port.js";
 import {
   FEATURE_SKIPPED_RESOLUTION,
-  WAITING_ON_HUMAN_STEP_REASON,
+  GOVERNOR_HOLD_REASON,
+  humanStepHoldSource,
   type CreateHumanStepInput,
   type HumanStepRecord,
   type HumanStepStatus,
@@ -34,17 +36,19 @@ interface StepRow {
 }
 
 /**
- * `state.db.human_steps` plus the `waiting_on_human_step` rows in `task_holds`.
+ * `state.db.human_steps` plus canonical `task_holds` rows (`governor` / `human_step:<stepId>`).
  * Status changes and hold release share one `BEGIN IMMEDIATE` transaction.
  */
 export class HumanStepStateStore {
   readonly holds: TaskHoldPort;
+  private readonly db: PositionalDb;
 
   constructor(
-    private readonly db: DatabaseSync,
+    state: ProjectStateDb,
     private readonly now: () => number,
   ) {
-    this.holds = new SqliteTaskHoldPort(db);
+    this.db = positionalDb(state.writer);
+    this.holds = new SqliteTaskHoldPort(this.db);
   }
 
   transaction<T>(body: () => T): T {
@@ -81,10 +85,11 @@ export class HumanStepStateStore {
           createdAt,
         );
       for (const task of input.blockingTaskIds) {
+        ensureHoldTarget(this.db, task, createdAt);
         this.holds.placeHold({
           task,
-          reason: WAITING_ON_HUMAN_STEP_REASON,
-          source: stepId,
+          reason: GOVERNOR_HOLD_REASON,
+          source: humanStepHoldSource(stepId),
           createdAt,
         });
       }
@@ -252,17 +257,22 @@ export class HumanStepStateStore {
 
   private releaseStepHolds(step: HumanStepRecord): void {
     for (const task of step.blockingTaskIds) {
-      this.holds.releaseHold({ task, reason: WAITING_ON_HUMAN_STEP_REASON, source: step.stepId });
+      this.holds.releaseHold({
+        task,
+        reason: GOVERNOR_HOLD_REASON,
+        source: humanStepHoldSource(step.stepId),
+      });
     }
   }
 
   private ensureStepHolds(step: HumanStepRecord): void {
     const createdAt = this.now();
     for (const task of step.blockingTaskIds) {
+      ensureHoldTarget(this.db, task, createdAt);
       this.holds.placeHold({
         task,
-        reason: WAITING_ON_HUMAN_STEP_REASON,
-        source: step.stepId,
+        reason: GOVERNOR_HOLD_REASON,
+        source: humanStepHoldSource(step.stepId),
         createdAt,
       });
     }
@@ -330,6 +340,23 @@ function isStepType(value: string): value is HumanStepRecord["stepType"] {
     value === "email_domain" ||
     value === "cloud_api" ||
     value === "account_attestation";
+}
+
+function ensureHoldTarget(db: PositionalDb, task: string, now: number): void {
+  const existing = db.prepare("SELECT 1 AS ok FROM task_runtime WHERE task = ?").get(task);
+  if (existing) return;
+  const changeSet = `CS-hold-${task}`;
+  db.prepare(
+    `INSERT OR IGNORE INTO change_sets(id, origin, author, created_at, summary) VALUES (?, 'kernel', 'human-steps', ?, ?)`,
+  ).run(changeSet, now, `Hold target ${task}`);
+  db.prepare(
+    `INSERT OR IGNORE INTO nodes(id, kind, version, content_hash, title, text, fields, status, change_set, created_rev, updated_rev)
+     VALUES (?, 'task', 1, ?, ?, '', '{}', 'active', ?, 1, 1)`,
+  ).run(task, `hold-${task}`, task, changeSet);
+  db.prepare(
+    `INSERT OR IGNORE INTO task_runtime(task, feature, state, level, epoch, submission_pending, updated_rev)
+     VALUES (?, 'human-step', 'WAITING_INPUT', 'human', 0, 0, 1)`,
+  ).run(task);
 }
 
 function scrubResult(result: ProbeResult): ProbeResult {

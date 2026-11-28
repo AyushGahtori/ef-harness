@@ -1,12 +1,13 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { GlobalBrokerDb, openProjectStateDb } from "@ef-harness/db";
 import { describe, expect, it } from "vitest";
 import { scanPathsForPlaintext } from "../../src/vault/disk-scan.js";
 import { WindowsDpapiMaterialStore } from "../../src/vault/dpapi-store.js";
 import { diffSecretNames } from "../../src/vault/name-diff.js";
 import { stripeLivePrefix, stripeLiveRefusalMessage, stripeTestPrefix } from "../../src/vault/patterns.js";
-import type { PurgeReceipt, SecretPurgeEngine } from "../../src/vault/ports.js";
+import type { PurgeReceipt, SecretMaterialStore, SecretPurgeEngine } from "../../src/vault/ports.js";
 import { ProviderSecretProber } from "../../src/vault/prober.js";
 import {
   CredentialsNeedReentryError,
@@ -42,11 +43,45 @@ class RecordingPurge implements SecretPurgeEngine {
   }
 }
 
+class MemoryMaterialStore implements SecretMaterialStore {
+  private readonly blobs = new Map<string, Buffer>();
+
+  async protectAndWrite(target: string, plaintext: Buffer, overflowPath: string): Promise<void> {
+    void overflowPath;
+    this.blobs.set(target, Buffer.from(plaintext));
+  }
+
+  async readAndUnprotect(target: string): Promise<Buffer | null> {
+    const value = this.blobs.get(target);
+    return value ? Buffer.from(value) : null;
+  }
+
+  async deleteMaterial(target: string, overflowPath: string): Promise<void> {
+    void overflowPath;
+    this.blobs.delete(target);
+  }
+
+  async replaceStoredCiphertext(target: string, ciphertext: Buffer, overflowPath: string): Promise<void> {
+    void overflowPath;
+    if (ciphertext.toString("utf8") === "not-a-dpapi-blob") {
+      this.blobs.delete(target);
+      return;
+    }
+    this.blobs.set(target, Buffer.from(ciphertext));
+  }
+
+  async close(): Promise<void> {
+    this.blobs.clear();
+  }
+}
+
 describe("WindowsDpapiSecretsVault", () => {
   it("round-trips DPAPI secrets, refuses live test keys, and leaves no plaintext on disk", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "ef-vault-"));
     const vaultDir = path.join(dir, "vault");
-    const store = new WindowsDpapiMaterialStore(vaultDir);
+    const global = GlobalBrokerDb.open({ root: path.join(dir, "harness") });
+    const state = openProjectStateDb({ projectId: `vault-${path.basename(dir)}`, rootDir: path.join(dir, "project") });
+    const store = process.platform === "win32" ? new WindowsDpapiMaterialStore(vaultDir) : new MemoryMaterialStore();
     const purge = new RecordingPurge();
     const prober = new ProviderSecretProber({
       fetchImpl: async (_url, init) => {
@@ -56,8 +91,8 @@ describe("WindowsDpapiSecretsVault", () => {
       },
     });
     const vault = new WindowsDpapiSecretsVault({
-      globalDbPath: path.join(dir, "global.db"),
-      stateDbPath: path.join(dir, "state.db"),
+      global,
+      state,
       vaultDir,
       logsDir: path.join(dir, "logs"),
       materialStore: store,
@@ -77,12 +112,13 @@ describe("WindowsDpapiSecretsVault", () => {
     try {
       await mkdir(path.join(dir, "cas"), { recursive: true });
       await writeFile(path.join(dir, "cas", "blob.txt"), "cas blob without a vault secret", "utf8");
-      const saved = await vault.put({
+      const saved = await vault.storeSecret({
         projectId: "proj",
         envScope: "test",
         name: "CANARY_NAME",
         value: canary,
       });
+      expect(await vault.readPlaintextForKernel(saved.secretId)).toBe(canary);
       expect((await vault.readSecret(saved.secretId))?.value).toBe(canary);
       expect(saved.lastFourMasked.includes(canary)).toBe(false);
       await expect(
@@ -180,6 +216,8 @@ describe("WindowsDpapiSecretsVault", () => {
       expect(entries).toBeInstanceOf(Error);
     } finally {
       await vault.close();
+      global.close();
+      state.close();
       const hits = scanPathsForPlaintext(
         [dir],
         [canary, rotated, live, pem, "LARGE_CANARY_START", `${stripeTestPrefix()}fixture_ok`].map((needle) =>

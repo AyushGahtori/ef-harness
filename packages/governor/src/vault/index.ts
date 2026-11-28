@@ -48,11 +48,12 @@ export {
 export { ProviderSecretProber } from "./prober.js";
 export type { PostgresChecker, ProviderSecretProberOptions } from "./prober.js";
 export {
-  LocalPacketSecurityRedactor,
+  MIN_REGISTERED_SECRET_LENGTH,
+  PacketSecurityRedactor,
+  StreamingRedactor,
   normalizeRedactionLabel,
   redactionPlaceholder,
 } from "./redactor.js";
-export type { PacketSecurityRedactor } from "./redactor.js";
 export { LiveKeyTestRefusalGuard } from "./refusal.js";
 export type { GuardDecision, GuardInput } from "./refusal.js";
 export {

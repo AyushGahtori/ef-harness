@@ -35,7 +35,7 @@ export interface ProbeDependencies {
 
 /**
  * Deterministic read-only probes. `verified` is stamped only when a probe
- * passes, and that stamp releases `waiting_on_human_step` in the same
+ * passes, and that stamp releases the `governor` hold in the same
  * transaction as the evidence write.
  */
 export class HumanStepProbeRegistry {

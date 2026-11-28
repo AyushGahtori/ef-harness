@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { ProjectStateDb } from "@ef-harness/db";
 
 import { nodeCommandRunner } from "./command-runner.js";
 import { HumanStepError } from "./errors.js";
@@ -25,6 +25,7 @@ import { silentProbeLogger } from "./ports.js";
 import type { ChromiumLaunch } from "./playwright-probe.js";
 import { HumanStepProbeRegistry } from "./registry.js";
 import { HumanStepReentryHook } from "./reentry.js";
+import { positionalDb } from "./sql-port.js";
 import { HumanStepStateStore } from "./store.js";
 import type {
   AttestationDecision,
@@ -34,8 +35,7 @@ import type {
 } from "./types.js";
 
 export interface OpenHumanStepsOptions {
-  readonly filename?: string;
-  readonly database?: DatabaseSync;
+  readonly database?: ProjectStateDb;
   readonly now?: () => number;
   readonly timeoutMs?: number;
   readonly graph?: KnowledgeGraphPort;
@@ -65,16 +65,17 @@ export class HumanStepRuntime {
   readonly graph: KnowledgeGraphPort;
   readonly questions: SharedQuestionArbiter;
   private readonly ownsDatabase: boolean;
-  private readonly database: DatabaseSync;
+  private readonly database: ProjectStateDb;
   private readonly buildId: string;
 
   constructor(options: OpenHumanStepsOptions = {}) {
     const now = options.now ?? (() => Date.now());
-    this.database = options.database ?? openHumanStepDatabase(options.filename ?? ":memory:");
+    this.database = options.database ?? openHumanStepDatabase();
     this.ownsDatabase = options.database === undefined;
+    const sql = positionalDb(this.database.writer);
     this.store = new HumanStepStateStore(this.database, now);
-    this.graph = options.graph ?? new SqliteKnowledgeGraphPort(this.database);
-    this.questions = options.questions ?? new SqliteQuestionArbiter(this.database, now);
+    this.graph = options.graph ?? new SqliteKnowledgeGraphPort(sql);
+    this.questions = options.questions ?? new SqliteQuestionArbiter(sql, now);
     this.policy = new AttestedVsVerifiedBadgePolicy();
     this.buildId = options.buildId ?? "build-local";
     this.registry = new HumanStepProbeRegistry({

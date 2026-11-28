@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { RuntimeOnlyEnvInjector, workerEnvironmentIsCredentialFree } from "../../src/vault/injector.js";
 import { stripeLivePrefix, stripeTestPrefix } from "../../src/vault/patterns.js";
 import type { StoredSecret, VaultSecretSource } from "../../src/vault/ports.js";
-import { LocalPacketSecurityRedactor } from "../../src/vault/redactor.js";
+import { PacketSecurityRedactor } from "../../src/vault/redactor.js";
 import { LiveKeyTestRefusalGuard } from "../../src/vault/refusal.js";
 import { LiveKeyRefusedError, ZeroArgvSecretError } from "../../src/vault/types.js";
 
@@ -50,7 +50,7 @@ describe("RuntimeOnlyEnvInjector", () => {
       row({ secretId: "vercel", name: "VERCEL_TOKEN", value: "CANARY_WORKER_VERCEL_999", envScope: "prod" }),
     ]);
     const guard = new LiveKeyTestRefusalGuard();
-    const injector = new RuntimeOnlyEnvInjector(secrets, new LocalPacketSecurityRedactor(), guard);
+    const injector = new RuntimeOnlyEnvInjector(secrets, new PacketSecurityRedactor(), guard);
     const dir = await mkdtemp(path.join(tmpdir(), "ef-inject-"));
     try {
       const echoed = await injector.spawn({
@@ -67,7 +67,7 @@ describe("RuntimeOnlyEnvInjector", () => {
       });
       expect(echoed.shell).toBe(false);
       expect(echoed.redactedStdout.includes(`sha=${sha(testKey)}`)).toBe(true);
-      expect(echoed.redactedStdout.includes("[REDACTED_SECRET:STRIPE_TEST_KEY]")).toBe(true);
+      expect(echoed.redactedStdout.includes("[REDACTED:STRIPE_TEST_KEY]")).toBe(true);
       expect(echoed.redactedStdout.includes(testKey)).toBe(false);
       expect(echoed.redactedStdout.includes("github=undefined")).toBe(true);
       expect(echoed.argv.some((arg) => arg.includes(testKey))).toBe(false);
@@ -86,7 +86,7 @@ describe("RuntimeOnlyEnvInjector", () => {
       });
       expect(multiline.redactedStdout.includes("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=")).toBe(false);
       expect(multiline.redactedStdout.includes(pem)).toBe(false);
-      expect(multiline.redactedStdout.includes("[REDACTED_SECRET:PEM_KEY]")).toBe(true);
+      expect(multiline.redactedStdout.includes("[REDACTED:PEM_KEY]")).toBe(true);
 
       await expect(
         injector.spawn({

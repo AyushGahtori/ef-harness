@@ -1,71 +1,55 @@
-import { mkdirSync } from "node:fs";
-import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
-import type { GlobalDbRepo } from "./ports.js";
+import type { GlobalBrokerDb, ProjectStateDb, SqlValue, SqliteConnection } from "@ef-harness/db";
 import { assertEnvScope } from "./patterns.js";
+import type { GlobalDbRepo } from "./ports.js";
 import type { EnvScope, SecretMetadata, VerifiedStatus } from "./types.js";
 import { VERIFIED_STATUSES } from "./types.js";
 
-const DDL = `
-CREATE TABLE IF NOT EXISTS vault_secret_metadata (
-  secret_id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  env_scope TEXT NOT NULL,
-  name TEXT NOT NULL,
-  last_four_masked TEXT NOT NULL,
-  provider_hint TEXT,
-  created_at INTEGER NOT NULL,
-  rotated_at INTEGER,
-  verified_status TEXT NOT NULL,
-  credential_target TEXT NOT NULL,
-  fingerprint TEXT NOT NULL,
-  tagged_prod INTEGER NOT NULL CHECK (tagged_prod IN (0, 1)),
-  test_override INTEGER NOT NULL CHECK (test_override IN (0, 1))
-) STRICT;
-CREATE UNIQUE INDEX IF NOT EXISTS vault_secret_name_scope
-  ON vault_secret_metadata(project_id, env_scope, name);
-`;
+interface VaultStatement {
+  get(...params: SqlValue[]): unknown;
+  all(...params: SqlValue[]): unknown[];
+  run(...params: SqlValue[]): unknown;
+}
 
+interface VaultSql {
+  prepare(sql: string): VaultStatement;
+}
+
+/**
+ * Metadata for one secret is written to `global.db` and `state.db` through the
+ * single-writer handles. The two files are never attached in one transaction.
+ */
 export class SqliteVaultMetadataStore implements GlobalDbRepo {
-  private readonly globalDb: DatabaseSync;
-  private readonly stateDb: DatabaseSync;
-  private closed = false;
+  private readonly globalDb: VaultSql;
+  private readonly stateDb: VaultSql;
 
-  constructor(globalDbPath: string, stateDbPath: string) {
-    if (path.resolve(globalDbPath) === path.resolve(stateDbPath)) {
-      throw new Error("global.db and state.db must be different files.");
-    }
-    this.globalDb = openVaultDb(globalDbPath);
-    this.stateDb = openVaultDb(stateDbPath);
+  constructor(global: GlobalBrokerDb, state: ProjectStateDb) {
+    this.globalDb = vaultSql(global.writer);
+    this.stateDb = vaultSql(state.writer);
   }
 
   upsertVaultMetadata(row: SecretMetadata): void {
-    this.write(this.globalDb, row);
+    write(this.globalDb, row);
     try {
-      this.write(this.stateDb, row);
+      write(this.stateDb, row);
     } catch (error) {
-      this.remove(this.globalDb, row.secretId);
+      remove(this.globalDb, row.secretId);
       throw error;
     }
   }
 
   getVaultMetadata(secretId: string): SecretMetadata | null {
-    const row = this.globalDb
-      .prepare("SELECT * FROM vault_secret_metadata WHERE secret_id = ?")
-      .get(secretId);
+    const row = this.globalDb.prepare("SELECT * FROM vault_secret_metadata WHERE secret_id = ?").get(secretId);
     return asMetadata(row);
   }
 
   deleteVaultMetadata(secretId: string): void {
-    this.remove(this.globalDb, secretId);
-    this.remove(this.stateDb, secretId);
+    remove(this.globalDb, secretId);
+    remove(this.stateDb, secretId);
   }
 
   findVaultMetadataByName(projectId: string, envScope: EnvScope, name: string): SecretMetadata | null {
     const row = this.globalDb
-      .prepare(
-        "SELECT * FROM vault_secret_metadata WHERE project_id = ? AND env_scope = ? AND name = ?",
-      )
+      .prepare("SELECT * FROM vault_secret_metadata WHERE project_id = ? AND env_scope = ? AND name = ?")
       .get(projectId, envScope, name);
     return asMetadata(row);
   }
@@ -93,66 +77,68 @@ export class SqliteVaultMetadataStore implements GlobalDbRepo {
   }
 
   close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.globalDb.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    this.stateDb.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    this.globalDb.close();
-    this.stateDb.close();
-  }
-
-  private write(db: DatabaseSync, row: SecretMetadata): void {
-    db.prepare(
-      `INSERT INTO vault_secret_metadata (
-         secret_id, project_id, env_scope, name, last_four_masked, provider_hint,
-         created_at, rotated_at, verified_status, credential_target, fingerprint,
-         tagged_prod, test_override
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(secret_id) DO UPDATE SET
-         project_id = excluded.project_id,
-         env_scope = excluded.env_scope,
-         name = excluded.name,
-         last_four_masked = excluded.last_four_masked,
-         provider_hint = excluded.provider_hint,
-         created_at = excluded.created_at,
-         rotated_at = excluded.rotated_at,
-         verified_status = excluded.verified_status,
-         credential_target = excluded.credential_target,
-         fingerprint = excluded.fingerprint,
-         tagged_prod = excluded.tagged_prod,
-         test_override = excluded.test_override`,
-    ).run(
-      row.secretId,
-      row.projectId,
-      row.envScope,
-      row.name,
-      row.lastFourMasked,
-      row.providerHint ?? null,
-      row.createdAt,
-      row.rotatedAt ?? null,
-      row.verifiedStatus,
-      row.credentialTarget,
-      row.fingerprint,
-      row.taggedProd ? 1 : 0,
-      row.testOverride ? 1 : 0,
-    );
-  }
-
-  private remove(db: DatabaseSync, secretId: string): void {
-    db.prepare("DELETE FROM vault_secret_metadata WHERE secret_id = ?").run(secretId);
+    return undefined;
   }
 }
 
-function openVaultDb(file: string): DatabaseSync {
-  mkdirSync(path.dirname(file), { recursive: true });
-  const db = new DatabaseSync(file);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = FULL");
-  db.exec("PRAGMA secure_delete = ON");
-  db.exec("PRAGMA foreign_keys = ON");
-  db.exec("PRAGMA busy_timeout = 5000");
-  db.exec(DDL);
-  return db;
+function vaultSql(connection: SqliteConnection): VaultSql {
+  return {
+    prepare(sql: string): VaultStatement {
+      const statement = connection.prepare(sql);
+      return {
+        get(...params: SqlValue[]): unknown {
+          return statement.get(params);
+        },
+        all(...params: SqlValue[]): unknown[] {
+          return statement.all(params);
+        },
+        run(...params: SqlValue[]): unknown {
+          return statement.run(params);
+        },
+      };
+    },
+  };
+}
+
+function write(db: VaultSql, row: SecretMetadata): void {
+  db.prepare(
+    `INSERT INTO vault_secret_metadata (
+       secret_id, project_id, env_scope, name, last_four_masked, provider_hint,
+       created_at, rotated_at, verified_status, credential_target, fingerprint,
+       tagged_prod, test_override
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(secret_id) DO UPDATE SET
+       project_id = excluded.project_id,
+       env_scope = excluded.env_scope,
+       name = excluded.name,
+       last_four_masked = excluded.last_four_masked,
+       provider_hint = excluded.provider_hint,
+       created_at = excluded.created_at,
+       rotated_at = excluded.rotated_at,
+       verified_status = excluded.verified_status,
+       credential_target = excluded.credential_target,
+       fingerprint = excluded.fingerprint,
+       tagged_prod = excluded.tagged_prod,
+       test_override = excluded.test_override`,
+  ).run(
+    row.secretId,
+    row.projectId,
+    row.envScope,
+    row.name,
+    row.lastFourMasked,
+    row.providerHint ?? null,
+    row.createdAt,
+    row.rotatedAt ?? null,
+    row.verifiedStatus,
+    row.credentialTarget,
+    row.fingerprint,
+    row.taggedProd ? 1 : 0,
+    row.testOverride ? 1 : 0,
+  );
+}
+
+function remove(db: VaultSql, secretId: string): void {
+  db.prepare("DELETE FROM vault_secret_metadata WHERE secret_id = ?").run(secretId);
 }
 
 function asMetadata(value: unknown): SecretMetadata | null {

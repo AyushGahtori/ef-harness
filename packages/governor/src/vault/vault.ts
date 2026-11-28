@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import type { GlobalBrokerDb, ProjectStateDb } from "@ef-harness/db";
 import { WindowsDpapiMaterialStore } from "./dpapi-store.js";
 import { VaultHmac } from "./hmac.js";
 import { SqliteVaultMetadataStore } from "./metadata-store.js";
@@ -40,8 +41,8 @@ export interface PutSecretInput {
 }
 
 export interface WindowsDpapiSecretsVaultOptions {
-  readonly globalDbPath: string;
-  readonly stateDbPath: string;
+  readonly global: GlobalBrokerDb;
+  readonly state: ProjectStateDb;
   readonly vaultDir: string;
   readonly logsDir?: string;
   readonly prodHostnames?: readonly string[];
@@ -75,7 +76,7 @@ export class WindowsDpapiSecretsVault implements VaultSecretSource {
       this.metadata = options.metadata;
       this.ownsMetadata = false;
     } else {
-      this.metadata = new SqliteVaultMetadataStore(options.globalDbPath, options.stateDbPath);
+      this.metadata = new SqliteVaultMetadataStore(options.global, options.state);
       this.ownsMetadata = true;
     }
     this.material = options.materialStore ?? new WindowsDpapiMaterialStore(options.vaultDir);
@@ -86,6 +87,20 @@ export class WindowsDpapiSecretsVault implements VaultSecretSource {
     this.now = options.now ?? (() => Date.now());
     mkdirSync(options.vaultDir, { recursive: true });
     if (this.logsDir) mkdirSync(this.logsDir, { recursive: true });
+  }
+
+  storeSecret(input: PutSecretInput): Promise<SecretMetadata> {
+    return this.put(input);
+  }
+
+  async readPlaintextForKernel(secretId: string): Promise<string> {
+    const secret = await this.readSecret(secretId);
+    if (!secret) throw new SecretNotFoundError(secretId);
+    return secret.value;
+  }
+
+  deleteSecret(secretId: string): Promise<PurgeOffer> {
+    return this.delete(secretId);
   }
 
   async put(input: PutSecretInput): Promise<SecretMetadata> {

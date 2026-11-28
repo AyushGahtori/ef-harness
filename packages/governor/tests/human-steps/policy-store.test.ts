@@ -58,7 +58,10 @@ it("stamps a passing probe verified and a manual confirmation attested", () => {
   expect(attested.step.attestationNote).toBe("I turned on 2FA in the Stripe dashboard");
   expect(policy.badge(attested.step).label).toBe(ATTESTED_BADGE_LABEL);
   expect(runtime.store.holdsFor("T-9")).toEqual([]);
-  const question = db.prepare(`SELECT status, kind FROM human_step_questions`).all() as { status: string; kind: string }[];
+  const question = db.writer.prepare(`SELECT status, kind FROM human_step_questions`).all() as {
+    status: string;
+    kind: string;
+  }[];
   expect(question.some((row) => row.kind === "human_step" && row.status === "retired")).toBe(true);
   db.close();
 });
@@ -76,6 +79,9 @@ it("refuses to attest a missing Playwright browser or a broken database URL", ()
   expect(refused.allowed).toBe(false);
   expect(refused.decision.message).toBe(PLAYWRIGHT_HARD_BYPASS_MESSAGE);
   expect(refused.step.status).toBe("pending");
+  expect(runtime.store.holdsFor("T-4")).toEqual([
+    expect.objectContaining({ reason: "governor", source: expect.stringMatching(/^human_step:HS-/) }),
+  ]);
   expect(runtime.store.holdsFor("T-4").map((hold) => hold.reason)).toEqual([WAITING_ON_HUMAN_STEP_REASON]);
 
   const database = runtime.createStep({
@@ -157,7 +163,7 @@ it("rolls back verification when recording evidence fails", async () => {
   expect(runtime.store.require(step.stepId).status).toBe("pending");
   expect(runtime.store.require(step.stepId).verifiedAt).toBeUndefined();
   const holds = runtime.store.holdsFor("T-2").map((hold) => hold.reason).sort();
-  expect(holds).toEqual(["user_pause", WAITING_ON_HUMAN_STEP_REASON]);
+  expect(holds).toEqual([WAITING_ON_HUMAN_STEP_REASON, "user_pause"]);
   db.close();
 });
 

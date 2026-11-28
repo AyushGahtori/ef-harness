@@ -1,7 +1,12 @@
-import { DatabaseSync } from "node:sqlite";
+import { randomBytes } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { isHoldReason, openProjectStateDb, type ProjectStateDb } from "@ef-harness/db";
 
 import { HumanStepError } from "./errors.js";
 import { HUMAN_STEP_SCHEMA_SQL } from "./schema.js";
+import type { PositionalDb } from "./sql-port.js";
 import type {
   GraphChangeSet,
   GraphEvidenceInput,
@@ -19,7 +24,7 @@ import type {
  * without colliding with the frozen schema. Swap the class for `KnowledgeGraphRepo`.
  */
 export class SqliteKnowledgeGraphPort implements KnowledgeGraphPort {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: PositionalDb) {}
 
   allocateEntityId(prefix: string): string {
     if (prefix !== "S-") {
@@ -80,7 +85,7 @@ export class SqliteKnowledgeGraphPort implements KnowledgeGraphPort {
  */
 export class SqliteQuestionArbiter implements SharedQuestionArbiter {
   constructor(
-    private readonly db: DatabaseSync,
+    private readonly db: PositionalDb,
     private readonly now: () => number,
   ) {}
 
@@ -117,11 +122,14 @@ export class SqliteQuestionArbiter implements SharedQuestionArbiter {
   }
 }
 
-/** Task 021 hold rows stored beside human steps. Reason is `waiting_on_human_step`. */
+/** Canonical `task_holds` rows. Reason must be a kernel `HoldReason`. */
 export class SqliteTaskHoldPort implements TaskHoldPort {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: PositionalDb) {}
 
   placeHold(hold: TaskHoldDraft): void {
+    if (!isHoldReason(hold.reason)) {
+      throw new HumanStepError("hold_reason", `task_holds.reason ${hold.reason} is not canonical`);
+    }
     this.db
       .prepare(
         `INSERT INTO task_holds(task, reason, source, created_at) VALUES (?, ?, ?, ?)
@@ -154,13 +162,15 @@ export class SqliteTaskHoldPort implements TaskHoldPort {
   }
 }
 
-export function openHumanStepDatabase(filename = ":memory:"): DatabaseSync {
-  const db = new DatabaseSync(filename);
-  db.exec(HUMAN_STEP_SCHEMA_SQL);
+export function openHumanStepDatabase(): ProjectStateDb {
+  const root = mkdtempSync(path.join(tmpdir(), "ef-human-steps-"));
+  const projectId = `hs-${randomBytes(4).toString("hex")}`;
+  const db = openProjectStateDb({ projectId, rootDir: root });
+  db.writer.exec(HUMAN_STEP_SCHEMA_SQL);
   return db;
 }
 
-export function withImmediateTransaction<T>(db: DatabaseSync, body: () => T): T {
+export function withImmediateTransaction<T>(db: PositionalDb, body: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
     const value = body();
@@ -177,7 +187,7 @@ export function withImmediateTransaction<T>(db: DatabaseSync, body: () => T): T 
   }
 }
 
-export function nextCounter(db: DatabaseSync, name: string): number {
+export function nextCounter(db: PositionalDb, name: string): number {
   db.prepare(`INSERT INTO human_step_counter(name, value) VALUES (?, 0) ON CONFLICT(name) DO NOTHING`).run(name);
   db.prepare(`UPDATE human_step_counter SET value = value + 1 WHERE name = ?`).run(name);
   const row = db.prepare(`SELECT value AS n FROM human_step_counter WHERE name = ?`).get(name) as { n: number } | undefined;

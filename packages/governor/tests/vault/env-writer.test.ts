@@ -51,11 +51,13 @@ describe("GitignoredLocalEnvWriter", () => {
       expect(body.includes("STRIPE_TEST_KEY=local_fixture_value_999")).toBe(true);
       expect(body.includes("line-one\\nline-two")).toBe(true);
       expect(await readFile(path.join(dir, ".env.example"), "utf8")).toBe(example);
-      const icacls = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "icacls.exe");
-      const listed = await runTool(icacls, [path.join(dir, ".env.local")]);
-      const identities = parseIcaclsIdentities(listed.stdout, path.join(dir, ".env.local"));
-      const who = await currentWindowsIdentity();
-      expect(identities.map((identity) => identity.toLowerCase())).toEqual([who.toLowerCase()]);
+      if (process.platform === "win32") {
+        const icacls = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "icacls.exe");
+        const listed = await runTool(icacls, [path.join(dir, ".env.local")]);
+        const identities = parseIcaclsIdentities(listed.stdout, path.join(dir, ".env.local"));
+        const who = await currentWindowsIdentity();
+        expect(identities.map((identity) => identity.toLowerCase())).toEqual([who.toLowerCase()]);
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

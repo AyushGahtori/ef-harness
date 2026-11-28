@@ -1,7 +1,6 @@
 /**
- * Human-step records stored in `state.db.human_steps`.
- * The frozen schema has no `human_steps` table yet; this package creates it
- * on the connection it is given. See the task handoff for the schema request.
+ * Human-step records stored in `state.db.human_steps` (MigrationRunner v2).
+ * Holds use canonical `task_holds.reason = governor` and `source = human_step:<stepId>`.
  */
 
 export const HUMAN_STEP_STATUSES = ["pending", "probing", "verified", "attested", "failed"] as const;
@@ -39,7 +38,13 @@ export type CliToolName = (typeof CLI_TOOLS)[number];
 
 export const MAX_PROBE_TIMEOUT_MS = 10_000;
 
-export const WAITING_ON_HUMAN_STEP_REASON = "waiting_on_human_step";
+export const GOVERNOR_HOLD_REASON = "governor" as const;
+
+export const WAITING_ON_HUMAN_STEP_REASON = GOVERNOR_HOLD_REASON;
+
+export function humanStepHoldSource(stepId: string): string {
+  return `human_step:${stepId}`;
+}
 
 export const ATTESTED_BADGE_LABEL = "Self-attested by you (unprobed)";
 

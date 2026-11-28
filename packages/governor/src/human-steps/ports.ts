@@ -12,7 +12,8 @@
  * - `WindowsDpapiSecretsVault` matches Task 120's vault read. Only a secret id
  *   crosses this boundary; plaintext is used inside the probe and scrubbed.
  * - `TaskHoldPort` matches Task 021 `placeHold` / `releaseHold` rows
- *   `(task, reason, source, created_at)` with reason `waiting_on_human_step`.
+ *   `(task, reason, source, created_at)` with reason `governor`
+ *   and source `human_step:<stepId>`.
  */
 
 import type { ProbeResult } from "./types.js";

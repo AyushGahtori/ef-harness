@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { looksLikeProviderCredential } from "./patterns.js";
-import type { PacketSecurityRedactor } from "./redactor.js";
+import { PacketSecurityRedactor, StreamingRedactor } from "./redactor.js";
 import type { StoredSecret, VaultSecretSource } from "./ports.js";
 import { LiveKeyTestRefusalGuard } from "./refusal.js";
 import type { EnvScope, InjectionRole, SandboxTier } from "./types.js";
@@ -111,14 +111,14 @@ export class RuntimeOnlyEnvInjector {
     if (request.role === "coding-worker" && !workerEnvironmentIsCredentialFree(env)) {
       throw new WorkerSandboxSecretError();
     }
-    const labels = injected.map((secret) => secret.name);
-    for (const secret of injected) this.redactor.register(secret.name, secret.value);
+    const labels: string[] = [];
+    for (const secret of injected) labels.push(...registerSecret(this.redactor, secret.name, secret.value));
     try {
       const captured = await runChild(request.command, request.args, env, request.cwd);
       return {
         exitCode: captured.exitCode,
-        redactedStdout: this.redactor.redact(captured.stdout),
-        redactedStderr: this.redactor.redact(captured.stderr),
+        redactedStdout: redactCaptured(this.redactor, captured.stdout),
+        redactedStderr: redactCaptured(this.redactor, captured.stderr),
         argv: [...request.args],
         shell: false,
         envNames: Object.keys(env).sort(),
@@ -209,4 +209,23 @@ function runChild(
       });
     });
   });
+}
+
+function registerSecret(redactor: PacketSecurityRedactor, name: string, value: string): string[] {
+  const labels = [name];
+  redactor.register(name, value);
+  const lines = value.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? "";
+    if (line.length < 8 || line === value) continue;
+    const label = `${name}_${index}`;
+    redactor.register(label, line);
+    labels.push(label);
+  }
+  return labels;
+}
+
+function redactCaptured(redactor: PacketSecurityRedactor, text: string): string {
+  const stream = new StreamingRedactor(redactor, Math.max(text.length, 1));
+  return `${stream.push(text)}${stream.flush()}`;
 }

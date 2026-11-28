@@ -72,7 +72,7 @@ describe("global broker database", () => {
       secureDelete: true,
       userVersion: 2,
     });
-    expect(first.schemaTables()).toEqual([...schemaTableNames(canonical)].sort());
+    expect(first.schemaTables()).toEqual([...schemaTableNames(canonical), "vault_secret_metadata"].sort());
     expect(first.attachedDatabaseNames()).toEqual(["main"]);
     first.verifyIsolatedConnection();
     expect(first.quickCheck()).toBe("ok");
