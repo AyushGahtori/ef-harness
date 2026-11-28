@@ -34,7 +34,7 @@ export {
   decideLockSafety,
 } from "./ports.js";
 export type { IoJournal, ProcessProbePort, ReconcilePorts } from "./ports.js";
-export { InMemoryReentryStore, createFileIndexLockPort } from "./state-store.js";
+export { ProjectReentryStore, createFileIndexLockPort } from "./state-store.js";
 export type { ReentryStateStore } from "./state-store.js";
 export {
   COLD_OPEN_DOMAINS,

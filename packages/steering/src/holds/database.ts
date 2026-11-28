@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+import { openSteeringState } from "../router/state-file.js";
+import { ensureTaskNode, kernelTaskState } from "../state-seed.js";
 
 import { holdKey, kernelReasonFor } from "./format.js";
 import {
@@ -15,28 +17,12 @@ import {
   type WipFile,
 } from "./types.js";
 
+/**
+ * Additive hold tables live in the state v2 migration.
+ * Canonical `task_runtime` and `task_holds` are not created here.
+ */
 export const HOLD_SCHEMA_SQL = `
-CREATE TABLE task_runtime (
-  task TEXT PRIMARY KEY,
-  feature TEXT NOT NULL,
-  state TEXT NOT NULL,
-  level TEXT NOT NULL,
-  epoch INTEGER NOT NULL,
-  holder_attempt TEXT,
-  lease_expires_at INTEGER,
-  submission_pending INTEGER NOT NULL CHECK (submission_pending IN (0, 1)),
-  updated_rev INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE task_holds (
-  task TEXT NOT NULL,
-  reason TEXT NOT NULL,
-  source TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (task, reason, source)
-) STRICT;
-
-CREATE TABLE hold_reason_details (
+CREATE TABLE IF NOT EXISTS hold_reason_details (
   task TEXT NOT NULL,
   reason TEXT NOT NULL,
   source TEXT NOT NULL,
@@ -122,9 +108,7 @@ CREATE TABLE ambiguity_reminders (
 `;
 
 export function openHoldDatabase(filename = ":memory:"): DatabaseSync {
-  const db = new DatabaseSync(filename);
-  db.exec(HOLD_SCHEMA_SQL);
-  return db;
+  return openSteeringState(filename);
 }
 
 export function withImmediateTransaction(db: DatabaseSync, body: () => void, trace?: string[]): void {
@@ -189,13 +173,14 @@ export class HoldStore {
   constructor(readonly db: DatabaseSync) {}
 
   seedCheckpoint(task: TaskSnapshot): void {
+    ensureTaskNode(this.db, task.taskId, task.featureId, task.label);
     this.db
       .prepare(
         `INSERT INTO task_runtime(task, feature, state, level, epoch, holder_attempt, lease_expires_at, submission_pending, updated_rev)
          VALUES (?, ?, ?, 'm3', 0, NULL, NULL, 0, 1)
          ON CONFLICT(task) DO UPDATE SET feature = excluded.feature, state = excluded.state`,
       )
-      .run(task.taskId, task.featureId, task.state);
+      .run(task.taskId, task.featureId, kernelTaskState(task.state));
     this.db
       .prepare(
         `INSERT INTO task_checkpoints(

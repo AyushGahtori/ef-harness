@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import { HUMAN_QUEUE_OWNER, OUTBOX_CONSUMERS, type PriorityTier, type QuestionKind, type QuestionStatus, type SettledSource } from "./constants.js";
-import { QUESTION_ARBITER_DDL } from "./ddl.js";
+import { ensureTaskRuntime } from "../state-seed.js";
+import { HUMAN_QUEUE_OWNER, OUTBOX_CONSUMERS, type PriorityTier, type QuestionKind, type QuestionStatus } from "./constants.js";
 import { HoldClearFailedError, QuestionTransactionError } from "./errors.js";
 import { canonicalInboxKind, canonicalInboxStatus, priorityRank } from "./priority.js";
 import { blockingLabel, normalizeTopic, questionKey, whyThisMatters } from "./text.js";
@@ -20,11 +20,48 @@ import type {
 
 type Row = Record<string, SQLOutputValue>;
 
-interface StoredPayload {
-  readonly text: string;
-  readonly options: readonly QuestionOption[];
-  readonly recommendedOptionId: string;
-  readonly signals: PrioritySignals;
+const COUNTERS = "steering.question_counters";
+const HOLDS = "steering.question_holds";
+const WAKES = "steering.question_wakes";
+const PENDING = "steering.question_pending";
+const FACTS = "steering.settled_facts";
+
+interface QuestionDoc {
+  questionId: string;
+  buildId: string;
+  questionKey: string;
+  scopeId: string | null;
+  criterionId: string | null;
+  featureId: string | null;
+  contractId: string | null;
+  kind: QuestionKind;
+  humanReason: QuestionCard["humanReason"];
+  text: string;
+  ownerRole: string;
+  priority: PriorityTier;
+  status: QuestionStatus;
+  domainStatus: QuestionStatus;
+  optionsVersion: number;
+  options: QuestionOption[];
+  recommendedOptionId: string;
+  blockedWorkerCount: number;
+  subscribers: QuestionSubscriber[];
+  createdAt: number;
+  resolvedAt: number | null;
+  retiredReason: string | null;
+  settledAnswer: string | null;
+  settledOptionId: string | null;
+  settledBy: string | null;
+  signals: PrioritySignals;
+  onCriticalPath: boolean;
+}
+
+interface StoredHold {
+  taskId: string;
+  reasonType: string;
+  reasonRefId: string;
+  mode: "HARD_HOLD" | "SOFT_HOLD";
+  active: boolean;
 }
 
 export interface NewQuestionInput {
@@ -55,18 +92,15 @@ export interface JoinUpdate {
 export class QuestionQueueStore {
   private holdClearFailures = 0;
   private depth = 0;
-  private readonly factByText: ReturnType<DatabaseSync["prepare"]>;
-  private readonly factByTopic: ReturnType<DatabaseSync["prepare"]>;
-  private readonly factByScope: ReturnType<DatabaseSync["prepare"]>;
 
   constructor(private readonly db: DatabaseSync) {
     this.db.exec("PRAGMA busy_timeout = 5000");
-    this.db.exec(QUESTION_ARBITER_DDL);
-    this.factByText = this.db.prepare(`SELECT * FROM qa_settled_facts WHERE normalized_text = ? LIMIT 1`);
-    this.factByTopic = this.db.prepare(`SELECT * FROM qa_settled_facts WHERE topic_key = ? LIMIT 1`);
-    this.factByScope = this.db.prepare(
-      `SELECT * FROM qa_settled_facts WHERE scope_id = ? AND criterion_id = ? LIMIT 1`,
-    );
+    const inbox = this.db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'inbox_items'").get();
+    if (!inbox) throw new QuestionTransactionError("Question arbiter requires ProjectStateDb inbox_items.");
+    const shadow = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'qa_%' LIMIT 1")
+      .get() as { name?: string } | undefined;
+    if (shadow?.name) throw new QuestionTransactionError(`Refusing shadow table ${shadow.name}.`);
   }
 
   armHoldClearFailure(): void {
@@ -93,148 +127,126 @@ export class QuestionQueueStore {
   }
 
   nextId(name: string, prefix: string): string {
-    const row = this.db
-      .prepare(
-        `INSERT INTO qa_id_counters(name, value) VALUES (?, 1)
-         ON CONFLICT(name) DO UPDATE SET value = value + 1
-         RETURNING value`,
-      )
-      .get(name) as Row | undefined;
-    return `${prefix}-${requiredInt(row, "value")}`;
+    const counters = readJson<Record<string, number>>(this.db, COUNTERS, {});
+    const value = (counters[name] ?? 0) + 1;
+    counters[name] = value;
+    writeJson(this.db, COUNTERS, counters);
+    return `${prefix}-${String(value)}`;
   }
 
   findOpenByKey(key: string): QuestionCard | null {
-    const row = this.db
-      .prepare(`SELECT * FROM qa_inbox_items WHERE question_key = ? AND status = 'open'`)
-      .get(key) as Row | undefined;
-    if (!row) return null;
-    return this.hydrate(row);
+    for (const card of this.listOpen()) {
+      if (card.questionKey === key) return card;
+    }
+    return null;
   }
 
   getCard(questionId: string): QuestionCard | null {
-    const row = this.db.prepare(`SELECT * FROM qa_inbox_items WHERE id = ?`).get(questionId) as Row | undefined;
-    if (!row) return null;
-    return this.hydrate(row);
+    const doc = this.readDoc(questionId);
+    return doc ? this.hydrate(doc) : null;
   }
 
   listOpen(): QuestionCard[] {
-    const rows = this.db.prepare(`SELECT * FROM qa_inbox_items WHERE status = 'open'`).all() as Row[];
-    return rows.map((row) => this.hydrate(row));
+    return this.listDocs()
+      .filter((doc) => doc.status === "open")
+      .map((doc) => this.hydrate(doc));
   }
 
   listOpenForFeature(featureId: string): QuestionCard[] {
-    const rows = this.db
-      .prepare(`SELECT * FROM qa_inbox_items WHERE status = 'open' AND feature_id = ?`)
-      .all(featureId) as Row[];
-    return rows.map((row) => this.hydrate(row));
+    return this.listOpen().filter((card) => card.featureId === featureId);
   }
 
   openQuestionIdsForTask(taskId: string): string[] {
-    const rows = this.db
-      .prepare(
-        `SELECT s.question_id AS question_id
-         FROM qa_inbox_subscribers s
-         JOIN qa_inbox_items q ON q.id = s.question_id
-         WHERE s.waiting_task_id = ? AND s.active = 1 AND q.status = 'open'`,
-      )
-      .all(taskId) as Row[];
-    return rows.map((row) => requiredText(row, "question_id"));
+    return this.listOpen()
+      .filter((card) => card.subscribers.some((subscriber) => subscriber.active && subscriber.waitingTaskId === taskId))
+      .map((card) => card.questionId);
   }
 
   insertQuestion(input: NewQuestionInput): void {
-    const payload = encodePayload({
+    if (this.findOpenByKey(input.questionKey)) {
+      throw new Error("UNIQUE constraint failed: inbox_items.question_key");
+    }
+    const doc: QuestionDoc = {
+      questionId: input.id,
+      buildId: input.buildId,
+      questionKey: input.questionKey,
+      scopeId: input.scopeId,
+      criterionId: input.criterionId,
+      featureId: input.featureId,
+      contractId: input.contractId,
+      kind: input.kind,
+      humanReason: input.humanReason,
       text: input.text,
-      options: input.options,
+      ownerRole: HUMAN_QUEUE_OWNER,
+      priority: input.priority,
+      status: "open",
+      domainStatus: "open",
+      optionsVersion: 1,
+      options: [...input.options],
       recommendedOptionId: input.recommendedOptionId,
+      blockedWorkerCount: 0,
+      subscribers: [],
+      createdAt: input.createdAt,
+      resolvedAt: null,
+      retiredReason: null,
+      settledAnswer: null,
+      settledOptionId: null,
+      settledBy: null,
       signals: input.signals,
-    });
-    this.db
-      .prepare(
-        `INSERT INTO qa_inbox_items (
-           id, build_id, question_key, scope_id, criterion_id, feature_id, contract_id,
-           kind, human_reason, owner_role, priority_tier, priority, status, payload,
-           options_version, blocked_worker_count, on_critical_path, created_at, resolved_at,
-           retired_reason, settled_answer, settled_option_id, settled_by
-         ) VALUES (
-           ?, ?, ?, ?, ?, ?, ?,
-           ?, ?, ?, ?, ?, 'open', ?,
-           1, 0, ?, ?, NULL,
-           NULL, NULL, NULL, NULL
-         )`,
-      )
-      .run(
-        input.id,
-        input.buildId,
-        input.questionKey,
-        input.scopeId,
-        input.criterionId,
-        input.featureId,
-        input.contractId,
-        input.kind,
-        input.humanReason,
-        HUMAN_QUEUE_OWNER,
-        input.priority,
-        priorityRank(input.priority),
-        payload,
-        input.onCriticalPath ? 1 : 0,
-        input.createdAt,
-      );
+      onCriticalPath: input.onCriticalPath,
+    };
+    this.writeDoc(doc);
   }
 
   addSubscriber(questionId: string, taskId: string, role: string, createdAt: number): "added" | "reactivated" | "exists" {
-    const existing = this.db
-      .prepare(`SELECT active FROM qa_inbox_subscribers WHERE question_id = ? AND waiting_task_id = ?`)
-      .get(questionId, taskId) as Row | undefined;
+    const doc = this.requireDoc(questionId);
+    const existing = doc.subscribers.find((subscriber) => subscriber.waitingTaskId === taskId);
     if (!existing) {
-      this.db
-        .prepare(
-          `INSERT INTO qa_inbox_subscribers(question_id, waiting_task_id, waiting_role, created_at, active)
-           VALUES (?, ?, ?, ?, 1)`,
-        )
-        .run(questionId, taskId, role, createdAt);
+      doc.subscribers = [...doc.subscribers, { waitingTaskId: taskId, waitingRole: role, active: true, createdAt }];
+      this.writeDoc(doc);
       return "added";
     }
-    if (requiredInt(existing, "active") === 1) return "exists";
-    this.db
-      .prepare(
-        `UPDATE qa_inbox_subscribers SET active = 1, waiting_role = ? WHERE question_id = ? AND waiting_task_id = ?`,
-      )
-      .run(role, questionId, taskId);
+    if (existing.active) return "exists";
+    doc.subscribers = doc.subscribers.map((subscriber) =>
+      subscriber.waitingTaskId === taskId ? { ...subscriber, waitingRole: role, active: true } : subscriber,
+    );
+    this.writeDoc(doc);
     return "reactivated";
   }
 
   deactivateSubscriber(questionId: string, taskId: string): boolean {
-    const result = this.db
-      .prepare(
-        `UPDATE qa_inbox_subscribers SET active = 0 WHERE question_id = ? AND waiting_task_id = ? AND active = 1`,
-      )
-      .run(questionId, taskId);
-    return Number(result.changes) > 0;
+    const doc = this.requireDoc(questionId);
+    const existing = doc.subscribers.find((subscriber) => subscriber.waitingTaskId === taskId && subscriber.active);
+    if (!existing) return false;
+    doc.subscribers = doc.subscribers.map((subscriber) =>
+      subscriber.waitingTaskId === taskId ? { ...subscriber, active: false } : subscriber,
+    );
+    this.writeDoc(doc);
+    return true;
   }
 
   deactivateAll(questionId: string): string[] {
-    const active = this.activeSubscribers(questionId).map((subscriber) => subscriber.waitingTaskId);
-    this.db.prepare(`UPDATE qa_inbox_subscribers SET active = 0 WHERE question_id = ? AND active = 1`).run(questionId);
+    const doc = this.requireDoc(questionId);
+    const active = doc.subscribers.filter((subscriber) => subscriber.active).map((subscriber) => subscriber.waitingTaskId);
+    doc.subscribers = doc.subscribers.map((subscriber) => ({ ...subscriber, active: false }));
+    this.writeDoc(doc);
     return active;
   }
 
   updateDelivery(questionId: string, update: JoinUpdate): void {
-    this.db
-      .prepare(
-        `UPDATE qa_inbox_items
-         SET priority_tier = ?, priority = ?, blocked_worker_count = ?, on_critical_path = ?
-         WHERE id = ?`,
-      )
-      .run(update.priority, priorityRank(update.priority), update.blockedWorkerCount, update.onCriticalPath ? 1 : 0, questionId);
+    const doc = this.requireDoc(questionId);
+    doc.priority = update.priority;
+    doc.blockedWorkerCount = update.blockedWorkerCount;
+    doc.onCriticalPath = update.onCriticalPath;
+    this.writeDoc(doc);
   }
 
   reviseOptions(questionId: string, options: readonly QuestionOption[], recommendedOptionId: string, version: number): void {
-    const card = this.requireRow(questionId);
-    const payload = readPayload(requiredText(card, "payload"));
-    const next = encodePayload({ ...payload, options, recommendedOptionId });
-    this.db
-      .prepare(`UPDATE qa_inbox_items SET payload = ?, options_version = ? WHERE id = ?`)
-      .run(next, version, questionId);
+    const doc = this.requireDoc(questionId);
+    doc.options = [...options];
+    doc.recommendedOptionId = recommendedOptionId;
+    doc.optionsVersion = version;
+    this.writeDoc(doc);
   }
 
   markAnswered(input: {
@@ -244,14 +256,15 @@ export class QuestionQueueStore {
     readonly settledBy: string;
     readonly resolvedAt: number;
   }): void {
-    this.db
-      .prepare(
-        `UPDATE qa_inbox_items
-         SET status = 'answered', settled_answer = ?, settled_option_id = ?, settled_by = ?,
-             resolved_at = ?, retired_reason = NULL
-         WHERE id = ?`,
-      )
-      .run(input.answer, input.optionId, input.settledBy, input.resolvedAt, input.questionId);
+    const doc = this.requireDoc(input.questionId);
+    doc.status = "answered";
+    doc.domainStatus = "answered";
+    doc.settledAnswer = input.answer;
+    doc.settledOptionId = input.optionId;
+    doc.settledBy = input.settledBy;
+    doc.resolvedAt = input.resolvedAt;
+    doc.retiredReason = null;
+    this.writeDoc(doc);
   }
 
   markRetired(
@@ -263,29 +276,28 @@ export class QuestionQueueStore {
       readonly settledBy: string;
     },
   ): void {
-    this.db
-      .prepare(
-        `UPDATE qa_inbox_items
-         SET status = 'retired', retired_reason = ?, resolved_at = ?, blocked_worker_count = 0
-         WHERE id = ?`,
-      )
-      .run(reason, resolvedAt, questionId);
-    if (!settled) return;
-    this.db.prepare(`UPDATE qa_inbox_items SET settled_by = ? WHERE id = ?`).run(settled.settledBy, questionId);
-    if (settled.answer !== null) {
-      this.db.prepare(`UPDATE qa_inbox_items SET settled_answer = ? WHERE id = ?`).run(settled.answer, questionId);
+    const doc = this.requireDoc(questionId);
+    doc.status = "retired";
+    doc.domainStatus = "retired";
+    doc.retiredReason = reason;
+    doc.resolvedAt = resolvedAt;
+    doc.blockedWorkerCount = 0;
+    if (settled) {
+      doc.settledBy = settled.settledBy;
+      if (settled.answer !== null) doc.settledAnswer = settled.answer;
     }
+    this.writeDoc(doc);
   }
 
   placeHold(reason: Omit<HoldReason, "active">): void {
-    this.db
-      .prepare(
-        `INSERT INTO qa_holds(task_id, reason_type, reason_ref_id, mode, active)
-         VALUES (?, ?, ?, ?, 1)
-         ON CONFLICT(task_id, reason_type, reason_ref_id)
-         DO UPDATE SET active = 1, mode = excluded.mode`,
-      )
-      .run(reason.taskId, reason.reasonType, reason.reasonRefId, reason.mode);
+    const holds = this.holds();
+    const index = holds.findIndex(
+      (hold) => hold.taskId === reason.taskId && hold.reasonType === reason.reasonType && hold.reasonRefId === reason.reasonRefId,
+    );
+    const next: StoredHold = { ...reason, active: true };
+    if (index >= 0) holds[index] = next;
+    else holds.push(next);
+    writeJson(this.db, HOLDS, holds);
   }
 
   clearHold(taskId: string, reasonType: string, reasonRefId: string): void {
@@ -293,36 +305,32 @@ export class QuestionQueueStore {
       this.holdClearFailures -= 1;
       throw new HoldClearFailedError();
     }
-    this.db
-      .prepare(
-        `UPDATE qa_holds SET active = 0 WHERE task_id = ? AND reason_type = ? AND reason_ref_id = ? AND active = 1`,
-      )
-      .run(taskId, reasonType, reasonRefId);
+    const holds = this.holds().map((hold) => {
+      if (hold.taskId === taskId && hold.reasonType === reasonType && hold.reasonRefId === reasonRefId && hold.active) {
+        return { ...hold, active: false };
+      }
+      return hold;
+    });
+    writeJson(this.db, HOLDS, holds);
   }
 
   holdsFor(taskId: string): HoldReason[] {
-    const rows = this.db.prepare(`SELECT * FROM qa_holds WHERE task_id = ? AND active = 1`).all(taskId) as Row[];
-    return rows.map(readHold);
+    return this.holds()
+      .filter((hold) => hold.taskId === taskId && hold.active)
+      .map((hold) => ({ ...hold }));
   }
 
   insertWake(questionId: string, taskId: string, answer: string, createdAt: number): void {
     const wakeId = this.nextId("wake", "W");
-    this.db
-      .prepare(`INSERT INTO qa_wakes(wake_id, question_id, waiting_task_id, answer, created_at) VALUES (?, ?, ?, ?, ?)`)
-      .run(wakeId, questionId, taskId, answer, createdAt);
+    const wakes = readJson<WakeRecord[]>(this.db, WAKES, []);
+    wakes.push({ wakeId, questionId, waitingTaskId: taskId, answer, createdAt });
+    writeJson(this.db, WAKES, wakes);
   }
 
   wakesFor(questionId: string): WakeRecord[] {
-    const rows = this.db
-      .prepare(`SELECT * FROM qa_wakes WHERE question_id = ? ORDER BY created_at, wake_id`)
-      .all(questionId) as Row[];
-    return rows.map((row) => ({
-      wakeId: requiredText(row, "wake_id"),
-      questionId: requiredText(row, "question_id"),
-      waitingTaskId: requiredText(row, "waiting_task_id"),
-      answer: requiredText(row, "answer"),
-      createdAt: requiredInt(row, "created_at"),
-    }));
+    return readJson<WakeRecord[]>(this.db, WAKES, [])
+      .filter((wake) => wake.questionId === questionId)
+      .sort((left, right) => left.createdAt - right.createdAt || left.wakeId.localeCompare(right.wakeId));
   }
 
   insertPending(input: {
@@ -333,65 +341,46 @@ export class QuestionQueueStore {
     readonly createdAt: number;
   }): string {
     const pendingId = this.nextId("pending", "PR");
-    this.db
-      .prepare(
-        `INSERT INTO qa_pending_replies(pending_id, question_id, options_version, option_id, reply_text, created_at, disposition)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      )
-      .run(pendingId, input.questionId, input.optionsVersion, input.optionId, input.replyText, input.createdAt);
+    const pending = readJson<PendingReply[]>(this.db, PENDING, []);
+    pending.push({
+      pendingId,
+      questionId: input.questionId,
+      optionsVersion: input.optionsVersion,
+      optionId: input.optionId,
+      replyText: input.replyText,
+      createdAt: input.createdAt,
+      disposition: "pending",
+    });
+    writeJson(this.db, PENDING, pending);
     return pendingId;
   }
 
   getPending(pendingId: string): PendingReply | null {
-    const row = this.db.prepare(`SELECT * FROM qa_pending_replies WHERE pending_id = ?`).get(pendingId) as Row | undefined;
-    if (!row) return null;
-    const disposition = requiredText(row, "disposition");
-    if (disposition !== "pending" && disposition !== "kept" && disposition !== "changed") {
-      throw new QuestionTransactionError(`Unexpected pending disposition ${disposition}.`);
-    }
-    return {
-      pendingId: requiredText(row, "pending_id"),
-      questionId: requiredText(row, "question_id"),
-      optionsVersion: requiredInt(row, "options_version"),
-      optionId: optionalText(row, "option_id"),
-      replyText: requiredText(row, "reply_text"),
-      createdAt: requiredInt(row, "created_at"),
-      disposition,
-    };
+    return readJson<PendingReply[]>(this.db, PENDING, []).find((item) => item.pendingId === pendingId) ?? null;
   }
 
   setPendingDisposition(pendingId: string, disposition: "kept" | "changed"): void {
-    this.db.prepare(`UPDATE qa_pending_replies SET disposition = ? WHERE pending_id = ?`).run(disposition, pendingId);
+    const pending = readJson<PendingReply[]>(this.db, PENDING, []);
+    const index = pending.findIndex((row) => row.pendingId === pendingId);
+    const item = pending[index];
+    if (!item) throw new QuestionTransactionError(`Pending reply ${pendingId} does not exist.`);
+    pending[index] = { ...item, disposition };
+    writeJson(this.db, PENDING, pending);
   }
 
   registerFact(draft: SettledFactDraft & { readonly topicKey: string; readonly normalizedText: string }): SettledFact {
     const existing = this.findFact(draft);
     if (existing && existing.answer === draft.answer) return existing;
+    const facts = readJson<SettledFact[]>(this.db, FACTS, []);
     if (existing) {
-      this.db.prepare(`UPDATE qa_settled_facts SET answer = ?, source = ? WHERE fact_id = ?`).run(draft.answer, draft.source, existing.factId);
+      const next = facts.map((fact) =>
+        fact.factId === existing.factId ? { ...fact, answer: draft.answer, source: draft.source } : fact,
+      );
+      writeJson(this.db, FACTS, next);
       return { ...existing, answer: draft.answer, source: draft.source };
     }
-    const factId = this.nextId("fact", "SF");
-    this.db
-      .prepare(
-        `INSERT INTO qa_settled_facts(
-           fact_id, scope_id, criterion_id, topic_key, normalized_text, answer, source, table_name, column_name
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        factId,
-        draft.scopeId ?? null,
-        draft.criterionId ?? null,
-        draft.topicKey,
-        draft.normalizedText,
-        draft.answer,
-        draft.source,
-        draft.tableName ?? null,
-        draft.columnName ?? null,
-      );
-    this.db.prepare(`INSERT INTO qa_settled_fts(fact_id, body) VALUES (?, ?)`).run(factId, draft.normalizedText);
-    return {
-      factId,
+    const fact: SettledFact = {
+      factId: this.nextId("fact", "SF"),
       scopeId: draft.scopeId ?? null,
       criterionId: draft.criterionId ?? null,
       topicKey: draft.topicKey,
@@ -401,37 +390,41 @@ export class QuestionQueueStore {
       tableName: draft.tableName ?? null,
       columnName: draft.columnName ?? null,
     };
+    facts.push(fact);
+    writeJson(this.db, FACTS, facts);
+    return fact;
   }
 
   lookupFact(input: { readonly text: string; readonly scopeId?: string; readonly criterionId?: string }): SettledFact | null {
     const normalized = normalizeTopic(input.text);
+    const facts = readJson<SettledFact[]>(this.db, FACTS, []);
     if (input.scopeId !== undefined && input.criterionId !== undefined) {
-      const scoped = readFactRow(this.factByScope.get(input.scopeId, input.criterionId) as Row | undefined);
+      const scoped = facts.find((fact) => fact.scopeId === input.scopeId && fact.criterionId === input.criterionId);
       if (scoped) return scoped;
     }
-    const exact = readFactRow(this.factByText.get(normalized) as Row | undefined);
+    const exact = facts.find((fact) => fact.normalizedText === normalized);
     if (exact) return exact;
-    const keyed = readFactRow(
-      this.factByTopic.get(questionKey({ text: input.text, scopeId: input.scopeId, criterionId: input.criterionId })) as
-        | Row
-        | undefined,
+    const keyed = facts.find(
+      (fact) => fact.topicKey === questionKey({ text: input.text, scopeId: input.scopeId, criterionId: input.criterionId }),
     );
     if (keyed) return keyed;
-    const entity = this.lookupEntity(normalized);
+    const entity = this.lookupEntity(normalized, facts);
     if (entity) return entity;
-    return this.lookupFts(normalized);
+    return this.lookupTokens(normalized, facts);
   }
 
   appendOutbox(type: string, subject: string, payload: Record<string, unknown>, createdAt: number): void {
     const id = this.nextId("outbox", "OB");
     const body = JSON.stringify(payload);
-    this.db
-      .prepare(`INSERT INTO outbox(id, type, subject, rev, payload, created_at) VALUES (?, ?, ?, NULL, ?, ?)`)
-      .run(id, type, subject, body, createdAt);
+    this.db.prepare(`INSERT INTO outbox(id, type, subject, rev, payload, created_at) VALUES (?, ?, ?, NULL, ?, ?)`).run(
+      id,
+      type,
+      subject,
+      body,
+      createdAt,
+    );
     for (const consumer of OUTBOX_CONSUMERS) {
-      this.db
-        .prepare(`INSERT INTO outbox_deliveries(event_id, consumer, delivered_at) VALUES (?, ?, NULL)`)
-        .run(id, consumer);
+      this.db.prepare(`INSERT INTO outbox_deliveries(event_id, consumer, delivered_at) VALUES (?, ?, NULL)`).run(id, consumer);
     }
   }
 
@@ -447,54 +440,10 @@ export class QuestionQueueStore {
   }
 
   syncProjection(questionId: string): void {
-    const card = this.getCard(questionId);
-    if (!card) throw new QuestionTransactionError(`Cannot project missing question ${questionId}.`);
-    const active = card.subscribers.filter((subscriber) => subscriber.active);
-    const payload = JSON.stringify({
-      domainStatus: card.status,
-      retiredReason: card.retiredReason,
-      questionKey: card.questionKey,
-      blockedWorkerCount: card.blockedWorkerCount,
-      whyThisMatters: card.whyThisMatters,
-      blockingLabel: card.blockingLabel,
-      optionsVersion: card.optionsVersion,
-      settledAnswer: card.settledAnswer,
-      settledBy: card.settledBy,
-      scopeId: card.scopeId,
-      criterionId: card.criterionId,
-      featureId: card.featureId,
-      subscribers: active.map((subscriber) => ({
-        waitingTaskId: subscriber.waitingTaskId,
-        waitingRole: subscriber.waitingRole,
-      })),
-    });
-    this.db
-      .prepare(
-        `INSERT INTO inbox_items(id, kind, subject, owner_role, priority, status, payload, needed_by, created_at, resolved_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           kind = excluded.kind,
-           subject = excluded.subject,
-           owner_role = excluded.owner_role,
-           priority = excluded.priority,
-           status = excluded.status,
-           payload = excluded.payload,
-           resolved_at = excluded.resolved_at`,
-      )
-      .run(
-        card.questionId,
-        canonicalInboxKind(card.kind),
-        card.text,
-        card.ownerRole,
-        card.priorityRank,
-        canonicalInboxStatus(card.status),
-        payload,
-        card.createdAt,
-        card.resolvedAt,
-      );
-    this.db.prepare(`DELETE FROM inbox_subscribers WHERE item = ?`).run(card.questionId);
-    const insert = this.db.prepare(`INSERT INTO inbox_subscribers(item, task) VALUES (?, ?)`);
-    for (const subscriber of active) insert.run(card.questionId, subscriber.waitingTaskId);
+    const doc = this.readDoc(questionId);
+    if (!doc) throw new QuestionTransactionError(`Cannot project missing question ${questionId}.`);
+    doc.domainStatus = doc.status;
+    this.writeDoc(doc);
   }
 
   projection(questionId: string): InboxProjection | null {
@@ -515,214 +464,175 @@ export class QuestionQueueStore {
   }
 
   activeSubscribers(questionId: string): QuestionSubscriber[] {
-    return this.subscribers(questionId).filter((subscriber) => subscriber.active);
+    return this.requireDoc(questionId).subscribers.filter((subscriber) => subscriber.active);
   }
 
-  private hydrate(row: Row): QuestionCard {
-    const payload = readPayload(requiredText(row, "payload"));
-    const questionId = requiredText(row, "id");
-    const subscribers = this.subscribers(questionId);
-    const blockedWorkerCount = requiredInt(row, "blocked_worker_count");
-    const priority = requiredTier(requiredText(row, "priority_tier"));
-    const status = requiredStatus(requiredText(row, "status"));
-    const recommended = payload.options.some((option) => option.id === payload.recommendedOptionId)
-      ? payload.recommendedOptionId
-      : (payload.options[0]?.id ?? "opt-1");
+  private holds(): StoredHold[] {
+    return readJson<StoredHold[]>(this.db, HOLDS, []);
+  }
+
+  private listDocs(): QuestionDoc[] {
+    const rows = this.db.prepare(`SELECT payload FROM inbox_items ORDER BY rowid`).all() as Row[];
+    const docs: QuestionDoc[] = [];
+    for (const row of rows) {
+      const doc = parseDoc(requiredText(row, "payload"));
+      if (doc) docs.push(doc);
+    }
+    return docs;
+  }
+
+  private readDoc(questionId: string): QuestionDoc | null {
+    const row = this.db.prepare(`SELECT payload FROM inbox_items WHERE id = ?`).get(questionId) as Row | undefined;
+    if (!row) return null;
+    return parseDoc(requiredText(row, "payload"));
+  }
+
+  private requireDoc(questionId: string): QuestionDoc {
+    const doc = this.readDoc(questionId);
+    if (!doc) throw new QuestionTransactionError(`Question ${questionId} does not exist.`);
+    return doc;
+  }
+
+  private writeDoc(doc: QuestionDoc): void {
+    doc.domainStatus = doc.status;
+    const payload = JSON.stringify(doc);
+    this.db
+      .prepare(
+        `INSERT INTO inbox_items(id, kind, subject, owner_role, priority, status, payload, needed_by, created_at, resolved_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           kind = excluded.kind,
+           subject = excluded.subject,
+           owner_role = excluded.owner_role,
+           priority = excluded.priority,
+           status = excluded.status,
+           payload = excluded.payload,
+           resolved_at = excluded.resolved_at`,
+      )
+      .run(
+        doc.questionId,
+        canonicalInboxKind(doc.kind),
+        doc.text,
+        doc.ownerRole,
+        priorityRank(doc.priority),
+        canonicalInboxStatus(doc.status),
+        payload,
+        doc.createdAt,
+        doc.resolvedAt,
+      );
+    this.db.prepare(`DELETE FROM inbox_subscribers WHERE item = ?`).run(doc.questionId);
+    const insert = this.db.prepare(`INSERT INTO inbox_subscribers(item, task) VALUES (?, ?)`);
+    for (const subscriber of doc.subscribers) {
+      if (!subscriber.active) continue;
+      ensureTaskRuntime(this.db, subscriber.waitingTaskId, doc.featureId ?? subscriber.waitingTaskId, "WAITING_INPUT");
+      insert.run(doc.questionId, subscriber.waitingTaskId);
+    }
+  }
+
+  private hydrate(doc: QuestionDoc): QuestionCard {
+    const recommended = doc.options.some((option) => option.id === doc.recommendedOptionId)
+      ? doc.recommendedOptionId
+      : (doc.options[0]?.id ?? "opt-1");
     return {
-      questionId,
-      buildId: requiredText(row, "build_id"),
-      questionKey: requiredText(row, "question_key"),
-      scopeId: optionalText(row, "scope_id"),
-      criterionId: optionalText(row, "criterion_id"),
-      featureId: optionalText(row, "feature_id"),
-      contractId: optionalText(row, "contract_id"),
-      kind: requiredKind(requiredText(row, "kind")),
-      humanReason: requiredReason(requiredText(row, "human_reason")),
-      text: payload.text,
-      ownerRole: requiredText(row, "owner_role"),
-      priority,
-      priorityRank: priorityRank(priority),
-      status,
-      optionsVersion: requiredInt(row, "options_version"),
-      options: payload.options,
+      questionId: doc.questionId,
+      buildId: doc.buildId,
+      questionKey: doc.questionKey,
+      scopeId: doc.scopeId,
+      criterionId: doc.criterionId,
+      featureId: doc.featureId,
+      contractId: doc.contractId,
+      kind: doc.kind,
+      humanReason: doc.humanReason,
+      text: doc.text,
+      ownerRole: doc.ownerRole,
+      priority: doc.priority,
+      priorityRank: priorityRank(doc.priority),
+      status: doc.status,
+      optionsVersion: doc.optionsVersion,
+      options: doc.options,
       recommendedOptionId: recommended,
-      whyThisMatters: whyThisMatters(blockedWorkerCount),
-      blockingLabel: blockingLabel(blockedWorkerCount),
-      blockedWorkerCount,
-      subscribers,
-      createdAt: requiredInt(row, "created_at"),
-      resolvedAt: optionalInt(row, "resolved_at"),
-      retiredReason: optionalText(row, "retired_reason"),
-      settledAnswer: optionalText(row, "settled_answer"),
-      settledOptionId: optionalText(row, "settled_option_id"),
-      settledBy: optionalText(row, "settled_by"),
-      signals: payload.signals,
-      onCriticalPath: requiredInt(row, "on_critical_path") === 1,
+      whyThisMatters: whyThisMatters(doc.blockedWorkerCount),
+      blockingLabel: blockingLabel(doc.blockedWorkerCount),
+      blockedWorkerCount: doc.blockedWorkerCount,
+      subscribers: doc.subscribers,
+      createdAt: doc.createdAt,
+      resolvedAt: doc.resolvedAt,
+      retiredReason: doc.retiredReason,
+      settledAnswer: doc.settledAnswer,
+      settledOptionId: doc.settledOptionId,
+      settledBy: doc.settledBy,
+      signals: doc.signals,
+      onCriticalPath: doc.onCriticalPath,
     };
   }
 
-  private subscribers(questionId: string): QuestionSubscriber[] {
-    const rows = this.db
-      .prepare(
-        `SELECT waiting_task_id, waiting_role, active, created_at
-         FROM qa_inbox_subscribers WHERE question_id = ? ORDER BY created_at, waiting_task_id`,
-      )
-      .all(questionId) as Row[];
-    return rows.map((row) => ({
-      waitingTaskId: requiredText(row, "waiting_task_id"),
-      waitingRole: requiredText(row, "waiting_role"),
-      active: requiredInt(row, "active") === 1,
-      createdAt: requiredInt(row, "created_at"),
-    }));
+  private findFact(draft: {
+    readonly topicKey: string;
+    readonly normalizedText: string;
+    readonly scopeId?: string;
+    readonly criterionId?: string;
+  }): SettledFact | null {
+    const facts = readJson<SettledFact[]>(this.db, FACTS, []);
+    if (draft.scopeId !== undefined && draft.criterionId !== undefined) {
+      const scoped = facts.find((fact) => fact.scopeId === draft.scopeId && fact.criterionId === draft.criterionId);
+      if (scoped) return scoped;
+    }
+    return facts.find((fact) => fact.topicKey === draft.topicKey) ?? facts.find((fact) => fact.normalizedText === draft.normalizedText) ?? null;
   }
 
-  private requireRow(questionId: string): Row {
-    const row = this.db.prepare(`SELECT * FROM qa_inbox_items WHERE id = ?`).get(questionId) as Row | undefined;
-    if (!row) throw new QuestionTransactionError(`Question ${questionId} does not exist.`);
-    return row;
-  }
-
-  private factBy(sql: string, ...params: string[]): SettledFact | null {
-    const row = this.db.prepare(sql).get(...params) as Row | undefined;
-    if (!row) return null;
-    return readFact(row);
-  }
-
-  private lookupEntity(normalized: string): SettledFact | null {
+  private lookupEntity(normalized: string, facts: readonly SettledFact[]): SettledFact | null {
     const tokens = new Set(normalized.split(" ").filter((token) => token.length > 0));
     if (!tokens.has("column") && !tokens.has("field")) return null;
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM qa_settled_facts
-         WHERE source = 'entity_schema' AND table_name IS NOT NULL AND column_name IS NOT NULL`,
-      )
-      .all() as Row[];
-    for (const row of rows) {
-      const tableName = optionalText(row, "table_name");
-      const columnName = optionalText(row, "column_name");
-      if (tableName && columnName && tokens.has(tableName) && tokens.has(columnName)) return readFact(row);
+    for (const fact of facts) {
+      if (fact.source !== "entity_schema" || fact.tableName === null || fact.columnName === null) continue;
+      if (tokens.has(fact.tableName) && tokens.has(fact.columnName)) return fact;
     }
     return null;
   }
 
-  private lookupFts(normalized: string): SettledFact | null {
+  private lookupTokens(normalized: string, facts: readonly SettledFact[]): SettledFact | null {
     const tokens = normalized.split(" ").filter((token) => /^[\p{L}\p{N}]+$/u.test(token) && token.length > 2);
     if (tokens.length < 2) return null;
-    const match = tokens.map((token) => `"${token}"`).join(" AND ");
-    let row: Row | undefined;
-    try {
-      row = this.db
-        .prepare(`SELECT fact_id FROM qa_settled_fts WHERE qa_settled_fts MATCH ? ORDER BY bm25(qa_settled_fts) LIMIT 1`)
-        .get(match) as Row | undefined;
-    } catch {
-      return null;
+    for (const fact of facts) {
+      const factTokens = new Set(fact.normalizedText.split(" "));
+      const shared = tokens.filter((token) => factTokens.has(token));
+      if (shared.length >= 2 && shared.length === tokens.length) return fact;
     }
-    if (!row) return null;
-    const fact = this.factBy(`SELECT * FROM qa_settled_facts WHERE fact_id = ?`, requiredText(row, "fact_id"));
-    if (!fact) return null;
-    const factTokens = new Set(fact.normalizedText.split(" "));
-    const shared = tokens.filter((token) => factTokens.has(token)).length;
-    if (shared < 2) return null;
-    return fact;
-  }
-
-  private findFact(draft: { readonly topicKey: string; readonly normalizedText: string; readonly scopeId?: string; readonly criterionId?: string }): SettledFact | null {
-    if (draft.scopeId !== undefined && draft.criterionId !== undefined) {
-      const scoped = this.factBy(
-        `SELECT * FROM qa_settled_facts WHERE scope_id = ? AND criterion_id = ? LIMIT 1`,
-        draft.scopeId,
-        draft.criterionId,
-      );
-      if (scoped) return scoped;
-    }
-    return (
-      this.factBy(`SELECT * FROM qa_settled_facts WHERE topic_key = ? LIMIT 1`, draft.topicKey) ??
-      this.factBy(`SELECT * FROM qa_settled_facts WHERE normalized_text = ? LIMIT 1`, draft.normalizedText)
-    );
+    return null;
   }
 }
 
-function encodePayload(payload: StoredPayload): string {
-  return JSON.stringify({
-    text: payload.text,
-    options: payload.options,
-    recommendedOptionId: payload.recommendedOptionId,
-    signals: payload.signals,
-  });
+function readJson<T>(db: DatabaseSync, key: string, fallback: T): T {
+  const row = db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key) as Row | undefined;
+  if (!row) return structuredClone(fallback);
+  try {
+    return JSON.parse(requiredText(row, "value")) as T;
+  } catch {
+    return structuredClone(fallback);
+  }
 }
 
-function readPayload(text: string): StoredPayload {
+function writeJson(db: DatabaseSync, key: string, value: unknown): void {
+  db.prepare(
+    `INSERT INTO meta(key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(key, JSON.stringify(value));
+}
+
+function parseDoc(payload: string): QuestionDoc | null {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
+    parsed = JSON.parse(payload) as unknown;
   } catch {
-    throw new QuestionTransactionError("Question payload is not JSON.");
+    return null;
   }
-  if (!parsed || typeof parsed !== "object") throw new QuestionTransactionError("Question payload is not an object.");
-  const record = parsed as Record<string, unknown>;
-  if (typeof record.text !== "string") throw new QuestionTransactionError("Question payload is missing text.");
-  if (!Array.isArray(record.options)) throw new QuestionTransactionError("Question payload is missing options.");
-  const options = record.options.map((item) => readOption(item));
-  if (typeof record.recommendedOptionId !== "string") {
-    throw new QuestionTransactionError("Question payload is missing a recommended option.");
+  if (!parsed || typeof parsed !== "object") return null;
+  const record = parsed as Partial<QuestionDoc>;
+  if (typeof record.questionId !== "string" || typeof record.questionKey !== "string" || typeof record.text !== "string") {
+    return null;
   }
-  return {
-    text: record.text,
-    options,
-    recommendedOptionId: record.recommendedOptionId,
-    signals: readSignals(record.signals),
-  };
-}
-
-function readOption(value: unknown): QuestionOption {
-  if (!value || typeof value !== "object") throw new QuestionTransactionError("Option payload is invalid.");
-  const record = value as Record<string, unknown>;
-  if (typeof record.number !== "number" || typeof record.id !== "string" || typeof record.label !== "string") {
-    throw new QuestionTransactionError("Option payload is invalid.");
-  }
-  return { number: record.number, id: record.id, label: record.label };
-}
-
-function readSignals(value: unknown): PrioritySignals {
-  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  return {
-    stop: record.stop === true,
-    security: record.security === true,
-    authExpiry: record.authExpiry === true,
-    budgetCap: record.budgetCap === true,
-    criticalBlocker: record.criticalBlocker === true,
-  };
-}
-
-function readHold(row: Row): HoldReason {
-  const mode = requiredText(row, "mode");
-  if (mode !== "HARD_HOLD" && mode !== "SOFT_HOLD") throw new QuestionTransactionError(`Unexpected hold mode ${mode}.`);
-  return {
-    taskId: requiredText(row, "task_id"),
-    reasonType: requiredText(row, "reason_type"),
-    reasonRefId: requiredText(row, "reason_ref_id"),
-    mode,
-    active: requiredInt(row, "active") === 1,
-  };
-}
-
-function readFactRow(row: Row | undefined): SettledFact | null {
-  if (!row) return null;
-  return readFact(row);
-}
-
-function readFact(row: Row): SettledFact {
-  return {
-    factId: requiredText(row, "fact_id"),
-    scopeId: optionalText(row, "scope_id"),
-    criterionId: optionalText(row, "criterion_id"),
-    topicKey: requiredText(row, "topic_key"),
-    normalizedText: requiredText(row, "normalized_text"),
-    answer: requiredText(row, "answer"),
-    source: requiredSource(requiredText(row, "source")),
-    tableName: optionalText(row, "table_name"),
-    columnName: optionalText(row, "column_name"),
-  };
+  if (!Array.isArray(record.options) || !Array.isArray(record.subscribers)) return null;
+  return record as QuestionDoc;
 }
 
 function requiredText(row: Row | undefined, key: string): string {
@@ -743,65 +653,6 @@ function requiredInt(row: Row | undefined, key: string): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "bigint") return Number(value);
   throw new QuestionTransactionError(`${key} is not an integer.`);
-}
-
-function optionalInt(row: Row, key: string): number | null {
-  const value = row[key];
-  if (value === null || value === undefined) return null;
-  return requiredInt({ [key]: value }, key);
-}
-
-function requiredTier(value: string): PriorityTier {
-  if (value === "P0" || value === "P1" || value === "P2" || value === "P3" || value === "P4") return value;
-  throw new QuestionTransactionError(`Unexpected priority ${value}.`);
-}
-
-function requiredStatus(value: string): QuestionStatus {
-  if (value === "open" || value === "answered" || value === "superseded" || value === "dismissed" || value === "retired") {
-    return value;
-  }
-  throw new QuestionTransactionError(`Unexpected status ${value}.`);
-}
-
-function requiredKind(value: string): QuestionKind {
-  if (
-    value === "technical" ||
-    value === "product" ||
-    value === "secret" ||
-    value === "approval" ||
-    value === "human_step" ||
-    value === "dispute_test" ||
-    value === "breaking_ccr" ||
-    value === "conflict" ||
-    value === "ambiguous_steering" ||
-    value === "escalation" ||
-    value === "advisory"
-  ) {
-    return value;
-  }
-  throw new QuestionTransactionError(`Unexpected kind ${value}.`);
-}
-
-function requiredReason(value: string): QuestionCard["humanReason"] {
-  if (
-    value === "unsettled_product_behavior" ||
-    value === "ambiguous_steering" ||
-    value === "breaking_ccr" ||
-    value === "secret" ||
-    value === "approval" ||
-    value === "human_step" ||
-    value === "dispute_test" ||
-    value === "unresolvable_escalation" ||
-    value === "advisory"
-  ) {
-    return value;
-  }
-  throw new QuestionTransactionError(`Unexpected human reason ${value}.`);
-}
-
-function requiredSource(value: string): SettledSource {
-  if (value === "decision" || value === "contract" || value === "rule" || value === "entity_schema") return value;
-  throw new QuestionTransactionError(`Unexpected settled source ${value}.`);
 }
 
 export function isUniqueConstraint(error: unknown): boolean {

@@ -59,6 +59,93 @@ CREATE TABLE IF NOT EXISTS input_focus_snapshots (
 );
 `;
 
+/** Hold detail beside canonical task_runtime and task_holds. Those two tables are not recreated. */
+const STEERING_HOLDS_SQL = `
+CREATE TABLE IF NOT EXISTS hold_reason_details (
+  task TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  reason_type TEXT NOT NULL,
+  reason_ref_id TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('HARD_HOLD', 'SOFT_HOLD')),
+  quarantine INTEGER NOT NULL CHECK (quarantine IN (0, 1)),
+  explanation TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  feature TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (task, reason, source)
+);
+
+CREATE TABLE IF NOT EXISTS task_checkpoints (
+  task TEXT PRIMARY KEY,
+  feature TEXT NOT NULL,
+  label TEXT NOT NULL,
+  progress REAL NOT NULL,
+  state TEXT NOT NULL,
+  slice_sha256 TEXT NOT NULL,
+  brief_text TEXT NOT NULL,
+  requirements_json TEXT NOT NULL,
+  base_commit TEXT NOT NULL,
+  session_ref TEXT NOT NULL,
+  step INTEGER NOT NULL,
+  wip_json TEXT NOT NULL,
+  critical_path INTEGER NOT NULL CHECK (critical_path IN (0, 1))
+);
+
+CREATE TABLE IF NOT EXISTS feature_heads (
+  feature TEXT PRIMARY KEY,
+  commit_sha TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ambiguous_readings (
+  message_id TEXT NOT NULL,
+  reading_id TEXT NOT NULL,
+  feature_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  change_kind TEXT NOT NULL,
+  delta_text TEXT NOT NULL,
+  replacement_brief TEXT,
+  contradicted_json TEXT NOT NULL,
+  targets_json TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message_text TEXT NOT NULL,
+  PRIMARY KEY (message_id, reading_id)
+);
+
+CREATE TABLE IF NOT EXISTS hold_reading_hits (
+  message_id TEXT NOT NULL,
+  task TEXT NOT NULL,
+  reading_id TEXT NOT NULL,
+  PRIMARY KEY (message_id, task, reading_id)
+);
+
+CREATE TABLE IF NOT EXISTS clarification_cards (
+  message_id TEXT PRIMARY KEY,
+  question TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  options_json TEXT NOT NULL,
+  affected_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'resolved'))
+);
+
+CREATE TABLE IF NOT EXISTS quarantined_candidates (
+  task TEXT PRIMARY KEY,
+  commit_sha TEXT NOT NULL,
+  base_commit TEXT NOT NULL,
+  attempt TEXT NOT NULL,
+  received_at INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('submission_pending', 'discarded', 'landed', 'reverify_failed'))
+);
+
+CREATE TABLE IF NOT EXISTS ambiguity_reminders (
+  message_id TEXT PRIMARY KEY,
+  surfaced_at INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  auto_guessed INTEGER NOT NULL CHECK (auto_guessed = 0)
+);
+`;
+
 export const STATE_V2_MIGRATION_NAME = "state-v2-edge-types-and-tables";
 export const CODE_INDEX_V2_MIGRATION_NAME = "code-index-v2-module-cards";
 export const CODE_INDEX_BASELINE_NAME = "code-index-schema-v1";
@@ -455,11 +542,19 @@ const STATE_V2_TABLES = [
   "user_messages",
   "message_clauses",
   "input_focus_snapshots",
+  "hold_reason_details",
+  "task_checkpoints",
+  "feature_heads",
+  "ambiguous_readings",
+  "hold_reading_hits",
+  "clarification_cards",
+  "quarantined_candidates",
+  "ambiguity_reminders",
 ] as const;
 
 /** Additive state v2 DDL, including handoff pointers, feature coordination, integrator m3, and steering messages. */
 export function stateV2Sql(): string {
-  return `${STATE_V2_SQL}\n${INTEGRATOR_M3_SQL}\n${STEERING_ROUTER_SQL}`;
+  return `${STATE_V2_SQL}\n${INTEGRATOR_M3_SQL}\n${STEERING_ROUTER_SQL}\n${STEERING_HOLDS_SQL}`;
 }
 
 function flag(value: unknown): number {

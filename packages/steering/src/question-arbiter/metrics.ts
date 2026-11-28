@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { TELEMETRY_DDL } from "./ddl.js";
+import { loadCanonicalSqlAsset } from "@ef-harness/db";
 import { QuestionTransactionError } from "./errors.js";
 import type { InterruptionTotals } from "./types.js";
 
@@ -10,7 +10,12 @@ export class InterruptionAudit {
     private readonly db: DatabaseSync,
     private readonly now: () => number,
   ) {
-    this.db.exec(TELEMETRY_DDL);
+    const nodes = this.db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'nodes'").get();
+    const telemetry = this.db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'telemetry'").get();
+    if (nodes && !telemetry) {
+      throw new QuestionTransactionError("Refusing to create telemetry inside state.db.");
+    }
+    if (!telemetry) this.db.exec(loadCanonicalSqlAsset("telemetrySql"));
   }
 
   record(buildId: string, metric: InterruptionMetric): void {

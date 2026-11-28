@@ -45,7 +45,7 @@ export const KNOWN_CLI_NAMES: readonly KnownCliName[] = [
 export interface AttemptRecord {
   readonly id: string;
   readonly taskId: string;
-  readonly status: "WORKING" | "CHECKPOINTED" | "DONE";
+  readonly status: "WORKING" | "parked" | "DONE";
   readonly pid: number | null;
   readonly checkpointRef: string | null;
   readonly wipDiffPreserved: boolean;

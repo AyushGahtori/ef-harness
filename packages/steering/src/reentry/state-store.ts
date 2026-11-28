@@ -1,4 +1,7 @@
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
+import { openSteeringState } from "../router/state-file.js";
+import { ensureTaskRuntime } from "../state-seed.js";
 import { decideLockSafety, type ProcessProbePort } from "./ports.js";
 import type { AttemptRecord } from "./types.js";
 
@@ -63,17 +66,22 @@ interface MutableState {
   applied: AppliedRecord[];
 }
 
-export class InMemoryReentryStore implements ReentryStateStore {
+export class ProjectReentryStore implements ReentryStateStore {
   failOn: string | null = null;
+  readonly stateDb: DatabaseSync;
   private state: MutableState;
 
-  constructor(initial: {
-    readonly projectId: string;
-    readonly snapshotId: string;
-    readonly integrationHead: string;
-    readonly projectRoot: string;
-    readonly attempts: readonly AttemptRecord[];
-  }) {
+  constructor(
+    initial: {
+      readonly projectId: string;
+      readonly snapshotId: string;
+      readonly integrationHead: string;
+      readonly projectRoot: string;
+      readonly attempts: readonly AttemptRecord[];
+    },
+    stateDb?: DatabaseSync,
+  ) {
+    this.stateDb = stateDb ?? openSteeringState(":memory:");
     this.state = {
       projectId: initial.projectId,
       snapshotId: initial.snapshotId,
@@ -93,6 +101,7 @@ export class InMemoryReentryStore implements ReentryStateStore {
       removedLocks: [],
       applied: [],
     };
+    for (const attempt of this.state.attempts) this.persistAttempt(attempt);
   }
 
   get projectId(): string {
@@ -174,9 +183,21 @@ export class InMemoryReentryStore implements ReentryStateStore {
   markCheckpointed(attemptIds: readonly string[]): void {
     this.guard("recover_orphaned_attempts");
     const wanted = new Set(attemptIds);
+    const now = Date.now();
     this.state.attempts = this.state.attempts.map((attempt) => {
       if (!wanted.has(attempt.id)) return attempt;
-      return { ...attempt, status: "CHECKPOINTED", wipDiffPreserved: true };
+      this.persistAttempt({ ...attempt, status: "parked" });
+      this.stateDb
+        .prepare(
+          `INSERT INTO attempt_checkpoints(
+             attempt, step, wip_ref, session_ref, contract_versions, pending_effects, handoff_artifact, updated_at
+           ) VALUES (?, 0, ?, NULL, '{}', '[]', NULL, ?)
+           ON CONFLICT(attempt) DO UPDATE SET
+             wip_ref = excluded.wip_ref,
+             updated_at = excluded.updated_at`,
+        )
+        .run(attempt.id, attempt.checkpointRef, now);
+      return { ...attempt, status: "parked" as const, wipDiffPreserved: true };
     });
   }
 
@@ -251,6 +272,22 @@ export class InMemoryReentryStore implements ReentryStateStore {
     const parsed: unknown = JSON.parse(snapshot);
     if (!isMutableState(parsed)) throw new Error("Refusing to restore an unreadable re-entry snapshot");
     this.state = parsed;
+    for (const attempt of this.state.attempts) this.persistAttempt(attempt);
+  }
+
+  private persistAttempt(attempt: AttemptRecord): void {
+    ensureTaskRuntime(this.stateDb, attempt.taskId, attempt.taskId, "CODING", attempt.taskId);
+    const sqlState = attempt.status === "DONE" ? "accepted" : attempt.status === "parked" ? "parked" : "running";
+    const existing = this.stateDb.prepare(`SELECT n FROM attempts WHERE id = ?`).get(attempt.id) as { n?: number } | undefined;
+    const n = existing?.n ?? nextAttemptNumber(this.stateDb, attempt.taskId);
+    this.stateDb
+      .prepare(
+        `INSERT INTO attempts(
+           id, task, n, epoch, brief_version, runtime, model, connection, worktree_slot, base_commit, state, started_at, ended_at, outcome
+         ) VALUES (?, ?, ?, 0, 1, 'local', 'none', 'none', NULL, 'base', ?, ?, ?, NULL)
+         ON CONFLICT(id) DO UPDATE SET state = excluded.state, ended_at = excluded.ended_at`,
+      )
+      .run(attempt.id, attempt.taskId, n, sqlState, Date.now(), sqlState === "running" ? null : Date.now());
   }
 
   private guard(type: string): void {
@@ -260,6 +297,11 @@ export class InMemoryReentryStore implements ReentryStateStore {
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
+}
+
+function nextAttemptNumber(db: DatabaseSync, taskId: string): number {
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM attempts WHERE task = ?`).get(taskId) as { n?: number } | undefined;
+  return Number(row?.n ?? 0) + 1;
 }
 
 function isMutableState(value: unknown): value is MutableState {

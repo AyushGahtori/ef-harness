@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ColdOpenReconciler,
-  InMemoryReentryStore,
+  ProjectReentryStore,
   ReconciledActionQueue,
   confirmationForResumeBuild,
   createFileIndexLockPort,
@@ -48,7 +48,7 @@ describe("ReconciledActionQueue", () => {
         views: [{ path: ".harness/views/notes.md", sha256: "edited" }],
       }),
     ).reconcile(coldInput(state));
-    const store = new InMemoryReentryStore({
+    const store = new ProjectReentryStore({
       projectId: state.projectId,
       snapshotId: state.snapshotId,
       integrationHead: state.expectedIntegrationHead,
@@ -61,7 +61,17 @@ describe("ReconciledActionQueue", () => {
     expect(result.integrationHead).toBe("integration-head");
     expect(result.projectId).toBe("project-kitchen");
     expect(result.snapshotId).toBe("snap-1");
-    expect(store.attempts[0]?.status).toBe("CHECKPOINTED");
+    expect(store.attempts[0]?.status).toBe("parked");
+    const row = store.stateDb.prepare(`SELECT state FROM attempts WHERE id = 'a1'`).get() as { state: string };
+    expect(row.state).toBe("parked");
+    const checkpoint = store.stateDb.prepare(`SELECT attempt, wip_ref FROM attempt_checkpoints WHERE attempt = 'a1'`).get() as {
+      attempt: string;
+      wip_ref: string;
+    };
+    expect(checkpoint.attempt).toBe("a1");
+    expect(checkpoint.wip_ref).toBe("refs/checkpoints/a1");
+    const illegal = store.stateDb.prepare(`SELECT COUNT(*) AS n FROM attempts WHERE state = 'CHECKPOINTED'`).get() as { n: number };
+    expect(Number(illegal.n)).toBe(0);
     expect(store.attempts[0]?.checkpointRef).toBe("refs/checkpoints/a1");
     expect(store.attempts[0]?.wipDiffPreserved).toBe(true);
     expect(store.closedQuestionIds).toEqual([]);
@@ -186,8 +196,8 @@ describe("ReconciledActionQueue", () => {
   });
 });
 
-function storeFor(state: ReturnType<typeof snapshot>): InMemoryReentryStore {
-  return new InMemoryReentryStore({
+function storeFor(state: ReturnType<typeof snapshot>): ProjectReentryStore {
+  return new ProjectReentryStore({
     projectId: state.projectId,
     snapshotId: state.snapshotId,
     integrationHead: state.expectedIntegrationHead,

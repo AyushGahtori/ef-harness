@@ -7,3 +7,17 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export * as router from "./router/index.js";
+export * as dispatcher from "./dispatcher/index.js";
+export * as holds from "./holds/index.js";
+export * as questionArbiter from "./question-arbiter/index.js";
+export * as reentry from "./reentry/index.js";
+
+export {
+  createGitEngineInspector,
+  createPlannerViewScanner,
+  durableTaskHolds,
+  inboxQuestionPort,
+  openColdOpenReconciler,
+} from "./chain.js";

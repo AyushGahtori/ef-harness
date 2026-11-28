@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { openSteeringState } from "../router/state-file.js";
 import { SharedQuestionArbiter } from "./arbiter.js";
 import { QuestionQueueStore } from "./database.js";
 import { QuestionDedupSubscriberStore } from "./dedup.js";
@@ -43,7 +44,7 @@ export class QuestionArbiterRuntime {
 
   constructor(options: QuestionArbiterOpenOptions) {
     const now = options.now ?? Date.now;
-    this.state = new DatabaseSync(options.stateDbPath);
+    this.state = openSteeringState(options.stateDbPath);
     this.telemetry = new DatabaseSync(options.telemetryDbPath);
     this.store = new QuestionQueueStore(this.state);
     this.settled = options.settled ?? new SqliteSettledDecisionPort(this.store);
