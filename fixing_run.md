@@ -1695,3 +1695,35 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `git status --short`: exit `0` — clean (empty output)
 - Product code changed: no
 - Not done: C60 not started. `main` not merged. `task/162` and `task/164` not merged. No pull request opened.
+
+---
+
+## [Wave 5 Proof Gate rerun] — C53–C59 pass at the same tip
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `dc3eb34b3fcaf29451c1df6aa35f7e7b50a9f453` (`integrate: wire runtime-adapters + m4-exit-gate`)
+- **Product fix SHA:** none
+- **Result:** pass. Missing browser. No product patch.
+
+### What Was Done
+- Stayed on `harness/integration` at `dc3eb34b3fcaf29451c1df6aa35f7e7b50a9f453`. Did not start C60. Did not merge `main`. Did not open a pull request. Did not merge `task/162` or `task/164`. Did not edit product code. Did not commit on `harness/integration`. The prior `139fd4c7` audit commit was not rewritten.
+- `pnpm exec playwright install chromium` exited 0 and downloaded Chrome for Testing 159.0.8154.6 (Playwright Chromium v1255) to `/home/ubuntu/.cache/ms-playwright/chromium-1255`, plus ffmpeg v1013 and Chrome Headless Shell 159.0.8154.6. No product file changed.
+- Reran `pnpm --filter @ef-harness/planner test -- crew-levels`. The `HumanStepRequired('install_playwright_chromium')` failures in `tests/design-system/design-system.test.ts`, `tests/phase0/controller.test.ts`, and `tests/phase0/gate0-verifier.test.ts` did not reproduce. Then ran the Wave 5 filters that the first gate had not reached.
+- Extra arguments after `--` did not narrow planner, renderer, runtime-adapters, or e2e. Each command ran that package's full suite. `e2e -- m4-exit-gate` collected the sibling exit-gate files, same as the C59 verification (5 files, 18 tests).
+- No spike test rewrote `REPORT.md` or `report.json`. Nothing was restored.
+
+### Verification Run & Results
+- `git rev-parse HEAD`: `dc3eb34b3fcaf29451c1df6aa35f7e7b50a9f453` (branch `harness/integration`)
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm --filter @ef-harness/planner test -- crew-levels`: exit `0` — `Test Files 69 passed (69)`, `Tests 377 passed (377)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/renderer test -- connections`: exit `0` — `Test Files 27 passed (27)`, `Tests 135 passed (135)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/runtime-adapters test -- core`: exit `0` — `Test Files 32 passed (32)`, `Tests 160 passed (160)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/runtime-adapters test -- core acp codex copilot`: exit `0` — `Test Files 32 passed (32)`, `Tests 160 passed (160)`, 0 skipped
+- `pnpm --filter @ef-harness/runtime-adapters test -- cursor claude-code gemini-cli`: exit `0` — `Test Files 32 passed (32)`, `Tests 160 passed (160)`, 0 skipped
+- `pnpm --filter @ef-harness/runtime-adapters test -- opencode resume`: exit `0` — `Test Files 32 passed (32)`, `Tests 160 passed (160)`, 0 skipped
+- `pnpm --filter @ef-harness/runtime-adapters test`: exit `0` — `Test Files 32 passed (32)`, `Tests 160 passed (160)`, 0 skipped
+- `pnpm --filter @ef-harness/e2e test -- m4-exit-gate`: exit `0` — `Test Files 5 passed (5)`, `Tests 18 passed (18)`, 0 skipped (full e2e package; extra arguments did not narrow)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `git status --short`: exit `0` — clean (empty output)
+- Product code changed: no
+- Not done: C60 not started. `main` not merged. `task/162` and `task/164` not merged. No pull request opened. No commit on `harness/integration`.
