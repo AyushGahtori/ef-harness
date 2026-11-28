@@ -1663,3 +1663,35 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - What It Fixed: F-061 for task 151 — probes no longer score synthetic AdapterBehavior structs, and a reopened GlobalBrokerDb returns the signed active verdict. F-062 — m4-exit-gate is compiled by tests/e2e/tsconfig.json and the ci-replay uses the real package barrels instead of hidden-suite.port.json.
 - Verification Run & Results: pnpm install exit 0; pnpm build and pnpm typecheck (both `tsc -b --pretty false`) exit 0; NODE_OPTIONS=--max-old-space-size=4096 pnpm lint exit 0 (0 errors, 4 pre-existing unused-disable warnings in packages/planner/src/system-arch/vendor/mermaid-parse.mjs); pnpm --filter @ef-harness/runtime-adapters test exit 0, Test Files 32 passed (32), Tests 160 passed (160), 0 skipped; pnpm --filter @ef-harness/e2e test -- m4-exit-gate exit 0, Test Files 5 passed (5), Tests 18 passed (18), 0 skipped (the filter also collected the sibling exit-gate files); node schema/schema-test.js exit 0, 67/67 passed, SQLite 3.53.4. Pre-commit harmony ran on the integration commit.
 - Not done: Wave 5 proof gate not started. C60 not started. main not merged. task/162 and task/164 not merged.
+
+---
+
+## [Wave 5 Proof Gate] — C53–C59 stopped on missing Playwright Chromium
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `dc3eb34b3fcaf29451c1df6aa35f7e7b50a9f453` (`integrate: wire runtime-adapters + m4-exit-gate`)
+- **Product fix SHA:** none
+- **Result:** fail. Stopped. No product patch.
+
+### What Was Done
+- Verified `harness/integration` at `dc3eb34b3fcaf29451c1df6aa35f7e7b50a9f453` (C59, after `e1758859` Task 151 and `fb101511` Task 152). Did not start C60. Did not merge `main`. Did not open a pull request. Did not merge `task/162` or `task/164`. Did not edit product code. Did not push a new `harness/integration` commit. `git status --short` was empty before the gate and empty after the failed test. No spike test rewrote `REPORT.md` or `report.json`.
+- The Wave 5 proof-gate command in `combination_task.md` is `pnpm --filter @ef-harness/e2e test -- m4-exit-gate`. The run also started the Wave 5 package filters from C53–C59. It stopped at the first non-zero exit and did not run the remaining filters.
+- Extra arguments after `--` did not narrow `@ef-harness/providers`, `@ef-harness/steering`, or `@ef-harness/planner`. Each of those commands ran that package's full suite.
+
+### Verification Run & Results
+- `git rev-parse HEAD`: `dc3eb34b3fcaf29451c1df6aa35f7e7b50a9f453` (branch `harness/integration`)
+- `pnpm install`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`, 0 skipped
+- `pnpm --filter @ef-harness/providers test -- policy api-keys siwc`: exit `0` — `Test Files 32 passed (32)`, `Tests 174 passed (174)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/providers test`: exit `0` — `Test Files 32 passed (32)`, `Tests 174 passed (174)`, 0 skipped
+- `pnpm --filter @ef-harness/steering test -- budget-stops`: exit `0` — `Test Files 21 passed (21)`, `Tests 122 passed (122)`, 0 skipped (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/planner test -- crew-levels`: exit `1` — `Test Files 3 failed | 66 passed (69)`, `Tests 11 failed | 366 passed (377)`. All 11 failures are `HumanStepRequired('install_playwright_chromium')` from `launchChromium` in `packages/verifier/src/ui-contract/playwright-runtime.ts`: `tests/design-system/design-system.test.ts` (4), `tests/phase0/controller.test.ts` (4), `tests/phase0/gate0-verifier.test.ts` (3). Extra arguments did not narrow. No product file changed. Chromium was not installed. The command was not rerun.
+- Not run after the failure: `pnpm --filter @ef-harness/renderer test -- connections`, `pnpm --filter @ef-harness/runtime-adapters test -- core`, `pnpm --filter @ef-harness/runtime-adapters test -- core acp codex copilot`, `pnpm --filter @ef-harness/runtime-adapters test -- cursor claude-code gemini-cli`, `pnpm --filter @ef-harness/runtime-adapters test -- opencode resume`, `pnpm --filter @ef-harness/runtime-adapters test`, and `pnpm --filter @ef-harness/e2e test -- m4-exit-gate`.
+- `git status --short`: exit `0` — clean (empty output)
+- Product code changed: no
+- Not done: C60 not started. `main` not merged. `task/162` and `task/164` not merged. No pull request opened.
