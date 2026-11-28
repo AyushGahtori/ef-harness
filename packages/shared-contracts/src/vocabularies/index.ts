@@ -125,6 +125,7 @@ export {
   NODE_STATUSES,
   NodeStatusSchema,
   normalizeCrewPreset,
+  normalizeGovernorPressure,
   normalizeProjectKind,
   normalizeWorkerTier,
   PRESSURE_LEVELS,

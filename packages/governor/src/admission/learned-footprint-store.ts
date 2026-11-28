@@ -20,6 +20,12 @@ export interface FootprintObservation {
   readonly observedAtMs: number;
 }
 
+export interface WorkloadFootprintEstimate {
+  readonly taskId: string;
+  readonly predictedMb: number;
+  readonly wallClockMs: number;
+}
+
 function percentileNearestRank(sortedAsc: readonly number[], percentile: number): number {
   const count = sortedAsc.length;
   const last = sortedAsc[count - 1];
@@ -47,6 +53,16 @@ export class LearnedFootprintStore {
 
   predictionMb(projectId: string, commandClass: CommandClass): number {
     return this.get(projectId, commandClass)?.predictedMb ?? defaultFootprintMb(commandClass);
+  }
+
+  estimate(taskId: string, projectId: string, commandClass: CommandClass): WorkloadFootprintEstimate | null {
+    const record = this.get(projectId, commandClass);
+    if (!record || record.samples < 1 || record.wallClockMs < 1) return null;
+    return {
+      taskId,
+      predictedMb: record.predictedMb,
+      wallClockMs: Math.ceil(record.wallClockMs),
+    };
   }
 
   get(projectId: string, commandClass: CommandClass): FootprintRecord | null {

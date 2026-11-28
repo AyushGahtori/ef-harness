@@ -379,6 +379,9 @@ importers:
 
   packages/governor:
     dependencies:
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts

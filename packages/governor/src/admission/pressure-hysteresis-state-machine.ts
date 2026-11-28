@@ -67,12 +67,25 @@ export class PressureHysteresisStateMachine {
     return actionsFor(this.level, this.baseWarmSlots);
   }
 
-  subscribe(listener: PressureShiftListener): () => void {
-    this.listeners.push(listener);
+  subscribe(listener: (level: PressureLevel) => void): () => void;
+  subscribe(listener: PressureShiftListener): () => void;
+  subscribe(listener: PressureShiftListener | ((level: PressureLevel) => void)): () => void {
+    const wrapped: PressureShiftListener =
+      typeof listener === "function" ? { onPressureShift: (event) => listener(event.to) } : listener;
+    this.listeners.push(wrapped);
     return () => {
-      const index = this.listeners.indexOf(listener);
+      const index = this.listeners.indexOf(wrapped);
       if (index >= 0) this.listeners.splice(index, 1);
     };
+  }
+
+  sample(
+    nowMs: number,
+    snapshot?: HardwareSnapshot,
+    options?: { readonly instantRecovery?: boolean },
+  ): PressureLevel {
+    this.observe(nowMs, snapshot, options ?? {});
+    return this.level;
   }
 
   start(pollMs = 1_000): void {

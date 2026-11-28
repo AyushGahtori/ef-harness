@@ -70,7 +70,7 @@ describe("global broker database", () => {
       synchronous: "full",
       foreignKeys: true,
       secureDelete: true,
-      userVersion: 1,
+      userVersion: 2,
     });
     expect(first.schemaTables()).toEqual([...schemaTableNames(canonical)].sort());
     expect(first.attachedDatabaseNames()).toEqual(["main"]);
@@ -260,7 +260,34 @@ describe("global broker database", () => {
       samples: 13,
       updatedAt: 91,
     });
-    expect(db.getFootprint("worker_cli")).toMatchObject({ p50Mb: 450, samples: 13 });
+    expect(db.getFootprint("worker_cli")).toMatchObject({ p50Mb: 450, samples: 13, p90Mb: 0 });
+    db.setFootprint({
+      consumer: "worker_cli",
+      project: "",
+      p50Mb: 450,
+      p95Mb: 950,
+      samples: 14,
+      updatedAt: 92,
+      p90Mb: 900,
+      peakRamMb: 1200,
+      peakCpuTimeMs: 50,
+      diskWriteBytes: 80,
+      wallClockMs: 1000,
+      highWatermarkMb: 1100.5,
+      predictedMb: 1200,
+      peakRamSamplesMb: [400, 1200],
+    });
+    expect(db.getFootprint("worker_cli")).toMatchObject({
+      p90Mb: 900,
+      peakRamMb: 1200,
+      peakCpuTimeMs: 50,
+      diskWriteBytes: 80,
+      wallClockMs: 1000,
+      highWatermarkMb: 1100.5,
+      predictedMb: 1200,
+      peakRamSamplesMb: [400, 1200],
+      samples: 14,
+    });
   });
 
   it("leases ports exclusively inside 41000-48999 and releases them", () => {

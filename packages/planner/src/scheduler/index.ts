@@ -5,7 +5,7 @@ export { SchedulerError } from "./errors.js";
 export { computeRanks, indexGraph, isPureChain } from "./graph.js";
 export type { IndexedGraph } from "./graph.js";
 export { HeftCriticalPathScheduler } from "./heft-critical-path-scheduler.js";
-export type { SchedulerDeps, WaveCapacityOptions } from "./heft-critical-path-scheduler.js";
+export type { SchedulerDeps, WaveCapacityOptions, WorkloadFootprint } from "./heft-critical-path-scheduler.js";
 export { dagDisjointWidth, effectiveHardwareCap, presetCap, WaveParallelismCalculator } from "./parallelism.js";
 export type { DagWidth } from "./parallelism.js";
 export {

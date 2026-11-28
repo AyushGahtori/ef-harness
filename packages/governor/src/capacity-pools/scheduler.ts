@@ -40,7 +40,7 @@ import {
   type GovernorPressure,
   type LeaseReleaseReason,
   type ReleaseReport,
-  isGovernorPressure,
+  canonicalGovernorPressure,
   isHeavyCommand,
 } from "./types.js";
 import { WarmExecutionSlotPool } from "./warm-execution-pool.js";
@@ -49,7 +49,7 @@ export interface ThreePoolSchedulerOptions {
   readonly totalRamGb: number;
   readonly clock?: Clock;
   readonly diskFreeGb?: number;
-  readonly pressure?: GovernorPressure;
+  readonly pressure?: string;
   /** Overrides the RAM-class thinking width. Still bounded by pacing and DAG width. */
   readonly thinkingCap?: number;
   /** Overrides the RAM-class warm inventory. Must stay inside 2–4. */
@@ -102,10 +102,7 @@ export class ThreePoolCapacityScheduler {
     const defaults = ramClassDefaults(options.totalRamGb);
     this.totalRamGb = defaults.totalRamGb;
     this.clock = options.clock ?? systemClock;
-    this.pressure = options.pressure ?? "Green";
-    if (!isGovernorPressure(this.pressure)) {
-      throw new CapacityError("invalid_request", "Unknown governor pressure");
-    }
+    this.pressure = canonicalGovernorPressure(options.pressure ?? "GREEN");
     this.diskFreeGb = options.diskFreeGb ?? 64;
     if (!Number.isFinite(this.diskFreeGb) || this.diskFreeGb < 0) {
       throw new CapacityError("invalid_request", "diskFreeGb must be a non-negative finite number");
@@ -156,7 +153,7 @@ export class ThreePoolCapacityScheduler {
   static async create(options: ThreePoolSchedulerOptions): Promise<ThreePoolCapacityScheduler> {
     const defaults = ramClassDefaults(options.totalRamGb);
     const clock = options.clock ?? systemClock;
-    const pressure = options.pressure ?? "Green";
+    const pressure = canonicalGovernorPressure(options.pressure ?? "GREEN");
     const diskFreeGb = options.diskFreeGb ?? 64;
     const warm = options.executionCap ?? defaults.executionCap;
     const backend = options.backend ?? new LocalExecutionSlotBackend();
@@ -189,12 +186,10 @@ export class ThreePoolCapacityScheduler {
     return this.pressure;
   }
 
-  setPressure(level: GovernorPressure): void {
-    if (!isGovernorPressure(level)) {
-      throw new CapacityError("invalid_request", "Unknown governor pressure");
-    }
-    this.pressure = level;
-    this.ownedHeavyLane?.setMaxPermits(heavyLanePermitsFor(this.totalRamGb, level));
+  setPressure(level: string): void {
+    const canonical = canonicalGovernorPressure(level);
+    this.pressure = canonical;
+    this.ownedHeavyLane?.setMaxPermits(heavyLanePermitsFor(this.totalRamGb, canonical));
     this.recomputeTarget();
   }
 

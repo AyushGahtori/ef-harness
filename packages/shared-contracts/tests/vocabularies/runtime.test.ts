@@ -34,6 +34,7 @@ import {
   isUiProjectKind,
   isWorkerTier,
   normalizeCrewPreset,
+  normalizeGovernorPressure,
   normalizeProjectKind,
   normalizeWorkerTier,
 } from "../../src/index.js";
@@ -85,7 +86,11 @@ describe("frozen C04 closed vocabularies", () => {
       expect(GovernorPressureSchema.safeParse(level).success).toBe(true);
       expect(isPressureLevel(level.toLowerCase())).toBe(false);
       expect(isPressureLevel(`${level[0]}${level.slice(1).toLowerCase()}`)).toBe(false);
+      expect(normalizeGovernorPressure(level)).toBe(level);
+      expect(normalizeGovernorPressure(level.toLowerCase())).toBe(level);
+      expect(normalizeGovernorPressure(`${level[0]}${level.slice(1).toLowerCase()}`)).toBe(level);
     }
+    expect(normalizeGovernorPressure("crimson")).toBeUndefined();
   });
 
   it("freezes PROJECT_KINDS, UI classification, and legacy aliases", () => {

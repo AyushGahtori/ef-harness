@@ -10,6 +10,7 @@ import {
   isTaskHoldReason,
   isWorkerTier,
   normalizeCrewPreset,
+  normalizeGovernorPressure,
   normalizeWorkerTier,
   type CrewPreset,
   type GovernorPressure,
@@ -32,6 +33,7 @@ export {
   isTaskHoldReason,
   isWorkerTier,
   normalizeCrewPreset,
+  normalizeGovernorPressure,
   normalizeWorkerTier,
 };
 export type {
@@ -102,17 +104,6 @@ export const SEQUENTIAL_CHAIN_REASON = "Sequential dependency chain — 1 worker
 export const WAITING_FOR_RESET_REASON = "Waiting for reset / Switch connection";
 
 export const MS_PER_MINUTE = 60_000;
-
-const PRESSURE_ALIASES: Readonly<Record<string, GovernorPressure>> = {
-  green: "GREEN",
-  yellow: "YELLOW",
-  orange: "ORANGE",
-  red: "RED",
-};
-
-export function normalizeGovernorPressure(value: string): GovernorPressure | undefined {
-  return PRESSURE_ALIASES[value.trim().toLowerCase()];
-}
 
 export function coerceCrewPreset(value: string): CrewPreset {
   const canonical = normalizeCrewPreset(value);

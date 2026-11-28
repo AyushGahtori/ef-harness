@@ -11,7 +11,6 @@ import {
 import type {
   CommandClass,
   ExecutionRequest,
-  GovernorPressure,
   LeaseRole,
 } from "../../src/capacity-pools/index.js";
 
@@ -29,7 +28,7 @@ export async function createHarness(
   options: {
     readonly totalRamGb?: number;
     readonly diskFreeGb?: number;
-    readonly pressure?: GovernorPressure;
+    readonly pressure?: string;
     readonly thinkingCap?: number;
     readonly executionCap?: number;
     readonly sessionProcessCap?: number;

@@ -12,7 +12,7 @@ import type {
   HardwareSnapshot,
   JobAccountingSample,
 } from "./types.js";
-import { MAX_COLLECTOR_RAM_BYTES } from "./types.js";
+import { MAX_COLLECTOR_RAM_BYTES, TelemetryError } from "./types.js";
 import { UiLatencyHeartbeatMonitor } from "./ui-latency.js";
 
 export interface CollectorClock {
@@ -197,12 +197,9 @@ export async function openWindowsResourceTelemetryCollector(
         });
       lowMemory.start();
       return new WindowsResourceTelemetryCollector({ ...options, provider, lowMemory });
-    } catch {
-      const { PosixFallbackTelemetryProvider } = await import("./posix-provider.js");
-      return new WindowsResourceTelemetryCollector({
-        ...options,
-        provider: new PosixFallbackTelemetryProvider(),
-      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Win32 telemetry helper failed";
+      throw error instanceof TelemetryError ? error : new TelemetryError("helper_unavailable", message);
     }
   }
   const { PosixFallbackTelemetryProvider } = await import("./posix-provider.js");

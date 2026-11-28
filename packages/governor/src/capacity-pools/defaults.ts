@@ -1,5 +1,5 @@
 import { CapacityError, assertFiniteNumber } from "./errors.js";
-import { DISK_FORWARD_PROGRESS_FLOOR_GB, type GovernorPressure } from "./types.js";
+import { DISK_FORWARD_PROGRESS_FLOOR_GB, canonicalGovernorPressure } from "./types.js";
 
 export interface RamClassDefaults {
   readonly totalRamGb: number;
@@ -50,14 +50,15 @@ export function defaultSessionProcessCap(totalRamGb: number): number {
  */
 export function executionTargetFor(input: {
   readonly warmSlots: number;
-  readonly pressure: GovernorPressure;
+  readonly pressure: string;
   readonly diskFreeGb: number;
 }): number {
+  const pressure = canonicalGovernorPressure(input.pressure);
   const warm = Math.max(0, input.warmSlots);
-  if (input.pressure === "Red" || input.diskFreeGb < DISK_FORWARD_PROGRESS_FLOOR_GB) {
+  if (pressure === "RED" || input.diskFreeGb < DISK_FORWARD_PROGRESS_FLOOR_GB) {
     return 0;
   }
-  if (input.pressure === "Orange") return Math.min(1, warm);
-  if (input.pressure === "Yellow") return Math.min(warm, Math.max(1, warm - 1));
+  if (pressure === "ORANGE") return Math.min(1, warm);
+  if (pressure === "YELLOW") return Math.min(warm, Math.max(1, warm - 1));
   return warm;
 }

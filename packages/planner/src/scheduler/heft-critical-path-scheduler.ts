@@ -4,6 +4,7 @@ import type {
   VersionedModelRoster,
 } from "../crew-levels/index.js";
 import { dispatchReady, prewarmFor, type DispatchDeps } from "./dispatch.js";
+import { SchedulerError } from "./errors.js";
 import { computeRanks, indexGraph } from "./graph.js";
 import { pacingCapOf, type TaskClaimManagerPort, type TaskHoldsManagerPort } from "./ports.js";
 import { WaveParallelismCalculator } from "./parallelism.js";
@@ -30,6 +31,12 @@ import {
   type ScheduleResult,
   type TaskHoldRecord,
 } from "./types.js";
+
+export interface WorkloadFootprint {
+  readonly taskId: string;
+  readonly predictedMb: number;
+  readonly wallClockMs: number;
+}
 
 export interface SchedulerDeps {
   readonly claims?: TaskClaimManagerPort;
@@ -122,6 +129,27 @@ export class HeftCriticalPathScheduler {
       ...(options.nowMs === undefined ? {} : { nowMs: options.nowMs }),
     });
     return dispatchReady(state, this.dispatchDeps()).admissions;
+  }
+
+  scheduleWithFootprints(
+    state: LiveScheduleState,
+    footprints: readonly WorkloadFootprint[],
+  ): ScheduleResult {
+    const execTimeOverrideMs: Record<string, number> = { ...state.execTimeOverrideMs };
+    for (const footprint of footprints) {
+      if (!Number.isInteger(footprint.wallClockMs) || footprint.wallClockMs < 1) {
+        throw new SchedulerError(
+          "invalid_graph",
+          `Workload footprint ${footprint.taskId} needs a positive integer wallClockMs`,
+        );
+      }
+      execTimeOverrideMs[footprint.taskId] = footprint.wallClockMs;
+    }
+    return this.schedule({
+      ...state,
+      execTimeOverrideMs,
+      governorPressure: coerceGovernorPressure(state.governorPressure),
+    });
   }
 
   private levelPort(): ExpectedCostLevelSelectorPort | ExpectedCostLevelSelector | undefined {

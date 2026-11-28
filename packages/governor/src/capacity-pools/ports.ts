@@ -1,5 +1,5 @@
 import { CapacityError, assertNonEmpty } from "./errors.js";
-import type { CommandClass, GovernorPressure, LeaseRole, SandboxTier } from "./types.js";
+import { canonicalGovernorPressure, type CommandClass, type GovernorPressure, type LeaseRole, type SandboxTier } from "./types.js";
 
 /**
  * Local stand-in for Task 038 `WorktreeSlotPool` (`acquireSlot` / `releaseSlot`).
@@ -177,14 +177,18 @@ export class LocalWaveParallelismCalculator implements WaveParallelismCalculator
 }
 
 export class InMemoryPressureSource implements PressureHysteresisPort {
-  constructor(private level: GovernorPressure = "Green") {}
+  private level: GovernorPressure;
+
+  constructor(level: string = "GREEN") {
+    this.level = canonicalGovernorPressure(level);
+  }
 
   current(): GovernorPressure {
     return this.level;
   }
 
-  set(level: GovernorPressure): void {
-    this.level = level;
+  set(level: string): void {
+    this.level = canonicalGovernorPressure(level);
   }
 }
 
@@ -337,8 +341,9 @@ export class InMemoryIdleSessionParker implements IdleWrappedAgentParkerPort {
   }
 }
 
-export function heavyLanePermitsFor(totalRamGb: number, pressure: GovernorPressure): number {
-  if (totalRamGb <= 16 || pressure === "Yellow" || pressure === "Orange" || pressure === "Red") {
+export function heavyLanePermitsFor(totalRamGb: number, pressure: string): number {
+  const canonical = canonicalGovernorPressure(pressure);
+  if (totalRamGb <= 16 || canonical === "YELLOW" || canonical === "ORANGE" || canonical === "RED") {
     return 1;
   }
   return 2;

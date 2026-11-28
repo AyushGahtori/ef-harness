@@ -86,7 +86,12 @@ export {
 export type { SyntheticScenarioName } from "./synthetic-provider.js";
 export type { ResourceTelemetryProvider, TelemetrySampleRequest } from "./provider.js";
 export { PosixFallbackTelemetryProvider } from "./posix-provider.js";
-export { Win32HelperClient, win32HelperExecutable } from "./win32-helper-client.js";
+export {
+  Win32HelperClient,
+  findPrebuiltWin32Helper,
+  isWin32HelperExecutable,
+  win32HelperExecutable,
+} from "./win32-helper-client.js";
 export type { HelperProbeJob, HelperSample } from "./win32-helper-client.js";
 export { Win32NativeTelemetryProvider } from "./win32-provider.js";
 export type { Win32SampleSource } from "./win32-provider.js";

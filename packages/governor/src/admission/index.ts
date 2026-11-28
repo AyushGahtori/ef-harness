@@ -123,7 +123,8 @@ export type {
 } from "./machine-calibration-runner.js";
 
 export { LearnedFootprintStore } from "./learned-footprint-store.js";
-export type { FootprintObservation } from "./learned-footprint-store.js";
+export type { FootprintObservation, WorkloadFootprintEstimate } from "./learned-footprint-store.js";
+export { openGlobalBrokerPort } from "./global-broker-port.js";
 
 export { MemoryFootprintAdmission } from "./memory-footprint-admission.js";
 export type {

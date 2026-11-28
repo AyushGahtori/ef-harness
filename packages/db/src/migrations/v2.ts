@@ -605,3 +605,44 @@ export const codeIndexV2Migration: MigrationDefinition = {
     assertTable(conn, "module_cards");
   },
 };
+
+export const GLOBAL_FOOTPRINTS_V2_MIGRATION_NAME = "global-v2-footprint-calibration";
+
+const FOOTPRINT_V2_COLUMNS = [
+  "p90_mb",
+  "peak_ram_mb",
+  "peak_cpu_time_ms",
+  "disk_write_bytes",
+  "wall_clock_ms",
+  "high_watermark_mb",
+  "predicted_mb",
+  "peak_ram_samples_json",
+] as const;
+
+const GLOBAL_FOOTPRINTS_V2_SQL = `
+ALTER TABLE footprints ADD COLUMN p90_mb INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN peak_ram_mb INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN peak_cpu_time_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN disk_write_bytes INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN wall_clock_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN high_watermark_mb REAL NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN predicted_mb INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE footprints ADD COLUMN peak_ram_samples_json TEXT NOT NULL DEFAULT '[]';
+`;
+
+export const globalFootprintsV2Migration: MigrationDefinition = {
+  kind: "additive",
+  version: 2,
+  name: GLOBAL_FOOTPRINTS_V2_MIGRATION_NAME,
+  targetDb: "global",
+  apply(conn) {
+    conn.exec(GLOBAL_FOOTPRINTS_V2_SQL);
+  },
+  check(conn) {
+    const rows = conn.prepare("PRAGMA table_info(footprints)").all();
+    const names = new Set(rows.map((row) => String(row.name)));
+    for (const column of FOOTPRINT_V2_COLUMNS) {
+      if (!names.has(column)) throw new SchemaInvariantError(`footprints.${column} was not added`);
+    }
+  },
+};

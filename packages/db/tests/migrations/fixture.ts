@@ -208,6 +208,16 @@ CREATE TABLE cas_pins (
   pinned_at INTEGER NOT NULL,
   PRIMARY KEY (hash, holder_kind, holder_id)
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE footprints (
+  consumer   TEXT NOT NULL,
+  project    TEXT NOT NULL DEFAULT '',
+  p50_mb     INTEGER NOT NULL,
+  p95_mb     INTEGER NOT NULL,
+  samples    INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (consumer, project)
+) STRICT, WITHOUT ROWID;
 `;
 
 const TINY_SCHEMA = `

@@ -12,12 +12,13 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false",
+    "build": "node scripts/ensure-win32-helper.mjs && tsc -p tsconfig.json --pretty false",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ef-harness/db": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*"
   },
   "devDependencies": {

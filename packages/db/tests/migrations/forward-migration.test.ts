@@ -8,7 +8,11 @@ import { PRODUCTION_SCHEMA_VERSION, productionMigrations } from "../../src/migra
 import { FTS_PENDING_META_KEY } from "../../src/migrations/rebuild.js";
 import { rehearseMigration } from "../../src/migrations/rehearse.js";
 import { MigrationRunner } from "../../src/migrations/runner.js";
-import { CODE_INDEX_V2_MIGRATION_NAME, STATE_V2_MIGRATION_NAME } from "../../src/migrations/v2.js";
+import {
+  CODE_INDEX_V2_MIGRATION_NAME,
+  GLOBAL_FOOTPRINTS_V2_MIGRATION_NAME,
+  STATE_V2_MIGRATION_NAME,
+} from "../../src/migrations/v2.js";
 import {
   APP_VERSION,
   CLOCK_NOW,
@@ -252,7 +256,7 @@ describe("forward-only migration", () => {
     });
   });
 
-  it("migrates a production state database from version 1 to version 2 and leaves global at version 1", async () => {
+    it("migrates production state to version 2 and global footprints to version 2", async () => {
     await withDir(async (dir) => {
       const projectDir = path.join(dir, "alpha");
       fs.mkdirSync(projectDir, { recursive: true });
@@ -268,11 +272,11 @@ describe("forward-only migration", () => {
           .run("0.0.0", 1);
       });
       const globalPath = createGlobalDb(dir, [{ id: "alpha", stateDbPath: statePath, name: "Alpha" }]);
-      const beforeGlobal = fileHash(globalPath);
       expect(PRODUCTION_SCHEMA_VERSION).toBe(1);
       expect(productionMigrations.map((migration) => `${migration.targetDb}:${migration.version}:${migration.name}`)).toEqual([
         `state:2:${STATE_V2_MIGRATION_NAME}`,
         `code-index:2:${CODE_INDEX_V2_MIGRATION_NAME}`,
+        `global:2:${GLOBAL_FOOTPRINTS_V2_MIGRATION_NAME}`,
       ]);
       const runner = new MigrationRunner({
         globalDbPath: globalPath,
@@ -283,9 +287,9 @@ describe("forward-only migration", () => {
         clock: fixedClock,
       });
       const startup = await runner.migrateOnStartup();
-      expect(startup.toVersion).toBe(1);
-      expect(startup.applied).toEqual([]);
-      expect(startup.backupPath).toBeNull();
+      expect(startup.toVersion).toBe(2);
+      expect(startup.applied.map((row) => row.name)).toEqual([GLOBAL_FOOTPRINTS_V2_MIGRATION_NAME]);
+      expect(startup.backupPath).not.toBeNull();
       const opened = await runner.openProject({ id: "alpha", stateDbPath: statePath });
       expect(opened.ok).toBe(true);
       if (!opened.ok) return;
@@ -301,7 +305,15 @@ describe("forward-only migration", () => {
           expect(scalar(conn, `SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' AND name = '${table}'`)).toBe(1);
         }
       });
-      expect(fileHash(globalPath)).toBe(beforeGlobal);
+      expect(userVersion(globalPath, "global")).toBe(2);
+      withConnection(globalPath, "global", true, (conn) => {
+        const names = conn
+          .prepare("PRAGMA table_info(footprints)")
+          .all()
+          .map((row) => String(row.name));
+        expect(names).toContain("p90_mb");
+        expect(names).toContain("peak_ram_samples_json");
+      });
       expect(readProjectStatus(globalPath, "alpha")).toBe("ok");
     });
   });

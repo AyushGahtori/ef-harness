@@ -421,6 +421,15 @@ export class GlobalBrokerDb implements DbHandle {
     };
   }
 
+  listMachineProfiles(): readonly MachineProfileEntry[] {
+    this.assertOpen();
+    return this.conn.all("SELECT * FROM machine_profile ORDER BY key").map((row) => ({
+      key: requiredText(row, "key"),
+      value: requiredText(row, "value"),
+      measuredAt: requiredInt(row, "measured_at"),
+    }));
+  }
+
   setMachineProfile(key: string, value: string, measuredAt: number): void {
     const profileKey = assertNonEmpty(key, "machine profile key");
     const profileValue = assertNonEmpty(value, "machine profile value");
@@ -447,27 +456,69 @@ export class GlobalBrokerDb implements DbHandle {
     return mapFootprint(row);
   }
 
+  listFootprints(): readonly FootprintEntry[] {
+    this.assertOpen();
+    return this.conn.all("SELECT * FROM footprints ORDER BY consumer, project").map((row) => mapFootprint(row));
+  }
+
   setFootprint(input: FootprintEntry): void {
     const consumer = assertNonEmpty(input.consumer, "consumer");
+    const p90Mb = input.p90Mb ?? 0;
+    const peakRamMb = input.peakRamMb ?? 0;
+    const peakCpuTimeMs = input.peakCpuTimeMs ?? 0;
+    const diskWriteBytes = input.diskWriteBytes ?? 0;
+    const wallClockMs = input.wallClockMs ?? 0;
+    const highWatermarkMb = input.highWatermarkMb ?? 0;
+    const predictedMb = input.predictedMb ?? 0;
+    const peakRamSamplesMb = input.peakRamSamplesMb ?? [];
     assertSafeInteger(input.p50Mb, "p50Mb");
     assertSafeInteger(input.p95Mb, "p95Mb");
     assertSafeInteger(input.samples, "samples");
     assertSafeInteger(input.updatedAt, "updatedAt");
+    assertSafeInteger(p90Mb, "p90Mb");
+    assertSafeInteger(peakRamMb, "peakRamMb");
+    assertSafeInteger(peakCpuTimeMs, "peakCpuTimeMs");
+    assertSafeInteger(diskWriteBytes, "diskWriteBytes");
+    assertSafeInteger(wallClockMs, "wallClockMs");
+    assertSafeInteger(predictedMb, "predictedMb");
+    if (!Number.isFinite(highWatermarkMb)) {
+      throw new AuxiliaryDbError("INVALID_INTEGER", "highWatermarkMb must be finite");
+    }
+    const samplesJson = JSON.stringify(peakRamSamplesMb);
     this.write(() => {
       this.conn.run(
-        `INSERT INTO footprints(consumer, project, p50_mb, p95_mb, samples, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO footprints(
+           consumer, project, p50_mb, p95_mb, samples, updated_at,
+           p90_mb, peak_ram_mb, peak_cpu_time_ms, disk_write_bytes, wall_clock_ms,
+           high_watermark_mb, predicted_mb, peak_ram_samples_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(consumer, project) DO UPDATE SET
            p50_mb = excluded.p50_mb,
            p95_mb = excluded.p95_mb,
            samples = excluded.samples,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at,
+           p90_mb = excluded.p90_mb,
+           peak_ram_mb = excluded.peak_ram_mb,
+           peak_cpu_time_ms = excluded.peak_cpu_time_ms,
+           disk_write_bytes = excluded.disk_write_bytes,
+           wall_clock_ms = excluded.wall_clock_ms,
+           high_watermark_mb = excluded.high_watermark_mb,
+           predicted_mb = excluded.predicted_mb,
+           peak_ram_samples_json = excluded.peak_ram_samples_json`,
         consumer,
         input.project,
         input.p50Mb,
         input.p95Mb,
         input.samples,
         input.updatedAt,
+        p90Mb,
+        peakRamMb,
+        peakCpuTimeMs,
+        diskWriteBytes,
+        wallClockMs,
+        highWatermarkMb,
+        predictedMb,
+        samplesJson,
       );
     });
   }
@@ -953,7 +1004,40 @@ function mapFootprint(row: Parameters<typeof requiredText>[0]): FootprintEntry {
     p95Mb: requiredInt(row, "p95_mb"),
     samples: requiredInt(row, "samples"),
     updatedAt: requiredInt(row, "updated_at"),
+    p90Mb: requiredInt(row, "p90_mb"),
+    peakRamMb: requiredInt(row, "peak_ram_mb"),
+    peakCpuTimeMs: requiredInt(row, "peak_cpu_time_ms"),
+    diskWriteBytes: requiredInt(row, "disk_write_bytes"),
+    wallClockMs: requiredInt(row, "wall_clock_ms"),
+    highWatermarkMb: requiredFinite(row, "high_watermark_mb"),
+    predictedMb: requiredInt(row, "predicted_mb"),
+    peakRamSamplesMb: parseRamSamples(requiredText(row, "peak_ram_samples_json")),
   };
+}
+
+function requiredFinite(row: Parameters<typeof requiredText>[0], key: string): number {
+  const value = row[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return bigintToNumber(value);
+  throw new AuxiliaryDbError("ROW_SHAPE", `expected number in column ${key}`);
+}
+
+function parseRamSamples(raw: string): readonly number[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new AuxiliaryDbError("ROW_SHAPE", "peak_ram_samples_json is not JSON");
+  }
+  if (!Array.isArray(parsed)) {
+    throw new AuxiliaryDbError("ROW_SHAPE", "peak_ram_samples_json must be an array");
+  }
+  return parsed.map((item, index) => {
+    if (typeof item !== "number" || !Number.isFinite(item)) {
+      throw new AuxiliaryDbError("ROW_SHAPE", `peak_ram_samples_json[${index}] must be a number`);
+    }
+    return item;
+  });
 }
 
 function mapResearch(row: Parameters<typeof requiredText>[0]): ResearchCacheEntry {

@@ -83,19 +83,47 @@ type Json = Record<string, unknown>;
 
 let compiledHelper: Promise<string> | undefined;
 
+export function isWin32HelperExecutable(filePath: string): boolean {
+  if (!fs.existsSync(filePath)) return false;
+  const header = Buffer.alloc(2);
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const read = fs.readSync(fd, header, 0, 2, 0);
+    return read === 2 && header[0] === 0x4d && header[1] === 0x5a;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Prefer a prebuilt helper over compiling win32-helper.cs at sample time. */
+export function findPrebuiltWin32Helper(directories: readonly string[]): string | null {
+  for (const directory of directories) {
+    const candidate = path.join(directory, "win32-helper.exe");
+    if (isWin32HelperExecutable(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function prebuiltWin32HelperDirectories(): readonly string[] {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return [here, path.join(here, "..", "..", "prebuilt")];
+}
+
 export function win32HelperExecutable(guard: PollSubprocessGuard): Promise<string> {
   compiledHelper ??= compileHelper(guard);
   return compiledHelper;
 }
 
 async function compileHelper(guard: PollSubprocessGuard): Promise<string> {
+  const prebuilt = findPrebuiltWin32Helper(prebuiltWin32HelperDirectories());
+  if (prebuilt) return prebuilt;
   const sourcePath = helperSourcePath();
   const source = fs.readFileSync(sourcePath);
   const hash = createHash("sha256").update(source).digest("hex").slice(0, 16);
   const directory = path.join(os.tmpdir(), "ef-harness-governor-telemetry");
   fs.mkdirSync(directory, { recursive: true });
   const executable = path.join(directory, `${hash}.exe`);
-  if (fs.existsSync(executable)) return executable;
+  if (fs.existsSync(executable) && isWin32HelperExecutable(executable)) return executable;
   if (!fs.existsSync(CSC)) {
     throw new TelemetryError("helper_compile", `C# compiler is not available at ${CSC}`);
   }

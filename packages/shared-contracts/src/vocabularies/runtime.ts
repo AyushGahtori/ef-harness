@@ -31,6 +31,18 @@ export const GovernorPressureSchema = PressureLevelSchema;
 export const isPressureLevel = isOneOf(PRESSURE_LEVELS);
 export const isGovernorPressure = isPressureLevel;
 
+const GOVERNOR_PRESSURE_ALIASES: Readonly<Record<string, GovernorPressure>> = {
+  green: "GREEN",
+  yellow: "YELLOW",
+  orange: "ORANGE",
+  red: "RED",
+};
+
+/** Accepts canonical uppercase and legacy TitleCase or lowercase labels. Emits uppercase. */
+export function normalizeGovernorPressure(value: string): GovernorPressure | undefined {
+  return GOVERNOR_PRESSURE_ALIASES[value.trim().toLowerCase()];
+}
+
 /** Canonical project shapes across discovery, planning, Phase 0, and UI verification (`F-040`, `F-052`). */
 export const PROJECT_KINDS = [
   "web_saas",

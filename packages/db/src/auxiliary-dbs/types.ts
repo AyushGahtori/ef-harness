@@ -93,6 +93,14 @@ export interface FootprintEntry {
   readonly p95Mb: number;
   readonly samples: number;
   readonly updatedAt: number;
+  readonly p90Mb?: number;
+  readonly peakRamMb?: number;
+  readonly peakCpuTimeMs?: number;
+  readonly diskWriteBytes?: number;
+  readonly wallClockMs?: number;
+  readonly highWatermarkMb?: number;
+  readonly predictedMb?: number;
+  readonly peakRamSamplesMb?: readonly number[];
 }
 
 export interface PortLease {

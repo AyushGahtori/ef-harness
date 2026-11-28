@@ -1,7 +1,23 @@
+import {
+  GOVERNOR_PRESSURES,
+  isGovernorPressure,
+  normalizeGovernorPressure,
+  type GovernorPressure,
+} from "@ef-harness/shared-contracts";
+import { CapacityError } from "./errors.js";
+
+export { GOVERNOR_PRESSURES, isGovernorPressure, normalizeGovernorPressure };
+export type { GovernorPressure };
+
 export const WAITING_FOR_RUN_SLOT = "Waiting for run slot" as const;
 
-export const GOVERNOR_PRESSURES = ["Green", "Yellow", "Orange", "Red"] as const;
-export type GovernorPressure = (typeof GOVERNOR_PRESSURES)[number];
+export function canonicalGovernorPressure(value: string): GovernorPressure {
+  const canonical = normalizeGovernorPressure(value);
+  if (canonical === undefined) {
+    throw new CapacityError("invalid_request", "Unknown governor pressure");
+  }
+  return canonical;
+}
 
 export const LEASE_ROLES = ["verifier", "worker", "background"] as const;
 export type LeaseRole = (typeof LEASE_ROLES)[number];
@@ -84,10 +100,6 @@ export const DISK_FORWARD_PROGRESS_FLOOR_GB = 2;
 /** execution-capacity.md: pause the disk lane after sustained high active time. */
 export const DISK_ACTIVE_PAUSE_PERCENT = 80;
 export const DISK_ACTIVE_PAUSE_MS = 10_000;
-
-export function isGovernorPressure(value: string): value is GovernorPressure {
-  return (GOVERNOR_PRESSURES as readonly string[]).includes(value);
-}
 
 export function isLeaseRole(value: string): value is LeaseRole {
   return (LEASE_ROLES as readonly string[]).includes(value);

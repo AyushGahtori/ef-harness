@@ -1021,6 +1021,7 @@ export type {
   TaskLevelAssignment,
   TaskPlacement,
   WaveCapacityOptions,
+  WorkloadFootprint,
 } from "./scheduler/index.js";
 export {
   AUTO_START_HISTORY_SETTING_KEY,

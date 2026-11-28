@@ -532,6 +532,7 @@ export {
   matchesScopePredicate,
   microUnitsToUsdDisplay,
   normalizeCrewPreset,
+  normalizeGovernorPressure,
   normalizeProjectKind,
   normalizeWorkerTier,
   percentToPpm,
