@@ -16,6 +16,9 @@
       "path": "../git-engine"
     },
     {
+      "path": "../sandbox"
+    },
+    {
       "path": "../shared-contracts"
     },
     {

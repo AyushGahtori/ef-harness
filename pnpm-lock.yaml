@@ -289,15 +289,27 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../db
+      '@ef-harness/discovery':
+        specifier: workspace:*
+        version: link:../discovery
       '@ef-harness/git-engine':
         specifier: workspace:*
         version: link:../git-engine
+      '@ef-harness/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
       '@ef-harness/shared-observability':
         specifier: workspace:*
         version: link:../shared-observability
+      '@ef-harness/test-env':
+        specifier: workspace:*
+        version: link:../test-env
       web-tree-sitter:
         specifier: 0.27.2
         version: 0.27.2

@@ -34,6 +34,9 @@ export interface BrownfieldOpeningControllerDeps {
   readonly workItems: WorkItemPersistencePort;
   readonly files: RepoFileReaderPort;
   readonly git: GitLogPort;
+  readonly conventionBrief?: {
+    setBrownfieldConventions(markdown: string): void;
+  };
 }
 
 export interface OpenBrownfieldRepoInput {
@@ -124,6 +127,9 @@ export class BrownfieldOpeningController {
     });
 
     const conventionsCard = this.conventions.extract(snapshot);
+    if (conventionsCard.estimatedTokens <= 600) {
+      this.deps.conventionBrief?.setBrownfieldConventions(conventionsCard.markdown);
+    }
     const confirmation = this.confirmationBuilder.build({
       stackSummary: snapshot.stackSummaryLine,
       focusModules: modules,

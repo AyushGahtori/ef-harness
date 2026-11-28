@@ -501,6 +501,15 @@ CREATE TABLE IF NOT EXISTS undo_ownership (
   previous_owner    TEXT NOT NULL,
   transferred_at    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS quarantined_tests (
+  test_id TEXT NOT NULL,
+  file_path TEXT,
+  error_fingerprint TEXT,
+  baseline_commit_sha TEXT NOT NULL,
+  classification TEXT NOT NULL CHECK (classification IN ('known_failing', 'baseline_flaky')),
+  PRIMARY KEY (baseline_commit_sha, test_id)
+) STRICT;
 `;
 
 const CODE_INDEX_MODULE_CARDS_DDL = `
@@ -550,6 +559,7 @@ const STATE_V2_TABLES = [
   "clarification_cards",
   "quarantined_candidates",
   "ambiguity_reminders",
+  "quarantined_tests",
   "human_steps",
   "human_step_counter",
   "vault_secret_metadata",

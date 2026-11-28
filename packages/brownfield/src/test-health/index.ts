@@ -38,6 +38,13 @@ export { BrokenBuildEntryGate } from "./broken-build-entry-gate.js";
 export { CharacterizationSafetyNetPlanner } from "./characterization-safety-net-planner.js";
 export { checkWorktreeClean, parseGitPorcelainLine } from "./dirty-tree-check.js";
 export { KnownFailingQuarantineStore, type QuarantineTransparencyReceipt } from "./known-failing-quarantine-store.js";
+export { SqliteQuarantinedTestsStore, type SqliteQuarantineStoreOptions } from "./sqlite-quarantine-store.js";
+export {
+  adaptHarnessRunEngine,
+  adaptL0ScriptDetector,
+  adaptWorktreeSlotPool,
+  type WorktreePoolBinding,
+} from "./runtime-ports.js";
 export { ThreeRunFlakeDetector, type FlakeRunFn, type ThreeRunFlakeDetectorOptions } from "./three-run-flake-detector.js";
 export {
   errorFingerprint,

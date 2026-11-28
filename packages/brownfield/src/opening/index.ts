@@ -10,6 +10,15 @@ export { ObservedStackPresettler } from "./observed-stack-presettler.js";
 export { AntiRewriteScopeFence } from "./scope-fence.js";
 export { TodayVsChangeConfirmationBuilder } from "./today-vs-change-confirmation-builder.js";
 export { InMemoryWorkItemStore } from "./work-item-store.js";
+export { SqliteWorkItemStore, type SqliteWorkItemStoreOptions } from "./sqlite-work-item-store.js";
+export {
+  adaptCodeMap,
+  adaptDiscovery,
+  adaptL0Scanner,
+  adaptModuleCards,
+  adaptStaleDocs,
+  type ObservedPreSettleCoordinator,
+} from "./runtime-ports.js";
 export { BROWNFIELD_QUICK_PROMPTS, estimateTokens, mapBrownfieldKindToDb } from "./types.js";
 export type {
   BrownfieldConfirmationCard,
