@@ -1934,3 +1934,36 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 68 passed (68)`, `Tests 377 passed (377)`, 0 skipped
 - `pnpm --filter @ef-harness/ship-deploy test -- effects github ci-loop`: exit `0` — `Test Files 12 passed (12)`, `Tests 45 passed (45)`, 0 skipped (extra arguments did not narrow)
 - Not done: C71 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened.
+
+## [C71] — deploy-adapter-vercel-docker, expand-contract-migrations, post-deploy-verify-rollback
+
+- **Subagent Role & Model:** integrator, grok-4.7
+- **Commit SHA & Subject:** `8a9ae08fb11a7f6e5eb0e10bba2958ffdc917f59` — `integrate: wire ship-deploy barrels/daemon RPCs`
+- **Merge commits:** `fb74a62ecbd0251f7445f4794977b28b9410a7a9` (`integrate: Task 179 deploy-adapter-vercel-docker`); `c5e8546647b4e4c46f63be3b5d34440123f6423d` (`integrate: Task 180 expand-contract-migrations`); `a668c73bb79a02bcd93dabfc8c2abb9b78614ec5` (`integrate: Task 181 post-deploy-verify-rollback`)
+- **Branches Merged:** `origin/task/179-deploy-adapter-vercel-docker` @ `1ad270e7abbec0bedecffeb7375b6b66248966e0`; `origin/task/180-expand-contract-migrations` @ `d6d7f53563019523275a84e581f56fd0030cb1ee`; `origin/task/181-post-deploy-verify-rollback` @ `53ef907d3bf578b721f7ccea6ead84fe36af1a5c`
+- **Findings Fixed:** F-076 (C71 slice: MigrationStateStore.open and MigrationStateStore.record deleted; migration effects go through ExternalEffectLedger and reject a reused key with a different payload hash) and F-077 (C71 slice: Docker and Vercel approval hashes bind targetEnv, commitSha, and envDiff; post-deploy receipts use CasBlobStore and ship_runs; barrel exports all six modules; daemon Ship RPCs).
+- **C72 included:** no. Compared three-dot file lists of tasks 179–181 with tasks 182–183 against `8b3996d8`. Intersection was empty, so only C71 was integrated.
+
+### What Was Done
+- Compared C71 three-dot lists (`8b3996d8...origin/task/179-deploy-adapter-vercel-docker`, `...180-expand-contract-migrations`, `...181-post-deploy-verify-rollback`) with C72 (`...182-mystery-bug-investigation`, `...183-investigation-localization-toolkit`). C71 paths are `.agent-handoffs/task-179.md`, `packages/ship-deploy/src/deploy-adapters/**`, `packages/ship-deploy/tests/deploy-adapters/**`, `.agent-handoffs/task-180.md`, `packages/ship-deploy/src/live-migrations/**`, `packages/ship-deploy/tests/live-migrations/**`, `.agent-handoffs/task-181.md`, `packages/ship-deploy/src/post-deploy/**`, `packages/ship-deploy/tests/post-deploy/**`. C72 paths are `.agent-handoffs/task-182.md`, `packages/investigations/src/pipeline/**`, `packages/investigations/tests/pipeline/**`, `.agent-handoffs/task-183.md`, `packages/investigations/src/localization/**`, `packages/investigations/tests/localization/**`. `comm -12` of the two sorted unions was empty. Neither set edits `pnpm-lock.yaml` or a package.json. C72 was not started.
+- Merged 179, 180, and 181 with `--no-ff` onto `harness/integration` from `8b3996d81b92bcbd022af95f0f8e18155dea875f`. No conflicts. No dirty-worktree patch exists for 179–181. C70 was not redone.
+- Deleted `MigrationStateStore.open` (raw `DatabaseSync`) and `MigrationStateStore.record` (ON CONFLICT payload_hash clobber). `recordEffect` writes through `ExternalEffectLedger.recordPlanned` on the canonical state connection. A reused idempotency key with a different payload throws `PayloadHashMismatchError` before insert. Run and cursor rows stay on sidecar tables of that same connection. Ship runs go through `SqliteShipRunStore`.
+- `DockerOverSshDeployAdapter.planDeploy` and `VercelDeployAdapter.planDeploy` set `canonicalPayloadHash` from `deployCanonicalPayloadHash({ targetEnv, commitSha, envDiff })`. Changing envDiff changes the hash, and the hash is not the bare commit SHA. SSH and API tokens stay behind `WindowsDpapiSecretsVault`. On Linux the daemon `ship.vaultNames` method does not construct the vault and returns `{ available: false, names: [] }`. The vault is constructed only when `process.platform` is `win32`. DPAPI was not stubbed.
+- `SqlitePostDeployStore` persists logical ship state on `ship_runs` through `SqliteShipRunStore` and keeps post-deploy sidecars on the canonical connection. `DurablePostDeployCas` puts screenshot and receipt bytes in `CasBlobStore` (`format: "raw"`). `PostDeployVerifier` constructs `CleanVerifierRunner` and calls `parseCollectedCaseIds`. `InMemoryCasBlobStore` and `InMemoryPostDeployStore` remain test doubles. `packages/ship-deploy/src/index.ts` exports `effects`, `github`, `ciLoop`, `deployAdapters`, `liveMigrations`, and `postDeploy`. `apps/daemon` dispatches `ship.*` from `handleIntegratedMethod`. The daemon workspace link is the only lockfile change.
+- Node stayed on the default runtime. The node:sqlite spike was not rerun. Windows Job Object failures were not stubbed. `schema/**` was not edited.
+
+### What It Fixed
+- Changing envDiff invalidates the Docker-over-SSH approval hash for the same commitSha.
+- `MigrationStateStore` rejects a reused migration effect key when the payload hash differs (`code` `payload_hash_mismatch`).
+- A post-deploy receipt survives close and reopen, and the CAS put returns a 64-hex digest.
+- `@ef-harness/ship-deploy` exports all six modules, and the daemon answers `ship.modules`, `ship.approvalHash`, `ship.migrationEffect`, `ship.parseSmoke`, and `ship.vaultNames`.
+
+### Verification Run & Results
+- `pnpm install`: already current after the daemon workspace link; `pnpm-lock.yaml` records `@ef-harness/ship-deploy` as `link:../../packages/ship-deploy`
+- `pnpm --filter @ef-harness/ship-deploy test`: exit `0` — `Test Files 21 passed (21)`, `Tests 101 passed (101)`, 0 skipped
+- `pnpm --filter @ef-harness/daemon test`: first run exit 1 because `tsc -b` had rebuilt `packages/dictation/dist` without `vocabulary/gpt2.tiktoken` (the package `build` script copies that asset; typecheck does not). Restored by the root `pnpm build` copy. Rerun exit `0` — `Test Files 22 passed (22)`, `Tests 98 passed (98)`, 0 skipped
+- `pnpm build`: exit `0`
+- `pnpm typecheck`: exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint`: exit `0` — 0 errors, 4 warnings (pre-existing unused eslint-disable directives in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: `67/67 passed`
+- Not done: C72 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened.
