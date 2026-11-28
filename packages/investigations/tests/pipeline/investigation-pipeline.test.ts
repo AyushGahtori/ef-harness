@@ -1,9 +1,16 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { openProjectStateDb } from "@ef-harness/db";
 import { describe, expect, it } from "vitest";
+import { symptomCardFromIntake } from "../../src/pipeline/adapters.js";
 import {
   ProductionEditsForbiddenBeforeReproError,
   ReproMustFailOnBaseError,
+  StageTransitionForbiddenError,
   UnreproducibleBugEscalation,
 } from "../../src/pipeline/errors.js";
+import { SqliteInvestigationStore } from "../../src/pipeline/investigation-store.js";
 import type { ProvenRootCause, ReproScript } from "../../src/pipeline/types.js";
 import {
   cacheRaceCard,
@@ -237,5 +244,115 @@ describe("MysteryBugInvestigationPipeline", () => {
     const record = pipeline.get("bug-miss");
     expect(record?.escalationMessage).toMatch(/telemetry/i);
     expect(record?.stage).toBe("CLEAN_REPRO");
+  });
+
+  it("persists investigations across ProjectStateDb reopen", () => {
+    const rootDir = mkdtempSync(path.join(tmpdir(), "ef-inv-reopen-"));
+    const projectId = `inv-reopen-${process.pid}`;
+    const first = openProjectStateDb({ projectId, rootDir, appVersion: "0.0.0" });
+    const store = new SqliteInvestigationStore({ state: first, now: () => 50 });
+    store.create("bug-persist", timezoneCard);
+    store.updateStage("bug-persist", "CLEAN_REPRO");
+    first.close();
+    const second = openProjectStateDb({ projectId, rootDir, appVersion: "0.0.0" });
+    try {
+      const reopened = new SqliteInvestigationStore({ state: second, now: () => 60 });
+      const record = reopened.get("bug-persist");
+      expect(record?.stage).toBe("CLEAN_REPRO");
+      expect(record?.symptomCard.title).toBe(timezoneCard.title);
+    } finally {
+      second.close();
+    }
+  });
+
+  it("runs the bisector and shrinker while localizing and rejects symptom patches", async () => {
+    let bisectCalls = 0;
+    let shrinkCalls = 0;
+    const pipeline = createPipeline({
+      cards: { tz: timezoneCard },
+      bisector: {
+        async run() {
+          bisectCalls += 1;
+          return {
+            suspectCommit: "abc",
+            stability: { badRuns: [], goodRuns: [], targetFingerprint: "ERR-TZ" },
+            revertVerified: true,
+            skippedCommitCount: 1,
+            shallowLimited: false,
+            artifactRef: "artifact",
+          };
+        },
+      },
+      shrinker: {
+        async shrink() {
+          shrinkCalls += 1;
+          return {
+            minimalInput: ["42"],
+            evaluations: 1,
+            fingerprint: "ERR-TZ",
+            artifactRef: "shrink",
+          };
+        },
+      },
+      localization: {
+        bisect: {
+          repoPath: "/tmp/unused",
+          badRef: "bad",
+          goodRef: "good",
+          runRepro: async () => ({ exitCode: 1, output: "ERR-TZ", fingerprint: "ERR-TZ" }),
+        },
+        shrinkInput: ["42", "189"],
+        runWithSubset: async () => ({ exitCode: 1, output: "ERR-TZ", fingerprint: "ERR-TZ" }),
+      },
+    });
+    const fp = "ERR-TZ-OFF-BY-ONE";
+    pipeline.startIntake("bug-loc", "tz");
+    pipeline.advanceToCleanRepro("bug-loc");
+    await pipeline.submitCleanRepro("bug-loc", reproScript("bug-loc", fp, "vitest"), failRun(fp));
+    pipeline.recordHypothesis("bug-loc", {
+      hypothesisId: "h1",
+      prediction: "boundary",
+      experiment: "flip",
+      result: "falsified",
+    });
+    await pipeline.proveRootCause(
+      "bug-loc",
+      {
+        file: "src/orders/cutoff.ts",
+        symbol: "cutoffBoundary",
+        mechanism: "cutoff used UTC instead of local TZ",
+        minimalFlipProof: minimalFlipFactory(fp),
+      },
+      failRun(fp),
+      fp,
+    );
+    expect(bisectCalls).toBe(1);
+    expect(shrinkCalls).toBe(1);
+    await expect(
+      pipeline.applyScopedFix(
+        "bug-loc",
+        { paths: ["src/orders/cutoff.ts"], diffSummary: "+ catch (error) { }" },
+        [],
+        ["export function cutoffBoundary() { return 'local'; }"],
+      ),
+    ).rejects.toBeInstanceOf(StageTransitionForbiddenError);
+  });
+
+  it("maps intake symptom cards onto the investigation card", () => {
+    const mapped = symptomCardFromIntake({
+      id: "card-1",
+      title: "Blank total",
+      observedBehavior: "Total stays at zero",
+      expectedBehavior: "Total matches the line items",
+      reproductionSteps: ["Open the cart"],
+      affectedUrlsOrRoutes: ["/cart"],
+      mappedStackFrames: [],
+      failingHttpRequests: [],
+      suspectedDomainTags: [],
+      missingReproInfo: ["Which browser"],
+      severity: "high",
+    });
+    expect(mapped.environmentNotes).toBe("Which browser");
+    expect(mapped.affectedUrlsOrRoutes).toEqual(["/cart"]);
   });
 });

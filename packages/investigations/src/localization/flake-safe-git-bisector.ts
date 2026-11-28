@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execGit } from "@ef-harness/git-engine";
 import { LocalizationArtifactStore } from "./artifacts.js";
 import {
   BisectDepthExceededError,
@@ -27,24 +27,36 @@ export type FlakeSafeGitBisectorOptions = {
   readonly artifactStore?: LocalizationArtifactStore;
 };
 
+async function runGit(repoPath: string, args: readonly string[]): Promise<string> {
+  const result = await execGit({
+    args,
+    cwd: repoPath,
+    developerCheckout: false,
+  });
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim() || `git ${args.join(" ")} failed`;
+    throw new LocalizationToolkitError(detail);
+  }
+  return result.stdout.trim();
+}
+
 function defaultGit(repoPath: string): MinGitRepoInspectorPort {
-  const run = (args: string[]): string =>
-    execFileSync("git", args, { cwd: repoPath, encoding: "utf8" }).trim();
   return {
-    isShallowRepository: () => run(["rev-parse", "--is-shallow-repository"]) === "true",
-    revListCount: (range) => {
-      const out = run(["rev-list", "--count", range]);
+    isShallowRepository: async () => (await runGit(repoPath, ["rev-parse", "--is-shallow-repository"])) === "true",
+    revListCount: async (range) => {
+      const out = await runGit(repoPath, ["rev-list", "--count", range]);
       return Number.parseInt(out, 10);
     },
-    resolveRef: (ref) => run(["rev-parse", ref]),
+    resolveRef: (ref) => runGit(repoPath, ["rev-parse", ref]),
   };
 }
 
-function listCommitsNewestFirst(repoPath: string, goodRef: string, badRef: string): string[] {
-  const out = execFileSync("git", ["rev-list", "--reverse", `${goodRef}..${badRef}`], {
-    cwd: repoPath,
-    encoding: "utf8",
-  });
+async function listCommitsOldestFirst(
+  repoPath: string,
+  goodRef: string,
+  badRef: string,
+): Promise<string[]> {
+  const out = await runGit(repoPath, ["rev-list", "--reverse", `${goodRef}..${badRef}`]);
   return out
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -100,12 +112,42 @@ function bisectStepExitCode(
   return GIT_BISECT_SKIP_EXIT;
 }
 
-function checkoutRef(repoPath: string, ref: string): void {
-  execFileSync("git", ["checkout", "--force", ref], { cwd: repoPath, stdio: "pipe" });
+async function checkoutRef(repoPath: string, ref: string): Promise<void> {
+  await runGit(repoPath, ["checkout", "--force", ref]);
+}
+
+async function restoreBadRef(repoPath: string, badRef: string): Promise<void> {
+  try {
+    await checkoutRef(repoPath, badRef);
+  } catch {
+    return;
+  }
+}
+
+function pickUnskipped(low: number, high: number, skipped: ReadonlySet<number>): number | null {
+  if (low > high) return null;
+  const mid = Math.floor((low + high) / 2);
+  if (!skipped.has(mid)) return mid;
+  const span = high - low;
+  for (let distance = 1; distance <= span; distance += 1) {
+    const before = mid - distance;
+    const after = mid + distance;
+    if (before >= low && !skipped.has(before)) return before;
+    if (after <= high && !skipped.has(after)) return after;
+  }
+  return null;
 }
 
 export class FlakeSafeGitBisector {
   async run(options: FlakeSafeGitBisectorOptions): Promise<BisectRunResult> {
+    try {
+      return await this.execute(options);
+    } finally {
+      await restoreBadRef(options.repoPath, options.badRef);
+    }
+  }
+
+  private async execute(options: FlakeSafeGitBisectorOptions): Promise<BisectRunResult> {
     const git = options.git ?? defaultGit(options.repoPath);
     const store = options.artifactStore ?? new LocalizationArtifactStore();
     const shallow = await git.isShallowRepository();
@@ -127,7 +169,7 @@ export class FlakeSafeGitBisector {
     assertStability("bad", badRuns, targetRawFingerprint);
 
     const goodRuns = await runMany(STABILITY_RUN_COUNT, async () => {
-      checkoutRef(options.repoPath, options.goodRef);
+      await checkoutRef(options.repoPath, options.goodRef);
       return options.runRepro();
     });
     assertStability("good", goodRuns, targetRawFingerprint);
@@ -136,31 +178,31 @@ export class FlakeSafeGitBisector {
     let skippedCommitCount = 0;
     let bisectSteps = 0;
     let suspectCommit = "";
-    const commits = listCommitsNewestFirst(options.repoPath, options.goodRef, options.badRef);
+    const commits = await listCommitsOldestFirst(options.repoPath, options.goodRef, options.badRef);
     let low = 0;
     let high = commits.length - 1;
+    const skipped = new Set<number>();
 
     while (low <= high && bisectSteps < MAX_BISECT_STEPS) {
-      const mid = Math.floor((low + high) / 2);
-      const commit = commits[mid];
-      if (!commit) {
-        break;
-      }
-      checkoutRef(options.repoPath, commit);
+      const probe = pickUnskipped(low, high, skipped);
+      if (probe === null) break;
+      const commit = commits[probe];
+      if (!commit) break;
+      await checkoutRef(options.repoPath, commit);
       const outcome = await options.runRepro();
       const exitCode = bisectStepExitCode(outcome, targetRawFingerprint);
       bisectSteps += 1;
       if (exitCode === GIT_BISECT_SKIP_EXIT) {
         skippedCommitCount += 1;
-        low = mid + 1;
+        skipped.add(probe);
         continue;
       }
       if (exitCode === 1) {
         suspectCommit = commit;
-        high = mid - 1;
+        high = probe - 1;
         continue;
       }
-      low = mid + 1;
+      low = probe + 1;
     }
 
     if (!suspectCommit && commits.length > 0) {
@@ -186,8 +228,6 @@ export class FlakeSafeGitBisector {
       bisectSuspectCommit: suspectCommit,
     });
 
-    await checkoutRef(options.repoPath, options.badRef);
-
     return {
       suspectCommit,
       stability: {
@@ -211,13 +251,13 @@ async function verifyRevert(
   targetFingerprint: string,
 ): Promise<boolean> {
   try {
-    checkoutRef(repoPath, parentRef);
+    await checkoutRef(repoPath, parentRef);
   } catch {
     return false;
   }
   const parentRuns = await runMany(REVERT_VERIFY_RUN_COUNT, runRepro);
   const parentStable = parentRuns.every((o) => o.exitCode === 0);
-  checkoutRef(repoPath, badRef);
+  await checkoutRef(repoPath, badRef);
   const badRuns = await runMany(REVERT_VERIFY_RUN_COUNT, runRepro);
   const badStable = badRuns.every(
     (o) => o.exitCode !== 0 && fingerprintsMatch(targetFingerprint, o.fingerprint),

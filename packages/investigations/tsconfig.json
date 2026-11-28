@@ -9,8 +9,11 @@
     "src/**/*.ts"
   ],
   "references": [
-    {
-      "path": "../shared-contracts"
-    }
+    { "path": "../brownfield" },
+    { "path": "../db" },
+    { "path": "../git-engine" },
+    { "path": "../intake" },
+    { "path": "../shared-contracts" },
+    { "path": "../shared-observability" }
   ]
 }

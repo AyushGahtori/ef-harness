@@ -142,6 +142,7 @@ describe("FlakeSafeGitBisector", () => {
     expect(result.skippedCommitCount).toBeGreaterThanOrEqual(1);
     expect(result.suspectCommit).toBe(repo.regressionCommit);
     expect(result.revertVerified).toBe(true);
+    expect(git(repo.dir, ["rev-parse", "HEAD"])).toBe(badRef);
     expect(result.stability.badRuns).toHaveLength(5);
     expect(result.stability.goodRuns).toHaveLength(5);
     expect(
@@ -169,7 +170,86 @@ describe("FlakeSafeGitBisector", () => {
       }),
     ).rejects.toBeInstanceOf(FlakyReproBlocksBisectError);
   }, 120_000);
+
+  it("localizes a culprit before a skipped mid commit and restores badRef on abort", async () => {
+    const repo = seedCulpritBeforeSkip();
+    tempRepos.push(repo.dir);
+    const goodRef = repo.commits[0] ?? "HEAD";
+    const badRef = repo.commits[repo.commits.length - 1] ?? "HEAD";
+    const result = await new FlakeSafeGitBisector().run({
+      repoPath: repo.dir,
+      goodRef,
+      badRef,
+      runRepro: () => runReproInRepo(repo.dir),
+    });
+    expect(result.skippedCommitCount).toBeGreaterThanOrEqual(1);
+    expect(result.suspectCommit).toBe(repo.regressionCommit);
+    expect(git(repo.dir, ["rev-parse", "HEAD"])).toBe(badRef);
+
+    let seen = 0;
+    await expect(
+      new FlakeSafeGitBisector().run({
+        repoPath: repo.dir,
+        goodRef,
+        badRef,
+        runRepro: async () => {
+          seen += 1;
+          if (seen <= 5) {
+            return { exitCode: 1, output: REGRESSION_FP, fingerprint: REGRESSION_FP };
+          }
+          throw new Error("abort-after-good-checkout");
+        },
+      }),
+    ).rejects.toThrow("abort-after-good-checkout");
+    expect(git(repo.dir, ["rev-parse", "HEAD"])).toBe(badRef);
+  }, 120_000);
 });
+
+function seedCulpritBeforeSkip(): SeedRepo {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "ef-bisect-early-"));
+  git(dir, ["init", "-b", "main"]);
+  git(dir, ["config", "user.email", "agent@ef-harness.local"]);
+  git(dir, ["config", "user.name", "EF Harness"]);
+  const calcPath = path.join(dir, "calc.mjs");
+  const reproPath = path.join(dir, "repro.mjs");
+  writeFileSync(
+    reproPath,
+    `import { add } from './calc.mjs';
+const value = add(2, 3);
+if (value === 5) process.exit(0);
+throw new Error('REGRESSION_SUM_MISMATCH expected 5 got ' + value);
+`,
+    "utf8",
+  );
+  const commits: string[] = [];
+  const writeGood = (note: string) => {
+    writeFileSync(calcPath, `export function add(a, b) { return a + b; } // ${note}\n`, "utf8");
+  };
+  const writeBad = (note: string) => {
+    writeFileSync(calcPath, `export function add(a, b) { return a - b; } // ${note}\n`, "utf8");
+  };
+  writeGood("base");
+  git(dir, ["add", "calc.mjs", "repro.mjs"]);
+  commits.push(commit(dir, "c1 good baseline"));
+  writeGood("still good");
+  git(dir, ["add", "calc.mjs"]);
+  commits.push(commit(dir, "c2 still good"));
+  writeBad("regression");
+  git(dir, ["add", "calc.mjs"]);
+  const regressionCommit = commit(dir, "c3 introduce regression");
+  commits.push(regressionCommit);
+  writeFileSync(calcPath, `export function add(a, b) { return a + // broken\n`, "utf8");
+  git(dir, ["add", "calc.mjs"]);
+  const brokenSyntaxCommit = commit(dir, "c4 broken syntax");
+  commits.push(brokenSyntaxCommit);
+  writeBad("still bad");
+  git(dir, ["add", "calc.mjs"]);
+  commits.push(commit(dir, "c5 still bad"));
+  writeBad("head");
+  git(dir, ["add", "calc.mjs"]);
+  commits.push(commit(dir, "c6 still bad"));
+  return { dir, commits, regressionCommit, brokenSyntaxCommit };
+}
 
 describe("DeltaDebuggingInputShrinker", () => {
   it("shrinks 200 items to minimal {42,189} within budget", async () => {

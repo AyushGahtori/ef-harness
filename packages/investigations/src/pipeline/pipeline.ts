@@ -1,3 +1,19 @@
+import { InvestigatorV1Schema } from "@ef-harness/shared-contracts";
+import { redactSecrets } from "@ef-harness/shared-observability";
+import {
+  DeltaDebuggingInputShrinker,
+  FlakeSafeGitBisector,
+  SymptomPatchDetector,
+} from "../localization/index.js";
+import type {
+  BisectRunResult,
+  DdminOptions,
+  DdminShrinkResult,
+  FlakeSafeGitBisectorOptions,
+  ReproOutcome as LocalizationOutcome,
+  SymptomPatchAudit,
+  SymptomPatchDetectorOptions,
+} from "../localization/index.js";
 import {
   StageBudgetExceededError,
   StageTransitionForbiddenError,
@@ -42,6 +58,24 @@ export const DEFAULT_INVESTIGATION_BUDGET: InvestigationBudget = {
   reproTimeBudgetMs: 5 * 60 * 1000,
 };
 
+export interface QuarantineLocalization {
+  readonly bisect: FlakeSafeGitBisectorOptions;
+  readonly shrinkInput?: readonly string[];
+  readonly runWithSubset?: (subset: readonly string[]) => Promise<LocalizationOutcome> | LocalizationOutcome;
+}
+
+export interface InvestigationBisector {
+  run(options: FlakeSafeGitBisectorOptions): Promise<BisectRunResult>;
+}
+
+export interface InvestigationShrinker {
+  shrink<T>(options: DdminOptions<T>): Promise<DdminShrinkResult<T>>;
+}
+
+export interface InvestigationPatchAuditor {
+  analyze(options: SymptomPatchDetectorOptions): SymptomPatchAudit;
+}
+
 export interface MysteryBugInvestigationPipelineOptions {
   readonly store: SqliteInvestigationStore;
   readonly gates?: StageGateEnforcer;
@@ -54,6 +88,10 @@ export interface MysteryBugInvestigationPipelineOptions {
   readonly verifier: CleanVerifierHarnessPort;
   readonly budget?: InvestigationBudget;
   readonly now?: () => number;
+  readonly bisector?: InvestigationBisector;
+  readonly shrinker?: InvestigationShrinker;
+  readonly patchDetector?: InvestigationPatchAuditor;
+  readonly localization?: QuarantineLocalization;
 }
 
 export interface IntakeResult {
@@ -74,6 +112,10 @@ export class MysteryBugInvestigationPipeline {
   private readonly verifier: CleanVerifierHarnessPort;
   private readonly budget: InvestigationBudget;
   private readonly now: () => number;
+  private readonly bisector: InvestigationBisector;
+  private readonly shrinker: InvestigationShrinker;
+  private readonly patchDetector: InvestigationPatchAuditor;
+  private readonly localization: QuarantineLocalization | undefined;
   private readonly scratchPaths: string[] = [];
 
   constructor(options: MysteryBugInvestigationPipelineOptions) {
@@ -88,6 +130,10 @@ export class MysteryBugInvestigationPipeline {
     this.verifier = options.verifier;
     this.budget = options.budget ?? structuredClone(DEFAULT_INVESTIGATION_BUDGET);
     this.now = options.now ?? (() => Date.now());
+    this.bisector = options.bisector ?? new FlakeSafeGitBisector();
+    this.shrinker = options.shrinker ?? new DeltaDebuggingInputShrinker();
+    this.patchDetector = options.patchDetector ?? new SymptomPatchDetector();
+    this.localization = options.localization;
   }
 
   private bumpTurn(stage: InvestigationRecord["stage"]): void {
@@ -216,6 +262,29 @@ export class MysteryBugInvestigationPipeline {
       );
     }
     this.bumpTurn("QUARANTINED_LOCALIZE");
+    const investigator = InvestigatorV1Schema.safeParse({
+      outcome: "root_cause",
+      root_cause: rootCause.mechanism,
+      evidence: [rootCause.file, rootCause.symbol],
+      minimal_change: rootCause.mechanism,
+    });
+    if (!investigator.success) {
+      throw new StageTransitionForbiddenError(
+        record.stage,
+        "PROVEN_MINIMAL_FLIP_ROOT_CAUSE",
+        "investigator root cause was rejected",
+      );
+    }
+    if (this.localization) {
+      await this.bisector.run(this.localization.bisect);
+      if (this.localization.shrinkInput && this.localization.runWithSubset) {
+        await this.shrinker.shrink({
+          input: this.localization.shrinkInput,
+          targetFingerprint: expectedFingerprint,
+          runWithSubset: this.localization.runWithSubset,
+        });
+      }
+    }
     await this.prover.prove(baselineRun, rootCause.minimalFlipProof, expectedFingerprint);
     let updated = this.store.saveProvenRootCause(investigationId, rootCause);
     this.gates.assertStageAdvance(updated.stage, "PROVEN_MINIMAL_FLIP_ROOT_CAUSE");
@@ -239,8 +308,17 @@ export class MysteryBugInvestigationPipeline {
       );
     }
     this.bumpTurn("SCOPED_FIX");
+    const scrubbedDiff = redactSecrets(fix.diffSummary);
+    const audit = this.patchDetector.analyze({ unifiedDiff: scrubbedDiff });
+    if (audit.flagged) {
+      throw new StageTransitionForbiddenError(
+        "SCOPED_FIX",
+        "PERMANENT_REPRO_AND_MECHANISM_TESTS",
+        audit.findings.map((finding) => finding.detail).join("; "),
+      );
+    }
     this.gates.assertScratchDiscarded(scratchFileContents, fixFileContents);
-    for (const summary of [fix.diffSummary]) {
+    for (const summary of [scrubbedDiff]) {
       this.gates.assertFixContentNotBandAid(summary);
     }
     const fixSlot = this.worktrees.acquireCleanFixBase();

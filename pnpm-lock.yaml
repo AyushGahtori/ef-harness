@@ -595,9 +595,39 @@ importers:
 
   packages/investigations:
     dependencies:
+      '@ef-harness/brownfield':
+        specifier: workspace:*
+        version: link:../brownfield
+      '@ef-harness/db':
+        specifier: workspace:*
+        version: link:../db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
+      '@ef-harness/intake':
+        specifier: workspace:*
+        version: link:../intake
+      '@ef-harness/integrator':
+        specifier: workspace:*
+        version: link:../integrator
+      '@ef-harness/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@ef-harness/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../shared-contracts
+      '@ef-harness/shared-observability':
+        specifier: workspace:*
+        version: link:../shared-observability
+      '@ef-harness/test-env':
+        specifier: workspace:*
+        version: link:../test-env
+      '@ef-harness/verifier':
+        specifier: workspace:*
+        version: link:../verifier
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

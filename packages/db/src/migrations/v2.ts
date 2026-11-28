@@ -191,6 +191,16 @@ CREATE TABLE IF NOT EXISTS investigations (
   repro_command TEXT,
   hypothesis_ledger TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(hypothesis_ledger)),
   root_cause TEXT,
+  symptom_card_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(symptom_card_json)),
+  repro_script_json TEXT CHECK (repro_script_json IS NULL OR json_valid(repro_script_json)),
+  proven_root_cause TEXT CHECK (proven_root_cause IS NULL OR json_valid(proven_root_cause)),
+  surgical_fix_json TEXT CHECK (surgical_fix_json IS NULL OR json_valid(surgical_fix_json)),
+  permanent_tests_json TEXT CHECK (permanent_tests_json IS NULL OR json_valid(permanent_tests_json)),
+  receipt_json TEXT CHECK (receipt_json IS NULL OR json_valid(receipt_json)),
+  repro_attempts INTEGER NOT NULL DEFAULT 0,
+  repro_started_at INTEGER,
+  escalation_message TEXT,
+  instrumentation_only INTEGER NOT NULL DEFAULT 0 CHECK (instrumentation_only IN (0, 1)),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 ) STRICT, WITHOUT ROWID;

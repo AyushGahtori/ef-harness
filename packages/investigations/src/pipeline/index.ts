@@ -1,7 +1,14 @@
 export {
+  BugIntakeSymptomAdapter,
+  CompactCodeMapRouteAdapter,
+  symptomCardFromIntake,
+  wireMysteryBugPipeline,
+} from "./adapters.js";
+export {
   MysteryBugInvestigationPipeline,
   DEFAULT_INVESTIGATION_BUDGET,
   type MysteryBugInvestigationPipelineOptions,
+  type QuarantineLocalization,
   type IntakeResult,
 } from "./pipeline.js";
 export { StageGateEnforcer } from "./stage-gate-enforcer.js";

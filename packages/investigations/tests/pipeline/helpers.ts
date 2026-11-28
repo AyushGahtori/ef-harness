@@ -1,4 +1,3 @@
-import { DatabaseSync } from "node:sqlite";
 import type {
   CleanVerifierHarnessPort,
   CompactCodeMapQueryPort,
@@ -21,10 +20,7 @@ import {
 } from "../../src/pipeline/pipeline.js";
 
 export function makeStore(now: () => number = () => 1_700_000_000_000): SqliteInvestigationStore {
-  return new SqliteInvestigationStore({
-    database: new DatabaseSync(":memory:"),
-    now,
-  });
+  return new SqliteInvestigationStore({ now });
 }
 
 export class ScriptedSymptomCards implements SymptomCardStorePort {
@@ -113,6 +109,10 @@ export function createPipeline(
     worktrees: partial.worktrees ?? new ScriptedWorktrees(),
     testEnv: partial.testEnv ?? new ScriptedTestEnv(partial.reproRuns ?? {}),
     verifier: partial.verifier ?? new ScriptedVerifier(),
+    ...(partial.bisector ? { bisector: partial.bisector } : {}),
+    ...(partial.shrinker ? { shrinker: partial.shrinker } : {}),
+    ...(partial.patchDetector ? { patchDetector: partial.patchDetector } : {}),
+    ...(partial.localization ? { localization: partial.localization } : {}),
     gates: partial.gates,
     prover: partial.prover,
     receipts: partial.receipts,
