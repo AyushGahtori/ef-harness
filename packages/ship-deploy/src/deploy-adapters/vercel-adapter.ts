@@ -1,4 +1,5 @@
 import type { DeployApprovalPort, VaultNameHashPort, VercelDeployPort, VercelRemoteEnvPort } from "./contracts.js";
+import { deployCanonicalPayloadHash } from "./payload-hash.js";
 import type { DeployAdapter } from "./interface.js";
 import { NameOnlySyncEnvController } from "./name-only-sync-env.js";
 import type {
@@ -46,7 +47,7 @@ export class VercelDeployAdapter implements DeployAdapter {
       effectType: "deploy",
       targetEnv,
       commitSha,
-      canonicalPayloadHash: commitSha,
+      canonicalPayloadHash: deployCanonicalPayloadHash({ targetEnv, commitSha, envDiff }),
       envDiff,
     }).lines;
     return {

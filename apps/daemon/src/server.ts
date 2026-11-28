@@ -1,6 +1,7 @@
 import path from "node:path";
 import { SecretRedactor, StreamingRedactor } from "@ef-harness/shared-contracts";
 import { TelemetryDb } from "@ef-harness/db";
+import { handleShipMethod } from "./ship-rpc.js";
 import {
   DaemonShutdownCoordinator,
   LifecycleRouter,
@@ -42,6 +43,8 @@ export function handleIntegratedMethod(
   params: Record<string, unknown>,
   ctx: IntegratedDaemonContext,
 ): IntegratedDispatch {
+  const ship = handleShipMethod(method, params, ctx);
+  if (ship.handled) return ship;
   if (method === "component.downloadProgress" || method === "component.pause") {
     return { handled: true, result: componentResult(method, params, ctx) };
   }

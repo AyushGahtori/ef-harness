@@ -216,4 +216,42 @@ describe("DockerOverSshDeployAdapter", () => {
     expect(rollback.liveUrl).toContain("198.51.100.12");
     expect(ssh.calls.some((item) => item.command.includes("rollback-previousSha"))).toBe(true);
   });
+
+  it("changes the approval hash when envDiff changes", async () => {
+    const known = new InMemoryKnownHostsStore();
+    known.pin("198.51.100.12", "SHA256:demo");
+    const shared = {
+      projectId: "demo",
+      envScope: "prod",
+      appName: "demoapp",
+      knownHosts: known,
+      approval: new DeployApprovalPolicyEngine(),
+    };
+    const empty = new DockerOverSshDeployAdapter({
+      ...shared,
+      vault: new MockVault([]),
+      ssh: new MockSshTransport("198.51.100.12", "SHA256:demo"),
+    });
+    const withName = new DockerOverSshDeployAdapter({
+      ...shared,
+      vault: new MockVault([
+        { secretId: "1", name: "RESEND_API_KEY", value: "re_123", envScope: "prod" },
+      ]),
+      ssh: new MockSshTransport("198.51.100.12", "SHA256:demo"),
+    });
+    const commitSha = "abc123def456";
+    const first = await empty.planDeploy("production", commitSha);
+    const second = await withName.planDeploy("production", commitSha);
+    const hashOf = (lines: readonly string[]): string => {
+      const line = lines.find((item) => item.startsWith("payload "));
+      return line ? line.slice("payload ".length) : "";
+    };
+    const firstHash = hashOf(first.approvalLines);
+    const secondHash = hashOf(second.approvalLines);
+    expect(firstHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(secondHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(firstHash).not.toBe(secondHash);
+    expect(firstHash).not.toBe(commitSha);
+    expect(secondHash).not.toBe(commitSha);
+  });
 });

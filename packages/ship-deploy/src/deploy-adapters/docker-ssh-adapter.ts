@@ -1,3 +1,4 @@
+import { deployCanonicalPayloadHash } from "./payload-hash.js";
 import { ArgvSecretLeakError, UnhealthySwapAbortedError } from "./errors.js";
 import { assertPinnedHost } from "./known-hosts.js";
 import type {
@@ -76,7 +77,7 @@ export class DockerOverSshDeployAdapter implements DeployAdapter {
       effectType: "deploy",
       targetEnv,
       commitSha,
-      canonicalPayloadHash: commitSha,
+      canonicalPayloadHash: deployCanonicalPayloadHash({ targetEnv, commitSha, envDiff }),
       envDiff,
     }).lines;
     return {

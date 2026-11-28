@@ -29,6 +29,7 @@
     "@ef-harness/planner": "workspace:*",
     "@ef-harness/providers": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/ship-deploy": "workspace:*",
     "@ef-harness/steering": "workspace:*"
   },
   "devDependencies": {

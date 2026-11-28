@@ -34,6 +34,9 @@
       "path": "../../packages/shared-contracts"
     },
     {
+      "path": "../../packages/ship-deploy"
+    },
+    {
       "path": "../../packages/steering"
     }
   ]

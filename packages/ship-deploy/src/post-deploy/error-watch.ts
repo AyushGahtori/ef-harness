@@ -181,16 +181,16 @@ export class TenMinuteErrorWatchMonitor {
     );
   }
 
-  private finish(
+  private async finish(
     input: WatchStartInput,
     controls: Controls,
     logs: readonly string[],
     pollCount: number,
     verdict: WatchResult["verdict"],
     breach: WatchBreach | null,
-  ): WatchResult {
+  ): Promise<WatchResult> {
     const text = this.deps.redactor.redact(logs.join("\n"));
-    const stored = this.deps.cas.put({
+    const stored = await this.deps.cas.put({
       kind: "log",
       text: text || `watch ${input.env} ${input.deploymentId} ${verdict}`,
     });

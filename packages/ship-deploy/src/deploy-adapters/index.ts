@@ -7,6 +7,8 @@ export { VercelHttpClient } from "./vercel-client.js";
 export { InMemoryKnownHostsStore, assertPinnedHost } from "./known-hosts.js";
 export { diffSecretNameHashes, formatApprovalLines } from "./name-diff.js";
 export { assertShellSafeSegment, SHELL_SAFE_PATTERN } from "./validation.js";
+export { deployCanonicalPayloadHash } from "./payload-hash.js";
+export { vaultNameHashPort } from "./dpapi-vault.js";
 export { assertDeployDispatchAllowed } from "./deploy-gate.js";
 export type {
   DeployTargetEnv,

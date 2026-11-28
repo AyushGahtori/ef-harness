@@ -15,7 +15,8 @@ import {
   LocalTemplateDbSeeder,
   LockHazardBlockedError,
   MapDatabaseVault,
-  MigrationStateStore,
+  bindMigrationState,
+  type MigrationStateStore,
   PayloadBoundApprovalPolicy,
   PausableBatchedBackfillRunner,
   RehearsalCompatibilityError,
@@ -128,7 +129,7 @@ describe("expand-then-contract live migrations", { timeout: 30_000 }, () => {
     expect(sumLegacy(fixture.live)).toBe(legacyBefore);
     first.orchestrator.close();
 
-    const resumedStore = MigrationStateStore.open(fixture.statePath);
+    const resumedStore = bindMigrationState(fixture.statePath);
     const resumed = new ExpandContractMigrationOrchestrator(
       { ...first.deps, store: resumedStore },
       "sqlite",
@@ -533,7 +534,7 @@ function createFixture(name: string): { name: string; dir: string; statePath: st
 }
 
 function fixtureStore(fixture: { statePath: string }): MigrationStateStore {
-  return MigrationStateStore.open(fixture.statePath);
+  return bindMigrationState(fixture.statePath);
 }
 
 function seedOrders(session: SqliteSession, rowCount: number): void {
@@ -592,7 +593,7 @@ function harness(
   },
 ) {
   const migrationId = `mig-${fixture.name}`;
-  const store = MigrationStateStore.open(fixture.statePath);
+  const store = bindMigrationState(fixture.statePath);
   const dialect = input.dialect ?? "sqlite";
   const sql =
     input.sql ??

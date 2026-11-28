@@ -1,4 +1,5 @@
 import { verifyHealthAndBuildId, type HealthVerifierOptions } from "./health.js";
+import { createPostDeployCleanVerifier } from "./clean-verifier.js";
 import { createHttpLoopbackPlaywrightProbe, runDeployedSmoke } from "./smoke.js";
 import type {
   CasBlobStore,
@@ -20,11 +21,13 @@ export interface PostDeployVerifierDeps extends HealthVerifierOptions {
 
 export class PostDeployVerifier {
   private readonly playwright: UiPlaywrightContractVerifier;
+  private readonly cleanVerifier: ReturnType<typeof createPostDeployCleanVerifier>;
 
   constructor(private readonly deps: PostDeployVerifierDeps) {
     this.playwright =
       deps.playwright ??
       createHttpLoopbackPlaywrightProbe(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : undefined);
+    this.cleanVerifier = createPostDeployCleanVerifier();
   }
 
   verifyHealthAndBuildId(input: HealthCheckInput): Promise<HealthCheckResult> {
@@ -35,11 +38,15 @@ export class PostDeployVerifier {
     });
   }
 
-  runDeployedSmoke(input: SmokeCheckInput): Promise<DeployedSmokeReceipt> {
-    return runDeployedSmoke(input, {
+  async runDeployedSmoke(input: SmokeCheckInput): Promise<DeployedSmokeReceipt> {
+    const receipt = await runDeployedSmoke(input, {
       playwright: this.playwright,
       redactor: this.deps.redactor,
       cas: this.deps.cas,
     });
+    this.cleanVerifier.parseCollectedCaseIds(
+      JSON.stringify({ smoke: receipt.receiptSha256, screenshot: receipt.screenshotSha256 }),
+    );
+    return receipt;
   }
 }

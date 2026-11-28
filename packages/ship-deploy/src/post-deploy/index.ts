@@ -49,6 +49,8 @@ export {
 export type { RollbackDecision, RollbackRequest } from "./rollback.js";
 export { createHttpLoopbackPlaywrightProbe, runDeployedSmoke } from "./smoke.js";
 export { InMemoryCasBlobStore, InMemoryPostDeployStore, schemaStatusFor } from "./store.js";
+export { DurablePostDeployCas, SqlitePostDeployStore, openPostDeployCas } from "./durable-store.js";
+export { createPostDeployCleanVerifier } from "./clean-verifier.js";
 export type {
   CasBlobStore,
   Clock,

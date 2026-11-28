@@ -23,7 +23,6 @@ import {
   type BackupProvider,
   type DeployAdapter,
   type DeprecatedObjectUseProbe,
-  type EffectDraft,
   type EnvApprovalPolicyEngine,
   type PostDeployHealthCheck,
   type SeedSpec,
@@ -363,7 +362,7 @@ export class ExpandContractMigrationOrchestrator {
       previousCommitSha: plan.previousCommitSha,
       targetHost: plan.targetHost,
     });
-    this.deps.store.update(effectId, "sent", null);
+    this.deps.store.applyEffect(effectId, "sent", null);
     const deploy = await this.deps.deployer.deploy(plan.env, plan.commitSha, effectId);
     const health = await this.deps.health.verify({
       env: plan.env,
@@ -373,14 +372,14 @@ export class ExpandContractMigrationOrchestrator {
       buildId: deploy.buildId,
     });
     if (health.healthy) {
-      this.deps.store.update(effectId, "confirmed", deploy.deploymentId);
+      this.deps.store.applyEffect(effectId, "confirmed", deploy.deploymentId);
       this.trace.push("deploy-healthy");
       return { deploy, rolledBackTo: null };
     }
     const rollbackId = effectIdentity(plan.migrationId, "app_deploy") + ":rollback";
     this.record(plan, rollbackId, "migration_rollback", sha256Text(deploy.previousDeploymentId), "intended");
     const rolled = await this.deps.deployer.rollback(plan.env, deploy.previousDeploymentId, rollbackId);
-    this.deps.store.update(rollbackId, "confirmed", rolled.deploymentId);
+    this.deps.store.applyEffect(rollbackId, "confirmed", rolled.deploymentId);
     const compatible = await plan.appNMinus1.probe(plan.live);
     if (!compatible.ok) {
       throw new RehearsalCompatibilityError(
@@ -431,7 +430,11 @@ export class ExpandContractMigrationOrchestrator {
         random: this.random,
       });
     }
-    this.deps.store.update(effectId, "confirmed", archives.map((archive) => archive.checksumSha256).join(","));
+    this.deps.store.applyEffect(
+      effectId,
+      "confirmed",
+      archives.map((archive) => archive.checksumSha256).join(","),
+    );
     return archives.map((archive) => archive.artifactPath).join("\n");
   }
 
@@ -462,10 +465,10 @@ export class ExpandContractMigrationOrchestrator {
     this.record(plan, effectId, `migration_${kind}`, card.payloadHash, "intended");
     const decision = this.deps.policy.decide(card);
     if (!decision.approved || decision.payloadHash !== card.payloadHash) {
-      this.deps.store.update(effectId, "failed", decision.reason);
+      this.deps.store.applyEffect(effectId, "failed", decision.reason);
       throw new ApprovalRequiredError(`${card.title} (${decision.reason})`);
     }
-    this.deps.store.update(effectId, "approved", decision.reason);
+    this.deps.store.applyEffect(effectId, "approved", decision.reason);
     this.trace.push(`approval:${kind}`);
   }
 
@@ -474,17 +477,16 @@ export class ExpandContractMigrationOrchestrator {
     id: string,
     kind: string,
     payloadHash: string,
-    state: EffectDraft["state"],
+    state: "intended" | "approved",
   ): void {
-    this.deps.store.record({
+    this.deps.store.recordEffect({
       id,
       kind,
       target: plan.targetHost,
       payloadHash,
       idempotencyKey: `live-migration:${plan.migrationId}:${kind}:${id}`,
-      approval: state === "approved" ? payloadHash : null,
-      state,
-      receipt: null,
+      targetEnv: plan.env,
+      approval: state === "approved" ? "approved" : "intended",
     });
   }
 

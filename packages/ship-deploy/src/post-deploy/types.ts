@@ -52,7 +52,7 @@ export interface CasPutInput {
 }
 
 export interface CasBlobStore {
-  put(input: CasPutInput): { readonly id: string; readonly hash: string };
+  put(input: CasPutInput): Promise<{ readonly id: string; readonly hash: string }>;
 }
 
 export interface DeployRollbackResult {

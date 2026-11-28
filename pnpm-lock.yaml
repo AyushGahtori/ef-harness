@@ -173,6 +173,9 @@ importers:
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
+      '@ef-harness/ship-deploy':
+        specifier: workspace:*
+        version: link:../../packages/ship-deploy
       '@ef-harness/steering':
         specifier: workspace:*
         version: link:../../packages/steering

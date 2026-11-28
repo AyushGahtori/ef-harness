@@ -297,7 +297,7 @@ export async function runDeployedSmoke(
   }
 
   const redactedExcerpt = deps.redactor.redact(shots.join("\n").slice(0, 8_000));
-  const screenshot = deps.cas.put({ kind: "screenshot", text: redactedExcerpt });
+  const screenshot = await deps.cas.put({ kind: "screenshot", text: redactedExcerpt });
   const screenshotSha256 = screenshot.hash;
 
   if (failures.length > 0) {
@@ -324,7 +324,7 @@ export async function runDeployedSmoke(
       brokenImageCount: 0,
     }),
   );
-  deps.cas.put({ kind: "trace", text: deps.redactor.redact(receiptSha256) });
+  await deps.cas.put({ kind: "trace", text: deps.redactor.redact(receiptSha256) });
   return {
     passed: true,
     viewports,

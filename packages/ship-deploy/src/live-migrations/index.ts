@@ -33,7 +33,7 @@ export type {
   WindowsDpapiSecretsVault,
 } from "./ports.js";
 export { adaptiveSleepMs, formatBackfillProgress } from "./progress.js";
-export { MigrationStateStore } from "./state-store.js";
+export { MigrationStateStore, bindMigrationState, PayloadHashMismatchError } from "./state-store.js";
 export type { PersistedRun } from "./state-store.js";
 export { SqliteSession } from "./sqlite-session.js";
 export {

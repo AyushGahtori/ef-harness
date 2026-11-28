@@ -38,7 +38,7 @@ export class InMemoryCasBlobStore implements CasBlobStore {
   readonly blobs: { readonly id: string; readonly hash: string; readonly kind: string; readonly text: string }[] =
     [];
 
-  put(input: CasPutInput): { readonly id: string; readonly hash: string } {
+  async put(input: CasPutInput): Promise<{ readonly id: string; readonly hash: string }> {
     const hash = sha256(input.text);
     const id = `cas-${hash.slice(0, 16)}`;
     this.blobs.push({ id, hash, kind: input.kind, text: input.text });
