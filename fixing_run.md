@@ -1553,3 +1553,43 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - Not run after the failure: governor telemetry filter, `pnpm --filter @ef-harness/planner test -- scheduler`, full governor, desktop, daemon, the four renderer filters, and `pnpm --filter @ef-harness/e2e test -- m3-exit-gate`.
 - `git status --short`: exit `0` — clean (empty output)
 - Not done: C53 not started. main not merged.
+
+---
+
+## [Wave 4 Proof Gate rerun] — C42–C52 pass at the same tip
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `13e71381780ed6db39be815f7f9ebddf0cf245cf` (`integrate: wire m3-exit-gate real stack`)
+- **Product fix SHA:** none
+- **Result:** pass. Flake. No product patch.
+
+### What Was Done
+- `git fetch origin && git checkout harness/integration && git reset --hard origin/harness/integration`. `git rev-parse HEAD` is `13e71381780ed6db39be815f7f9ebddf0cf245cf`. Did not start C53. Did not merge `main`. Did not force-push. Did not edit product code or test assertions. Did not push `harness/integration`.
+- The prior `TestTimeoutError` on `tests/reentry/cold-open-reconciler.test.ts` (`simulates offline edits, manual commits, branch drift, and lockfile drift without writing the repo`, 5000ms, reported 16704ms) did not reproduce. Two full `pnpm --filter @ef-harness/steering test` runs after `pnpm build` both passed 21 files, 121/121. Treated as a flake. No timeout change.
+- A cold tree had no `node_modules` or `dist`. `pnpm install --frozen-lockfile` and `pnpm build` were local setup only. The first steering invocation, before `dist` existed, exited 1 with `Failed to resolve entry for package "@ef-harness/db"` and ran no tests. That is not the gate timeout.
+- `pnpm --filter @ef-harness/planner test -- scheduler` first exited 1 because Playwright Chromium was missing (`HumanStepRequired('install_playwright_chromium')`, 11 failed | 366 passed). `pnpm exec playwright install chromium` then the same command passed 377/377. No product file changed. Same browser prerequisite as the Wave 2 verifier rerun.
+- Package filters append `--`, so the extra names did not narrow governor, planner, renderer, or e2e. Each of those commands ran that package's full suite.
+- Governor still skips the live Windows telemetry describe on Linux (`describe.skipIf` in `packages/governor/tests/telemetry/live-win32.test.ts`). Exit 0. Same 1 skipped test recorded for C46 and C47. Assertions were not changed.
+
+### Verification Run & Results
+- `git rev-parse HEAD`: `13e71381780ed6db39be815f7f9ebddf0cf245cf` (branch `harness/integration`)
+- `pnpm install --frozen-lockfile`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm --filter @ef-harness/steering test` (before build): exit `1` — 21 files failed to load, 0 tests (`@ef-harness/db` entry missing)
+- `pnpm --filter @ef-harness/steering test` (run 1): exit `0` — `Test Files 21 passed (21)`, `Tests 121 passed (121)`, duration 6.72s
+- `pnpm --filter @ef-harness/steering test` (run 2): exit `0` — `Test Files 21 passed (21)`, `Tests 121 passed (121)`, duration 5.28s
+- `pnpm --filter @ef-harness/governor test -- telemetry admission capacity-pools`: exit `0` — `Test Files 28 passed (28)`, `Tests 118 passed | 1 skipped (119)` (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/planner test -- scheduler` (before Chromium): exit `1` — `Test Files 3 failed | 66 passed (69)`, `Tests 11 failed | 366 passed (377)`, `HumanStepRequired('install_playwright_chromium')`
+- `pnpm exec playwright install chromium`: exit `0`
+- `pnpm --filter @ef-harness/planner test -- scheduler` (after Chromium): exit `0` — `Test Files 69 passed (69)`, `Tests 377 passed (377)` (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/governor test`: exit `0` — `Test Files 28 passed (28)`, `Tests 118 passed | 1 skipped (119)` (live-win32)
+- `pnpm --filter @ef-harness/desktop test`: exit `0` — `Test Files 12 passed (12)`, `Tests 57 passed (57)`
+- `pnpm --filter @ef-harness/daemon test`: exit `0` — `Test Files 15 passed (15)`, `Tests 73 passed (73)`
+- `pnpm --filter @ef-harness/renderer test -- shell presets`: exit `0` — `Test Files 25 passed (25)`, `Tests 121 passed (121)` (extra arguments did not narrow)
+- `pnpm --filter @ef-harness/renderer test -- shell cockpit-board cockpit-health`: exit `0` — `Test Files 25 passed (25)`, `Tests 121 passed (121)`
+- `pnpm --filter @ef-harness/renderer test -- cockpit-inspector cockpit-inbox stop-card`: exit `0` — `Test Files 25 passed (25)`, `Tests 121 passed (121)`
+- `pnpm --filter @ef-harness/renderer test -- diagnostics`: exit `0` — `Test Files 25 passed (25)`, `Tests 121 passed (121)`
+- `pnpm --filter @ef-harness/e2e test -- m3-exit-gate`: exit `0` — `Test Files 4 passed (4)`, `Tests 14 passed (14)`, 0 skipped (full e2e package: m1, m2, m3, smoke; extra arguments did not narrow)
+- `git status --short`: exit `0` — clean (empty output)
+- Product code changed: no
+- Not done: C53 not started. `main` not merged. `harness/integration` not pushed.
