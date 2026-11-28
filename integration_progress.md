@@ -76,7 +76,7 @@
 | C61 | Wave 6 | done | 6188a497 | F-074 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); discovery 30 files 196/196; brownfield 10 files 54/54, 0 skipped; db 67 files 374/374; schema 67/67 |
 | C62 | Wave 6 | done | edd3627f | F-051 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); integrator 32 files 201/201, 0 skipped; db 67 files 375/375; schema 67/67 |
 | C63 | Wave 6 | done | 84b11e47 | F-069 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); dictation 11 files 37/37, 0 skipped; dist import loads gpt2.tiktoken; schema 67/67 |
-| C64 | Wave 6 | pending | - | F-067, F-068 | - |
+| C64 | Wave 6 | done | 04048a18 | F-067, F-068 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); db 68 files 377/377, 0 skipped; daemon 17 files 77/77, 0 skipped; renderer command 39 files 196/196, 0 skipped; pinned canvas_layout row survives reopen; schema 67/67 |
 | C65 | Wave 6 | pending | - | F-067, F-068 | - |
 | C66 | Wave 6 | pending | - | F-042, F-070 | - |
 | C67 | Wave 6 | pending | - | F-071, F-072 | - |
