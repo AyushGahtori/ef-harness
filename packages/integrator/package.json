@@ -28,6 +28,7 @@
     "@ef-harness/shared-observability": "workspace:*",
     "@ef-harness/verifier": "workspace:*",
     "@ef-harness/worker-loop": "workspace:*",
+    "@parcel/watcher": "^2.5.1",
     "typescript": "catalog:"
   },
   "devDependencies": {

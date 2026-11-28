@@ -103,6 +103,7 @@ describe("coexistence-watcher", () => {
     expect(ports.holds.holds).toHaveLength(1);
     expect(ports.holds.holds[0]?.taskId).toBe("A0014");
     expect(ports.holds.holds[0]?.reason).toBe("editor_overlap");
+    expect(ports.holds.holds[0]?.source).toBe("editor_overlap:src/api/orders.ts");
     expect(ports.ui.overlapCards).toHaveLength(1);
     expect(ports.ui.overlapCards[0]?.choices).toEqual(OVERLAP_CHOICES);
     watcher.overlapDetector().resolveOverlap("src/api/orders.ts", "A0014", "keep_both");
@@ -155,7 +156,12 @@ describe("coexistence-watcher", () => {
     expect(merged.kind).toBe("merged");
     expect(ports.mergeQueue.requests).toHaveLength(1);
     expect(refs.readRef(root, HARNESS_INTEGRATION_REF)).toBe(next);
-    spawnSync("git", ["commit", "--amend", "--no-edit"], { cwd: root, encoding: "utf8", windowsHide: true });
+    spawnSync("git", ["commit", "--amend", "--no-edit"], {
+      cwd: root,
+      encoding: "utf8",
+      windowsHide: true,
+      env: { ...process.env, GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z" },
+    });
     const amended = git.headSha(root)!;
     const blocked = await merger.onDevHeadMoved(next, amended);
     expect(blocked.kind).toBe("rewrite_blocked");

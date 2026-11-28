@@ -510,6 +510,42 @@ CREATE TABLE IF NOT EXISTS quarantined_tests (
   classification TEXT NOT NULL CHECK (classification IN ('known_failing', 'baseline_flaky')),
   PRIMARY KEY (baseline_commit_sha, test_id)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS landing_receipts (
+  landing_id TEXT PRIMARY KEY,
+  target_branch TEXT NOT NULL,
+  pre_land_sha TEXT NOT NULL,
+  landed_sha TEXT NOT NULL,
+  safety_ref TEXT NOT NULL,
+  strategy TEXT NOT NULL,
+  overlapping_files_json TEXT NOT NULL,
+  landed_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS human_fix_tasks (
+  task_id TEXT PRIMARY KEY,
+  write_scope_json TEXT NOT NULL,
+  downstream_json TEXT NOT NULL,
+  checkpoint_ref TEXT NOT NULL,
+  human_paths_json TEXT NOT NULL,
+  verification_status TEXT NOT NULL,
+  overridden_json TEXT NOT NULL,
+  worker_pid INTEGER
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS human_fix_contracts (
+  contract_id TEXT NOT NULL,
+  field TEXT NOT NULL,
+  basis TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  PRIMARY KEY (contract_id, field)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS human_fix_workers (
+  task_id TEXT PRIMARY KEY,
+  pid INTEGER NOT NULL,
+  paths_json TEXT NOT NULL
+) STRICT;
 `;
 
 const CODE_INDEX_MODULE_CARDS_DDL = `
@@ -560,6 +596,10 @@ const STATE_V2_TABLES = [
   "quarantined_candidates",
   "ambiguity_reminders",
   "quarantined_tests",
+  "landing_receipts",
+  "human_fix_tasks",
+  "human_fix_contracts",
+  "human_fix_workers",
   "human_steps",
   "human_step_counter",
   "vault_secret_metadata",

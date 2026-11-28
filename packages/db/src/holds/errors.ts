@@ -1,4 +1,4 @@
-import type { HoldReason, TaskState } from "./states.js";
+import type { StoredHoldReason, TaskState } from "./states.js";
 
 export interface StaleEpochDetails {
   readonly task: string;
@@ -58,7 +58,7 @@ export class DuplicateCandidateError extends Error {
 }
 
 export interface TaskHoldRef {
-  readonly reason: HoldReason;
+  readonly reason: StoredHoldReason;
   readonly source: string;
 }
 

@@ -531,6 +531,9 @@ importers:
       '@ef-harness/worker-loop':
         specifier: workspace:*
         version: link:../worker-loop
+      '@parcel/watcher':
+        specifier: ^2.5.1
+        version: 2.6.0
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

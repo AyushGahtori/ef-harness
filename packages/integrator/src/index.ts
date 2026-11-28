@@ -159,3 +159,20 @@ export {
 export type { DrainReport, LandedFeature, MergeFeatureRequest, QueuedFeature } from "./merge-queue/index.js";
 export { ContractChangeRequestEngine, DeterministicSchemaDiffClassifier } from "./ccr/index.js";
 export { FeatureUndoEngine } from "./undo/index.js";
+export {
+  ActiveScopeOverlapDetector,
+  BaseSyncIntegrationMerger,
+  EditorCoexistenceWatcher,
+  ManualLockfileIncludeHandler,
+  createParcelWatchBackend,
+  editorOverlapSource,
+  loadParcelWatcher,
+} from "./coexistence-watcher/index.js";
+export {
+  LandingRollbackSafetyPoint,
+  SafeLandingPreFlightAnalyzer,
+  ZeroStashLandingExecutor,
+  getLandingReceipt,
+  persistLandingReceipt,
+} from "./landing/index.js";
+export { HumanFixFlowEngine, HumanFixStateDb, HumanFixTakeoverController } from "./human-fix/index.js";

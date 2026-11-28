@@ -8,7 +8,7 @@ export {
 } from "./constants.js";
 export type { ActiveCoexistenceState, OverlapChoice, LockfileIncludeChoice } from "./constants.js";
 
-export { ActiveScopeOverlapDetector } from "./active-scope-overlap-detector.js";
+export { ActiveScopeOverlapDetector, editorOverlapSource } from "./active-scope-overlap-detector.js";
 export type { OverlapDetection, ActiveScopeOverlapDetectorOptions } from "./active-scope-overlap-detector.js";
 
 export { BaseSyncIntegrationMerger } from "./base-sync-integration-merger.js";

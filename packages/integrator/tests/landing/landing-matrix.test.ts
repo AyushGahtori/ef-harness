@@ -156,6 +156,47 @@ describe("Safe Landing Engine", () => {
     }
   });
 
+  it("keeps unmerged harness/f branches and drops only ancestors of the landed sha", { timeout: LANDING_TEST_TIMEOUT_MS }, async () => {
+    const sandbox = makeSandbox();
+    const repo = initRepo(sandbox);
+    try {
+      ensureHarnessIntegration(repo, sandbox);
+      const harnessSha = advanceHarness(repo, sandbox, "src/api/orders.ts", "export const x = 1;\n");
+      rawGit(repo, ["branch", "harness/f/included", harnessSha], sandbox.env);
+      rawGit(repo, ["checkout", "-b", "harness/f/future", harnessSha], sandbox.env);
+      writeAndCommit(repo, sandbox, "src/future.ts", "export const future = true;\n", "future");
+      rawGit(repo, ["checkout", "main"], sandbox.env);
+      const executor = new ZeroStashLandingExecutor();
+      const result = await executor.execute({ repoPath: repo, targetBranch: "main" });
+      expect(result.ok).toBe(true);
+      expect(result.landedSha).toBe(harnessSha);
+      const included = rawGit(repo, ["rev-parse", "--verify", "refs/heads/harness/f/included"], sandbox.env);
+      const future = rawGit(repo, ["rev-parse", "--verify", "refs/heads/harness/f/future"], sandbox.env);
+      expect(included.code).not.toBe(0);
+      expect(future.code).toBe(0);
+      expect(future.stdout.trim().length).toBeGreaterThan(0);
+    } finally {
+      removeSandbox(sandbox.root);
+    }
+  });
+
+  it("aborts without moving HEAD when the developer checkout is not the target branch", { timeout: LANDING_TEST_TIMEOUT_MS }, async () => {
+    const sandbox = makeSandbox();
+    const repo = initRepo(sandbox);
+    try {
+      ensureHarnessIntegration(repo, sandbox);
+      advanceHarness(repo, sandbox, "src/api/orders.ts", "export const x = 1;\n");
+      rawGit(repo, ["checkout", "-b", "side"], sandbox.env);
+      const before = rawGit(repo, ["rev-parse", "HEAD"], sandbox.env).stdout.trim();
+      const result = await new ZeroStashLandingExecutor().execute({ repoPath: repo, targetBranch: "main" });
+      expect(result.ok).toBe(false);
+      expect(rawGit(repo, ["rev-parse", "--abbrev-ref", "HEAD"], sandbox.env).stdout.trim()).toBe("side");
+      expect(rawGit(repo, ["rev-parse", "HEAD"], sandbox.env).stdout.trim()).toBe(before);
+    } finally {
+      removeSandbox(sandbox.root);
+    }
+  });
+
   it("forbids stash/reset-hard/checkout -f in developer checkout git journal", () => {
     expect(() => assertDeveloperCheckoutGitAllowed(["stash", "push"])).toThrow();
     expect(() => assertDeveloperCheckoutGitAllowed(["reset", "--hard", "HEAD"])).toThrow();

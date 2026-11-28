@@ -1,15 +1,15 @@
-import type { HoldReason, ResumptionTrigger, TaskState } from "./states.js";
+import type { ResumptionTrigger, StoredHoldReason, TaskState } from "./states.js";
 
 export interface TaskHold {
   readonly task: string;
-  readonly reason: HoldReason;
+  readonly reason: StoredHoldReason;
   readonly source: string;
   readonly createdAt: number;
 }
 
 export interface PlaceHoldInput {
   readonly task: string;
-  readonly reason: HoldReason;
+  readonly reason: StoredHoldReason;
   readonly source: string;
   readonly now: number;
   readonly rev: number;
@@ -26,7 +26,7 @@ export interface PlaceHoldResult {
 
 export interface ReleaseHoldInput {
   readonly task: string;
-  readonly reason: HoldReason;
+  readonly reason: StoredHoldReason;
   readonly source: string;
   readonly now: number;
   readonly rev: number;

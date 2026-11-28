@@ -1,3 +1,6 @@
+import path from "node:path";
+import { ParallelFeatureBranchManager } from "../feature-branches/branch-manager.js";
+import { openFeatureBranchStateDb } from "../feature-branches/state-db.js";
 import type { LandingDependencies } from "./contracts.js";
 import { DirtyOverlapFourOptionDialog } from "./four-option-dialog.js";
 import { readGitInvocationJournal, runGit, runGitOrThrow } from "./git-runner.js";
@@ -40,6 +43,7 @@ export class ZeroStashLandingExecutor {
 
   async execute(input: LandingExecutionInput): Promise<LandingExecutionResult> {
     const harnessRef = input.harnessIntegrationRef ?? DEFAULT_INTEGRATION;
+    const receiptFile = landingReceiptFile(input.repoPath);
     const report = await this.analyzer.analyze({
       repoPath: input.repoPath,
       targetBranch: input.targetBranch,
@@ -48,7 +52,7 @@ export class ZeroStashLandingExecutor {
     });
 
     if (report.detachedHead) {
-      return this.landOntoNewBranch(input, report, `ef/${input.featureSlug ?? "landing"}`);
+      return this.landOntoNewBranch(input, report, `ef/${input.featureSlug ?? "landing"}`, receiptFile);
     }
 
     if (report.path === "C") {
@@ -64,7 +68,7 @@ export class ZeroStashLandingExecutor {
         return { ok: false, haltedForOverlap: true, reason: input.overlapChoice };
       }
       if (resolution.action === "create_branch" && resolution.branchName) {
-        return this.landOntoNewBranch(input, report, resolution.branchName);
+        return this.landOntoNewBranch(input, report, resolution.branchName, receiptFile);
       }
     }
 
@@ -84,7 +88,7 @@ export class ZeroStashLandingExecutor {
     }
 
     if (input.commitStyle === "create_new_branch") {
-      return this.landOntoNewBranch(input, report, `ef/${input.featureSlug ?? "landing"}`);
+      return this.landOntoNewBranch(input, report, `ef/${input.featureSlug ?? "landing"}`, receiptFile);
     }
 
     const safety = await this.safety.writePreLandSafetyPoint({
@@ -97,14 +101,17 @@ export class ZeroStashLandingExecutor {
     const landedSha = await this.applyLandingToBranch(input, report, harnessRef);
     if (!landedSha) return { ok: false, reason: "landing_apply_failed" };
 
-    const receipt = persistLandingReceipt({
-      targetBranch: input.targetBranch,
-      preLandSha: report.headSha,
-      landedSha,
-      safetyRef: safety.safetyRef,
-      strategy: report.path,
-      overlappingFilesHandled: report.overlappingPaths,
-    });
+    const receipt = persistLandingReceipt(
+      {
+        targetBranch: input.targetBranch,
+        preLandSha: report.headSha,
+        landedSha,
+        safetyRef: safety.safetyRef,
+        strategy: report.path,
+        overlappingFilesHandled: report.overlappingPaths,
+      },
+      receiptFile,
+    );
 
     await this.postLandingCleanup(input.repoPath, harnessRef, landedSha);
 
@@ -129,6 +136,12 @@ export class ZeroStashLandingExecutor {
     report: PreFlightReport,
     harnessRef: string,
   ): Promise<string | null> {
+    const branch = runGit({
+      cwd: input.repoPath,
+      args: ["rev-parse", "--abbrev-ref", "HEAD"],
+      developerCheckout: false,
+    }).stdout.trim();
+    if (branch !== input.targetBranch) return null;
     const style = input.commitStyle ?? "keep_feature_commits";
     if (style === "squash_single_commit") {
       runGitOrThrow({
@@ -169,46 +182,54 @@ export class ZeroStashLandingExecutor {
     input: LandingExecutionInput,
     report: PreFlightReport,
     branchName: string,
+    receiptFile: string,
   ): LandingExecutionResult {
     runGitOrThrow({
       cwd: input.repoPath,
       args: ["branch", branchName, report.harnessIntegrationSha],
       developerCheckout: false,
     });
-    persistLandingReceipt({
-      targetBranch: branchName,
-      preLandSha: report.headSha,
-      landedSha: report.harnessIntegrationSha,
-      safetyRef: `refs/ef-safety/pre-land-branch-${Date.now()}`,
-      strategy: "separate_branch",
-      overlappingFilesHandled: report.overlappingPaths,
-    });
+    persistLandingReceipt(
+      {
+        targetBranch: branchName,
+        preLandSha: report.headSha,
+        landedSha: report.harnessIntegrationSha,
+        safetyRef: `refs/ef-safety/pre-land-branch-${Date.now()}`,
+        strategy: "separate_branch",
+        overlappingFilesHandled: report.overlappingPaths,
+      },
+      receiptFile,
+    );
     return { ok: true, landedSha: report.harnessIntegrationSha, newBranch: branchName };
   }
 
   private async postLandingCleanup(repoPath: string, harnessRef: string, landedSha: string): Promise<void> {
-    const harnessHead = harnessRef.startsWith("refs/heads/")
-      ? harnessRef
-      : `refs/heads/${harnessRef}`;
-    runGitOrThrow({
-      cwd: repoPath,
-      args: ["update-ref", harnessHead, landedSha],
-      developerCheckout: false,
+    const harnessHead = harnessRef.startsWith("refs/heads/") ? harnessRef : `refs/heads/${harnessRef}`;
+    const state = openFeatureBranchStateDb(path.join(path.dirname(repoPath), "feature-branch-state.db"));
+    const manager = new ParallelFeatureBranchManager({
+      repo: repoPath,
+      state,
+      worktreeRoot: path.join(path.dirname(repoPath), "landing-worktrees"),
+      integrationRef: harnessHead,
     });
-    runGit({
-      cwd: repoPath,
-      args: ["for-each-ref", "--format=%(refname)", "refs/heads/harness/f/"],
-      developerCheckout: false,
-    })
-      .stdout.split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .forEach((ref) => {
-        runGit({
-          cwd: repoPath,
-          args: ["update-ref", "-d", ref],
-          developerCheckout: false,
-        });
-      });
+    try {
+      const current = runGit({
+        cwd: repoPath,
+        args: ["rev-parse", "--verify", harnessHead],
+        developerCheckout: false,
+      }).stdout.trim();
+      if (current && current !== landedSha) {
+        const moved = manager.casAdvanceIntegrationRef(current, landedSha);
+        if (!moved) return;
+      }
+      manager.pruneFeatureRefsAncestorOf(landedSha);
+    } finally {
+      manager.close();
+      state.close();
+    }
   }
+}
+
+function landingReceiptFile(repoPath: string): string {
+  return path.join(path.dirname(repoPath), "landing-receipts.db");
 }

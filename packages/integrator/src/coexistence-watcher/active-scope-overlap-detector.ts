@@ -12,6 +12,10 @@ import type {
 import type { OverlapChoice } from "./constants.js";
 import { OverlapSuppressionCache } from "./overlap-suppression.js";
 
+export function editorOverlapSource(filePath: string): string {
+  return `editor_overlap:${filePath.replaceAll("\\", "/")}`;
+}
+
 export interface OverlapDetection {
   readonly filePath: string;
   readonly taskId: string;
@@ -49,11 +53,8 @@ export class ActiveScopeOverlapDetector {
         hits.push({ filePath, taskId: task.taskId, agentLabel: task.agentLabel, hold: null });
         continue;
       }
-      const hold = this.options.holds.placeHold(
-        task.taskId,
-        EDITOR_OVERLAP_HOLD_REASON,
-        `Developer edited ${filePath}`,
-      );
+      const source = editorOverlapSource(filePath);
+      const hold = this.options.holds.placeHold(task.taskId, EDITOR_OVERLAP_HOLD_REASON, source);
       const holdKey = `${filePath}\0${task.taskId}`;
       this.activeHolds.set(holdKey, hold);
       this.options.ui.showOverlapCard({
@@ -71,7 +72,7 @@ export class ActiveScopeOverlapDetector {
     const holdKey = `${filePath}\0${taskId}`;
     const hold = this.activeHolds.get(holdKey);
     if (hold) {
-      this.options.holds.releaseHold(hold.holdId);
+      this.options.holds.releaseHold(taskId, hold.reason, hold.source);
       this.activeHolds.delete(holdKey);
     }
     this.suppression.remember(filePath, taskId, choice);

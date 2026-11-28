@@ -34,7 +34,7 @@ import {
   TASK_STATE_FLAGS,
   clearsHolder,
   isFinishSubmissionState,
-  isHoldReason,
+  isStoredHoldReason,
   isLegalTaskTransition,
   isResumptionTrigger,
   isTaskState,
@@ -837,7 +837,7 @@ export class TaskHoldAndSubmissionRepo {
     ).all({ task });
     return rows.map((row) => {
       const reason = asText(row, "reason");
-      if (!isHoldReason(reason)) throw new InvalidHoldReasonError({ reason });
+      if (!isStoredHoldReason(reason)) throw new InvalidHoldReasonError({ reason });
       const createdAt = asNumber(row.created_at);
       if (createdAt === null) throw new Error("task_holds.created_at is not an integer");
       return { task: asText(row, "task"), reason, source: asText(row, "source"), createdAt };
@@ -852,7 +852,7 @@ export class TaskHoldAndSubmissionRepo {
     ).get({ task, reason, source });
     if (!row) throw new Error(`hold ${task}/${reason}/${source} disappeared`);
     const createdAt = asNumber(row.created_at);
-    if (!isHoldReason(reason) || createdAt === null) throw new InvalidHoldReasonError({ reason });
+    if (!isStoredHoldReason(reason) || createdAt === null) throw new InvalidHoldReasonError({ reason });
     return { task, reason, source, createdAt };
   }
 
@@ -932,7 +932,7 @@ export class TaskHoldAndSubmissionRepo {
   }
 
   private assertHoldIdentity(reason: string, source: string): void {
-    if (!isHoldReason(reason)) throw new InvalidHoldReasonError({ reason });
+    if (!isStoredHoldReason(reason)) throw new InvalidHoldReasonError({ reason });
     if (source.length === 0) throw new Error("hold source is required");
   }
 

@@ -8,17 +8,21 @@ let cachedGit: string | null = null;
 
 export function systemGit(): string {
   if (cachedGit) return cachedGit;
-  const output = execFileSync("where.exe", ["git"], {
-    encoding: "utf8",
-    windowsHide: true,
-  });
-  const found = output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.toLowerCase().endsWith("git.exe"));
-  if (!found) throw new Error("System Git was not found on PATH.");
-  cachedGit = found;
-  return found;
+  if (process.platform === "win32") {
+    const output = execFileSync("where.exe", ["git"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    const found = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.toLowerCase().endsWith("git.exe"));
+    if (!found) throw new Error("System Git was not found on PATH.");
+    cachedGit = found;
+    return found;
+  }
+  cachedGit = "git";
+  return cachedGit;
 }
 
 export interface Sandbox {

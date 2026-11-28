@@ -34,6 +34,16 @@ export const HOLD_REASONS = [
 
 export type HoldReason = (typeof HOLD_REASONS)[number];
 
+/**
+ * `editor_overlap` is stored on `task_holds` for editor coexistence.
+ * It stays out of `HOLD_REASONS` so the schema comment parity check still matches `schema/state.sql`.
+ */
+export const EDITOR_OVERLAP_HOLD_REASON = "editor_overlap" as const;
+
+export const STORED_HOLD_REASONS = [...HOLD_REASONS, EDITOR_OVERLAP_HOLD_REASON] as const;
+
+export type StoredHoldReason = (typeof STORED_HOLD_REASONS)[number];
+
 export interface TaskStateFlags {
   readonly claimable: boolean;
   readonly done: boolean;
@@ -131,6 +141,10 @@ export function isTaskState(value: string): value is TaskState {
 
 export function isHoldReason(value: string): value is HoldReason {
   return (HOLD_REASONS as readonly string[]).includes(value);
+}
+
+export function isStoredHoldReason(value: string): value is StoredHoldReason {
+  return (STORED_HOLD_REASONS as readonly string[]).includes(value);
 }
 
 export function isFinishSubmissionState(value: string): value is FinishSubmissionState {

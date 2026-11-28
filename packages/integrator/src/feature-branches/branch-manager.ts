@@ -11,7 +11,7 @@ import {
   IntegrationUnverifiedError,
   PruneRefusedError,
 } from "./errors.js";
-import { catFileType, countExclusive, gitOk, isAncestor, porcelain, revParse, tryRevParse } from "./git.js";
+import { catFileType, countExclusive, gitOk, isAncestor, porcelain, revParse, runGit, tryRevParse } from "./git.js";
 import { alignCleanWorktree, commitTree, LocalRefLeaseManager, writeTree } from "./ref-lease.js";
 import { FeatureBranchStore, type FeatureBranchStateDb } from "./state-db.js";
 import {
@@ -29,6 +29,7 @@ import {
 import { LocalWorktreeSlotPool } from "./worktree-pool.js";
 
 const LEASE_HOLDER = "parallel-feature-branch-manager";
+const LANDING_HOLDER = "zero-stash-landing";
 
 function adaptRefLeaseDb(db: FeatureBranchStateDb): RefLeaseStateDb {
   return {
@@ -405,6 +406,45 @@ export class ParallelFeatureBranchManager {
 
   close(): void {
     this.pool.close();
+  }
+
+  /**
+   * Move `harness/integration` only when the current oid matches `expectedSha`.
+   * The lease plus `git update-ref <ref> <new> <old>` is the Task 039 CAS update.
+   */
+  casAdvanceIntegrationRef(expectedSha: string, nextSha: string): boolean {
+    if (expectedSha === nextSha) return true;
+    const ref = this.integrationRef.startsWith("refs/") ? this.integrationRef : `refs/heads/${this.integrationRef}`;
+    try {
+      const lease = this.leases.acquire(ref, LANDING_HOLDER, expectedSha);
+      this.leases.advance(ref, lease.holder, lease.epoch, nextSha, expectedSha);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Delete `harness/f/*` refs whose commit is an ancestor of `landedSha`.
+   * Refs that are not yet merged stay in place.
+   */
+  pruneFeatureRefsAncestorOf(landedSha: string): readonly string[] {
+    const listed = runGit({
+      repo: this.repo,
+      args: ["for-each-ref", "--format=%(refname)", "refs/heads/harness/f/"],
+    });
+    if (listed.status !== 0) return [];
+    const removed: string[] = [];
+    for (const line of listed.stdout.split(/\r?\n/)) {
+      const ref = line.trim();
+      if (!ref.startsWith("refs/heads/harness/f/")) continue;
+      const sha = tryRevParse(this.repo, ref);
+      if (!sha || !isAncestor(this.repo, sha, landedSha)) continue;
+      const lease = this.leases.acquire(ref, LANDING_HOLDER, sha);
+      this.leases.deleteRef(ref, lease.holder, lease.epoch, sha);
+      removed.push(ref);
+    }
+    return removed;
   }
 
   private withHead(record: FeatureBranchRecord, head: string): FeatureBranchRecord {

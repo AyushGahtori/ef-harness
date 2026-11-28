@@ -248,6 +248,35 @@ describe("multi-reason holds", () => {
     expect(repo.isTaskHeld("T07")).toBe(false);
   });
 
+  it("stores editor_overlap on the composite (task, reason, source) key", () => {
+    const { db, repo } = setup();
+    const placed = repo.placeHold({
+      task: "T07",
+      reason: "editor_overlap",
+      source: "editor_overlap:src/api/orders.ts",
+      now: 4,
+      rev: 2,
+    });
+    expect(placed.placed).toBe(true);
+    expect(placed.hold).toEqual({
+      task: "T07",
+      reason: "editor_overlap",
+      source: "editor_overlap:src/api/orders.ts",
+      createdAt: 4,
+    });
+    const columns = db.prepare("PRAGMA table_info(task_holds)").all() as { name: string }[];
+    expect(columns.map((column) => column.name)).not.toContain("hold_id");
+    const released = repo.releaseHold({
+      task: "T07",
+      reason: "editor_overlap",
+      source: "editor_overlap:src/api/orders.ts",
+      now: 5,
+      rev: 3,
+    });
+    expect(released.removed).toBe(true);
+    expect(repo.listActiveHolds("T07")).toEqual([]);
+  });
+
   it("matches the closed hold reasons recorded on task_holds", () => {
     const sql = readFileSync(canonicalStateSqlPath(), "utf8");
     const line = sql.split(/\r?\n/).find((entry) => entry.includes("user_pause | requirement_change"));

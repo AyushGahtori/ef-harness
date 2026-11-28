@@ -12,13 +12,15 @@ export interface ActiveTasksPort {
 }
 
 export interface HoldPlacement {
+  readonly task: string;
+  readonly reason: string;
+  readonly source: string;
   readonly taskId: string;
-  readonly holdId: string;
 }
 
 export interface TaskHoldsManagerPort {
-  placeHold(taskId: string, reason: string, detail: string): HoldPlacement;
-  releaseHold(holdId: string): void;
+  placeHold(taskId: string, reason: string, source: string): HoldPlacement;
+  releaseHold(taskId: string, reason: string, source: string): void;
 }
 
 export interface OverlapCardPayload {
@@ -117,17 +119,17 @@ export class InMemoryActiveTasks implements ActiveTasksPort {
 }
 
 export class InMemoryTaskHoldsManager implements TaskHoldsManagerPort {
-  readonly holds: Array<{ taskId: string; reason: string; detail: string; holdId: string }> = [];
-  private seq = 0;
+  readonly holds: Array<{ taskId: string; reason: string; source: string; detail: string }> = [];
 
-  placeHold(taskId: string, reason: string, detail: string): HoldPlacement {
-    const holdId = `hold-${++this.seq}`;
-    this.holds.push({ taskId, reason, detail, holdId });
-    return { taskId, holdId };
+  placeHold(taskId: string, reason: string, source: string): HoldPlacement {
+    this.holds.push({ taskId, reason, source, detail: source });
+    return { task: taskId, reason, source, taskId };
   }
 
-  releaseHold(holdId: string): void {
-    const index = this.holds.findIndex((h) => h.holdId === holdId);
+  releaseHold(taskId: string, reason: string, source: string): void {
+    const index = this.holds.findIndex(
+      (hold) => hold.taskId === taskId && hold.reason === reason && hold.source === source,
+    );
     if (index >= 0) this.holds.splice(index, 1);
   }
 }
