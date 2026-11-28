@@ -10,11 +10,22 @@
     "src/**/*.ts",
     "m2-exit-gate/**/*.ts",
     "m3-exit-gate/**/*.ts",
-    "m4-exit-gate/**/*.ts"
+    "m4-exit-gate/**/*.ts",
+    "m5-exit-gate/**/*.ts",
+    "tests/m5-exit-gate.test.ts"
   ],
   "references": [
     {
       "path": "../../packages/shared-contracts"
+    },
+    {
+      "path": "../../packages/brownfield"
+    },
+    {
+      "path": "../../packages/dictation"
+    },
+    {
+      "path": "../../apps/daemon"
     },
     {
       "path": "../../packages/shared-observability"

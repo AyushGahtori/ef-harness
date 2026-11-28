@@ -1,6 +1,7 @@
-import { runLiveCertification, runM5Certification } from "./runner.ts";
+import { runLiveCertification, runM5Certification } from "./runner.js";
 
-const invokedDirectly = process.argv[1]?.replaceAll("\\", "/").endsWith("run-m5-suite.ts") === true;
+const invokedPath = process.argv[1]?.replaceAll("\\", "/") ?? "";
+const invokedDirectly = invokedPath.endsWith("run-m5-suite.ts") || invokedPath.endsWith("run-m5-suite.js");
 
 if (invokedDirectly) {
   const live = process.argv.includes("--live");

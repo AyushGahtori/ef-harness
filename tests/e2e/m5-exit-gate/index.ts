@@ -15,7 +15,7 @@ export {
   WasmTreeSitterIndexer,
   ZeroStashLandingExecutor,
   loadGuidedChangeFixture,
-} from "./brownfield.ts";
+} from "./brownfield.js";
 export {
   BENCHMARK_FILE,
   DOC_COUNT,
@@ -25,8 +25,8 @@ export {
   PLAN_LINE_COUNT,
   REPORT_SCHEMA,
   ROOM_IDS,
-} from "./constants.ts";
-export { loadResumeChangerManifest } from "./manifest.ts";
+} from "./constants.js";
+export { loadResumeChangerManifest } from "./manifest.js";
 export {
   BurstCollapseEventQueue,
   HelperSpriteClusterManager,
@@ -39,12 +39,12 @@ export {
   OrangePressureAutoBoardFallback,
   TruthfulAnimationDirector,
   seatedCast,
-} from "./office.ts";
-export { formatAgentOfficeTag } from "./office-tag.ts";
-export { M5ExitGateReport, collectReasons, signReport } from "./report.ts";
-export { runLiveCertification, runM5Certification } from "./runner.ts";
-export { resolveFaults } from "./types.ts";
-export type { GateFacts, M5Faults, SignedReport } from "./types.ts";
+} from "./office.js";
+export { formatAgentOfficeTag } from "./office-tag.js";
+export { M5ExitGateReport, collectReasons, signReport } from "./report.js";
+export { runLiveCertification, runM5Certification } from "./runner.js";
+export { resolveFaults } from "./types.js";
+export type { GateFacts, M5Faults, SignedReport } from "./types.js";
 export {
   BeforeAfterBaselineApprover,
   DevOnlyJsxSourceTagPlugin,
@@ -65,4 +65,4 @@ export {
   TwoOccurrenceCorrectionLearner,
   ZeroTokenImpactPreviewModal,
   greyThenBlack,
-} from "./ux.ts";
+} from "./ux.js";

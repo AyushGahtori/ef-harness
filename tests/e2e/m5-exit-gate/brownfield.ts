@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { l0Scan, l1Codemap } from "@ef-harness/brownfield";
+import { CodeIndexDb } from "@ef-harness/db";
+import { HumanFixStateDb, UiConsistencyPipeline as LandedUiConsistencyPipeline, ZeroStashLandingExecutor as LandedZeroStashLandingExecutor } from "@ef-harness/integrator";
 import {
   CODE_INDEX_DB,
   COMPETING_UI_KITS,
@@ -10,10 +15,10 @@ import {
   PAGE_RANK_ITERS,
   STALE_STATUS,
   UI_WIDTHS,
-} from "./constants.ts";
-import type { ManifestParity } from "./manifest.ts";
-import { codeIndexSchemaPath } from "./paths.ts";
-import type { BrownfieldFacts, M5Faults } from "./types.ts";
+} from "./constants.js";
+import type { ManifestParity } from "./manifest.js";
+import { codeIndexSchemaPath } from "./paths.js";
+import type { BrownfieldFacts, M5Faults } from "./types.js";
 
 export interface FixtureFile {
   readonly path: string;
@@ -69,7 +74,6 @@ export class BrownfieldL0RepoScanner {
     readonly secondUiKit: boolean;
     readonly packageNames: readonly string[];
   } {
-    const started = performance.now();
     let secretBytesRead = 0;
     if (faults.readEnvSecrets) {
       for (const secret of fixture.sensitive) secretBytesRead += Buffer.byteLength(secret.text);
@@ -77,14 +81,18 @@ export class BrownfieldL0RepoScanner {
     const pkg = fixture.files.find((file) => file.path === "package.json");
     const names = new Set(pkg ? packageNames(pkg.text) : []);
     if (faults.installSecondUiKit) names.add("@mui/material");
-    const elapsedMs = faults.l0ElapsedOverrideMs > 0 ? faults.l0ElapsedOverrideMs : performance.now() - started;
+    const observed = scanMaterializedRepo(fixture, faults.installSecondUiKit);
+    const elapsedMs = faults.l0ElapsedOverrideMs > 0 ? faults.l0ElapsedOverrideMs : observed.durationMs;
+    const frameworks = new Set(observed.frameworks);
+    const kits = new Set([...observed.uiKits, ...names]);
+    const runners = new Set(observed.testRunners);
     return {
       elapsedMs,
-      next: names.has("next"),
-      tailwind: names.has("tailwindcss"),
-      vitest: names.has("vitest"),
+      next: frameworks.has("next") || names.has("next"),
+      tailwind: kits.has("tailwindcss"),
+      vitest: runners.has("vitest") || names.has("vitest"),
       secretBytesRead,
-      secondUiKit: COMPETING_UI_KITS.some((kit) => names.has(kit)),
+      secondUiKit: COMPETING_UI_KITS.some((kit) => kits.has(kit)),
       packageNames: [...names],
     };
   }
@@ -161,15 +169,43 @@ export class CodeIndexDatabase {
     readonly symbolCount: number;
     readonly rankedFileCount: number;
   } {
-    const schema = fs.existsSync(this.schemaPath) ? fs.readFileSync(this.schemaPath, "utf8") : "";
-    const schemaOk =
-      commit.length > 0 && schema.includes("CREATE TABLE symbols") && schema.includes("CREATE TABLE file_rank");
-    return {
-      database: CODE_INDEX_DB,
-      schemaOk,
-      symbolCount: schemaOk ? symbols.length : 0,
-      rankedFileCount: schemaOk ? ranks.size : 0,
-    };
+    if (!fs.existsSync(this.schemaPath)) throw new Error("code index schema is missing");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-m5-code-index-"));
+    const db = CodeIndexDb.open({ filePath: path.join(root, CODE_INDEX_DB) });
+    try {
+      const byFile = new Map<string, CodeSymbol[]>();
+      for (const symbol of symbols) {
+        const list = byFile.get(symbol.file) ?? [];
+        list.push(symbol);
+        byFile.set(symbol.file, list);
+      }
+      db.upsertCommit({ commitSha: commit, builtAt: Date.now(), files: byFile.size });
+      for (const [file, rows] of byFile) {
+        const fileHash = sha256(`${file}\n${rows.map((row) => row.name).join("\n")}`);
+        db.linkFile({ commitSha: commit, path: file, fileHash });
+        db.putSymbols(
+          fileHash,
+          rows.map((row) => ({
+            name: row.name,
+            kind: symbolKind(row.kind),
+            line: 1,
+            exported: true,
+          })),
+        );
+      }
+      for (const [file, score] of ranks) {
+        db.putFileRank({ commitSha: commit, path: file, score });
+      }
+      return {
+        database: CODE_INDEX_DB,
+        schemaOk: db.symbolCount() > 0,
+        symbolCount: db.symbolCount(),
+        rankedFileCount: ranks.size,
+      };
+    } finally {
+      db.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }
 
   remember(commit: string): string {
@@ -261,6 +297,11 @@ export class ZeroStashLandingExecutor {
   land(fixture: GuidedChangeFixture, faults: M5Faults): { readonly commands: readonly string[]; readonly stashCount: number; readonly scopeFenceOk: boolean } {
     const commands = ["git status --porcelain", "git diff --no-ext-diff"];
     if (faults.silentStash) commands.push("git stash push --keep-index");
+    persistHumanOwned(faults.spoofHumanAuthor);
+    const landedExecutor = new LandedZeroStashLandingExecutor();
+    if (!landedExecutor.verifyZeroForbiddenGitInvocations() && !faults.silentStash) {
+      commands.push("git status --porcelain");
+    }
     const changed = faults.editUntouchedFile
       ? [...fixture.allowedChangePaths, fixture.untouchedDirtyPath]
       : fixture.allowedChangePaths;
@@ -275,11 +316,26 @@ export class ZeroStashLandingExecutor {
 }
 
 export class UiConsistencyPipeline {
-  run(fixture: GuidedChangeFixture, secondUiKit: boolean, faults: M5Faults): {
+  async run(fixture: GuidedChangeFixture, secondUiKit: boolean, faults: M5Faults): Promise<{
     readonly stagesPassed: number;
     readonly contrastOk: boolean;
     readonly rhythmOk: boolean;
-  } {
+  }> {
+    const landed = await new LandedUiConsistencyPipeline().run({
+      projectKind: "web_saas",
+      files: [
+        {
+          path: "src/features/orders/components/OrdersPage.tsx",
+          contents: "import { Button } from \"@/components/ui/button\";\nexport function OrdersPage() {\n  return <main className=\"p-4\"><Button>Save</Button></main>;\n}\n",
+        },
+      ],
+      darkModeEnabled: true,
+      tasteReviewBudgetOk: true,
+    });
+    if (landed.status !== "passed") {
+      const rules = landed.findings.filter((finding) => finding.severity === "error").map((finding) => finding.rule);
+      throw new Error(`UiConsistencyPipeline ${landed.status}: ${rules.join(",")}`);
+    }
     const button = fixture.files.find((file) => file.path.endsWith("Button.tsx"))?.text ?? "";
     const toggle = fixture.changeFiles.find((file) => file.path.endsWith("ToneToggle.tsx"))?.text ?? "";
     const duplicate = jaccard(tokenize(button), tokenize(toggle)) >= 0.8 || secondUiKit;
@@ -309,9 +365,10 @@ export class ResumeChangerBenchmarkVerifier {
   private readonly landing = new ZeroStashLandingExecutor();
   private readonly ui = new UiConsistencyPipeline();
 
-  verify(manifest: ManifestParity, fixture: GuidedChangeFixture, faults: M5Faults): BrownfieldFacts {
+  async verify(manifest: ManifestParity, fixture: GuidedChangeFixture, faults: M5Faults): Promise<BrownfieldFacts> {
     const l0 = this.scanner.scan(fixture, manifest, faults);
     const indexed = this.indexer.index(fixture.files);
+    await indexWithWasm(fixture, manifest.commit);
     const sourcePaths = fixture.files
       .filter((file) => file.path.endsWith(".ts") || file.path.endsWith(".tsx"))
       .map((file) => file.path);
@@ -328,7 +385,7 @@ export class ResumeChangerBenchmarkVerifier {
     const dirty = fixture.files.find((file) => file.path === fixture.untouchedDirtyPath)?.text ?? "";
     const watch = this.coexistence.watch(dirty, faults);
     const landed = this.landing.land(fixture, faults);
-    const ui = this.ui.run(fixture, l0.secondUiKit, faults);
+    const ui = await this.ui.run(fixture, l0.secondUiKit, faults);
     const authorEmail = faults.spoofHumanAuthor ? HARNESS_EMAIL : fixture.developerEmail;
     return {
       commit: manifest.commit,
@@ -409,6 +466,105 @@ function jaccard(left: ReadonlySet<string>, right: ReadonlySet<string>): number 
   for (const token of left) if (right.has(token)) shared += 1;
   const union = left.size + right.size - shared;
   return union === 0 ? 0 : shared / union;
+}
+
+function symbolKind(kind: string): "function" | "class" | "type" | "const" | "component" | "route" {
+  if (kind === "function" || kind === "class" || kind === "type" || kind === "const" || kind === "component" || kind === "route") {
+    return kind;
+  }
+  return "const";
+}
+
+function scanMaterializedRepo(fixture: GuidedChangeFixture, installSecondUiKit: boolean): {
+  readonly durationMs: number;
+  readonly frameworks: readonly string[];
+  readonly uiKits: readonly string[];
+  readonly testRunners: readonly string[];
+} {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-m5-l0-"));
+  try {
+    fs.writeFileSync(path.join(root, ".gitignore"), ".env\n.env.local\n");
+    for (const file of fixture.files) {
+      if (file.path.startsWith(".env")) continue;
+      const destination = path.join(root, file.path);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      const text = installSecondUiKit && file.path === "package.json" ? withSecondKit(file.text) : file.text;
+      fs.writeFileSync(destination, text);
+    }
+    const git = (args: readonly string[]) => {
+      const result = spawnSync("git", ["-C", root, "-c", "core.hooksPath=/dev/null", ...args], { encoding: "utf8" });
+      if (result.status !== 0) throw new Error(result.stderr || `git ${args.join(" ")} failed`);
+    };
+    git(["init"]);
+    git(["config", "user.email", fixture.developerEmail]);
+    git(["config", "user.name", fixture.developerName]);
+    git(["add", "-A"]);
+    git(["commit", "-m", "resume changer fixture"]);
+    const scanned = new l0Scan.BrownfieldL0RepoScanner().scan({ repoRoot: root, useCache: false });
+    return {
+      durationMs: scanned.durationMs,
+      frameworks: scanned.stack.frameworks.frameworks,
+      uiKits: scanned.stack.frameworks.uiKits,
+      testRunners: scanned.stack.frameworks.testRunners,
+    };
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function withSecondKit(text: string): string {
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== "object") return text;
+  const record = parsed as { dependencies?: Record<string, string> };
+  record.dependencies = { ...(record.dependencies ?? {}), "@mui/material": "6.0.0" };
+  return JSON.stringify(record);
+}
+
+async function indexWithWasm(fixture: GuidedChangeFixture, commit: string): Promise<void> {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-m5-wasm-"));
+  try {
+    for (const file of fixture.files) {
+      if (!file.path.endsWith(".ts") && !file.path.endsWith(".tsx")) continue;
+      const destination = path.join(root, file.path);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, file.text);
+    }
+    const indexer = new l1Codemap.WasmTreeSitterIndexer();
+    try {
+      await indexer.index({
+        repoRoot: root,
+        commitSha: commit,
+        dbPath: path.join(root, CODE_INDEX_DB),
+      });
+    } finally {
+      indexer.closeAll();
+    }
+    const ranks = new l1Codemap.AiderPageRankCalculator().computeGlobal(
+      fixture.files.map((file) => file.path),
+      [],
+    );
+    if (!(ranks instanceof Map)) throw new Error("page rank did not run");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function persistHumanOwned(spoof: boolean): void {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ef-m5-human-"));
+  const db = HumanFixStateDb.open(path.join(root, "state.db"));
+  try {
+    if (!spoof) {
+      db.seedTask({
+        taskId: "m5-exit",
+        featureId: "m5",
+        state: "HUMAN_OWNED",
+        writeScope: ["src/**"],
+      });
+    }
+  } finally {
+    db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function isFixture(value: unknown): value is GuidedChangeFixture {

@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import { DOC_COUNT, PINNED_COMMIT, PLAN_FILE_COUNT, PLAN_LINE_COUNT } from "./constants.ts";
-import { benchmarkJsonPath } from "./paths.ts";
+import { DOC_COUNT, PINNED_COMMIT, PLAN_FILE_COUNT, PLAN_LINE_COUNT } from "./constants.js";
+import { benchmarkJsonPath } from "./paths.js";
 
 export interface ManifestFile {
   readonly path: string;

@@ -37,18 +37,46 @@ export { createVisualSteerRouter, VisualSteerRouter } from "./preview/point-to-f
 export { DiagnosticsHealthView, renderHealthDocument } from "./diagnostics/index.js";
 export { diagnosticsHealthSlot } from "./diagnostics/mount.js";
 export {
+  HotDeskOverflowAggregator,
+  ORANGE_FALLBACK_BANNER,
+  OfficeReducedMotionAdapter,
+  OfficeSemanticMirrorTree,
   OfficeView,
+  OrangePressureAutoBoardFallback,
   bindPressureHysteresisStateMachine,
   governorPressureFromShell,
   shellCenterTab,
 } from "./office/a11y/index.js";
-export type { GovernorPressureMachine, OfficeViewMount } from "./office/a11y/index.js";
+export type {
+  AnimationDirectorPort,
+  BoardViewPort,
+  CenterTabPort,
+  GovernorPressureMachine,
+  MediaQueryPort,
+  OfficeViewMount,
+  OfficeWorkerRecord,
+  PhaseLayoutPresetPort,
+  PixiTickerPort,
+  PressureMachinePort,
+} from "./office/a11y/index.js";
+export { ROOM_IDS as OFFICE_ROOM_IDS } from "./office/renderer/room-ids.js";
+export type { OfficeRoomId as CanonicalOfficeRoomId } from "./office/renderer/room-ids.js";
+export { formatAgentOfficeTag, HelperSpriteClusterManager } from "./office/cast/index.js";
 export {
+  BurstCollapseEventQueue,
   FloorPlanWalkableGridPort,
+  InMemoryOfficeCastProjector,
+  LocalWalkableGridPort,
   OfficeCastProjectorPortAdapter,
+  OfficeFrameBudgetMonitor,
   TruthfulAnimationDirector,
   walkableGridFromFloorPlan,
 } from "./office/director/index.js";
+export {
+  BeforeAfterBaselineApprover,
+  InMemoryVisualBaselineStore,
+  verifyCrossViewportAfterFix,
+} from "./preview/point-to-fix/index.js";
 export type {
   WelcomeActionId,
   WelcomeBackModel,

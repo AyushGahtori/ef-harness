@@ -12,7 +12,7 @@ describe("UiConsistencyPipeline compliant fixture", () => {
   it("passes all six stages on a compliant multi-screen app", async () => {
     const pipeline = new UiConsistencyPipeline();
     const result = await pipeline.run({
-      projectKind: "ui",
+      projectKind: "web_saas",
       darkModeEnabled: true,
       files: COMPLIANT_FILES,
       routeAudits: COMPLIANT_ROUTE_AUDITS,

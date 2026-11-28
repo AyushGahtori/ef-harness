@@ -18,8 +18,8 @@ import {
   SPOKEN_RULE_NORMALIZED,
   SPOKEN_THERE,
   ZOOM_SAMPLES,
-} from "./constants.ts";
-import type { GateFacts, SignedReport } from "./types.ts";
+} from "./constants.js";
+import type { GateFacts, SignedReport } from "./types.js";
 
 const ZOOM_TRAIL = ZOOM_SAMPLES.map((sample) => sample.level);
 
@@ -69,14 +69,15 @@ export class M5ExitGateReport {
       scorecardMarkdown: "",
       liveCheckoutSeen: false,
     };
-    draft.scorecardMarkdown = renderScorecard(draft);
+    const scorecardMarkdown = renderScorecard(draft);
+    const signed: SignedReport = { ...draft, scorecardMarkdown };
     return new M5ExitGateReport({
       mode: "ci-replay",
       exitCode,
       reasons,
       facts,
-      scorecardMarkdown: draft.scorecardMarkdown,
-      signature: signReport(draft),
+      scorecardMarkdown,
+      signature: signReport(signed),
       hostElapsedMs,
       liveCheckoutSeen: false,
     });
@@ -94,14 +95,15 @@ export class M5ExitGateReport {
       scorecardMarkdown: "",
       liveCheckoutSeen,
     };
-    draft.scorecardMarkdown = renderScorecard(draft);
+    const scorecardMarkdown = renderScorecard(draft);
+    const signed: SignedReport = { ...draft, scorecardMarkdown };
     return new M5ExitGateReport({
       mode: "live",
       exitCode: 2,
       reasons,
       facts: null,
-      scorecardMarkdown: draft.scorecardMarkdown,
-      signature: signReport(draft),
+      scorecardMarkdown,
+      signature: signReport(signed),
       hostElapsedMs: 0,
       liveCheckoutSeen,
     });

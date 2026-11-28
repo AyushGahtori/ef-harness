@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BENCHMARK_FILE } from "./constants.ts";
+import { BENCHMARK_FILE } from "./constants.js";
 
 export function repoRoot(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));

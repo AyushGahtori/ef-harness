@@ -546,6 +546,9 @@ importers:
       '@ef-harness/git-engine':
         specifier: workspace:*
         version: link:../git-engine
+      '@ef-harness/intake':
+        specifier: workspace:*
+        version: link:../intake
       '@ef-harness/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
@@ -570,6 +573,9 @@ importers:
       '@parcel/watcher':
         specifier: ^2.5.1
         version: 2.6.0
+      axe-core:
+        specifier: ^4.10.0
+        version: 4.14.1
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
@@ -1155,6 +1161,9 @@ importers:
 
   tests/e2e:
     dependencies:
+      '@ef-harness/brownfield':
+        specifier: workspace:*
+        version: link:../../packages/brownfield
       '@ef-harness/completeness-gate':
         specifier: workspace:*
         version: link:../../packages/completeness-gate
@@ -1167,6 +1176,9 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ef-harness/dictation':
+        specifier: workspace:*
+        version: link:../../packages/dictation
       '@ef-harness/discovery':
         specifier: workspace:*
         version: link:../../packages/discovery

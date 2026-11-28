@@ -176,3 +176,17 @@ export {
   persistLandingReceipt,
 } from "./landing/index.js";
 export { HumanFixFlowEngine, HumanFixStateDb, HumanFixTakeoverController } from "./human-fix/index.js";
+export {
+  LandedBeforeAfterBaseline,
+  LandedBrandAssetRegistry,
+  LandedDesignTokenLint,
+  LandedStaticAuditGate,
+  LandedTasteReviewer,
+  UiConsistencyPipeline,
+  defaultConsumedPorts,
+} from "./ui-checks/index.js";
+export type {
+  UiConsistencyPipelineDeps,
+  UiConsistencyPipelineInput,
+  UiConsistencyPipelineResult,
+} from "./ui-checks/index.js";

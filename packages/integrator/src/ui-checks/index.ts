@@ -8,7 +8,7 @@ export {
   solidFrame,
 } from "./approved-screenshot-regression-runner.js";
 export type { ScreenshotRegressionInput } from "./approved-screenshot-regression-runner.js";
-export { runTokenDisciplineStage, LocalBrandAssetRegistry, LocalDesignTokenLint } from "./token-discipline-stage.js";
+export { runTokenDisciplineStage } from "./token-discipline-stage.js";
 export { axeGatePassed, runAxeAccessibilityGate } from "./axe-accessibility-gate.js";
 export { InMemoryCasStore } from "./cas-store.js";
 export {
@@ -21,10 +21,14 @@ export {
 } from "./constants.js";
 export type { CanonicalViewportId } from "./constants.js";
 export {
-  LocalStaticAuditGate,
-  LocalTasteReviewer,
-  MemoryBeforeAfterBaseline,
+  LandedBeforeAfterBaseline,
+  LandedBrandAssetRegistry,
+  LandedCasStore,
+  LandedDesignTokenLint,
+  LandedStaticAuditGate,
+  LandedTasteReviewer,
   defaultConsumedPorts,
+  openLandedCas,
 } from "./local-ports.js";
 export type {
   BeforeAfterBaselinePort,

@@ -13,6 +13,9 @@
       "path": "../completeness-gate"
     },
     {
+      "path": "../intake"
+    },
+    {
       "path": "../db"
     },
     {

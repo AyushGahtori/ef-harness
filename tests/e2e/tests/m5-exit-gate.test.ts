@@ -5,14 +5,14 @@ import {
   PINNED_COMMIT,
   PLAN_FILE_COUNT,
   PLAN_LINE_COUNT,
-} from "../m5-exit-gate/constants.ts";
-import { formatAgentOfficeTag } from "../m5-exit-gate/office-tag.ts";
-import { M5ExitGateReport, signReport } from "../m5-exit-gate/report.ts";
-import { runLiveCertification, runM5Certification } from "../m5-exit-gate/runner.ts";
-import { ZeroStashLandingExecutor, loadGuidedChangeFixture } from "../m5-exit-gate/brownfield.ts";
-import { fixtureJsonPath } from "../m5-exit-gate/paths.ts";
-import { greyThenBlack, ProjectVerifiedSpokenIdNormalizer } from "../m5-exit-gate/ux.ts";
-import { VERIFIED_IDS } from "../m5-exit-gate/constants.ts";
+} from "../m5-exit-gate/constants.js";
+import { formatAgentOfficeTag } from "../m5-exit-gate/office-tag.js";
+import { M5ExitGateReport, signReport } from "../m5-exit-gate/report.js";
+import { runLiveCertification, runM5Certification } from "../m5-exit-gate/runner.js";
+import { ZeroStashLandingExecutor, loadGuidedChangeFixture } from "../m5-exit-gate/brownfield.js";
+import { fixtureJsonPath } from "../m5-exit-gate/paths.js";
+import { greyThenBlack, ProjectVerifiedSpokenIdNormalizer } from "../m5-exit-gate/ux.js";
+import { VERIFIED_IDS } from "../m5-exit-gate/constants.js";
 
 it("passes the resume-changer M5 ci-replay exit gate", async () => {
   const report = await runM5Certification();

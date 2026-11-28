@@ -1,4 +1,6 @@
-export type UiProjectKind = "ui" | "cli" | "api";
+import type { ProjectKind } from "@ef-harness/shared-contracts";
+
+export type UiProjectKind = ProjectKind | "ui" | "web" | "cli" | "api";
 
 export type ThemeMode = "light" | "dark";
 

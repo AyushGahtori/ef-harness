@@ -1,4 +1,18 @@
 import {
+  MemoryProjectStateCatalog,
+  MemoryVocabularyStore,
+  ProjectVerifiedSpokenIdNormalizer as LandedSpokenIdNormalizer,
+  TwoOccurrenceCorrectionLearner as LandedCorrectionLearner,
+  correctionTooltip,
+} from "@ef-harness/dictation";
+import { createDevOnlyJsxSourceTagPlugin } from "@ef-harness/planner";
+import {
+  BeforeAfterBaselineApprover as LandedBaselineApprover,
+  InMemoryVisualBaselineStore,
+  IsolatedPreviewWebviewHost as LandedPreviewHost,
+  verifyCrossViewportAfterFix,
+} from "@ef-harness/renderer";
+import {
   APP_PARTITION,
   DICTATION_HINT,
   DICTATION_HINT_MS,
@@ -15,31 +29,8 @@ import {
   VERIFIED_IDS,
   VOCAB_TOOLTIP,
   ZOOM_SAMPLES,
-} from "./constants.ts";
-import type { M5Faults, UxFacts } from "./types.ts";
-
-const NUMBER_WORDS: Readonly<Record<string, number>> = {
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-  thirteen: 13,
-  fourteen: 14,
-  fifteen: 15,
-  sixteen: 16,
-  seventeen: 17,
-  eighteen: 18,
-  nineteen: 19,
-  ninety: 90,
-};
+} from "./constants.js";
+import type { M5Faults, UxFacts } from "./types.js";
 
 const FILLERS = new Set(["the", "a", "an", "um", "uh", "and", "or"]);
 
@@ -69,7 +60,7 @@ export function wavePreservesPins(store: SavedNodePositionStore, drop: boolean):
   const survived = seeds.every((_, index) => {
     const left = before[index];
     const right = after[index];
-    return left !== null && right !== null && left.x === right.x && left.y === right.y;
+    return left != null && right != null && left.x === right.x && left.y === right.y;
   });
   return { count: seeds.length, survived };
 }
@@ -196,7 +187,13 @@ export class TwoOccurrenceCorrectionLearner {
     ids.add(occurrenceId);
     this.seen.set(key, ids);
     const promoted = ids.size >= 2;
-    return { promoted, tooltip: promoted ? VOCAB_TOOLTIP : null };
+    const learner = new LandedCorrectionLearner(new MemoryVocabularyStore(), { now: () => Date.now() });
+    const once = learner.observeCorrection({ projectId: "resume-changer", heard, corrected: canonical, occurrenceId });
+    const twice = promoted
+      ? learner.observeCorrection({ projectId: "resume-changer", heard, corrected: canonical, occurrenceId: `${occurrenceId}-2` })
+      : once;
+    if (promoted && !twice.promoted) throw new Error("correction learner did not promote the second occurrence");
+    return { promoted, tooltip: promoted ? correctionTooltip(heard) : null };
   }
 }
 
@@ -208,23 +205,26 @@ export class ProjectVerifiedSpokenIdNormalizer {
   }
 
   normalize(text: string, forceMissing: boolean): string {
-    return text.replace(/\brule\s+([a-z]+)(?:\s+([a-z]+))?\b/gi, (full, first: string, second?: string) => {
-      const phrase = second ? `${first} ${second}` : first;
-      const id = ruleId(phrase.toLowerCase());
-      if (!id) return full;
-      if (this.catalog.has(id) || forceMissing) return id;
-      return full;
-    });
+    const catalog = new MemoryProjectStateCatalog();
+    for (const id of this.catalog) catalog.add("resume-changer", catalogKind(id), id);
+    if (forceMissing) catalog.add("resume-changer", "rule", "R99");
+    return new LandedSpokenIdNormalizer(catalog).normalize("resume-changer", text).text;
   }
 }
 
 export class IsolatedPreviewWebviewHost {
   private readonly partitions = new Map<string, Map<string, string>>();
+  private readonly landed = new LandedPreviewHost({
+    projectId: "resume-changer",
+    previewUrl: "http://127.0.0.1:9/",
+  });
 
   write(partition: string, key: string, value: string): void {
     const bucket = this.partitions.get(partition) ?? new Map<string, string>();
     bucket.set(key, value);
     this.partitions.set(partition, bucket);
+    if (partition === PREVIEW_PARTITION) this.landed.writeLocalStorage("preview", key, value);
+    if (partition === APP_PARTITION) this.landed.writeLocalStorage("shell", key, value);
   }
 
   read(partition: string, key: string): string | null {
@@ -245,16 +245,19 @@ export class PersistentDemoDbManager {
 
 export class DevOnlyJsxSourceTagPlugin {
   transform(source: string, mode: "development" | "production", leakedTags: number): { readonly code: string; readonly count: number } {
+    const plugin = createDevOnlyJsxSourceTagPlugin({
+      rootDir: process.cwd(),
+      mode,
+    });
+    const transform = plugin.transform;
+    const transformed = transform ? transform(source, "src/features/export/ToneToggle.tsx") : null;
+    const tagged = transformed && typeof transformed === "object" ? transformed.code : source;
     if (mode === "production") {
-      const stripped = source.replace(new RegExp(`\\s${EF_SOURCE_ATTR}="[^"]*"`, "g"), "");
       const leak = leakedTags > 0 ? ` ${EF_SOURCE_ATTR}="src/features/export/ToneToggle.tsx:1"` : "";
-      const code = `${stripped}${leak}`;
-      return { code, count: countTags(code) + Math.max(0, leakedTags - countTags(leak)) };
+      const code = `${tagged}${leak}`;
+      return { code, count: countTags(code) };
     }
-    const code = source.includes("<button")
-      ? source.replace("<button", `<button ${EF_SOURCE_ATTR}="src/features/export/ToneToggle.tsx:4"`)
-      : `${source}\n<button ${EF_SOURCE_ATTR}="src/features/export/ToneToggle.tsx:4">Concise tone</button>\n`;
-    return { code, count: countTags(code) };
+    return { code: tagged, count: countTags(tagged) };
   }
 }
 
@@ -271,7 +274,18 @@ export class PointToFixPickerOverlay {
 export class BeforeAfterBaselineApprover {
   approve(skip: boolean): { readonly updated: boolean; readonly widths: readonly number[] } {
     if (skip) return { updated: false, widths: [] };
-    return { updated: true, widths: [375, 1440] };
+    const store = new InMemoryVisualBaselineStore();
+    const approver = new LandedBaselineApprover(store);
+    const presented = approver.present({
+      baselineKey: "tone",
+      beforeCropRef: "cas:before",
+      afterCropRef: "cas:after",
+      viewportWidth: 375,
+      crossViewport: verifyCrossViewportAfterFix({ pickedViewport: 375, desktopOk: true, mobileOk: true }),
+    });
+    if ("blocked" in presented) return { updated: false, widths: [] };
+    approver.approveAndUpdateBaseline();
+    return { updated: store.getBaseline("tone") === "cas:after", widths: [375, 1440] };
   }
 }
 
@@ -357,15 +371,11 @@ export class M5InteractiveUxE2eSuite {
   }
 }
 
-function ruleId(phrase: string): string | null {
-  const words = phrase.split(/\s+/);
-  const first = words[0];
-  const second = words[1];
-  if (!first) return null;
-  if (first === "ninety" && second === "nine") return "R99";
-  const value = NUMBER_WORDS[first];
-  if (value === undefined || second) return null;
-  return `R${value}`;
+function catalogKind(id: string): "rule" | "task" | "worker" | "requirement" {
+  if (id.startsWith("R")) return "rule";
+  if (id.startsWith("T-")) return "task";
+  if (id.startsWith("REQ-")) return "requirement";
+  return "worker";
 }
 
 function countTags(source: string): number {

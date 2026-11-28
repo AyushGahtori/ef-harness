@@ -18,7 +18,9 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@ef-harness/brownfield": "workspace:*",
     "@ef-harness/completeness-gate": "workspace:*",
+    "@ef-harness/dictation": "workspace:*",
     "@ef-harness/corpus": "workspace:*",
     "@ef-harness/daemon": "workspace:*",
     "@ef-harness/db": "workspace:*",

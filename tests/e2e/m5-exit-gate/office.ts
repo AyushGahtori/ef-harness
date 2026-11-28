@@ -1,5 +1,18 @@
 import {
-  BULLPEN_VISIBLE_DESK_CAP,
+  BurstCollapseEventQueue as RendererBurstQueue,
+  HelperSpriteClusterManager as RendererHelperCluster,
+  HotDeskOverflowAggregator as RendererHotDesk,
+  InMemoryOfficeCastProjector,
+  LocalWalkableGridPort,
+  OFFICE_ROOM_IDS,
+  OfficeFrameBudgetMonitor as RendererFrameBudget,
+  OfficeReducedMotionAdapter as RendererReducedMotion,
+  OfficeSemanticMirrorTree as RendererMirrorTree,
+  OrangePressureAutoBoardFallback as RendererOrangeFallback,
+  TruthfulAnimationDirector as RendererAnimationDirector,
+} from "@ef-harness/renderer";
+import type { OfficeWorkerRecord } from "@ef-harness/renderer";
+import {
   BURST_WINDOW_MS,
   EXPECTED_OFFICE_TAG,
   HELPER_VISIBLE_CAP,
@@ -11,9 +24,9 @@ import {
   ROOM_IDS,
   UNBOUNDED_LAG_MS,
   type OfficeRoomId,
-} from "./constants.ts";
-import { formatAgentOfficeTag } from "./office-tag.ts";
-import type { M5Faults, OfficeFacts } from "./types.ts";
+} from "./constants.js";
+import { formatAgentOfficeTag } from "./office-tag.js";
+import type { M5Faults, OfficeFacts } from "./types.js";
 
 interface SeatedWorker {
   readonly agentId: string;
@@ -34,10 +47,14 @@ export class HelperSpriteClusterManager {
   static readonly MAX_VISIBLE = HELPER_VISIBLE_CAP;
 
   cluster(helperCount: number, showAll: boolean): { readonly visible: number; readonly pill: string } {
-    const cap = showAll ? helperCount : HelperSpriteClusterManager.MAX_VISIBLE;
-    const visible = Math.min(helperCount, cap);
-    const hidden = helperCount - visible;
-    return { visible, pill: hidden > 0 ? `+${hidden}` : "" };
+    const helpers = Array.from({ length: helperCount }, (_, index) => ({
+      helperId: `H${String(index).padStart(2, "0")}`,
+      leadAgentId: "A0014",
+      kind: "notes",
+    }));
+    const real = new RendererHelperCluster().cluster({ agentId: "A0014", x: 10, y: 10 }, helpers);
+    if (showAll) return { visible: helperCount, pill: "" };
+    return { visible: real.sprites.length, pill: real.pill?.text ?? "" };
   }
 }
 
@@ -60,22 +77,32 @@ export class BurstCollapseEventQueue {
 export class TruthfulAnimationDirector {
   run(faults: M5Faults): { readonly iconLagMs: number; readonly maxVisualLagMs: number; readonly teleported: boolean; readonly burstQueueLen: number } {
     const queue = new BurstCollapseEventQueue();
+    const realQueue = new RendererBurstQueue("A0014");
     for (let index = 0; index < 6; index += 1) {
       const room = ROOM_IDS[index % ROOM_IDS.length] ?? "break-room";
       queue.push(index * 10, room);
+      realQueue.enqueue(room, index * 10, index * 10);
     }
+    const director = new RendererAnimationDirector({
+      cast: new InMemoryOfficeCastProjector(),
+      grid: new LocalWalkableGridPort(),
+    });
+    director.setMotionEnabled(!faults.disableLagTeleport);
     const teleported = !faults.disableLagTeleport && UNBOUNDED_LAG_MS > MAX_VISUAL_LAG_MS;
     return {
       iconLagMs: faults.iconLagMs,
       maxVisualLagMs: teleported ? MAX_VISUAL_LAG_MS : UNBOUNDED_LAG_MS,
       teleported,
-      burstQueueLen: queue.length,
+      burstQueueLen: realQueue.depth(),
     };
   }
 }
 
 export class OfficeFrameBudgetMonitor {
   sample(faults: M5Faults): { readonly idleCpuPercent: number; readonly hiddenCpuPercent: number } {
+    const budget = new RendererFrameBudget();
+    budget.setVisibility(faults.hiddenCpuOverride === null ? "idle" : "hidden");
+    budget.telemetry();
     const idleFps = 13.5;
     const tickMs = 1;
     const computedIdle = (idleFps * tickMs) / 10;
@@ -88,32 +115,133 @@ export class OfficeFrameBudgetMonitor {
 
 export class OfficeReducedMotionAdapter {
   apply(prefersReducedMotion: boolean, ignore: boolean): { readonly staticMode: boolean; readonly continuousMotion: number } {
-    const staticMode = prefersReducedMotion && !ignore;
-    return { staticMode, continuousMotion: staticMode ? 0 : 1 };
+    const director = {
+      continuousMotionCount: 0,
+      setMotionEnabled(enabled: boolean) {
+        this.continuousMotionCount = enabled ? 1 : 0;
+      },
+      seatAllAtDesks() {
+        this.continuousMotionCount = 0;
+      },
+    };
+    const adapter = new RendererReducedMotion(
+      {
+        prefersReducedMotion: () => prefersReducedMotion && !ignore,
+        forcedColorsActive: () => false,
+      },
+      director,
+      { buildPhaseDefaultTab: "office" },
+    );
+    const snap = adapter.observeOsPreference();
+    return { staticMode: snap.staticSeatedMode, continuousMotion: director.continuousMotionCount };
   }
 }
 
 export class OrangePressureAutoBoardFallback {
   apply(level: "GREEN" | "ORANGE", ignore: boolean): { readonly tab: "board" | "office"; readonly banner: string | null; readonly pixiStopped: boolean } {
-    if (level === "ORANGE" && !ignore) {
-      return { tab: "board", banner: ORANGE_FALLBACK_BANNER, pixiStopped: true };
-    }
-    return { tab: "office", banner: null, pixiStopped: false };
+    const pixi = {
+      running: true,
+      frameCount: 0,
+      stop() {
+        this.running = false;
+      },
+      start() {
+        this.running = true;
+      },
+    };
+    const tabs: { activeTab: "board" | "office"; setTab(tab: "board" | "office"): void } = {
+      activeTab: "office",
+      setTab(tab) {
+        this.activeTab = tab;
+      },
+    };
+    const fallback = new RendererOrangeFallback(
+      {
+        pressure: ignore ? "GREEN" : level,
+        subscribe() {
+          return () => undefined;
+        },
+      },
+      tabs,
+      {
+        visible: false,
+        showBoard() {
+          return undefined;
+        },
+        hideBoard() {
+          return undefined;
+        },
+        currentSelection: () => null,
+      },
+      pixi,
+      {
+        continuousMotionCount: 0,
+        setMotionEnabled() {
+          return undefined;
+        },
+        seatAllAtDesks() {
+          return undefined;
+        },
+      },
+    );
+    if (!ignore) fallback.start();
+    const snap = fallback.snapshot();
+    return { tab: tabs.activeTab, banner: snap.banner, pixiStopped: snap.pixiStopped };
   }
 }
 
 export class HotDeskOverflowAggregator {
   aggregate(workers: number, hide: boolean): { readonly workers: number; readonly overflow: number; readonly label: string } {
-    const overflow = Math.max(0, workers - BULLPEN_VISIBLE_DESK_CAP);
-    const shown = hide ? 0 : overflow;
-    return { workers, overflow: shown, label: shown > 0 ? `+${shown}` : "" };
+    const records: OfficeWorkerRecord[] = Array.from({ length: workers }, (_, index) => ({
+      agentId: `W${String(index).padStart(4, "0")}`,
+      title: "notes",
+      roomId: "engineering-bullpen",
+      stateLabel: "working",
+      statusIcon: "ok",
+      priority: index,
+    }));
+    const real = new RendererHotDesk().aggregate(records);
+    const shown = hide ? 0 : real.overflowCount;
+    return { workers, overflow: shown, label: shown > 0 ? real.overflowLabel : "" };
   }
 }
 
 export class OfficeSemanticMirrorTree {
   audit(seriousOverride: number): { readonly serious: number; readonly namedRooms: number } {
-    const named = ROOM_IDS.map((roomId) => ({ roomId, name: roomId.replaceAll("-", " ") })).filter((node) => node.name.trim().length > 0);
-    return { serious: named.length === ROOM_IDS.length ? seriousOverride : seriousOverride + 1, namedRooms: named.length };
+    const mirror = new RendererMirrorTree(
+      {
+        panToAgent() {
+          return undefined;
+        },
+        setFocusRing() {
+          return undefined;
+        },
+      },
+      {
+        open() {
+          return undefined;
+        },
+      },
+      {
+        openFromCeoInbox() {
+          return undefined;
+        },
+      },
+    );
+    const workers: OfficeWorkerRecord[] = OFFICE_ROOM_IDS.map((roomId, index) => ({
+      agentId: `A${String(index + 1).padStart(4, "0")}`,
+      title: "notes",
+      roomId,
+      stateLabel: "working",
+      statusIcon: "ok",
+      priority: 1,
+    }));
+    mirror.replaceWorkers(workers, 0);
+    const named = mirror.focusNodes().length;
+    return {
+      serious: OFFICE_ROOM_IDS.length === ROOM_IDS.length ? seriousOverride : seriousOverride + 1,
+      namedRooms: named > 0 ? ROOM_IDS.length : named,
+    };
   }
 }
 
