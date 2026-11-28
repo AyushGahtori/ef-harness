@@ -63,5 +63,10 @@ export type {
   ProviderPolicyDocument,
   RosterModelRecord,
   SilentFallbackDecision,
+  SiwcPolicyView,
   UnsignedProviderPolicy,
+  CopilotPremiumMultiplier,
+  PolicyPriceModel,
+  PolicyPriceTable,
+  PriceTableProvider,
 } from "./types.js";

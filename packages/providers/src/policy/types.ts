@@ -237,3 +237,43 @@ export interface SilentFallbackDecision {
   accepted: boolean;
   reason: "ok" | "no_silent_paid_fallback" | "target_revoked";
 }
+
+export type PriceTableProvider = "anthropic" | "openai" | "openrouter" | "gemini";
+
+export interface PolicyPriceModel {
+  modelId: string;
+  provider: PriceTableProvider;
+  inputMicroUsdPer1M: bigint;
+  outputMicroUsdPer1M: bigint;
+  cachedInputReadMicroUsdPer1M: bigint;
+  cacheWriteMicroUsdPer1M: bigint;
+  reasoningTokenMicroUsdPer1M: bigint;
+}
+
+export interface PolicyPriceTable {
+  version: string;
+  models: PolicyPriceModel[];
+}
+
+export interface CopilotPremiumMultiplier {
+  modelId: string;
+  multiplier: 0 | 1 | 3;
+  kind: "included" | "standard" | "premium_reasoning";
+}
+
+export interface SiwcPolicyView {
+  routeRevoked: boolean;
+  registerDynamicClient: boolean;
+  staticClientId: string | null;
+  authorizeEndpoint: string;
+  tokenEndpoint: string;
+  revocationEndpoint: string;
+  discoveryUrl: string;
+  jwksUri: string;
+  issuer: string;
+  resource: string;
+  responsesEndpoint: string;
+  agentNameHint: string;
+  requestedScopes: readonly string[];
+  fallbackGuidance: string;
+}

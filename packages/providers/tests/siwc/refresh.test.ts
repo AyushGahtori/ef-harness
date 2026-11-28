@@ -34,7 +34,7 @@ describe("SiwcTokenRefresher single-flight rotation", () => {
       expect(form?.["client_id"]).toBe("oaiapp_efh_seed");
       expect(form?.["scope"]).toBeUndefined();
       expect(form?.["resource"]).toBe("https://api.openai.com/v1");
-      const stored = JSON.parse((await harness.vault.get(siwcTokenSecretName("chatgpt-personal"))) ?? "{}") as {
+      const stored = JSON.parse((await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))) ?? "{}") as {
         access_token: string;
         refresh_token: string;
       };
@@ -97,7 +97,7 @@ describe("SiwcTokenRefresher single-flight rotation", () => {
       expect(effects).toEqual(["park", "card"]);
       expect(harness.server.refreshStarted).toBe(1);
       expect(harness.store.get("chatgpt-personal")?.status).toBe("needs_sign_in");
-      expect(await harness.vault.get(siwcTokenSecretName("chatgpt-personal"))).toBeNull();
+      expect(await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))).toBeNull();
       expect(effects.join(" ")).not.toContain("fallback");
     } finally {
       await harness.close();
@@ -119,7 +119,7 @@ async function seed(harness: Awaited<ReturnType<typeof openHarness>>, expiresAtM
     expiresAtMs,
     earliestRefreshAtMs: null,
   }, now);
-  await harness.vault.put(siwcTokenSecretName("chatgpt-personal"), JSON.stringify({
+  await harness.vault.storeSecret(siwcTokenSecretName("chatgpt-personal"), JSON.stringify({
     access_token: "efh.access.seed",
     refresh_token: "efh.refresh.seed",
     id_token: "efh.id.seed",

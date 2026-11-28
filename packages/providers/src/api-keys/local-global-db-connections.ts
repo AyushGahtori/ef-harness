@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
-import path from "node:path";
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { existsSync, readFileSync } from "node:fs";
+import { GlobalBrokerDb } from "@ef-harness/db";
+import { redactSecrets } from "@ef-harness/shared-observability";
 import {
   API_KEY_AUTH_MODE,
   ApiKeyOnboardingError,
@@ -14,9 +14,8 @@ import {
 import { assertRateTable } from "./integer-micro-usd.js";
 
 /**
- * Local stand-in for Task 014 `GlobalDbRepo.connections`.
- * Rows keep the foundation connection columns plus API-key metadata.
- * Raw keys are not a column.
+ * API-key rows on Task 014 `GlobalBrokerDb.connections` plus `connection_profiles`.
+ * Route and provider stay unconstrained in SQL so subscription and local rows can share the file.
  */
 export interface GlobalDbConnectionsPort {
   insert(record: ApiConnectionRecord): void;
@@ -53,49 +52,33 @@ const FAMILIES = new Set<ApiKeyFamily>([
   "custom",
 ]);
 
+interface ApiKeyProfile {
+  label: string;
+  authMode: typeof API_KEY_AUTH_MODE;
+  maskedKeyPreview: string;
+  discoveredModels: string[];
+  userMonthlyCapMicroUsd: string | null;
+  verifiedAt: number | null;
+  status: ConnectionStatus;
+  resumeStatus: ConnectionStatus | null;
+  customBaseUrl: string | null;
+  customRates: Record<string, string> | null;
+  keyFamily: ApiKeyFamily;
+}
+
 export class LocalGlobalDbConnections implements GlobalDbConnectionsPort {
-  private readonly db: DatabaseSync;
-  private readonly filePath: string;
-  private readonly directory: string;
+  private readonly global: GlobalBrokerDb;
+  private readonly owned: boolean;
   private closed = false;
 
-  constructor(directory: string) {
-    mkdirSync(directory, { recursive: true });
-    this.directory = directory;
-    this.filePath = path.join(directory, "global.db");
-    this.db = new DatabaseSync(this.filePath);
-    this.db.exec("PRAGMA foreign_keys = ON");
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS connections (
-        id TEXT PRIMARY KEY,
-        provider TEXT NOT NULL CHECK (provider IN ('anthropic','openai','openrouter','gemini','custom')),
-        route TEXT NOT NULL CHECK (route = 'api_key'),
-        plan TEXT,
-        vault_ref TEXT,
-        currency TEXT NOT NULL CHECK (currency = 'usd'),
-        scale INTEGER NOT NULL CHECK (scale = 1000000),
-        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
-        created_at INTEGER NOT NULL
-      ) STRICT;
-
-      CREATE TABLE IF NOT EXISTS api_key_connection_meta (
-        connection_id TEXT PRIMARY KEY REFERENCES connections(id),
-        label TEXT NOT NULL,
-        auth_mode TEXT NOT NULL CHECK (auth_mode = 'api_key'),
-        masked_key_preview TEXT NOT NULL,
-        discovered_models_json TEXT NOT NULL,
-        user_monthly_cap_micro_usd TEXT,
-        verified_at INTEGER,
-        status TEXT NOT NULL CHECK (status IN (
-          'verified','unverified_offline','billing_not_active','insufficient_quota',
-          'org_restriction','rate_limited','provider_error','rejected_by_provider','disabled'
-        )),
-        resume_status TEXT,
-        custom_base_url TEXT,
-        custom_rates_json TEXT,
-        key_family TEXT NOT NULL
-      ) STRICT;
-    `);
+  constructor(directory: string, shared?: GlobalBrokerDb) {
+    if (shared) {
+      this.global = shared;
+      this.owned = false;
+    } else {
+      this.global = GlobalBrokerDb.open({ root: directory });
+      this.owned = true;
+    }
   }
 
   insert(record: ApiConnectionRecord): void {
@@ -107,144 +90,143 @@ export class LocalGlobalDbConnections implements GlobalDbConnectionsPort {
   }
 
   get(connectionId: string): ApiConnectionRecord | undefined {
-    const row = this.db
-      .prepare(`${SELECT_SQL} WHERE c.id = ?`)
-      .get(connectionId);
-    if (!row) return undefined;
-    return mapRow(row);
+    const row = this.global.getConnection(connectionId);
+    if (!row || row.route !== "api_key") return undefined;
+    const profile = this.readProfile(connectionId);
+    if (!profile) return undefined;
+    return mapRecord(row, profile);
   }
 
   list(): readonly ApiConnectionRecord[] {
-    return this.db
-      .prepare(`${SELECT_SQL} ORDER BY c.created_at ASC, c.id ASC`)
-      .all()
-      .map((row) => mapRow(row));
+    const records: ApiConnectionRecord[] = [];
+    for (const row of this.global.listConnections()) {
+      if (row.route !== "api_key") continue;
+      const profile = this.readProfile(row.id);
+      if (!profile) continue;
+      records.push(mapRecord(row, profile));
+    }
+    records.sort((left, right) => left.createdAt - right.createdAt || left.connectionId.localeCompare(right.connectionId));
+    return records;
   }
 
   delete(connectionId: string): void {
-    this.transaction(() => {
-      this.db.prepare("DELETE FROM api_key_connection_meta WHERE connection_id = ?").run(connectionId);
-      this.db.prepare("DELETE FROM connections WHERE id = ?").run(connectionId);
+    this.global.transaction(() => {
+      this.global.writer.run("DELETE FROM connection_profiles WHERE connection_id = ?", [connectionId]);
+      this.global.writer.run("DELETE FROM connections WHERE id = ?", [connectionId]);
     });
   }
 
   metadataText(): string {
-    const connections = this.db.prepare("SELECT * FROM connections ORDER BY id").all();
-    const meta = this.db.prepare("SELECT * FROM api_key_connection_meta ORDER BY connection_id").all();
-    return JSON.stringify({ connections, meta });
+    const connections = this.global.writer.all("SELECT * FROM connections ORDER BY id");
+    const profiles = this.global.writer.all(
+      "SELECT connection_id, kind, profile_json, updated_at FROM connection_profiles ORDER BY connection_id",
+    );
+    return redactSecrets(JSON.stringify({ connections, profiles }));
   }
 
   readAtRestBytes(): Uint8Array {
-    const dest = path.join(this.directory, "global.snapshot.sqlite");
-    rmSync(dest, { force: true });
-    const sqlPath = dest.replaceAll("\\", "/").replaceAll("'", "''");
-    this.db.exec(`VACUUM INTO '${sqlPath}'`);
-    const bytes = readFileSync(dest);
-    rmSync(dest, { force: true });
-    return bytes;
+    const files = [this.global.filePath, `${this.global.filePath}-wal`, `${this.global.filePath}-shm`];
+    const chunks: Buffer[] = [];
+    for (const file of files) {
+      if (existsSync(file)) chunks.push(readFileSync(file));
+    }
+    return Buffer.concat(chunks);
   }
 
   close(): void {
-    if (this.closed) return;
-    this.db.close();
+    if (this.closed || !this.owned) return;
     this.closed = true;
+    this.global.close();
   }
 
   private write(record: ApiConnectionRecord, existing: boolean): void {
     assertRecord(record);
-    const ratesJson = record.customRates ? JSON.stringify(serializeRates(record.customRates)) : null;
-    const cap = record.userMonthlyCapMicroUsd === null ? null : record.userMonthlyCapMicroUsd.toString();
-    this.transaction(() => {
-      if (existing) {
-        this.db
-          .prepare(
-            `UPDATE connections
-             SET provider = ?, vault_ref = ?, enabled = ?
-             WHERE id = ?`,
-          )
-          .run(record.provider, record.vaultRef, record.enabled ? 1 : 0, record.connectionId);
-        this.db
-          .prepare(
-            `UPDATE api_key_connection_meta
-             SET label = ?, masked_key_preview = ?, discovered_models_json = ?,
-                 user_monthly_cap_micro_usd = ?, verified_at = ?, status = ?, resume_status = ?,
-                 custom_base_url = ?, custom_rates_json = ?, key_family = ?
-             WHERE connection_id = ?`,
-          )
-          .run(
-            record.label,
-            record.maskedKeyPreview,
-            JSON.stringify(record.discoveredModels),
-            cap,
-            record.verifiedAt,
-            record.status,
-            record.resumeStatus,
-            record.customBaseUrl,
-            ratesJson,
-            record.keyFamily,
-            record.connectionId,
-          );
-        return;
-      }
-      this.db
-        .prepare(
-          `INSERT INTO connections (
-             id, provider, route, plan, vault_ref, currency, scale, enabled, created_at
-           ) VALUES (?, ?, 'api_key', NULL, ?, 'usd', ?, ?, ?)`,
-        )
-        .run(
-          record.connectionId,
-          record.provider,
-          record.vaultRef,
-          MICRO_USD_SCALE,
-          record.enabled ? 1 : 0,
-          record.createdAt,
-        );
-      this.db
-        .prepare(
-          `INSERT INTO api_key_connection_meta (
-             connection_id, label, auth_mode, masked_key_preview, discovered_models_json,
-             user_monthly_cap_micro_usd, verified_at, status, resume_status,
-             custom_base_url, custom_rates_json, key_family
-           ) VALUES (?, ?, 'api_key', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          record.connectionId,
-          record.label,
-          record.maskedKeyPreview,
-          JSON.stringify(record.discoveredModels),
-          cap,
-          record.verifiedAt,
-          record.status,
-          record.resumeStatus,
-          record.customBaseUrl,
-          ratesJson,
-          record.keyFamily,
-        );
+    const current = existing ? this.global.getConnection(record.connectionId) : null;
+    if (existing && !current) {
+      throw new ApiKeyOnboardingError("Connection was not found.");
+    }
+    const profile = profileFromRecord(record);
+    this.global.transaction(() => {
+      this.global.upsertConnection({
+        id: record.connectionId,
+        provider: record.provider,
+        route: "api_key",
+        plan: null,
+        vaultRef: record.vaultRef,
+        currency: "usd",
+        scale: record.scale,
+        enabled: record.enabled,
+        createdAt: current?.createdAt ?? record.createdAt,
+      });
+      this.global.writer.run(
+        `INSERT INTO connection_profiles (connection_id, kind, profile_json, updated_at)
+         VALUES (?, 'api_key', ?, ?)
+         ON CONFLICT(connection_id) DO UPDATE SET
+           kind = excluded.kind,
+           profile_json = excluded.profile_json,
+           updated_at = excluded.updated_at`,
+        [record.connectionId, JSON.stringify(profile), record.createdAt],
+      );
     });
   }
 
-  private transaction(work: () => void): void {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      work();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+  private readProfile(connectionId: string): ApiKeyProfile | null {
+    const row = asRow(
+      this.global.writer.get(
+        "SELECT kind, profile_json FROM connection_profiles WHERE connection_id = ?",
+        [connectionId],
+      ),
+    );
+    if (!row || row.kind !== "api_key" || typeof row.profile_json !== "string") return null;
+    return parseProfile(row.profile_json);
   }
 }
 
-const SELECT_SQL = `
-  SELECT
-    c.id, c.provider, c.vault_ref, c.enabled, c.created_at,
-    m.label, m.auth_mode, m.masked_key_preview, m.discovered_models_json,
-    m.user_monthly_cap_micro_usd, m.verified_at, m.status, m.resume_status,
-    m.custom_base_url, m.custom_rates_json, m.key_family
-  FROM connections c
-  JOIN api_key_connection_meta m ON m.connection_id = c.id
-`;
+function profileFromRecord(record: ApiConnectionRecord): ApiKeyProfile {
+  return {
+    label: record.label,
+    authMode: API_KEY_AUTH_MODE,
+    maskedKeyPreview: record.maskedKeyPreview,
+    discoveredModels: [...record.discoveredModels],
+    userMonthlyCapMicroUsd: record.userMonthlyCapMicroUsd === null ? null : record.userMonthlyCapMicroUsd.toString(),
+    verifiedAt: record.verifiedAt,
+    status: record.status,
+    resumeStatus: record.resumeStatus,
+    customBaseUrl: record.customBaseUrl,
+    customRates: record.customRates ? serializeRates(record.customRates) : null,
+    keyFamily: record.keyFamily,
+  };
+}
+
+function mapRecord(
+  row: { id: string; provider: string; vaultRef: string | null; enabled: boolean; createdAt: number; scale: number },
+  profile: ApiKeyProfile,
+): ApiConnectionRecord {
+  if (!isProvider(row.provider) || row.vaultRef === null || row.scale !== MICRO_USD_SCALE) {
+    throw new ApiKeyOnboardingError("global.db connection row is corrupt");
+  }
+  const capText = profile.userMonthlyCapMicroUsd;
+  return {
+    connectionId: row.id,
+    provider: row.provider,
+    label: profile.label,
+    authMode: API_KEY_AUTH_MODE,
+    maskedKeyPreview: profile.maskedKeyPreview,
+    discoveredModels: profile.discoveredModels,
+    userMonthlyCapMicroUsd: capText === null ? null : BigInt(capText),
+    verifiedAt: profile.verifiedAt,
+    status: profile.status,
+    resumeStatus: profile.resumeStatus,
+    enabled: row.enabled,
+    keyFamily: profile.keyFamily,
+    customBaseUrl: profile.customBaseUrl,
+    customRates: profile.customRates ? parseRates(profile.customRates) : null,
+    vaultRef: row.vaultRef,
+    createdAt: row.createdAt,
+    currency: "usd",
+    scale: MICRO_USD_SCALE,
+  };
+}
 
 function assertRecord(record: ApiConnectionRecord): void {
   if (!PROVIDERS.has(record.provider)) {
@@ -265,57 +247,69 @@ function assertRecord(record: ApiConnectionRecord): void {
   if (record.label.trim().length === 0) {
     throw new ApiKeyOnboardingError("Enter a label for this connection.");
   }
+  if (record.scale !== MICRO_USD_SCALE) {
+    throw new ApiKeyOnboardingError("API key connections use the micro-USD scale");
+  }
 }
 
-function mapRow(row: Record<string, SQLOutputValue>): ApiConnectionRecord {
-  const provider = requiredText(row, "provider");
-  const status = requiredText(row, "status");
-  const keyFamily = requiredText(row, "key_family");
-  if (!isProvider(provider) || !isStatus(status) || !isFamily(keyFamily)) {
+function parseProfile(json: string): ApiKeyProfile {
+  const parsed = JSON.parse(json) as unknown;
+  if (typeof parsed !== "object" || parsed === null) {
     throw new ApiKeyOnboardingError("global.db connection row is corrupt");
   }
-  const resume = optionalText(row, "resume_status");
-  if (resume !== null && !isStatus(resume)) {
+  const record = parsed as Record<string, unknown>;
+  const status = requiredText(record, "status");
+  const keyFamily = requiredText(record, "keyFamily");
+  const resume = record.resumeStatus;
+  if (!isStatus(status) || !isFamily(keyFamily)) {
     throw new ApiKeyOnboardingError("global.db connection row is corrupt");
   }
-  const capText = optionalText(row, "user_monthly_cap_micro_usd");
+  if (resume !== null && (typeof resume !== "string" || !isStatus(resume))) {
+    throw new ApiKeyOnboardingError("global.db connection row is corrupt");
+  }
+  const models = record.discoveredModels;
+  if (!Array.isArray(models) || models.some((item) => typeof item !== "string")) {
+    throw new ApiKeyOnboardingError("Discovered model list is corrupt");
+  }
+  const cap = record.userMonthlyCapMicroUsd;
+  if (cap !== null && typeof cap !== "string") {
+    throw new ApiKeyOnboardingError("global.db connection row is corrupt");
+  }
   return {
-    connectionId: requiredText(row, "id"),
-    provider,
-    label: requiredText(row, "label"),
+    label: requiredText(record, "label"),
     authMode: API_KEY_AUTH_MODE,
-    maskedKeyPreview: requiredText(row, "masked_key_preview"),
-    discoveredModels: parseModels(requiredText(row, "discovered_models_json")),
-    userMonthlyCapMicroUsd: capText === null ? null : BigInt(capText),
-    verifiedAt: optionalInt(row, "verified_at"),
+    maskedKeyPreview: requiredText(record, "maskedKeyPreview"),
+    discoveredModels: models,
+    userMonthlyCapMicroUsd: cap,
+    verifiedAt: optionalInt(record.verifiedAt),
     status,
     resumeStatus: resume,
-    enabled: requiredInt(row, "enabled") === 1,
+    customBaseUrl: optionalText(record.customBaseUrl),
+    customRates: parseStoredRates(record.customRates),
     keyFamily,
-    customBaseUrl: optionalText(row, "custom_base_url"),
-    customRates: parseRates(optionalText(row, "custom_rates_json")),
-    vaultRef: requiredText(row, "vault_ref"),
-    createdAt: requiredInt(row, "created_at"),
-    currency: "usd",
-    scale: MICRO_USD_SCALE,
   };
 }
 
-function parseModels(json: string): string[] {
-  const parsed = JSON.parse(json) as unknown;
-  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
-    throw new ApiKeyOnboardingError("Discovered model list is corrupt");
+function parseStoredRates(value: unknown): Record<string, string> | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object") throw new ApiKeyOnboardingError("Custom rate table is corrupt");
+  const record = value as Record<string, unknown>;
+  const rates: Record<string, string> = {};
+  for (const key of [
+    "inputMicroUsdPer1M",
+    "outputMicroUsdPer1M",
+    "cachedInputReadMicroUsdPer1M",
+    "cacheWriteMicroUsdPer1M",
+    "reasoningTokenMicroUsdPer1M",
+  ]) {
+    const cell = record[key];
+    if (typeof cell !== "string") throw new ApiKeyOnboardingError("Custom rate table is corrupt");
+    rates[key] = cell;
   }
-  return parsed;
+  return rates;
 }
 
-function parseRates(json: string | null): CustomRateTable | null {
-  if (json === null) return null;
-  const parsed = JSON.parse(json) as unknown;
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new ApiKeyOnboardingError("Custom rate table is corrupt");
-  }
-  const record = parsed as Record<string, unknown>;
+function parseRates(record: Record<string, string>): CustomRateTable {
   return assertRateTable({
     inputMicroUsdPer1M: big(record.inputMicroUsdPer1M),
     outputMicroUsdPer1M: big(record.outputMicroUsdPer1M),
@@ -336,42 +330,32 @@ function serializeRates(rates: CustomRateTable): Record<string, string> {
   };
 }
 
-function big(value: unknown): bigint {
+function big(value: string | undefined): bigint {
   if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value)) return BigInt(value);
   throw new ApiKeyOnboardingError("Custom rate table is corrupt");
 }
 
-function requiredText(row: Record<string, SQLOutputValue>, key: string): string {
+function requiredText(row: Record<string, unknown>, key: string): string {
   const value = row[key];
-  if (typeof value !== "string") {
-    throw new ApiKeyOnboardingError(`global.db column ${key} was not text`);
-  }
+  if (typeof value !== "string") throw new ApiKeyOnboardingError(`global.db column ${key} was not text`);
   return value;
 }
 
-function optionalText(row: Record<string, SQLOutputValue>, key: string): string | null {
-  const value = row[key];
+function optionalText(value: unknown): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== "string") {
-    throw new ApiKeyOnboardingError(`global.db column ${key} was not text`);
-  }
+  if (typeof value !== "string") throw new ApiKeyOnboardingError("global.db connection row is corrupt");
   return value;
 }
 
-function requiredInt(row: Record<string, SQLOutputValue>, key: string): number {
-  const value = optionalInt(row, key);
-  if (value === null) throw new ApiKeyOnboardingError(`global.db column ${key} was not an integer`);
-  return value;
-}
-
-function optionalInt(row: Record<string, SQLOutputValue>, key: string): number | null {
-  const value = row[key];
+function optionalInt(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number" && Number.isSafeInteger(value)) return value;
-  if (typeof value === "bigint" && value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= 0n) {
-    return Number(value);
-  }
-  throw new ApiKeyOnboardingError(`global.db column ${key} was not an integer`);
+  throw new ApiKeyOnboardingError("global.db connection row is corrupt");
+}
+
+function asRow(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined || value === null || typeof value !== "object") return undefined;
+  return value as Record<string, unknown>;
 }
 
 function isProvider(value: string): value is ApiKeyProviderId {

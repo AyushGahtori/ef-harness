@@ -33,6 +33,7 @@ export type { CutoffSnapshot, StreamCutoffOptions } from "./cutoff.js";
 export { buildSiwcWireBody } from "./wire.js";
 export { LocalSignedProviderPolicyEngine } from "./policy.js";
 export type { SiwcPolicyOverrides } from "./policy.js";
+export { SiwcDpapiSecretsVault } from "./dpapi-vault.js";
 export { SqliteSiwcInstallationStore } from "./store.js";
 export type { SiwcConnectedWrite, SiwcConnectionRecord } from "./store.js";
 export { SiwcTokenRefresher } from "./refresher.js";

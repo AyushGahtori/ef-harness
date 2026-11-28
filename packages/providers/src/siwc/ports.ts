@@ -41,13 +41,13 @@ export interface SiwcTokenBundle {
 }
 
 /**
- * Local port of Task 120 `WindowsDpapiSecretsVault`.
+ * Task 120 `WindowsDpapiSecretsVault`.
  * Values are opaque credential blobs. Callers pass vault names, never write the blob into global.db.
  */
 export interface SiwcSecretsVault {
-  put(name: string, value: string): Promise<void>;
-  get(name: string): Promise<string | null>;
-  delete(name: string): Promise<void>;
+  storeSecret(name: string, value: string): Promise<void>;
+  readPlaintextForKernel(name: string): Promise<string | null>;
+  deleteSecret(name: string): Promise<void>;
 }
 
 export interface SiwcAccessGrant {

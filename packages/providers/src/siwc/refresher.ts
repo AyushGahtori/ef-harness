@@ -107,12 +107,12 @@ export class SiwcTokenRefresher {
     }
     const scopes = token.scope === null ? record.scopes : grantedScopeList(token.scope);
     if (!scopes.includes(SIWC_DIRECT_SCOPE)) {
-      await this.options.vault.delete(siwcTokenSecretName(connectionId));
+      await this.options.vault.deleteSecret(siwcTokenSecretName(connectionId));
       this.options.store.markNeedsSignIn(connectionId);
       throw new SiwcScopeRejectedError();
     }
     const expiresAtMs = now + (token.expiresIn || ACCESS_TOKEN_TTL_SECONDS) * 1000;
-    await this.options.vault.put(siwcTokenSecretName(connectionId), serializeTokenBundle({
+    await this.options.vault.storeSecret(siwcTokenSecretName(connectionId), serializeTokenBundle({
       access_token: token.accessToken,
       refresh_token: token.refreshToken,
       id_token: idToken,
@@ -122,13 +122,13 @@ export class SiwcTokenRefresher {
   }
 
   private async readBundle(connectionId: string) {
-    const raw = await this.options.vault.get(siwcTokenSecretName(connectionId));
+    const raw = await this.options.vault.readPlaintextForKernel(siwcTokenSecretName(connectionId));
     if (!raw) return null;
     return parseTokenBundle(raw);
   }
 
   private async expire(connectionId: string): Promise<never> {
-    await this.options.vault.delete(siwcTokenSecretName(connectionId));
+    await this.options.vault.deleteSecret(siwcTokenSecretName(connectionId));
     const record = this.options.store.get(connectionId);
     if (!record?.expiryNotified) {
       this.options.parker.park({ connectionId, reason: "refresh_invalid_grant" });

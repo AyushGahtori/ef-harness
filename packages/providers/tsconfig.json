@@ -10,7 +10,19 @@
   ],
   "references": [
     {
+      "path": "../db"
+    },
+    {
+      "path": "../governor"
+    },
+    {
+      "path": "../planner"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../shared-observability"
     }
   ]
 }

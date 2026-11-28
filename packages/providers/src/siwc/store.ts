@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { GlobalBrokerDb } from "@ef-harness/db";
 import { HOST_ID_META_KEY, SIWC_PREVIEW_LABEL } from "./constants.js";
 import { siwcProfileKey, siwcTokenSecretName } from "./ids.js";
 import type { SiwcConnectionStatus } from "./ports.js";
@@ -54,70 +53,50 @@ interface Profile {
   plan: string | null;
   expiryNotified: boolean;
   createdAt: number;
+  profileKey: string;
 }
-
-interface ConnectionRow {
-  id: string;
-  provider: string;
-  route: string;
-  plan: string | null;
-  vault_ref: string | null;
-  currency: string;
-  scale: number;
-  enabled: number;
-  created_at: number;
-}
-
-const DDL = `
-CREATE TABLE IF NOT EXISTS meta (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS connections (
-  id         TEXT PRIMARY KEY,
-  provider   TEXT NOT NULL,
-  route      TEXT NOT NULL,
-  plan       TEXT,
-  vault_ref  TEXT,
-  currency   TEXT NOT NULL,
-  scale      INTEGER NOT NULL,
-  enabled    INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
-  created_at INTEGER NOT NULL
-) STRICT;
-`;
 
 /**
- * Local port of Task 014 `GlobalDbRepo` for `meta` and `connections`.
- * `connections` in schema/global.sql has no status column, so status is stored in `meta`
- * and mirrored onto the record the rest of this package reads. Tokens are never written here.
+ * Sign in with ChatGPT rows on Task 014 `GlobalBrokerDb`.
+ * Profile fields live in `connection_profiles`. Tokens are never written here.
  */
 export class SqliteSiwcInstallationStore {
-  private readonly db: DatabaseSync;
+  private readonly global: GlobalBrokerDb;
+  private readonly owned: boolean;
   private closed = false;
 
-  constructor(filePath: string) {
-    mkdirSync(path.dirname(filePath), { recursive: true });
-    this.db = new DatabaseSync(filePath);
-    this.db.exec(DDL);
+  constructor(filePath: string, shared?: GlobalBrokerDb) {
+    if (shared) {
+      this.global = shared;
+      this.owned = false;
+    } else {
+      const root = filePath.endsWith(`${path.sep}global.db`) || filePath.endsWith("/global.db")
+        ? path.dirname(filePath)
+        : filePath;
+      this.global = GlobalBrokerDb.open({ root });
+      this.owned = true;
+    }
   }
 
   ensureHostId(): string {
     const existing = this.readHostId();
     if (existing) return existing;
     const hostId = `urn:uuid:${randomUUID()}`;
-    this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?)").run(HOST_ID_META_KEY, hostId);
+    this.global.writer.run(
+      "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      [HOST_ID_META_KEY, hostId],
+    );
     return hostId;
   }
 
   readHostId(): string | null {
-    const row = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(HOST_ID_META_KEY);
-    return textColumn(row, "value");
+    const row = asRow(this.global.writer.get("SELECT value FROM meta WHERE key = ?", [HOST_ID_META_KEY]));
+    return typeof row?.value === "string" ? row.value : null;
   }
 
   get(id: string): SiwcConnectionRecord | null {
-    const row = this.db.prepare("SELECT * FROM connections WHERE id = ?").get(id);
-    if (!isConnectionRow(row)) return null;
+    const row = this.global.getConnection(id);
+    if (!row || row.route !== "siwc") return null;
     const profile = this.readProfile(id);
     const hostId = this.readHostId();
     if (!profile || !hostId) return null;
@@ -127,11 +106,11 @@ export class SqliteSiwcInstallationStore {
       provider: "openai",
       route: "siwc",
       plan: row.plan,
-      vaultRef: row.vault_ref,
+      vaultRef: row.vaultRef,
       currency: row.currency,
       scale: row.scale,
-      enabled: row.enabled === 1,
-      createdAt: row.created_at,
+      enabled: row.enabled,
+      createdAt: row.createdAt,
       status: profile.status,
       clientId: profile.clientId,
       subject: profile.subject,
@@ -160,18 +139,22 @@ export class SqliteSiwcInstallationStore {
       plan: input.plan,
       expiryNotified: false,
       createdAt,
+      profileKey: siwcProfileKey(input.id),
     };
-    const vaultRef = siwcTokenSecretName(input.id);
-    this.db.prepare(
-      `INSERT INTO connections(id, provider, route, plan, vault_ref, currency, scale, enabled, created_at)
-       VALUES (?, 'openai', 'siwc', ?, ?, ?, 1, 1, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         plan = excluded.plan,
-         vault_ref = excluded.vault_ref,
-         currency = excluded.currency,
-         enabled = 1`,
-    ).run(input.id, input.plan, vaultRef, `allowance:${input.id}`, createdAt);
-    this.writeProfile(input.id, profile);
+    this.global.transaction(() => {
+      this.global.upsertConnection({
+        id: input.id,
+        provider: "openai",
+        route: "siwc",
+        plan: input.plan,
+        vaultRef: siwcTokenSecretName(input.id),
+        currency: `allowance:${input.id}`,
+        scale: 1,
+        enabled: true,
+        createdAt,
+      });
+      this.writeProfile(input.id, profile, nowMs);
+    });
   }
 
   updateExpiry(
@@ -186,31 +169,59 @@ export class SqliteSiwcInstallationStore {
     if (scopes) profile.scopes = [...scopes];
     profile.status = "connected";
     profile.expiryNotified = false;
-    this.writeProfile(id, profile);
-    this.db.prepare("UPDATE connections SET enabled = 1, vault_ref = ? WHERE id = ?").run(siwcTokenSecretName(id), id);
+    const current = this.global.getConnection(id);
+    if (!current) throw new Error(`missing Sign in with ChatGPT profile for ${id}`);
+    this.global.transaction(() => {
+      this.writeProfile(id, profile, expiresAtMs);
+      this.global.upsertConnection({
+        id,
+        provider: "openai",
+        route: "siwc",
+        plan: current.plan,
+        vaultRef: siwcTokenSecretName(id),
+        currency: current.currency,
+        scale: current.scale,
+        enabled: true,
+        createdAt: current.createdAt,
+      });
+    });
   }
 
   markNeedsSignIn(id: string): void {
-    const profile = this.requireProfile(id);
-    profile.status = "needs_sign_in";
-    profile.expiresAtMs = null;
-    profile.expiryNotified = true;
-    this.writeProfile(id, profile);
-    this.db.prepare("UPDATE connections SET enabled = 0, vault_ref = NULL WHERE id = ?").run(id);
+    this.mark(id, "needs_sign_in", true);
   }
 
   markDisconnected(id: string): void {
-    const profile = this.requireProfile(id);
-    profile.status = "disconnected";
-    profile.expiresAtMs = null;
-    this.writeProfile(id, profile);
-    this.db.prepare("UPDATE connections SET enabled = 0, vault_ref = NULL WHERE id = ?").run(id);
+    this.mark(id, "disconnected", false);
   }
 
   close(): void {
-    if (this.closed) return;
+    if (this.closed || !this.owned) return;
     this.closed = true;
-    this.db.close();
+    this.global.close();
+  }
+
+  private mark(id: string, status: SiwcConnectionStatus, expiryNotified: boolean): void {
+    const profile = this.requireProfile(id);
+    profile.status = status;
+    profile.expiresAtMs = null;
+    if (expiryNotified) profile.expiryNotified = true;
+    const current = this.global.getConnection(id);
+    if (!current) throw new Error(`missing Sign in with ChatGPT profile for ${id}`);
+    this.global.transaction(() => {
+      this.writeProfile(id, profile, Date.now());
+      this.global.upsertConnection({
+        id,
+        provider: "openai",
+        route: "siwc",
+        plan: current.plan,
+        vaultRef: null,
+        currency: current.currency,
+        scale: current.scale,
+        enabled: false,
+        createdAt: current.createdAt,
+      });
+    });
   }
 
   private requireProfile(id: string): Profile {
@@ -220,54 +231,49 @@ export class SqliteSiwcInstallationStore {
   }
 
   private readProfile(id: string): Profile | null {
-    const row = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(siwcProfileKey(id));
-    const raw = textColumn(row, "value");
-    if (!raw) return null;
-    return parseProfile(raw);
+    const row = asRow(
+      this.global.writer.get(
+        "SELECT profile_json FROM connection_profiles WHERE connection_id = ? AND kind = 'siwc'",
+        [id],
+      ),
+    );
+    if (typeof row?.profile_json !== "string") return null;
+    return parseProfile(row.profile_json);
   }
 
-  private writeProfile(id: string, profile: Profile): void {
-    this.db.prepare(
-      `INSERT INTO meta(key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    ).run(siwcProfileKey(id), JSON.stringify(profile));
+  private writeProfile(id: string, profile: Profile, updatedAt: number): void {
+    this.global.writer.run(
+      `INSERT INTO connection_profiles(connection_id, kind, profile_json, updated_at)
+       VALUES (?, 'siwc', ?, ?)
+       ON CONFLICT(connection_id) DO UPDATE SET
+         kind = excluded.kind,
+         profile_json = excluded.profile_json,
+         updated_at = excluded.updated_at`,
+      [id, JSON.stringify(profile), updatedAt],
+    );
   }
 }
 
-function textColumn(row: unknown, key: string): string | null {
-  if (typeof row !== "object" || row === null || !(key in row)) return null;
-  const value = (row as Record<string, unknown>)[key];
-  return typeof value === "string" ? value : null;
-}
-
-function isConnectionRow(row: unknown): row is ConnectionRow {
-  if (typeof row !== "object" || row === null) return false;
-  const record = row as Record<string, unknown>;
-  return typeof record["id"] === "string"
-    && typeof record["provider"] === "string"
-    && typeof record["route"] === "string"
-    && (record["plan"] === null || typeof record["plan"] === "string")
-    && (record["vault_ref"] === null || typeof record["vault_ref"] === "string")
-    && typeof record["currency"] === "string"
-    && typeof record["scale"] === "number"
-    && typeof record["enabled"] === "number"
-    && typeof record["created_at"] === "number";
+function asRow(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined || value === null || typeof value !== "object") return undefined;
+  return value as Record<string, unknown>;
 }
 
 function parseProfile(raw: string): Profile {
   const parsed = JSON.parse(raw) as Record<string, unknown>;
   return {
-    label: typeof parsed["label"] === "string" ? parsed["label"] : "",
-    status: parseStatus(parsed["status"]),
-    clientId: typeof parsed["clientId"] === "string" ? parsed["clientId"] : null,
-    subject: typeof parsed["subject"] === "string" ? parsed["subject"] : null,
-    email: typeof parsed["email"] === "string" ? parsed["email"] : null,
-    scopes: Array.isArray(parsed["scopes"]) ? parsed["scopes"].filter((item) => typeof item === "string") : [],
-    expiresAtMs: typeof parsed["expiresAtMs"] === "number" ? parsed["expiresAtMs"] : null,
-    earliestRefreshAtMs: typeof parsed["earliestRefreshAtMs"] === "number" ? parsed["earliestRefreshAtMs"] : null,
-    plan: typeof parsed["plan"] === "string" ? parsed["plan"] : null,
-    expiryNotified: parsed["expiryNotified"] === true,
-    createdAt: typeof parsed["createdAt"] === "number" ? parsed["createdAt"] : 0,
+    label: typeof parsed.label === "string" ? parsed.label : "",
+    status: parseStatus(parsed.status),
+    clientId: typeof parsed.clientId === "string" ? parsed.clientId : null,
+    subject: typeof parsed.subject === "string" ? parsed.subject : null,
+    email: typeof parsed.email === "string" ? parsed.email : null,
+    scopes: Array.isArray(parsed.scopes) ? parsed.scopes.filter((item) => typeof item === "string") : [],
+    expiresAtMs: typeof parsed.expiresAtMs === "number" ? parsed.expiresAtMs : null,
+    earliestRefreshAtMs: typeof parsed.earliestRefreshAtMs === "number" ? parsed.earliestRefreshAtMs : null,
+    plan: typeof parsed.plan === "string" ? parsed.plan : null,
+    expiryNotified: parsed.expiryNotified === true,
+    createdAt: typeof parsed.createdAt === "number" ? parsed.createdAt : 0,
+    profileKey: typeof parsed.profileKey === "string" ? parsed.profileKey : "",
   };
 }
 

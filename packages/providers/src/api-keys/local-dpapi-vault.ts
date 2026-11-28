@@ -1,6 +1,7 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { GlobalBrokerDb, openProjectStateDb, type ProjectStateDb } from "@ef-harness/db";
+import { WindowsDpapiSecretsVault } from "@ef-harness/governor";
 import { ApiKeyOnboardingError } from "./api-key-types.js";
 
 export type VaultEnvScope = "test" | "dev" | "staging" | "prod";
@@ -23,177 +24,155 @@ export interface VaultPutInput {
   readonly envScope: VaultEnvScope;
 }
 
+export interface VaultMaterialStore {
+  protectAndWrite(target: string, plaintext: Buffer, overflowPath: string): Promise<void>;
+  readAndUnprotect(target: string): Promise<Buffer | null>;
+  deleteMaterial(target: string, overflowPath: string): Promise<void>;
+  replaceStoredCiphertext(target: string, ciphertext: Buffer, overflowPath: string): Promise<void>;
+  close(): Promise<void>;
+}
+
 /**
- * Port of Task 120 `WindowsDpapiSecretsVault`.
- * The local adapter encrypts with AES-256-GCM. Integration replaces it with DPAPI.
+ * Async port of Task 120 `WindowsDpapiSecretsVault`.
+ * Callers use `storeSecret`, `readPlaintextForKernel`, and `deleteSecret`.
  */
 export interface WindowsDpapiSecretsVaultPort {
-  put(input: VaultPutInput): VaultSecretMetadata;
-  rotate(secretId: string, plaintext: string): VaultSecretMetadata;
-  getPlaintext(secretId: string): string;
-  delete(secretId: string): void;
-  has(secretId: string): boolean;
-  metadata(secretId: string): VaultSecretMetadata | undefined;
+  storeSecret(input: VaultPutInput): Promise<VaultSecretMetadata>;
+  rotate(secretId: string, plaintext: string): Promise<VaultSecretMetadata>;
+  readPlaintextForKernel(secretId: string): Promise<string>;
+  deleteSecret(secretId: string): Promise<void>;
+  has(secretId: string): Promise<boolean>;
   readAtRestBytes(): Uint8Array;
 }
 
-interface StoredEntry {
-  readonly nonce: string;
-  readonly tag: string;
-  readonly ciphertext: string;
-  readonly lastFourMasked: string;
-  readonly name: string;
-  readonly providerHint: string;
-  readonly envScope: VaultEnvScope;
-  readonly createdAt: number;
-  readonly rotatedAt: number;
+export interface LocalDpapiSecretsVaultOptions {
+  readonly materialStore?: VaultMaterialStore;
 }
 
-interface VaultFile {
-  readonly v: 1;
-  readonly entries: Record<string, StoredEntry>;
-}
+const PROJECT_ID = "provider-connections";
 
 export class LocalDpapiSecretsVault implements WindowsDpapiSecretsVaultPort {
-  private readonly filePath: string;
-  private readonly key: Buffer;
+  private readonly vault: WindowsDpapiSecretsVault;
+  private readonly global: GlobalBrokerDb;
+  private readonly state: ProjectStateDb;
+  private readonly vaultDir: string;
+  private closed = false;
 
-  constructor(directory: string, keyMaterial?: Buffer) {
-    mkdirSync(directory, { recursive: true });
-    this.filePath = path.join(directory, "dpapi-vault.json");
-    this.key = keyMaterial ?? randomBytes(32);
-    if (this.key.length !== 32) {
-      throw new ApiKeyOnboardingError("Local vault key must be 32 bytes");
-    }
-    if (!exists(this.filePath)) {
-      this.persist({ v: 1, entries: {} });
+  constructor(directory: string, options: LocalDpapiSecretsVaultOptions = {}) {
+    this.vaultDir = directory;
+    this.global = GlobalBrokerDb.open({ root: path.join(directory, "harness") });
+    this.state = openProjectStateDb({
+      projectId: PROJECT_ID,
+      rootDir: path.join(directory, "state"),
+    });
+    try {
+      this.vault = new WindowsDpapiSecretsVault({
+        global: this.global,
+        state: this.state,
+        vaultDir: directory,
+        ...(options.materialStore ? { materialStore: options.materialStore } : {}),
+      });
+    } catch (error) {
+      this.state.close();
+      this.global.close();
+      throw error;
     }
   }
 
-  put(input: VaultPutInput): VaultSecretMetadata {
+  async storeSecret(input: VaultPutInput): Promise<VaultSecretMetadata> {
     if (input.plaintext.length === 0) {
       throw new ApiKeyOnboardingError("Refusing to store an empty secret");
     }
-    const file = this.load();
-    const previous = file.entries[input.secretId];
-    const now = Date.now();
-    const entry = this.seal(input.plaintext, {
-      name: input.name,
-      providerHint: input.providerHint,
+    const saved = await this.vault.storeSecret({
+      projectId: PROJECT_ID,
       envScope: input.envScope,
-      createdAt: previous?.createdAt ?? now,
-      rotatedAt: now,
+      name: envName(input.secretId),
+      value: input.plaintext,
+      providerHint: input.providerHint,
+      secretId: input.secretId,
     });
-    this.persist({
-      v: 1,
-      entries: { ...file.entries, [input.secretId]: entry },
-    });
-    return this.toMetadata(input.secretId, entry);
+    return toMetadata(saved, input.providerHint);
   }
 
-  rotate(secretId: string, plaintext: string): VaultSecretMetadata {
-    const current = this.metadata(secretId);
-    if (!current) {
+  async rotate(secretId: string, plaintext: string): Promise<VaultSecretMetadata> {
+    if (!(await this.has(secretId))) {
       throw new ApiKeyOnboardingError("Cannot rotate a secret that is not in the vault");
     }
-    return this.put({
-      secretId,
-      plaintext,
-      name: current.name,
-      providerHint: current.providerHint,
-      envScope: current.envScope,
-    });
+    const saved = await this.vault.rotate(secretId, plaintext);
+    return toMetadata(saved.metadata, saved.metadata.providerHint ?? "");
   }
 
-  getPlaintext(secretId: string): string {
-    const entry = this.load().entries[secretId];
-    if (!entry) {
-      throw new ApiKeyOnboardingError("Secret is not in the vault");
+  async readPlaintextForKernel(secretId: string): Promise<string> {
+    try {
+      return await this.vault.readPlaintextForKernel(secretId);
+    } catch (error) {
+      if (error instanceof Error && error.name === "SecretNotFoundError") {
+        throw new ApiKeyOnboardingError("Secret is not in the vault");
+      }
+      throw error;
     }
-    const decipher = createDecipheriv("aes-256-gcm", this.key, Buffer.from(entry.nonce, "base64url"));
-    decipher.setAuthTag(Buffer.from(entry.tag, "base64url"));
-    const plain = Buffer.concat([
-      decipher.update(Buffer.from(entry.ciphertext, "base64url")),
-      decipher.final(),
-    ]);
-    return plain.toString("utf8");
   }
 
-  delete(secretId: string): void {
-    const file = this.load();
-    if (!file.entries[secretId]) return;
-    const entries = { ...file.entries };
-    delete entries[secretId];
-    this.persist({ v: 1, entries });
+  async deleteSecret(secretId: string): Promise<void> {
+    if (!(await this.has(secretId))) return;
+    await this.vault.deleteSecret(secretId);
   }
 
-  has(secretId: string): boolean {
-    return this.load().entries[secretId] !== undefined;
-  }
-
-  metadata(secretId: string): VaultSecretMetadata | undefined {
-    const entry = this.load().entries[secretId];
-    if (!entry) return undefined;
-    return this.toMetadata(secretId, entry);
+  async has(secretId: string): Promise<boolean> {
+    const secret = await this.vault.readSecret(secretId);
+    return secret !== null;
   }
 
   readAtRestBytes(): Uint8Array {
-    return readFileSync(this.filePath);
+    return readTree(this.vaultDir);
   }
 
-  private seal(
-    plaintext: string,
-    meta: Omit<StoredEntry, "nonce" | "tag" | "ciphertext" | "lastFourMasked">,
-  ): StoredEntry {
-    const nonce = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", this.key, nonce);
-    const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return {
-      nonce: nonce.toString("base64url"),
-      tag: tag.toString("base64url"),
-      ciphertext: ciphertext.toString("base64url"),
-      lastFourMasked: plaintext.slice(-4),
-      ...meta,
-    };
-  }
-
-  private toMetadata(secretId: string, entry: StoredEntry): VaultSecretMetadata {
-    return {
-      secretId,
-      name: entry.name,
-      providerHint: entry.providerHint,
-      envScope: entry.envScope,
-      lastFourMasked: entry.lastFourMasked,
-      createdAt: entry.createdAt,
-      rotatedAt: entry.rotatedAt,
-    };
-  }
-
-  private load(): VaultFile {
-    const parsed = JSON.parse(readFileSync(this.filePath, "utf8")) as unknown;
-    if (typeof parsed !== "object" || parsed === null) {
-      throw new ApiKeyOnboardingError("Vault file is unreadable");
-    }
-    const record = parsed as { v?: unknown; entries?: unknown };
-    if (record.v !== 1 || typeof record.entries !== "object" || record.entries === null) {
-      throw new ApiKeyOnboardingError("Vault file is unreadable");
-    }
-    return { v: 1, entries: record.entries as Record<string, StoredEntry> };
-  }
-
-  private persist(file: VaultFile): void {
-    writeFileSync(this.filePath, JSON.stringify(file), { encoding: "utf8" });
+  async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    await this.vault.close();
+    this.state.close();
+    this.global.close();
   }
 }
 
-function exists(filePath: string): boolean {
-  try {
-    readFileSync(filePath);
-    return true;
-  } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? error.code : "";
-    if (code === "ENOENT") return false;
-    throw error;
+function envName(secretId: string): string {
+  const cleaned = secretId.replace(/[^A-Za-z0-9_]/g, "_");
+  const named = `API_KEY_${cleaned}`;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(named)) {
+    throw new ApiKeyOnboardingError("Secret name is not an environment variable identifier");
   }
+  return named;
+}
+
+function toMetadata(
+  saved: { secretId: string; name: string; envScope: VaultEnvScope; lastFourMasked: string; createdAt: number; rotatedAt?: number; providerHint?: string },
+  providerHint: string,
+): VaultSecretMetadata {
+  return {
+    secretId: saved.secretId,
+    name: saved.name,
+    providerHint: saved.providerHint ?? providerHint,
+    envScope: saved.envScope,
+    lastFourMasked: saved.lastFourMasked,
+    createdAt: saved.createdAt,
+    rotatedAt: saved.rotatedAt ?? saved.createdAt,
+  };
+}
+
+function readTree(directory: string): Uint8Array {
+  const chunks: Buffer[] = [];
+  if (!existsSync(directory)) return Buffer.alloc(0);
+  const visit = (current: string): void => {
+    for (const name of readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, name.name);
+      if (name.isDirectory()) {
+        visit(full);
+        continue;
+      }
+      if (name.isFile()) chunks.push(readFileSync(full));
+    }
+  };
+  visit(directory);
+  return Buffer.concat(chunks);
 }

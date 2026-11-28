@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { VersionedModelRoster, type ModelEntryInit } from "@ef-harness/planner";
 import { CompliancePolicyLocks } from "./compliance-policy-locks.js";
 import { summarizePolicyDiff } from "./diff-summary.js";
 import { verifyPinnedSignature } from "./ed25519.js";
@@ -18,11 +19,28 @@ import type {
   ActiveAtomicStep,
   ApplyResult,
   ConnectionRecord,
+  CopilotPremiumMultiplier,
   PolicyHistoryRecord,
+  PolicyModel,
+  PolicyPriceTable,
   PolicyTransparencyView,
+  PriceTableProvider,
   ProviderPolicyDocument,
+  SiwcPolicyView,
 } from "./types.js";
 import { VersionedModelRosterPort } from "./versioned-model-roster-port.js";
+import {
+  SIWC_AGENT_NAME_HINT,
+  SIWC_AUTHORIZE_ENDPOINT,
+  SIWC_DISCOVERY_URL,
+  SIWC_ISSUER,
+  SIWC_JWKS_URL,
+  SIWC_REQUESTED_SCOPES,
+  SIWC_RESOURCE,
+  SIWC_RESPONSES_ENDPOINT,
+  SIWC_ROUTE_REVOKED_GUIDANCE,
+  SIWC_TOKEN_ENDPOINT,
+} from "../siwc/constants.js";
 
 export const POLICY_FETCH_TIMEOUT_MS = 5_000;
 export const POLICY_REFRESH_MIN_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -96,8 +114,7 @@ export class SignedProviderPolicyEngine {
 
   constructor(options: SignedProviderPolicyEngineOptions) {
     this.cacheDirectory = options.cacheDirectory;
-    this.globalDb =
-      options.globalDb ?? new GlobalDbPolicyPort(join(options.cacheDirectory, "global.db"));
+    this.globalDb = options.globalDb ?? new GlobalDbPolicyPort(options.cacheDirectory);
     this.roster = options.roster ?? new VersionedModelRosterPort();
     this.locks = options.locks ?? new CompliancePolicyLocks();
     this.parkHandler = options.parkHandler ?? new RouteRevocationParkHandler();
@@ -224,6 +241,84 @@ export class SignedProviderPolicyEngine {
 
   activeDocument(): ProviderPolicyDocument {
     return this.requireDocument();
+  }
+
+  currentPriceTable(): PolicyPriceTable | undefined {
+    const document = this.document;
+    if (!document) return undefined;
+    const models = document.models.flatMap((model) => {
+      const provider = priceProvider(model.provider);
+      if (!provider) return [];
+      return [priceModel(model, provider)];
+    });
+    return { version: String(document.policyVersion), models };
+  }
+
+  readSiwcPolicy(): SiwcPolicyView {
+    const document = this.requireDocument();
+    const route = document.routes.find((item) => item.id === "siwc_preview" || item.authFlow === "siwc");
+    const revoked = route?.status === "route_revoked" || route?.status === "disabled_by_policy";
+    return {
+      routeRevoked: revoked,
+      registerDynamicClient: true,
+      staticClientId: null,
+      authorizeEndpoint: SIWC_AUTHORIZE_ENDPOINT,
+      tokenEndpoint: SIWC_TOKEN_ENDPOINT,
+      revocationEndpoint: "",
+      discoveryUrl: SIWC_DISCOVERY_URL,
+      jwksUri: SIWC_JWKS_URL,
+      issuer: SIWC_ISSUER,
+      resource: SIWC_RESOURCE,
+      responsesEndpoint: SIWC_RESPONSES_ENDPOINT,
+      agentNameHint: SIWC_AGENT_NAME_HINT,
+      requestedScopes: SIWC_REQUESTED_SCOPES,
+      fallbackGuidance: route?.revocationNotice ?? SIWC_ROUTE_REVOKED_GUIDANCE,
+    };
+  }
+
+  copilotPremiumMultipliers(): readonly CopilotPremiumMultiplier[] {
+    return COPILOT_PREMIUM_MULTIPLIERS.map((row) => ({ ...row }));
+  }
+
+  plannerRoster(): VersionedModelRoster | null {
+    const document = this.requireDocument();
+    const models: ModelEntryInit[] = [];
+    for (const model of document.models) {
+      const priors = model.defaultPassPriors;
+      const trivial = priors.trivial;
+      const standard = priors.standard;
+      const complex = priors.complex;
+      const critical = priors.critical;
+      if (
+        typeof trivial !== "number" ||
+        typeof standard !== "number" ||
+        typeof complex !== "number" ||
+        typeof critical !== "number"
+      ) {
+        continue;
+      }
+      models.push({
+        modelId: model.modelId,
+        family: model.family,
+        provider: model.provider,
+        connectionId: `policy:${model.provider}`,
+        tier: model.tier,
+        contextWindow: model.contextWindow,
+        supportsTools: model.supportsTools,
+        supportsStructuredJson: model.supportsStructuredJson,
+        supportsVision: model.supportsVision,
+        spendKind: "paid-api",
+        inputMicroUsdPer1M: BigInt(Math.max(0, Math.trunc(model.inputMicroUsdPer1M))),
+        outputMicroUsdPer1M: BigInt(Math.max(0, Math.trunc(model.outputMicroUsdPer1M))),
+        cachedInputMicroUsdPer1M: BigInt(Math.max(0, Math.trunc(model.cachedInputMicroUsdPer1M))),
+        allowancePpmPer1M: 0n,
+        defaultPassPriors: { trivial, standard, complex, critical },
+        deprecatedAfter: null,
+        pinned: false,
+      });
+    }
+    if (models.length === 0) return null;
+    return VersionedModelRoster.seed(models, Math.max(1, document.policyVersion));
   }
 
   acknowledgeCard(): void {
@@ -452,6 +547,33 @@ function isTimeoutError(error: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const COPILOT_PREMIUM_MULTIPLIERS: readonly CopilotPremiumMultiplier[] = [
+  { modelId: "included-fast", multiplier: 0, kind: "included" },
+  { modelId: "standard-chat", multiplier: 1, kind: "standard" },
+  { modelId: "premium-reasoner", multiplier: 3, kind: "premium_reasoning" },
+  { modelId: "claude-sonnet", multiplier: 3, kind: "premium_reasoning" },
+];
+
+function priceProvider(provider: string): PriceTableProvider | null {
+  if (provider === "google") return "gemini";
+  if (provider === "anthropic" || provider === "openai" || provider === "openrouter" || provider === "gemini") {
+    return provider;
+  }
+  return null;
+}
+
+function priceModel(model: PolicyModel, provider: PriceTableProvider): PolicyPriceTable["models"][number] {
+  return {
+    modelId: model.modelId,
+    provider,
+    inputMicroUsdPer1M: BigInt(Math.max(0, Math.trunc(model.inputMicroUsdPer1M))),
+    outputMicroUsdPer1M: BigInt(Math.max(0, Math.trunc(model.outputMicroUsdPer1M))),
+    cachedInputReadMicroUsdPer1M: BigInt(Math.max(0, Math.trunc(model.cachedInputMicroUsdPer1M))),
+    cacheWriteMicroUsdPer1M: 0n,
+    reasoningTokenMicroUsdPer1M: 0n,
+  };
 }
 
 export type { ParkTransitionResult };

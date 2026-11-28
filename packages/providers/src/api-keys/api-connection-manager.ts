@@ -97,7 +97,7 @@ export class ApiConnectionManager {
     if ("outcome" in cap) return cap;
 
     if (input.offline === true) {
-      const connection = this.insertConnection({
+      const connection = await this.insertConnection({
         key: resolved.key,
         label,
         cap: cap.cap,
@@ -135,7 +135,7 @@ export class ApiConnectionManager {
     if ("outcome" in prepared) return prepared;
 
     if (input.offline === true) {
-      const connection = this.replaceSecret(existing, resolved.key, {
+      const connection = await this.replaceSecret(existing, resolved.key, {
         ...projectStatus(existing, "unverified_offline", null, existing.discoveredModels),
         customRates: this.rotatedRates(existing, input.customRates),
       });
@@ -156,7 +156,7 @@ export class ApiConnectionManager {
       return { outcome: "rejected", message: validation.message };
     }
     const applied = applyValidation(existing, validation, this.now());
-    const connection = this.replaceSecret(existing, resolved.key, {
+    const connection = await this.replaceSecret(existing, resolved.key, {
       ...applied,
       customRates: this.rotatedRates(existing, input.customRates),
     });
@@ -166,7 +166,7 @@ export class ApiConnectionManager {
 
   async retest(connectionId: string): Promise<{ readonly connection: ApiConnectionRecord; readonly validation: ValidationResult }> {
     const existing = this.require(connectionId);
-    const apiKey = this.vault.getPlaintext(existing.vaultRef);
+    const apiKey = await this.vault.readPlaintextForKernel(existing.vaultRef);
     const validation = await this.validator.validate({
       apiKey,
       provider: existing.provider,
@@ -211,9 +211,9 @@ export class ApiConnectionManager {
     return next;
   }
 
-  delete(connectionId: string): void {
+  async delete(connectionId: string): Promise<void> {
     const existing = this.require(connectionId);
-    this.vault.delete(existing.vaultRef);
+    await this.vault.deleteSecret(existing.vaultRef);
     this.connections.delete(connectionId);
   }
 
@@ -229,14 +229,14 @@ export class ApiConnectionManager {
     return this.ledger.listByConnection(connectionId);
   }
 
-  private finishCreate(
+  private async finishCreate(
     key: ResolvedKey,
     label: string,
     cap: bigint | null,
     customBaseUrl: string | null,
     customRates: CustomRateTable | undefined,
     validation: ValidationResult,
-  ): SaveApiKeyResult {
+  ): Promise<SaveApiKeyResult> {
     if (!validation.ok && validation.failureClass === "invalid_key") {
       return { outcome: "invalid_key", message: validation.message };
     }
@@ -244,7 +244,7 @@ export class ApiConnectionManager {
       return { outcome: "rejected", message: validation.message };
     }
     if (!validation.ok && validation.failureClass === "network_or_proxy_blocked") {
-      const connection = this.insertConnection({
+      const connection = await this.insertConnection({
         key,
         label,
         cap,
@@ -259,7 +259,7 @@ export class ApiConnectionManager {
       return { outcome: "saved", connection, message: OFFLINE_SAVE_MESSAGE };
     }
     const status = validation.ok ? "verified" : failureStatus(validation.failureClass);
-    const connection = this.insertConnection({
+    const connection = await this.insertConnection({
       key,
       label,
       cap,
@@ -275,7 +275,7 @@ export class ApiConnectionManager {
     return { outcome: "saved", connection, message };
   }
 
-  private insertConnection(input: {
+  private async insertConnection(input: {
     readonly key: ResolvedKey;
     readonly label: string;
     readonly cap: bigint | null;
@@ -286,7 +286,7 @@ export class ApiConnectionManager {
     readonly discoveredModels: readonly string[];
     readonly enabled: boolean;
     readonly resumeStatus: ConnectionStatus | null;
-  }): ApiConnectionRecord {
+  }): Promise<ApiConnectionRecord> {
     this.assertPreviewSafe(input.key.normalizedKey, input.key.previewStem);
     const connectionId = this.createId();
     const vaultRef = `api-key:${connectionId}`;
@@ -310,7 +310,7 @@ export class ApiConnectionManager {
       currency: "usd",
       scale: MICRO_USD_SCALE,
     };
-    this.vault.put({
+    await this.vault.storeSecret({
       secretId: vaultRef,
       plaintext: input.key.normalizedKey,
       name: input.label,
@@ -320,13 +320,13 @@ export class ApiConnectionManager {
     try {
       this.connections.insert(record);
     } catch (error) {
-      this.vault.delete(vaultRef);
+      await this.vault.deleteSecret(vaultRef);
       throw error;
     }
     return record;
   }
 
-  private replaceSecret(
+  private async replaceSecret(
     existing: ApiConnectionRecord,
     key: ResolvedKey,
     patch: {
@@ -337,9 +337,9 @@ export class ApiConnectionManager {
       readonly discoveredModels: readonly string[];
       readonly customRates: CustomRateTable | null;
     },
-  ): ApiConnectionRecord {
+  ): Promise<ApiConnectionRecord> {
     this.assertPreviewSafe(key.normalizedKey, key.previewStem);
-    const previous = this.vault.getPlaintext(existing.vaultRef);
+    const previous = await this.vault.readPlaintextForKernel(existing.vaultRef);
     const next: ApiConnectionRecord = {
       ...existing,
       status: patch.status,
@@ -351,12 +351,12 @@ export class ApiConnectionManager {
       keyFamily: key.keyFamily,
       customRates: patch.customRates,
     };
-    this.vault.rotate(existing.vaultRef, key.normalizedKey);
+    await this.vault.rotate(existing.vaultRef, key.normalizedKey);
     try {
       this.connections.update(next);
     } catch (error) {
       try {
-        this.vault.rotate(existing.vaultRef, previous);
+        await this.vault.rotate(existing.vaultRef, previous);
       } catch (restoreError) {
         const reason = restoreError instanceof Error ? restoreError.message : "restore failed";
         throw new ApiKeyOnboardingError(`Key rotation failed and the previous secret could not be restored (${reason})`);

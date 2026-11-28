@@ -64,7 +64,7 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
       expect(exchange?.["client_id"]).not.toBe(SIWC_DYNAMIC_CLIENT_ID);
       expect(exchange?.["client_id"]?.startsWith("oaiapp_efh_")).toBe(true);
       expect(exchange?.["code_verifier"]).toBeTruthy();
-      const bundle = JSON.parse((await harness.vault.get(siwcTokenSecretName("chatgpt-personal"))) ?? "{}") as {
+      const bundle = JSON.parse((await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))) ?? "{}") as {
         access_token?: string;
       };
       expect(bundle.access_token?.startsWith("efh.access.")).toBe(true);
@@ -102,7 +102,7 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
       await expect(harness.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" }))
         .rejects.toThrow(SIWC_SCOPE_REJECTED_MESSAGE);
       expect(harness.store.get("chatgpt-personal")).toBeNull();
-      expect(harness.vault.entries.size).toBe(0);
+      expect(await harness.vault.count()).toBe(0);
       expect(harness.store.readHostId()).toMatch(/^urn:uuid:/);
     } finally {
       await harness.close();
@@ -116,7 +116,7 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
       await expect(nonce.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" }))
         .rejects.toBeInstanceOf(SiwcNonceRejectedError);
       expect(nonce.store.get("chatgpt-personal")).toBeNull();
-      expect(nonce.vault.entries.size).toBe(0);
+      expect(await nonce.vault.count()).toBe(0);
     } finally {
       await nonce.close();
     }
@@ -189,11 +189,11 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
       harness.server.subject = "acct-personal";
       harness.server.email = "personal@example.test";
       await harness.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)", plan: "plus" });
-      const personal = await harness.vault.get(siwcTokenSecretName("chatgpt-personal"));
+      const personal = await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"));
       harness.server.subject = "acct-work";
       harness.server.email = "work@example.test";
       await harness.flow.signIn({ connectionId: "chatgpt-work", label: "ChatGPT (work)", plan: "team" });
-      const work = await harness.vault.get(siwcTokenSecretName("chatgpt-work"));
+      const work = await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-work"));
       expect(personal).toBeTruthy();
       expect(work).toBeTruthy();
       expect(personal).not.toBe(work);
@@ -209,22 +209,22 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
     const mismatch = await openHarness();
     try {
       await mismatch.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" });
-      const before = await mismatch.vault.get(siwcTokenSecretName("chatgpt-personal"));
+      const before = await mismatch.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"));
       mismatch.server.callbackClientIdOverride = "oaiapp_efh_other";
       await expect(mismatch.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" }))
         .rejects.toMatchObject({ code: "client_mismatch" });
-      expect(await mismatch.vault.get(siwcTokenSecretName("chatgpt-personal"))).toBe(before);
+      expect(await mismatch.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))).toBe(before);
     } finally {
       await mismatch.close();
     }
     const identity = await openHarness();
     try {
       await identity.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" });
-      const before = await identity.vault.get(siwcTokenSecretName("chatgpt-personal"));
+      const before = await identity.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"));
       identity.server.subject = "acct-other";
       await expect(identity.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" }))
         .rejects.toMatchObject({ code: "identity_mismatch" });
-      expect(await identity.vault.get(siwcTokenSecretName("chatgpt-personal"))).toBe(before);
+      expect(await identity.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))).toBe(before);
     } finally {
       await identity.close();
     }
@@ -234,7 +234,7 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
     const harness = await openHarness({ revocationEndpoint: "" });
     try {
       const account = await harness.flow.signIn({ connectionId: "chatgpt-personal", label: "ChatGPT (personal)" });
-      const bundle = JSON.parse((await harness.vault.get(siwcTokenSecretName("chatgpt-personal"))) ?? "{}") as {
+      const bundle = JSON.parse((await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))) ?? "{}") as {
         refresh_token: string;
         access_token: string;
       };
@@ -247,7 +247,7 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
       });
       expect(harness.store.get("chatgpt-personal")?.status).toBe("disconnected");
       expect(harness.store.get("chatgpt-personal")?.enabled).toBe(false);
-      expect(await harness.vault.get(siwcTokenSecretName("chatgpt-personal"))).toBeNull();
+      expect(await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))).toBeNull();
       expect(harness.server.revokeForms).toHaveLength(1);
       expect(harness.server.revokeForms[0]?.["token"]).toBe(bundle.refresh_token);
       expect(harness.server.revokeForms[0]?.["client_id"]).toBe(account.clientId);
@@ -267,7 +267,7 @@ describe("Sign in with ChatGPT PKCE and OIDC", () => {
       expect(result.remoteRevocationConfirmed).toBe(false);
       expect(result.notice).toContain("Remote revocation was not confirmed");
       expect(harness.store.get("chatgpt-personal")?.status).toBe("disconnected");
-      expect(await harness.vault.get(siwcTokenSecretName("chatgpt-personal"))).toBeNull();
+      expect(await harness.vault.readPlaintextForKernel(siwcTokenSecretName("chatgpt-personal"))).toBeNull();
     } finally {
       await harness.close();
     }

@@ -5,27 +5,12 @@ import path from "node:path";
 import {
   LocalSignedProviderPolicyEngine,
   SignInWithChatGptAuthFlow,
+  SiwcDpapiSecretsVault,
   SqliteSiwcInstallationStore,
-  type SiwcSecretsVault,
   type SystemBrowserOpener,
 } from "../../src/siwc/index.js";
+import { MemoryMaterialStore } from "../memory-material.js";
 import { MockOidcServer } from "./mock-oidc.js";
-
-export class MemoryVault implements SiwcSecretsVault {
-  readonly entries = new Map<string, string>();
-
-  async put(name: string, value: string): Promise<void> {
-    this.entries.set(name, value);
-  }
-
-  async get(name: string): Promise<string | null> {
-    return this.entries.get(name) ?? null;
-  }
-
-  async delete(name: string): Promise<void> {
-    this.entries.delete(name);
-  }
-}
 
 export class RedirectBrowser implements SystemBrowserOpener {
   readonly urls: string[] = [];
@@ -62,7 +47,7 @@ export interface SiwcHarness {
   readonly dbPath: string;
   readonly server: MockOidcServer;
   readonly store: SqliteSiwcInstallationStore;
-  readonly vault: MemoryVault;
+  readonly vault: SiwcDpapiSecretsVault;
   readonly browser: RedirectBrowser;
   readonly flow: SignInWithChatGptAuthFlow;
   readonly policy: LocalSignedProviderPolicyEngine;
@@ -80,7 +65,7 @@ export async function openHarness(options: {
   const server = new MockOidcServer();
   await server.start();
   const store = new SqliteSiwcInstallationStore(dbPath);
-  const vault = new MemoryVault();
+  const vault = new SiwcDpapiSecretsVault(path.join(dir, "vault"), new MemoryMaterialStore());
   const browser = options.browser ?? new RedirectBrowser();
   const policy = new LocalSignedProviderPolicyEngine({
     ...server.endpoints(),
@@ -105,8 +90,9 @@ export async function openHarness(options: {
     flow,
     policy,
     async close() {
-      store.close();
-      await server.stop();
+    store.close();
+    await vault.close();
+    await server.stop();
       rmSync(dir, { recursive: true, force: true });
     },
   };

@@ -240,7 +240,7 @@ async function seedFresh(harness: Awaited<ReturnType<typeof openHarness>>): Prom
     expiresAtMs: now + 3_600_000,
     earliestRefreshAtMs: null,
   }, now);
-  await harness.vault.put(siwcTokenSecretName("chatgpt-personal"), JSON.stringify({
+  await harness.vault.storeSecret(siwcTokenSecretName("chatgpt-personal"), JSON.stringify({
     access_token: "efh.access.wire",
     refresh_token: "efh.refresh.wire",
     id_token: "efh.id.wire",

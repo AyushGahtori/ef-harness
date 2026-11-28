@@ -1,112 +1,108 @@
-import { DatabaseSync } from "node:sqlite";
+import { GlobalBrokerDb } from "@ef-harness/db";
 import { PolicyDocumentError } from "./errors.js";
 import type { ConnectionRecord, PolicyHistoryRecord } from "./types.js";
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS policy_history (
-  policy_version INTEGER PRIMARY KEY,
-  published_at TEXT NOT NULL,
-  sha256 TEXT NOT NULL,
-  applied_at TEXT NOT NULL,
-  diff_summary TEXT NOT NULL
-) STRICT;
-`;
-
-interface HistoryRow {
-  policy_version: number;
-  published_at: string;
-  sha256: string;
-  applied_at: string;
-  diff_summary: string;
-}
-
-interface ConnectionRow {
-  id: string;
-  provider: string;
-  route: string;
-  currency: string;
-  enabled: number;
-}
-
 /**
- * Local stand-in for GlobalDbRepo policy history until Task 014 owns the table.
- * The additive DDL is recorded in the task handoff for schema/global.sql.
+ * Policy history and connection reads on Task 014 `GlobalBrokerDb`.
+ * The v2 migration owns `policy_history`. This port does not open its own `DatabaseSync`.
  */
 export class GlobalDbPolicyPort {
-  private readonly db: DatabaseSync;
+  private readonly global: GlobalBrokerDb;
+  private readonly owned: boolean;
 
-  constructor(filename: string) {
-    this.db = new DatabaseSync(filename);
-    this.db.exec(SCHEMA);
+  constructor(root: string, global?: GlobalBrokerDb) {
+    if (global) {
+      this.global = global;
+      this.owned = false;
+    } else {
+      this.global = GlobalBrokerDb.open({ root });
+      this.owned = true;
+    }
   }
 
   insertHistory(row: PolicyHistoryRecord): void {
     const current = this.latestVersion();
     if (current !== null && row.policyVersion < current) {
-      throw new PolicyDocumentError(
-        "rollback",
-        "refusing to persist an older policy version",
-      );
+      throw new PolicyDocumentError("rollback", "refusing to persist an older policy version");
     }
-    this.db
-      .prepare(
-        `INSERT INTO policy_history (policy_version, published_at, sha256, applied_at, diff_summary)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(policy_version) DO UPDATE SET
-           published_at = excluded.published_at,
-           sha256 = excluded.sha256,
-           applied_at = excluded.applied_at,
-           diff_summary = excluded.diff_summary`,
-      )
-      .run(row.policyVersion, row.publishedAt, row.sha256, row.appliedAt, row.diffSummary);
+    this.global.writer.run(
+      `INSERT INTO policy_history (policy_version, published_at, sha256, applied_at, diff_summary)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(policy_version) DO UPDATE SET
+         published_at = excluded.published_at,
+         sha256 = excluded.sha256,
+         applied_at = excluded.applied_at,
+         diff_summary = excluded.diff_summary`,
+      [row.policyVersion, row.publishedAt, row.sha256, row.appliedAt, row.diffSummary],
+    );
   }
 
   listHistory(): PolicyHistoryRecord[] {
-    const rows = this.db
-      .prepare(
-        `SELECT policy_version, published_at, sha256, applied_at, diff_summary
-         FROM policy_history
-         ORDER BY policy_version ASC`,
-      )
-      .all() as unknown as HistoryRow[];
-    return rows.map((row) => ({
-      policyVersion: row.policy_version,
-      publishedAt: row.published_at,
-      sha256: row.sha256,
-      appliedAt: row.applied_at,
-      diffSummary: row.diff_summary,
-    }));
+    const rows = this.global.writer.all(
+      `SELECT policy_version, published_at, sha256, applied_at, diff_summary
+       FROM policy_history
+       ORDER BY policy_version ASC`,
+    );
+    return rows.flatMap((row) => {
+      const mapped = asRow(row);
+      return mapped ? [mapHistory(mapped)] : [];
+    });
   }
 
   latestVersion(): number | null {
-    const row = this.db
-      .prepare("SELECT MAX(policy_version) AS policy_version FROM policy_history")
-      .get() as { policy_version: number | null } | undefined;
-    if (!row || row.policy_version === null) return null;
-    return row.policy_version;
+    const row = asRow(
+      this.global.writer.get("SELECT MAX(policy_version) AS policy_version FROM policy_history"),
+    );
+    if (!row) return null;
+    const version = row.policy_version;
+    if (typeof version === "number" && Number.isSafeInteger(version)) return version;
+    if (typeof version === "bigint") return Number(version);
+    return null;
   }
 
   listConnections(): ConnectionRecord[] {
-    const table = this.db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'connections'")
-      .get() as { name: string } | undefined;
-    if (!table) return [];
-    const rows = this.db
-      .prepare("SELECT id, provider, route, currency, enabled FROM connections")
-      .all() as unknown as ConnectionRow[];
-    return rows.map((row) => ({
+    return this.global.listConnections().map((row) => ({
       id: row.id,
       provider: row.provider,
       route: row.route,
       currency: row.currency,
-      enabled: row.enabled === 1,
+      enabled: row.enabled,
       billing: billingForCurrency(row.currency),
     }));
   }
 
   close(): void {
-    this.db.close();
+    if (!this.owned) return;
+    this.global.close();
   }
+}
+
+function mapHistory(row: Record<string, unknown>): PolicyHistoryRecord {
+  return {
+    policyVersion: requiredInt(row, "policy_version"),
+    publishedAt: requiredText(row, "published_at"),
+    sha256: requiredText(row, "sha256"),
+    appliedAt: requiredText(row, "applied_at"),
+    diffSummary: requiredText(row, "diff_summary"),
+  };
+}
+
+function asRow(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined || value === null || typeof value !== "object") return undefined;
+  return value as Record<string, unknown>;
+}
+
+function requiredText(row: Record<string, unknown>, key: string): string {
+  const value = row[key];
+  if (typeof value !== "string") throw new PolicyDocumentError("malformed", `policy_history.${key} was not text`);
+  return value;
+}
+
+function requiredInt(row: Record<string, unknown>, key: string): number {
+  const value = row[key];
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  throw new PolicyDocumentError("malformed", `policy_history.${key} was not an integer`);
 }
 
 function billingForCurrency(currency: string): ConnectionRecord["billing"] {

@@ -685,6 +685,35 @@ ALTER TABLE footprints ADD COLUMN predicted_mb INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE footprints ADD COLUMN peak_ram_samples_json TEXT NOT NULL DEFAULT '[]';
 `;
 
+/**
+ * Additive global tables for provider policy, connection profile metadata, and k[model] weights.
+ * `connections.route` stays unconstrained so api_key and siwc rows share one global.db.
+ */
+const PROVIDER_GLOBAL_V2_SQL = `
+CREATE TABLE IF NOT EXISTS policy_history (
+  policy_version INTEGER PRIMARY KEY,
+  published_at TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  diff_summary TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS connection_profiles (
+  connection_id TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  profile_json TEXT NOT NULL CHECK (json_valid(profile_json)),
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS model_weights (
+  connection_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (connection_id, model_id)
+) STRICT;
+`;
+
 export const globalFootprintsV2Migration: MigrationDefinition = {
   kind: "additive",
   version: 2,
@@ -693,6 +722,7 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
   apply(conn) {
     conn.exec(GLOBAL_FOOTPRINTS_V2_SQL);
     conn.exec(VAULT_SECRET_METADATA_SQL);
+    conn.exec(PROVIDER_GLOBAL_V2_SQL);
   },
   check(conn) {
     const rows = conn.prepare("PRAGMA table_info(footprints)").all();
@@ -701,5 +731,8 @@ export const globalFootprintsV2Migration: MigrationDefinition = {
       if (!names.has(column)) throw new SchemaInvariantError(`footprints.${column} was not added`);
     }
     assertTable(conn, "vault_secret_metadata");
+    assertTable(conn, "policy_history");
+    assertTable(conn, "connection_profiles");
+    assertTable(conn, "model_weights");
   },
 };

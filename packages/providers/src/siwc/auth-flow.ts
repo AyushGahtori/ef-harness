@@ -125,7 +125,7 @@ export class SignInWithChatGptAuthFlow {
     if (bundle && record.clientId) {
       remoteRevocationConfirmed = await this.revoke(policy, record.clientId, bundle.refresh_token);
     }
-    await this.options.vault.delete(siwcTokenSecretName(connectionId));
+    await this.options.vault.deleteSecret(siwcTokenSecretName(connectionId));
     this.options.store.markDisconnected(connectionId);
     const status = this.options.store.get(connectionId)?.status;
     if (status !== "disconnected") {
@@ -183,7 +183,7 @@ export class SignInWithChatGptAuthFlow {
     const scopes = grantedScopeList(token.scope ?? "");
     if (!scopes.includes(SIWC_DIRECT_SCOPE)) throw new SiwcScopeRejectedError();
     const now = this.now();
-    await this.options.vault.put(siwcTokenSecretName(input.request.connectionId), serializeTokenBundle({
+    await this.options.vault.storeSecret(siwcTokenSecretName(input.request.connectionId), serializeTokenBundle({
       access_token: token.accessToken,
       refresh_token: token.refreshToken,
       id_token: token.idToken ?? "",
@@ -213,7 +213,7 @@ export class SignInWithChatGptAuthFlow {
   }
 
   private async readBundle(connectionId: string) {
-    const raw = await this.options.vault.get(siwcTokenSecretName(connectionId));
+    const raw = await this.options.vault.readPlaintextForKernel(siwcTokenSecretName(connectionId));
     if (!raw) return null;
     return parseTokenBundle(raw);
   }

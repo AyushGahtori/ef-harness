@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { MemoryMaterialStore } from "../memory-material.js";
 import {
   anthropicConsolePrefix,
   anthropicOauthPrefix,
@@ -57,21 +58,21 @@ interface Harness {
   readonly ledger: LocalBudgetLedger;
   readonly logger: MemoryLog;
   readonly transport: RecordingTransport;
-  cleanup(): void;
+  cleanup(): Promise<void>;
 }
 
-const cleanups: Array<() => void> = [];
+const cleanups: Array<() => Promise<void>> = [];
 
-afterEach(() => {
+afterEach(async () => {
   while (cleanups.length > 0) {
     const cleanup = cleanups.pop();
-    cleanup?.();
+    if (cleanup) await cleanup();
   }
 });
 
 function harness(respond: (input: ModelListRequest) => ModelListResponse): Harness {
   const dir = mkdtempSync(path.join(tmpdir(), "ef136-"));
-  const vault = new LocalDpapiSecretsVault(path.join(dir, "vault"));
+  const vault = new LocalDpapiSecretsVault(path.join(dir, "vault"), { materialStore: new MemoryMaterialStore() });
   const connections = new LocalGlobalDbConnections(path.join(dir, "db"));
   const ledger = new LocalBudgetLedger();
   const logger = new MemoryLog();
@@ -87,7 +88,8 @@ function harness(respond: (input: ModelListRequest) => ModelListResponse): Harne
       return () => `conn-${++n}`;
     })(),
   });
-  const cleanup = (): void => {
+  const cleanup = async (): Promise<void> => {
+    await vault.close();
     connections.close();
     rmSync(dir, { recursive: true, force: true });
   };
@@ -156,7 +158,7 @@ describe("ApiConnectionManager", () => {
     });
     expect(work.connection.maskedKeyPreview).toBe(`${anthropicPreviewStem}...9x2a`);
     expect(work.connection.provider).toBe("anthropic");
-    expect(env.vault.getPlaintext(personal.connection.vaultRef)).toBe(openaiKey);
+    expect(await env.vault.readPlaintextForKernel(personal.connection.vaultRef)).toBe(openaiKey);
     expect(env.manager.list().map((row) => row.label)).toEqual(["Personal OpenAI", "Work Anthropic"]);
     assertSecretAbsent(
       [
@@ -241,22 +243,22 @@ describe("ApiConnectionManager", () => {
     if (rotated.outcome !== "saved") return;
     expect(rotated.connection.connectionId).toBe(saved.connection.connectionId);
     expect(rotated.connection.maskedKeyPreview.endsWith("1c3d")).toBe(true);
-    expect(env.vault.getPlaintext(rotated.connection.vaultRef)).toBe(rotatedKey);
+    expect(await env.vault.readPlaintextForKernel(rotated.connection.vaultRef)).toBe(rotatedKey);
     expect(env.manager.usageReceipts(saved.connection.connectionId)).toHaveLength(1);
 
     const oat = await env.manager.rotateKey(saved.connection.connectionId, { rawKey: key(anthropicOauthPrefix) });
     expect(oat.outcome).toBe("rejected");
-    expect(env.vault.getPlaintext(rotated.connection.vaultRef)).toBe(rotatedKey);
+    expect(await env.vault.readPlaintextForKernel(rotated.connection.vaultRef)).toBe(rotatedKey);
 
     const disabled = env.manager.disable(saved.connection.connectionId);
     expect(disabled).toMatchObject({ enabled: false, status: "disabled" });
-    expect(env.vault.has(disabled.vaultRef)).toBe(true);
+    expect(await env.vault.has(disabled.vaultRef)).toBe(true);
     expect(env.manager.usageReceipts(saved.connection.connectionId)).toHaveLength(1);
     expect(env.manager.get(saved.connection.connectionId)?.discoveredModels).toEqual(["gpt-5.1"]);
     expect(env.manager.enable(saved.connection.connectionId).status).toBe("verified");
 
-    env.manager.delete(saved.connection.connectionId);
-    expect(env.vault.has(saved.connection.vaultRef)).toBe(false);
+    await env.manager.delete(saved.connection.connectionId);
+    expect(await env.vault.has(saved.connection.vaultRef)).toBe(false);
     expect(env.manager.get(saved.connection.connectionId)).toBeUndefined();
     expect(env.manager.usageReceipts(saved.connection.connectionId)).toHaveLength(1);
     expect(Buffer.from(env.vault.readAtRestBytes()).toString("latin1").includes(BODY)).toBe(false);

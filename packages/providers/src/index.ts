@@ -7,3 +7,13 @@ export function packageIdentity(): {
 } {
   return { name: packageName, layer };
 }
+
+export {
+  ApiConnectionManager,
+  ZeroTokenApiKeyValidator,
+} from "./api-keys/index.js";
+export { SignedProviderPolicyEngine } from "./policy/index.js";
+export { SignInWithChatGptAuthFlow } from "./siwc/index.js";
+export * as apiKeys from "./api-keys/index.js";
+export * as policy from "./policy/index.js";
+export * as signInWithChatGpt from "./siwc/index.js";
