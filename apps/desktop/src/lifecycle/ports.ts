@@ -1,7 +1,7 @@
+import type { reentry } from "@ef-harness/steering";
 import type {
   BuildActivity,
   ShutdownMode,
-  WakeBand,
   WalCheckpointMode,
   WalCheckpointResult,
 } from "./types.js";
@@ -90,7 +90,7 @@ export interface PopOutWindowPort {
   readonly openCount: number;
 }
 
-/** Task 130 ColdOpenReconciler.reconcileAfterWake. */
+/** Task 130 ColdOpenReconciler.reconcile. */
 export interface WakeHealth {
   readonly networkOnline: boolean;
   readonly repoChanged: boolean;
@@ -99,19 +99,14 @@ export interface WakeHealth {
   readonly testEnvHealthy: boolean;
 }
 
-export interface WakeReconciliationInput extends WakeHealth {
-  readonly sleepDurationMs: number;
-  readonly band: WakeBand;
-  readonly suspendedAt: number;
-  readonly resumedAt: number;
+export interface WakeReconcileResult {
+  readonly showWelcome: boolean;
+  readonly wakeNote: string | null;
+  readonly tokensSpent: number;
 }
 
 export interface ColdOpenReconcilerPort {
-  reconcileAfterWake(input: WakeReconciliationInput): Promise<{
-    readonly welcomeBackRequired: boolean;
-    readonly message: string;
-    readonly burnedRetries: 0;
-  }>;
+  reconcile(input: reentry.ColdOpenInput): WakeReconcileResult;
 }
 
 /** Task 020 SleepSkewGuard. */

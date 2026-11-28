@@ -2,11 +2,9 @@ import type { DaemonShutdownCoordinator } from "./daemon-shutdown-coordinator.js
 import type { PowerLifecycleHandler } from "./power-lifecycle-handler.js";
 import {
   LISTENS_ON_LOCALHOST,
-  POWER_PATH,
-  SHUTDOWN_PATH,
   type LifecyclePowerEvent,
-  type LifecycleRequest,
   type LifecycleRouteResult,
+  type LifecycleRpcRequest,
   type LifecycleShutdownRequest,
   type ShutdownMode,
 } from "./protocol.js";
@@ -56,23 +54,35 @@ export class LifecycleRouter {
     private readonly power: PowerLifecycleHandler,
   ) {}
 
-  async handle(request: LifecycleRequest): Promise<LifecycleRouteResult> {
-    if (request.path !== SHUTDOWN_PATH && request.path !== POWER_PATH) {
-      return { status: 404, body: { ok: false, error: "not found" } };
-    }
-    if (request.method !== "POST") {
-      return { status: 405, body: { ok: false, error: "method not allowed" } };
-    }
-    if (request.path === SHUTDOWN_PATH) {
-      const parsed = readShutdown(request.body);
+  async handle(request: LifecycleRpcRequest): Promise<LifecycleRouteResult> {
+    if (request.method === "daemon.shutdown") {
+      const parsed = readShutdown(request.params);
       if ("error" in parsed) return { status: 400, body: { ok: false, error: parsed.error } };
       const body = await this.shutdown.shutdown(parsed);
       return { status: 200, body };
     }
-    if (!isPowerEvent(request.body)) {
-      return { status: 400, body: { ok: false, error: "power body is not a lifecycle power event" } };
+    if (request.method === "run.pause") {
+      const reason = readPauseReason(request.params);
+      const body = await this.shutdown.shutdown({
+        mode: "detach_ui_keep_running",
+        reason,
+      });
+      return { status: 200, body };
     }
-    await this.power.handle(request.body);
-    return { status: 200, body: { ok: true } };
+    if (request.method === "lifecycle.power") {
+      if (!isPowerEvent(request.params)) {
+        return { status: 400, body: { ok: false, error: "power body is not a lifecycle power event" } };
+      }
+      await this.power.handle(request.params);
+      return { status: 200, body: { ok: true } };
+    }
+    return { status: 404, body: { ok: false, error: "method not found" } };
   }
+}
+
+function readPauseReason(params: unknown): string {
+  if (!isRecord(params) || typeof params.reason !== "string" || params.reason.length === 0) {
+    return "run.pause";
+  }
+  return params.reason;
 }

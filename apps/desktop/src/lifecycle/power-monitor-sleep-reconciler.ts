@@ -1,3 +1,4 @@
+import type { reentry } from "@ef-harness/steering";
 import type {
   CheckpointFlushPort,
   ClaimGatePort,
@@ -54,6 +55,7 @@ export interface PowerReconcilerDependencies {
   readonly jobs: WindowsJobObjectPort;
   readonly sqlite: SqliteCheckpointPort;
   readonly retries: RetryLedgerPort;
+  readonly projectRoot?: string;
   ecoOnBattery: boolean;
 }
 
@@ -108,17 +110,18 @@ export class PowerMonitorSleepReconciler {
       throw new Error("Sleep burned retries");
     }
     const health = await this.deps.probe.probe();
-    const wake = await this.deps.reconciler.reconcileAfterWake({
-      sleepDurationMs,
-      band,
-      suspendedAt,
-      resumedAt,
-      ...health,
-    });
-    if (wake.burnedRetries !== 0) {
-      throw new Error("reconcileAfterWake burned retries");
+    const wake = this.deps.reconciler.reconcile(
+      wakeColdOpenInput({
+        sleepDurationMs,
+        resumedAt,
+        health,
+        projectRoot: this.deps.projectRoot ?? ".",
+      }),
+    );
+    if (wake.tokensSpent !== 0) {
+      throw new Error("ColdOpenReconciler.reconcile burned retries");
     }
-    const hold = this.shouldHold(sleepDurationMs, health, wake.welcomeBackRequired);
+    const hold = this.shouldHold(sleepDurationMs, health, wake.showWelcome);
     if (hold) {
       this.deps.claims.pause("welcome-back");
     } else if (this.deps.claims.paused) {
@@ -130,7 +133,7 @@ export class PowerMonitorSleepReconciler {
       sleepDurationMs,
       resumeClaiming: !hold,
     });
-    const message = hold ? welcomeBackMessage(sleepDurationMs, health) : wake.message;
+    const message = hold ? welcomeBackMessage(sleepDurationMs, health) : (wake.wakeNote ?? "");
     const outcome: ResumeOutcome = {
       sleepDurationMs,
       band,
@@ -215,4 +218,55 @@ export class PowerMonitorSleepReconciler {
     }
     return { source, batteryPercent, ecoOnBattery: false };
   }
+}
+
+function wakeColdOpenInput(input: {
+  readonly sleepDurationMs: number;
+  readonly resumedAt: number;
+  readonly health: WakeHealth;
+  readonly projectRoot: string;
+}): reentry.ColdOpenInput {
+  const snapshot: reentry.StateDbSnapshot = {
+    projectId: "m1",
+    snapshotId: "wake",
+    projectName: "ef-harness",
+    projectRoot: input.projectRoot,
+    lastActiveAt: new Date(input.resumedAt).toISOString(),
+    phaseLabel: "wake",
+    whyStopped: "sleep",
+    expectedIntegrationHead: "unknown",
+    recordedBranch: "harness/integration",
+    recordedHead: "unknown",
+    recordedOriginMain: null,
+    walOk: input.health.localDbHealthy,
+    walDetail: input.health.localDbHealthy ? "ok" : "unhealthy",
+    attempts: [],
+    remainingTasks: [],
+    parkedTasks: [],
+    finishedFeatures: [],
+    costEstimate: "$0.00",
+    windowLabel: "wake",
+    lockHashes: { packageJson: null, pnpmLock: null },
+    viewHashes: [],
+    worktrees: [],
+    connections: [],
+    cliVersions: [],
+    humanSteps: [],
+    questions: [],
+    failedTasks: [],
+  };
+  return {
+    snapshot,
+    nowIso: new Date(input.resumedAt).toISOString(),
+    reopen: "wake",
+    buildWasInProgress: false,
+    sleepMinutes: Math.round(input.sleepDurationMs / 60_000),
+    offline: !input.health.networkOnline,
+    repoChanged: input.health.repoChanged,
+    networkChanged: !input.health.networkOnline,
+    forceHold: false,
+    lastActiveLabel: null,
+    ledger: { tokens: 0, cents: 0, calls: [] },
+    gate: null,
+  };
 }

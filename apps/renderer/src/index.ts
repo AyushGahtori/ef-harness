@@ -24,6 +24,8 @@ export type {
 export * from "./presets/index.js";
 export * from "./shell/index.js";
 export { WelcomeBackScreen, renderWelcomeBack } from "./cockpit/welcome-back/index.js";
+export { DiagnosticsHealthView, renderHealthDocument } from "./diagnostics/index.js";
+export { diagnosticsHealthSlot } from "./diagnostics/mount.js";
 export type {
   WelcomeActionId,
   WelcomeBackModel,

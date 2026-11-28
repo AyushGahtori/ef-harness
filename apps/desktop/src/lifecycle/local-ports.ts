@@ -21,7 +21,7 @@ import type {
   SqliteCheckpointPort,
   StuckClockPort,
   WakeHealth,
-  WakeReconciliationInput,
+  WakeReconcileResult,
   WindowHost,
   WindowsJobObjectPort,
 } from "./ports.js";
@@ -90,15 +90,11 @@ export class RecordingPopOuts implements PopOutWindowPort {
 }
 
 export class LocalColdOpenReconciler implements ColdOpenReconcilerPort {
-  readonly calls: WakeReconciliationInput[] = [];
+  readonly calls: Parameters<ColdOpenReconcilerPort["reconcile"]>[0][] = [];
 
-  async reconcileAfterWake(input: WakeReconciliationInput): Promise<{
-    readonly welcomeBackRequired: boolean;
-    readonly message: string;
-    readonly burnedRetries: 0;
-  }> {
+  reconcile(input: Parameters<ColdOpenReconcilerPort["reconcile"]>[0]): WakeReconcileResult {
     this.calls.push(input);
-    return { welcomeBackRequired: false, message: "", burnedRetries: 0 };
+    return { showWelcome: false, wakeNote: null, tokensSpent: 0 };
   }
 }
 

@@ -94,9 +94,9 @@ describe("diagnostics redacted bundle exporter", () => {
     for (const file of preview.files) {
       expect(Buffer.from(unzipped.get(file.name) ?? new Uint8Array())).toEqual(Buffer.from(file.bytes));
     }
-    const listing = execFileSync("tar", ["-tf", zipPath], { encoding: "utf8" });
+    const listing = execFileSync("unzip", ["-l", zipPath], { encoding: "utf8" });
     for (const file of preview.files) expect(listing).toContain(file.name);
-    const extracted = execFileSync("tar", ["-xOf", zipPath, "daemon-logs-redacted.txt"]);
+    const extracted = execFileSync("unzip", ["-p", zipPath, "daemon-logs-redacted.txt"]);
     expect(Buffer.from(extracted)).toEqual(Buffer.from(logs?.bytes ?? new Uint8Array()));
     const raw = readFileSync(zipPath);
     expect(raw.includes(Buffer.from(canary))).toBe(false);

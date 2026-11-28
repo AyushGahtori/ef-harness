@@ -10,7 +10,16 @@
   ],
   "references": [
     {
+      "path": "../../packages/db"
+    },
+    {
+      "path": "../../packages/governor"
+    },
+    {
       "path": "../../packages/shared-contracts"
+    },
+    {
+      "path": "../../packages/steering"
     }
   ]
 }

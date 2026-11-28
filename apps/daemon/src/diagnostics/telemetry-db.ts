@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname } from "node:path";
+import { TelemetryDb } from "@ef-harness/db";
 import { TelemetryUnavailableError, type SqliteDatabaseHealth } from "./types.js";
 
 export const TELEMETRY_SCHEMA_SQL = `
@@ -15,11 +16,6 @@ CREATE INDEX telemetry_attempt ON telemetry(attempt, ts);
 CREATE INDEX telemetry_ts ON telemetry(ts);
 `;
 
-const ENSURE_TELEMETRY_SCHEMA_SQL = TELEMETRY_SCHEMA_SQL.replace(
-  "CREATE TABLE telemetry",
-  "CREATE TABLE IF NOT EXISTS telemetry",
-).replaceAll("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ");
-
 export interface TelemetryRow {
   readonly id: number;
   readonly ts: number;
@@ -27,32 +23,75 @@ export interface TelemetryRow {
   readonly data: string;
 }
 
-export function openTelemetryDatabase(path: string, readOnly: boolean): DatabaseSync {
+export interface TelemetryStatement {
+  all(...params: readonly unknown[]): Record<string, unknown>[];
+  get(...params: readonly unknown[]): Record<string, unknown> | undefined;
+  run(...params: readonly unknown[]): { readonly changes: number };
+}
+
+export interface TelemetrySession {
+  exec(sql: string): void;
+  prepare(sql: string): TelemetryStatement;
+  close(): void;
+}
+
+/**
+ * Opens telemetry.db through TelemetryDb. `now` stays at 0 so this short-lived
+ * reader does not apply the 14-day writer prune over diagnostics aggregates.
+ */
+export function openTelemetryDatabase(filePath: string, readOnly: boolean): TelemetrySession {
   try {
-    const database = new DatabaseSync(path, { readOnly });
-    if (!readOnly) {
-      database.exec("PRAGMA journal_mode = WAL");
-      database.exec("PRAGMA synchronous = NORMAL");
-      database.exec(ENSURE_TELEMETRY_SCHEMA_SQL);
-    } else {
-      database.exec("PRAGMA query_only = ON");
-    }
-    return database;
+    const database = TelemetryDb.open({ filePath, now: () => 0 });
+    const writer = database.writer;
+    const guard = (sql: string) => {
+      if (readOnly && !/^\s*(select|pragma)\b/i.test(sql)) {
+        throw new TelemetryUnavailableError("telemetry session is read only");
+      }
+    };
+    return {
+      exec(sql: string) {
+        guard(sql);
+        writer.exec(sql);
+      },
+      prepare(sql: string) {
+        guard(sql);
+        const statement = writer.prepare(sql);
+        return {
+          all(...params: readonly unknown[]) {
+            const rows = statement.all(params.length === 0 ? undefined : (params as never)) as unknown[];
+            return rows.map((row: unknown) => (row && typeof row === "object" ? (row as Record<string, unknown>) : {}));
+          },
+          get(...params: readonly unknown[]) {
+            const row = statement.get(params.length === 0 ? undefined : (params as never));
+            if (!row || typeof row !== "object") return undefined;
+            return row as Record<string, unknown>;
+          },
+          run(...params: readonly unknown[]) {
+            const result = statement.run(params.length === 0 ? undefined : (params as never));
+            return { changes: Number(result.changes) };
+          },
+        };
+      },
+      close() {
+        database.close();
+      },
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "unreadable";
     throw new TelemetryUnavailableError(`${message}`);
   }
 }
 
-export function rebuildTelemetryDatabase(path: string): void {
+export function rebuildTelemetryDatabase(filePath: string, live?: { close(): void }): void {
+  live?.close();
   for (const suffix of ["", "-wal", "-shm"]) {
-    const target = `${path}${suffix}`;
+    const target = `${filePath}${suffix}`;
     if (existsSync(target)) rmSync(target, { force: true });
   }
-  const parent = dirname(path);
+  const parent = dirname(filePath);
   if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
-  const database = openTelemetryDatabase(path, false);
-  database.close();
+  const reopened = TelemetryDb.open({ filePath, now: () => 0 });
+  reopened.close();
 }
 
 export function fileByteSize(path: string): number {

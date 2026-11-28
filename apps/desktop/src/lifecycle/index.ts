@@ -125,7 +125,7 @@ export type {
   SqliteCheckpointPort,
   StuckClockPort,
   WakeHealth,
-  WakeReconciliationInput,
+  WakeReconcileResult,
   WindowHost,
   WindowsJobObjectPort,
 } from "./ports.js";

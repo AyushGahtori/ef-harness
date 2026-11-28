@@ -21,13 +21,14 @@ export {
   type PowerLifecycleDependencies,
 } from "./power-lifecycle-handler.js";
 export {
+  DAEMON_SHUTDOWN_METHOD,
   DRAIN_BUDGET_MS,
   IDLE_DRAIN_BUDGET_MS,
+  LIFECYCLE_POWER_METHOD,
   LISTENS_ON_LOCALHOST,
-  POWER_PATH,
-  SHUTDOWN_PATH,
+  RUN_PAUSE_METHOD,
   type LifecyclePowerEvent,
-  type LifecycleRequest,
+  type LifecycleRpcRequest,
   type LifecycleRouteResult,
   type LifecycleShutdownRequest,
   type LifecycleShutdownResponse,

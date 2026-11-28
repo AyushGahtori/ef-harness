@@ -42,9 +42,10 @@ describe("PowerMonitorSleepReconciler", () => {
     expect(harness.leases.spuriousLeaseExpiries).toBe(0);
     expect(harness.leases.expirySweeperSuspended).toBe(true);
     expect(harness.coldOpen.calls[0]).toMatchObject({
-      sleepDurationMs: FOUR_HOURS,
-      band: "over_30_min",
-      networkOnline: false,
+      reopen: "wake",
+      sleepMinutes: FOUR_HOURS / 60_000,
+      offline: true,
+      repoChanged: false,
     });
     expect(harness.claims.paused).toBe(true);
     expect(harness.daemon.power.at(-1)).toMatchObject({

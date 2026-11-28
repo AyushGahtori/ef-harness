@@ -1,6 +1,7 @@
 export const LISTENS_ON_LOCALHOST = false;
-export const SHUTDOWN_PATH = "/lifecycle/shutdown";
-export const POWER_PATH = "/lifecycle/power";
+export const DAEMON_SHUTDOWN_METHOD = "daemon.shutdown";
+export const RUN_PAUSE_METHOD = "run.pause";
+export const LIFECYCLE_POWER_METHOD = "lifecycle.power";
 export const DRAIN_BUDGET_MS = 10_000;
 export const IDLE_DRAIN_BUDGET_MS = 1_000;
 
@@ -52,10 +53,9 @@ export type LifecyclePowerEvent =
   | { readonly type: "lock-screen"; readonly at: number }
   | { readonly type: "unlock-screen"; readonly at: number };
 
-export interface LifecycleRequest {
+export interface LifecycleRpcRequest {
   readonly method: string;
-  readonly path: string;
-  readonly body?: unknown;
+  readonly params?: unknown;
 }
 
 export type LifecycleRouteResult =

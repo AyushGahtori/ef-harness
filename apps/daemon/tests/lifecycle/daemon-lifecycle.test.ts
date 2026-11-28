@@ -212,11 +212,14 @@ describe("daemon power lifecycle", () => {
   });
 });
 
-describe("POST /lifecycle/shutdown", () => {
-  it("routes drain and detach without listening on localhost", async () => {
+describe("daemon.shutdown and run.pause", () => {
+  it("routes drain and detach over named-pipe methods without listening on localhost", async () => {
     const source = readFileSync(new URL("../../src/lifecycle/lifecycle-router.ts", import.meta.url), "utf8");
     expect(source.includes("createServer")).toBe(false);
     expect(source.includes("127.0.0.1")).toBe(false);
+    expect(source.includes("/lifecycle/shutdown")).toBe(false);
+    expect(source.includes("daemon.shutdown")).toBe(true);
+    expect(source.includes("run.pause")).toBe(true);
     const claims = new LocalClaimGate();
     const jobs = new RecordingJobObjects();
     const sqlite = new RecordingSqlite();
@@ -242,33 +245,34 @@ describe("POST /lifecycle/shutdown", () => {
     expect(router.listensOnLocalhost).toBe(false);
 
     const detached = await router.handle({
-      method: "POST",
-      path: "/lifecycle/shutdown",
-      body: { mode: "detach_ui_keep_running", reason: "keep-building-in-background" },
+      method: "daemon.shutdown",
+      params: { mode: "detach_ui_keep_running", reason: "keep-building-in-background" },
     });
     expect(detached.status).toBe(200);
     if (detached.status !== 200 || !("mode" in detached.body)) return;
     expect(detached.body.daemonKeptRunning).toBe(true);
 
-    const missing = await router.handle({ method: "POST", path: "/missing", body: {} });
+    const paused = await router.handle({ method: "run.pause", params: { reason: "user" } });
+    expect(paused.status).toBe(200);
+    if (paused.status === 200 && "daemonKeptRunning" in paused.body) {
+      expect(paused.body.daemonKeptRunning).toBe(true);
+    }
+
+    const missing = await router.handle({ method: "lifecycle.missing", params: {} });
     expect(missing.status).toBe(404);
-    const wrongMethod = await router.handle({ method: "GET", path: "/lifecycle/shutdown" });
-    expect(wrongMethod.status).toBe(405);
-    const bad = await router.handle({ method: "POST", path: "/lifecycle/shutdown", body: { mode: "kill" } });
+    const bad = await router.handle({ method: "daemon.shutdown", params: { mode: "kill" } });
     expect(bad.status).toBe(400);
 
     const suspended = await router.handle({
-      method: "POST",
-      path: "/lifecycle/power",
-      body: { type: "suspend", at: 4 },
+      method: "lifecycle.power",
+      params: { type: "suspend", at: 4 },
     });
     expect(suspended.status).toBe(200);
     expect(claims.paused).toBe(true);
 
     const drained = await router.handle({
-      method: "POST",
-      path: "/lifecycle/shutdown",
-      body: { mode: "drain_and_exit", reason: "pause-safely-and-quit", deadlineMs: 10_000, idle: false },
+      method: "daemon.shutdown",
+      params: { mode: "drain_and_exit", reason: "pause-safely-and-quit", deadlineMs: 10_000, idle: false },
     });
     expect(drained.status).toBe(200);
     if (drained.status === 200 && "walModes" in drained.body) {

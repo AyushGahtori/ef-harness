@@ -68,8 +68,9 @@ export class DiagnosticsMetricsAggregator {
       inspectSqliteFile(this.deps.telemetryPath, "telemetry.db"),
     ];
     try {
-      if (!existsSync(this.deps.telemetryPath)) {
-        return this.unavailable(generatedAt, databases, "missing");
+      const telemetry = databases.find((row) => row.name === "telemetry.db");
+      if (!existsSync(this.deps.telemetryPath) || telemetry?.quickCheck !== "ok") {
+        return this.unavailable(generatedAt, databases, "unreadable");
       }
       const rows = readTelemetryRows(this.deps.telemetryPath, since);
       const samples: HardwareSample[] = [];

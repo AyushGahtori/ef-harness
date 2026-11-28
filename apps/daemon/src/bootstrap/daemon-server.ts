@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import type { TelemetryDb } from "@ef-harness/db";
 import {
   BINARY_CHUNK_BYTES,
   CURRENT_PROTOCOL,
@@ -55,6 +56,7 @@ import {
   type InspectorInboxContext,
 } from "../cockpit/inspector-inbox.js";
 import { recordHealthMetric } from "../cockpit/telemetry.js";
+import { handleIntegratedMethod, handleLifecycleMethod } from "../server.js";
 import { isM1View, sha256, SimulatedTask, type M1View } from "./task-run.js";
 
 export interface HarnessdOptions {
@@ -124,6 +126,7 @@ export class HarnessDaemon {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private shutdownPromise: Promise<ShutdownReceipt> | null = null;
+  private telemetryOverride: TelemetryDb | null = null;
 
   constructor(private readonly opts: HarnessdOptions) {
     this.task = new SimulatedTask(opts.sandboxTier, opts.diffNote, opts.largeDiffBytes);
@@ -187,6 +190,10 @@ export class HarnessDaemon {
       closed.push("global.db");
       bundle.project.close();
       closed.push("state.db");
+      if (this.telemetryOverride) {
+        this.telemetryOverride.close();
+        this.telemetryOverride = null;
+      }
       bundle.telemetry.close();
       this.bundle = null;
     }
@@ -380,9 +387,12 @@ export class HarnessDaemon {
         if (stored.hash !== hash) throw new RpcError(RPC_OP_CONFLICT, "op_id conflict");
         return stored.result;
       }
-      const result = this.mutate(method);
+      const detach = method === "daemon.shutdown" && record.mode === "detach_ui_keep_running";
+      const result = detach
+        ? { accepted: true, pid: process.pid, daemonKeptRunning: true, mode: "detach_ui_keep_running" }
+        : this.mutate(method);
       this.writeOp(op, method, hash, result);
-      if (method === "daemon.parkAndExit" || method === "daemon.shutdown") {
+      if ((method === "daemon.parkAndExit" || method === "daemon.shutdown") && !detach) {
         this.reply(conn, id, result);
         const reason = method === "daemon.parkAndExit" ? "version-mismatch" : "rpc";
         setImmediate(() => {
@@ -390,8 +400,16 @@ export class HarnessDaemon {
         });
         return DEFERRED;
       }
+      if (detach) {
+        void handleLifecycleMethod("daemon.shutdown", record, this.integrationContext());
+      }
       return result;
     }
+    if (method === "run.pause" || method === "lifecycle.power") {
+      return handleLifecycleMethod(method, record, this.integrationContext());
+    }
+    const integrated = handleIntegratedMethod(method, record, this.integrationContext());
+    if (integrated.handled) return integrated.result;
     if (method === "session.ping") return { ok: true };
     if (method === "daemon.status") return this.statusBody();
     if (method === "snapshot.get") return this.snapshot();
@@ -430,6 +448,28 @@ export class HarnessDaemon {
     throw new RpcError(RPC_METHOD_NOT_FOUND, `method not found: ${method}`);
   }
 
+  private telemetryDb(): TelemetryDb {
+    if (this.telemetryOverride) return this.telemetryOverride;
+    return this.requireBundle().telemetry;
+  }
+
+  private integrationContext() {
+    const bundle = this.requireBundle();
+    return {
+      profileDir: this.opts.profileDir,
+      appVersion: this.opts.daemonVersion,
+      statePath: bundle.statePath,
+      globalPath: bundle.globalPath,
+      telemetry: () => this.telemetryDb(),
+      replaceTelemetry: (next: TelemetryDb) => {
+        this.telemetryOverride = next;
+      },
+      pauseBuild: () => {
+        if (this.task.stop()) this.publish("task.state");
+      },
+    };
+  }
+
   private statusBody(): unknown {
     const view = this.task.view(this.windowCount());
     return {
@@ -464,7 +504,7 @@ export class HarnessDaemon {
     const result = explainCockpit(params.modelOutput);
     const bundle = this.bundle;
     if (bundle) {
-      recordHealthMetric(bundle.telemetry, {
+      recordHealthMetric(this.telemetryDb(), {
         attempt: null,
         ts: Date.now(),
         data: { event: "cockpit_explain", contractId: "cockpit-explainer@1", ok: result.ok },
@@ -487,8 +527,8 @@ export class HarnessDaemon {
         throw new RpcError(RPC_INVALID_REQUEST, "telemetry data is not JSON");
       }
     }
-    const bundle = this.requireBundle();
-    return recordHealthMetric(bundle.telemetry, { attempt, ts: params.ts, data });
+    this.requireBundle();
+    return recordHealthMetric(this.telemetryDb(), { attempt, ts: params.ts, data });
   }
 
   private subscribe(conn: Conn, params: Record<string, unknown>): unknown {

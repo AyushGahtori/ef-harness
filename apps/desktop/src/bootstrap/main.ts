@@ -5,6 +5,7 @@ import { InMemoryMainShell, InMemoryScreenPort, InMemoryTrayLifecycle } from "..
 import { PopOutWindowCoordinator } from "../windows/pop-out-window-coordinator.js";
 import { SharedHarnessdStream } from "../windows/shared-harnessd-stream.js";
 import { MAX_POP_OUT_WINDOWS, type DipRect, type HarnessdEvent, type ManagedWindow, type PopOutResult, type PopOutView, type ThemeName } from "../windows/types.js";
+import { mountDesktopLifecycle, type MountedDesktopLifecycle } from "../main.js";
 import { ensureHarnessd, launchDetached } from "./launch.js";
 import { callDaemon, probeDaemon } from "./probe.js";
 import { M1_PRELOAD_CONTRACT, PRELOAD_CJS } from "./preload.js";
@@ -293,6 +294,12 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
     preloadContract: M1_PRELOAD_CONTRACT,
   };
   (globalThis as { __EF_M1_SECURITY__?: unknown }).__EF_M1_SECURITY__ = security;
+  (globalThis as { __EF_DESKTOP_LIFECYCLE__?: MountedDesktopLifecycle }).__EF_DESKTOP_LIFECYCLE__ =
+    mountDesktopLifecycle({
+      profileDir: options.profileDir,
+      appVersion: options.appVersion,
+      pipePath: options.pipePath,
+    });
   return {
     security: ELECTRON_SECURITY_DEFAULTS,
     focusCount: () => focusCount,

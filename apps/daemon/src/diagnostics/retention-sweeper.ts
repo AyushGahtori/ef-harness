@@ -1,5 +1,11 @@
-import { DatabaseSync } from "node:sqlite";
-import { fileByteSize, openTelemetryDatabase, readNumberField, readTextField } from "./telemetry-db.js";
+import {
+  fileByteSize,
+  openTelemetryDatabase,
+  readNumberField,
+  readTextField,
+  type TelemetrySession,
+  type TelemetryStatement,
+} from "./telemetry-db.js";
 import { parseHardwareRows, parseSqliteWrite } from "./telemetry-parse.js";
 import { percentileNearestRank } from "./percentile.js";
 import {
@@ -159,8 +165,8 @@ function foldSqlite(days: Map<number, SqliteDayBucket>, ts: number, data: string
 }
 
 function upsertDaily(
-  database: DatabaseSync,
-  insert: ReturnType<DatabaseSync["prepare"]>,
+  database: TelemetrySession,
+  insert: TelemetryStatement,
   day: number,
   kind: string,
   data: string,
@@ -213,7 +219,7 @@ function worsePressure(left: PressureLevel, right: PressureLevel): PressureLevel
   return rank[right] > rank[left] ? right : left;
 }
 
-function rollback(database: DatabaseSync, error: unknown): Error {
+function rollback(database: TelemetrySession, error: unknown): Error {
   try {
     database.exec("ROLLBACK");
   } catch (rollbackError) {

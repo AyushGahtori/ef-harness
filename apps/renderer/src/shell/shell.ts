@@ -25,6 +25,7 @@ import {
   type ShellPreferenceStore,
 } from "./preferences.js";
 import { commandForKey, type KeyInput } from "./shortcuts.js";
+import { diagnosticsHealthSlot } from "../diagnostics/mount.js";
 import { SingleAppShellView } from "./shell-view.js";
 import { resolveTheme } from "./theme.js";
 import type { AppliedPhasePreset, CenterTab, LifecyclePhase } from "../presets/types.js";
@@ -743,6 +744,7 @@ export function createConnectedShell(options?: {
   systemTheme?: ResolvedThemeName;
   preferences?: MemoryPreferenceStore;
   windowId?: string;
+  slots?: ShellSlotRegistry;
 }): ConnectedShell {
   const clock = new ManualClock();
   const client = new MemoryPreloadPort();
@@ -764,6 +766,11 @@ export function createConnectedShell(options?: {
     viewport: options?.viewport ?? { width: 1440, height: 900 },
     systemTheme: options?.systemTheme ?? "light",
     projects: [options?.snapshot?.project ?? defaultProject(), { id: "other", name: "other-app", branch: "main" }],
+  });
+  const slots = options?.slots;
+  shell.registerSlots({
+    ...slots,
+    center: { diagnostics: diagnosticsHealthSlot(), ...slots?.center },
   });
   return { shell, clock, client, bridge, stop, pressure, sink, preferences };
 }
