@@ -1899,3 +1899,38 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - `git status --short`: exit `0` — clean after restoring the spike reports
 - Product code changed: no
 - Not done: C70 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened. No commit on `harness/integration`.
+
+## [C70] — external-effect-ledger, github-connector-queue, push-pr-ci-repair
+
+- **Subagent Role & Model:** integrator, grok-4.7
+- **Commit SHA & Subject:** `8b3996d81b92bcbd022af95f0f8e18155dea875f` — `integrate: wire ship-deploy effects/github/ci-loop`
+- **Merge commits:** `c5a682e26dbb8a2c26c9fb52b2a5017c88f57fe6` (`integrate: Task 176 external-effect-ledger`); `b6fca7b252045d18899cfd231341b1d95f93bd79` (`integrate: Task 177 github-connector-queue`); `fc8a40f4aad5ed3845c878633a7219389f031a1c` (`integrate: Task 178 push-pr-ci-repair`)
+- **Branches Merged:** `origin/task/176-external-effect-ledger` @ `7b46817c17985f3746786b988edf1f1e90ab8e73`; `origin/task/177-github-connector-queue` @ `b32f60ea12111077935ef9f84fe0fe07fb2537cd`; `origin/task/178-push-pr-ci-repair` @ `3dcb8705761335b2e49d14324aef76a2b64082b6`
+- **Findings Fixed:** F-076 (C70 slice: live STOP and writer_epoch fence; nested import rewrite) and F-077 (C70 slice: durable GitHub rate counters, durable ship_runs, shared hash and redactor, 176–178 wire). MigrationStateStore, Docker image hash, post-deploy CAS, and the six-module barrel stay with C71.
+- **C71 included:** no. Compared three-dot and merge file lists. Intersection was empty, so only C70 was integrated.
+
+### What Was Done
+- Compared C70 merge trees (`a4547404..c5a682e2`, `c5a682e2..b6fca7b2`, `b6fca7b2..fc8a40f4`) with C71 three-dot lists against `a4547404`: `origin/task/179-deploy-adapter-vercel-docker`, `origin/task/180-expand-contract-migrations`, `origin/task/181-post-deploy-verify-rollback`. C70 paths are `.agent-handoffs/task-176.md`, `packages/ship-deploy/src/effects/**`, `packages/ship-deploy/tests/effects/**`, `.agent-handoffs/task-177.md`, `packages/ship-deploy/src/github/**`, `packages/ship-deploy/tests/github/**`, `.agent-handoffs/task-178.md`, `packages/ship-deploy/src/ci-loop/**`, `packages/ship-deploy/tests/ci-loop/**`. C71 paths are `.agent-handoffs/task-179.md`, `packages/ship-deploy/src/deploy-adapters/**`, `packages/ship-deploy/tests/deploy-adapters/**`, `.agent-handoffs/task-180.md`, `packages/ship-deploy/src/live-migrations/**`, `packages/ship-deploy/tests/live-migrations/**`, `.agent-handoffs/task-181.md`, `packages/ship-deploy/src/post-deploy/**`, `packages/ship-deploy/tests/post-deploy/**`. `comm -12` of the two sorted unions was empty. Neither set edits `pnpm-lock.yaml`, `packages/ship-deploy/package.json`, or `packages/ship-deploy/src/index.ts`. C71 was not started.
+- Merged 176, 177, and 178 with `--no-ff` onto `harness/integration` from `a4547404df6941be18e8cb5c80f0e09a16392034`. No dirty-worktree patch exists for 176–178.
+- `SqliteEffectStore` writes through `EffectsRepo` on the canonical `state.db`. Dispatch reads meta `writer_epoch` and meta `steering.control_state`. Exact `STOPPED` or a stale epoch blocks the send. The private `project_runtime` DDL is gone. `project_runtime` has `paused` and does not have a `writer_epoch` column.
+- `GitHubRateAwareQueue` loads and saves `global.db.github_rate_state` through the existing global v2 migration (`GITHUB_RATE_STATE_SQL`). The process-local `sharedQueues` map is gone. `user_version` stays 2.
+- `SqliteShipRunStore` writes canonical `ship_runs` plus sidecar `ship_run_details` (phase and repair counters). `stateV2Sql` stays idempotent. `InMemoryShipRunStore` remains a test double.
+- `rewriteImportLine` keeps intermediate directories. `'../utils/DateFormat'` repairs to `'../utils/dateFormat'`. `'./Components/Header'` repairs to `'./Components/header'`.
+- Deleted the duplicate effect hash and redactor modules. Payload hashing uses `canonicalJson` and a bare 64-hex digest. Payloads go through `StreamingRedactor`. CI fingerprints live in `failure-fingerprint.ts`. Triage parses `CiTriageV1Schema`. Git mutations use `execGit` with `developerCheckout: false`. `bindShipDeploy` wires the ledger, rate queue, ship-run store, MinGit inspector, and `GitSafetyScanner`. `LandingSummaryGenerator` produces the landing paragraph.
+- Declared `@ef-harness/db`, `git-engine`, `shared-observability`, `integrator`, `verifier`, and `governor` on `@ef-harness/ship-deploy` and added the matching tsconfig references. `verifier` and `governor` are declared for the seam and are not imported. Node stayed on the default runtime. The node:sqlite spike was not rerun. Windows Job Object failures were not stubbed.
+
+### What It Fixed
+- A STOPPED control state or a bumped writer epoch blocks `ExternalEffectLedger` dispatch with zero network calls.
+- GitHub mutation counters survive `GlobalBrokerDb` close and reopen (`mutationsThisMinute` stays 1).
+- `ship_runs` survives `ProjectStateDb` close and reopen (`resumeAfterCrash` returns `CI_WATCHING`).
+- Nested case repair keeps the specifier directory and the `..` prefix.
+
+### Verification Run & Results
+- `pnpm install`: already current after the ship-deploy dependency edit; `pnpm-lock.yaml` is in the wire commit
+- `pnpm build`: exit `0`
+- `pnpm typecheck`: exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint`: exit `0` — 0 errors, 4 warnings (pre-existing unused eslint-disable directives in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: `67/67 passed`
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 68 passed (68)`, `Tests 377 passed (377)`, 0 skipped
+- `pnpm --filter @ef-harness/ship-deploy test -- effects github ci-loop`: exit `0` — `Test Files 12 passed (12)`, `Tests 45 passed (45)`, 0 skipped (extra arguments did not narrow)
+- Not done: C71 not started. `main` not merged. `task/162-office-pixijs-floorplan-sprites` and `task/164-office-animation-director-astar` not merged. No pull request opened.
