@@ -1522,3 +1522,34 @@ Each entry is appended by the executing subagent upon completing and verifying i
 - What It Fixed: F-056 — the M3 exit gate executes the integrated stack, keeps a 0% hidden-suite drop against the cassette, and fails closed on an injected slow task_holds trace, a 22 ms board burst, a leaked pid, and a pre-resume claim.
 - Verification Run & Results: pnpm install exit 0; pnpm build and pnpm typecheck (both `tsc -b --pretty false`) exit 0; NODE_OPTIONS=--max-old-space-size=4096 pnpm lint exit 0 (0 errors, 4 pre-existing unused-disable warnings in packages/planner/src/system-arch/vendor/mermaid-parse.mjs); pnpm --filter @ef-harness/e2e exec vitest run --config vitest.config.ts tests/m3-exit-gate.test.ts exit 0, Test Files 1 passed (1), Tests 7 passed (7), 0 skipped; node schema/schema-test.js exit 0, 67/67 passed, SQLite 3.53.4; EF_HARNESS_MAINTAINER=1 node scripts/verify-harmony.mjs --pre-commit exit 0, harmony ok.
 - Not done: C53 not started. Wave 4 proof gate not run. main not merged. task/162 and task/164 not merged.
+
+---
+
+## [Wave 4 Proof Gate] — C42–C52 stopped on steering timeout
+
+- **Subagent Role & Model:** gate-auditor, grok-4.7
+- **Commit on `harness/integration`:** `13e71381780ed6db39be815f7f9ebddf0cf245cf` (`integrate: wire m3-exit-gate real stack`)
+- **Product fix SHA:** none
+- **Result:** fail. Stopped. No product patch.
+
+### What Was Done
+- Verified `harness/integration` at `13e71381780ed6db39be815f7f9ebddf0cf245cf` (C52). Did not start C53. Did not merge `main`. Did not open a pull request. Did not edit product code. Did not push a new `harness/integration` commit. `git status --short` was empty before the gate and empty after the failed test. No spike test rewrote `REPORT.md`.
+- The Wave 4 proof-gate command in `combination_task.md` is `pnpm --filter @ef-harness/e2e test -- m3-exit-gate`. The run also started the Wave 4 package filters from C42–C52. It stopped at the first non-zero exit and did not run the remaining filters.
+
+### Verification Run & Results
+- `git rev-parse HEAD`: `13e71381780ed6db39be815f7f9ebddf0cf245cf` (branch `harness/integration`)
+- `pnpm install`: exit `0`
+- `pnpm build` (`tsc -b --pretty false`): exit `0`
+- `pnpm typecheck` (`tsc -b --pretty false`): exit `0`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm lint` (`eslint .`): exit `0` (`0` errors; `4` pre-existing unused-disable warnings in `packages/planner/src/system-arch/vendor/mermaid-parse.mjs`)
+- `node schema/schema-test.js`: exit `0` — `67/67 passed · SQLite 3.53.4`
+- `pnpm verify:diagrams`: exit `0` — `Merged 31 diagrams into ef-harness-complete.mmd (1219 lines)`
+- `pnpm --filter @ef-harness/db test`: exit `0` — `Test Files 67 passed (67)`, `Tests 374 passed (374)`
+- `pnpm --filter @ef-harness/mcp-server test`: exit `0` — `Test Files 2 passed (2)`, `Tests 18 passed (18)`
+- `pnpm --filter @ef-harness/integrator test -- handoffs feature-branches`: exit `0` — `Test Files 29 passed (29)`, `Tests 179 passed (179)` (the extra arguments did not narrow the suite)
+- `pnpm --filter @ef-harness/integrator test -- merge-queue ccr undo feature-integrator final-audit`: exit `0` — `Test Files 29 passed (29)`, `Tests 179 passed (179)`
+- `pnpm --filter @ef-harness/steering test -- router dispatcher`: exit `0` — `Test Files 21 passed (21)`, `Tests 121 passed (121)` (the extra arguments did not narrow the suite)
+- `pnpm --filter @ef-harness/steering test`: exit `1` — `Test Files 1 failed | 20 passed (21)`, `Tests 1 failed | 120 passed (121)`. `FAIL tests/reentry/cold-open-reconciler.test.ts > ColdOpenReconciler > simulates offline edits, manual commits, branch drift, and lockfile drift without writing the repo` — `TestTimeoutError: Test timed out in 5000ms` (that case reported `16704ms`).
+- Not run after the failure: governor telemetry filter, `pnpm --filter @ef-harness/planner test -- scheduler`, full governor, desktop, daemon, the four renderer filters, and `pnpm --filter @ef-harness/e2e test -- m3-exit-gate`.
+- `git status --short`: exit `0` — clean (empty output)
+- Not done: C53 not started. main not merged.
