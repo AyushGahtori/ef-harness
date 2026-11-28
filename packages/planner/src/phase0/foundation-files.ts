@@ -1,3 +1,4 @@
+import { createDevOnlyJsxSourceTagPlugin } from "../jsx-source-plugin/index.js";
 import type { ProjectKind } from "./types.js";
 
 const TOKEN_ROLES = [
@@ -148,11 +149,19 @@ export function filesForTask(taskId: string, projectKind: ProjectKind): Readonly
         "src/health/health.ts": "export function ready(): { readonly status: \"ok\" } {\n  return { status: \"ok\" };\n}\n",
         "src/clock/clock.ts": "export function fixedClock(now: number): () => number {\n  return () => now;\n}\n",
       };
-    case "P0.8":
+    case "P0.8": {
+      const plugin = createDevOnlyJsxSourceTagPlugin({ mode: "development" });
+      const sample = "export function PreviewButton() {\n  return <button>Preview</button>;\n}\n";
+      const transformed = plugin.transform?.(sample, "src/preview/PreviewButton.tsx");
+      const tagged = transformed && typeof transformed === "object" ? transformed.code : sample;
       return {
-        "plugins/jsx-source-tag/index.ts": "export const jsxSourceTag = { devOnly: true };\n",
-        "src/preview/server.ts": "export function preview(): { readonly route: \"/preview\" } {\n  return { route: \"/preview\" };\n}\n",
+        "plugins/jsx-source-tag/index.ts":
+          "export { createDevOnlyJsxSourceTagPlugin as DevOnlyJsxSourceTagPlugin } from \"@ef-harness/planner\";\n",
+        "src/preview/server.ts":
+          "export function preview(): { readonly route: \"/preview\" } {\n  return { route: \"/preview\" };\n}\n",
+        "src/preview/PreviewButton.tsx": tagged,
       };
+    }
     case "P0.B1":
       return {
         "tests/characterization/lock.mjs": script(`process.stdout.write("characterization_ok=1\\n");`),

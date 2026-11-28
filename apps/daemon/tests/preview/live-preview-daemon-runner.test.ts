@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createLivePreviewDaemonRunner } from "../../src/preview/create-runner.js";
 import { LiveKeyRefusedError } from "../../src/preview/errors.js";
 import { cliFixtureFiles, webFixtureFiles } from "../../src/preview/fixture-files.js";
-import { pidAlive, LocalWindowsJobSupervisor } from "../../src/preview/local-job-supervisor.js";
+import { pidAlive, PreviewJobSupervisor } from "../../src/preview/preview-job-supervisor.js";
 import { LocalPortLeaseRepo } from "../../src/preview/local-port-lease.js";
 import type { LivePreviewDaemonRunner } from "../../src/preview/live-preview-daemon-runner.js";
 import type { PreviewSecret, SqlMigration } from "../../src/preview/ports.js";
@@ -72,10 +72,10 @@ function harness(input?: {
   readonly scheduler?: ManualPreviewScheduler;
   readonly timings?: Partial<import("../../src/preview/timings.js").PreviewTimings>;
   readonly ports?: LocalPortLeaseRepo;
-  readonly jobs?: LocalWindowsJobSupervisor;
+  readonly jobs?: PreviewJobSupervisor;
   readonly commits?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   readonly headSha?: string;
-}): { runner: LivePreviewDaemonRunner; jobs: LocalWindowsJobSupervisor; dir: string } {
+}): { runner: LivePreviewDaemonRunner; jobs: PreviewJobSupervisor; dir: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ef-preview-run-"));
   const projectId = input?.projectId ?? "cafe";
   const developer = path.join(dir, "developer-checkout");
@@ -85,7 +85,7 @@ function harness(input?: {
   fs.writeFileSync(path.join(developer, "MARKER.txt"), "developer-desk\n");
   fs.writeFileSync(path.join(worker, "MARKER.txt"), "worker-slot\n");
   const kind = input?.kind ?? "web";
-  const jobs = input?.jobs ?? new LocalWindowsJobSupervisor();
+  const jobs = input?.jobs ?? new PreviewJobSupervisor(path.join(dir, "data", "harness-jobs.sqlite"));
   const commits =
     input?.commits ??
     (kind === "cli"
@@ -172,7 +172,10 @@ describe("LivePreviewDaemonRunner", { timeout: 60_000 }, () => {
     expect(opened.port).toBeGreaterThanOrEqual(PREVIEW_PORT_MIN);
     expect(opened.port).toBeLessThanOrEqual(PREVIEW_PORT_MAX);
     expect(opened.path).toBe("/orders");
-    expect(opened.worktreePath?.endsWith(`${path.sep}cafe${path.sep}integration`)).toBe(true);
+    expect(opened.worktreePath?.endsWith(`${path.sep}integration`)).toBe(true);
+    expect(opened.worktreePath?.includes(`${path.sep}wt${path.sep}`)).toBe(true);
+    expect(opened.worktreePath).not.toContain("developer-checkout");
+    expect(opened.worktreePath).not.toContain("slot-1");
     expect(opened.pid).not.toBeNull();
     expect(jobs.spawnContainedSecret(testStripeKey())).toBe(false);
     expect(jobs.lastCwd()?.endsWith(`${path.sep}integration`)).toBe(true);
@@ -332,7 +335,7 @@ describe("LivePreviewDaemonRunner", { timeout: 60_000 }, () => {
   });
 
   it("refuses a live key before any preview process starts", async () => {
-    const jobs = new LocalWindowsJobSupervisor();
+    const jobs = new PreviewJobSupervisor(path.join(os.tmpdir(), `ef-preview-jobs-${process.pid}-live.sqlite`));
     const { runner } = harness({ jobs, secrets: secrets(liveStripeKey(), "test") });
     await expect(runner.openPreview()).rejects.toBeInstanceOf(LiveKeyRefusedError);
     expect(runner.snapshot().everStarted).toBe(false);
@@ -415,7 +418,7 @@ describe("LivePreviewDaemonRunner", { timeout: 60_000 }, () => {
   });
 
   it("spends no preview process while Preview stays closed", async () => {
-    const jobs = new LocalWindowsJobSupervisor();
+    const jobs = new PreviewJobSupervisor(path.join(os.tmpdir(), `ef-preview-jobs-${process.pid}-idle.sqlite`));
     const { runner } = harness({ jobs });
     expect(runner.noteHeadlessElapsed(20 * 60 * 1000).serverProcesses).toBe(0);
     expect(jobs.leakedPids()).toEqual([]);

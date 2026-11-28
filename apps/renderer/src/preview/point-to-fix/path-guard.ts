@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { SourceLocation } from "./types.js";
 
 export interface AcceptedPath {
@@ -13,10 +11,11 @@ export interface RejectedPath {
   readonly reason: string;
 }
 
-export function validateProjectSourcePath(
-  sourceFile: string,
-  projectRoot: string,
-): AcceptedPath | RejectedPath {
+/**
+ * Lexical project-relative check for the sandboxed renderer.
+ * Workspace realpath containment runs in the daemon.
+ */
+export function validateProjectSourcePath(sourceFile: string, projectRoot: string): AcceptedPath | RejectedPath {
   if (sourceFile.length === 0 || sourceFile.length > 500 || sourceFile.includes("\0")) {
     return { ok: false, reason: "source path is invalid" };
   }
@@ -34,53 +33,16 @@ export function validateProjectSourcePath(
     return { ok: false, reason: "source path must be relative to the project" };
   }
   const segments = unified.split("/");
-  if (segments.some((part) => part === "" || part === "..")) {
+  if (segments.some((part) => part === "" || part === "." || part === "..")) {
     return { ok: false, reason: "source path escapes the project" };
   }
-  const rootReal = fs.realpathSync(projectRoot);
-  const absolute = path.resolve(rootReal, ...segments);
-  const lexical = path.relative(rootReal, absolute);
-  if (lexical.startsWith("..") || path.isAbsolute(lexical)) {
-    return { ok: false, reason: "source path escapes the project" };
-  }
-  const existing = deepestExisting(absolute);
-  let existingReal: string;
-  try {
-    existingReal = fs.realpathSync(existing);
-  } catch {
-    return { ok: false, reason: "source path could not be resolved" };
-  }
-  const fromRoot = path.relative(rootReal, existingReal);
-  if (fromRoot.startsWith("..") || path.isAbsolute(fromRoot)) {
-    return { ok: false, reason: "source path resolves outside the project" };
-  }
-  if (fs.existsSync(absolute)) {
-    const fileReal = fs.realpathSync(absolute);
-    const fileRel = path.relative(rootReal, fileReal);
-    if (fileRel.startsWith("..") || path.isAbsolute(fileRel)) {
-      return { ok: false, reason: "source path resolves outside the project" };
-    }
-    return {
-      ok: true,
-      relativePath: fileRel.replaceAll("\\", "/"),
-      absolutePath: fileReal,
-    };
-  }
+  const relativePath = segments.join("/");
+  const root = projectRoot.replaceAll("\\", "/").replace(/\/+$/, "");
   return {
     ok: true,
-    relativePath: lexical.replaceAll("\\", "/"),
-    absolutePath: absolute,
+    relativePath,
+    absolutePath: `${root}/${relativePath}`,
   };
-}
-
-function deepestExisting(target: string): string {
-  let current = target;
-  while (!fs.existsSync(current)) {
-    const parent = path.dirname(current);
-    if (parent === current) return current;
-    current = parent;
-  }
-  return current;
 }
 
 export function parseSourceAttribute(raw: string): { file: string; line: number; column: number } | null {

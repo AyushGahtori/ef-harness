@@ -1,3 +1,4 @@
+import { VisualSteerV1Schema } from "@ef-harness/shared-contracts";
 import { validateEfSourceInWorkspace } from "./source-path.js";
 import type {
   ElementPickContext,
@@ -15,9 +16,20 @@ const SHARED_PRIMITIVE_PATHS = [
 const GLOBAL_INTENT_PATTERN =
   /\b(all|every|global|primary buttons?|shared|everywhere|token)\b/i;
 
+export interface VisualSteerCodeIndex {
+  filesReferencing(componentFile: string): readonly string[];
+  fileForUnsourcedPick?(pick: PickContextBundle): string | null;
+}
+
+export interface VisualSteerDaemonPort {
+  route(instruction: string, pick: PickContextBundle): VisualSteerRouteResult;
+}
+
 export interface VisualSteerRouterOptions {
   readonly workspaceRoot: string;
   readonly nodeIdPrefix?: string;
+  readonly daemon?: VisualSteerDaemonPort;
+  readonly codeIndex?: VisualSteerCodeIndex;
 }
 
 function inferTargetKind(instruction: string): VisualSteerTargetKind {
@@ -47,35 +59,41 @@ function componentNameFromFile(file: string): string {
 export class VisualSteerRouter {
   readonly #workspaceRoot: string;
   readonly #nodeIdPrefix: string;
+  readonly #daemon: VisualSteerDaemonPort | null;
+  readonly #codeIndex: VisualSteerCodeIndex | null;
 
   constructor(options: VisualSteerRouterOptions) {
     this.#workspaceRoot = options.workspaceRoot;
     this.#nodeIdPrefix = options.nodeIdPrefix ?? "ptf";
+    this.#daemon = options.daemon ?? null;
+    this.#codeIndex = options.codeIndex ?? null;
   }
 
   route(instruction: string, pick: PickContextBundle): VisualSteerRouteResult {
-    const primaryFile = this.#resolvePrimaryFile(pick);
-    if (primaryFile) {
-      const validation = validateEfSourceInWorkspace(primaryFile, this.#workspaceRoot);
-      if (!validation.ok) {
-        return {
-          accepted: false,
-          ...(validation.reason !== undefined ? { reason: validation.reason } : {}),
-          writeScope: [],
-        };
-      }
+    if (this.#daemon) return this.#daemon.route(instruction, pick);
+    const primaryFile = this.#resolvePrimaryFile(pick) ?? this.#codeIndex?.fileForUnsourcedPick?.(pick) ?? null;
+    if (!primaryFile) {
+      return { accepted: false, reason: "source file is not in the code index", writeScope: [] };
     }
-
-    const scopedFile = primaryFile ?? "src/unknown/Unknown.tsx";
-    const sharedPrimitive =
-      isSharedPrimitivePath(scopedFile) || GLOBAL_INTENT_PATTERN.test(instruction);
+    const validation = validateEfSourceInWorkspace(primaryFile, this.#workspaceRoot);
+    if (!validation.ok) {
+      return {
+        accepted: false,
+        ...(validation.reason !== undefined ? { reason: validation.reason } : {}),
+        writeScope: [],
+      };
+    }
+    const scopedFile = validation.normalized ?? primaryFile;
+    const references = this.#codeIndex?.filesReferencing(scopedFile) ?? [];
+    const sharedPrimitive = isSharedPrimitivePath(scopedFile) || GLOBAL_INTENT_PATTERN.test(instruction);
     const localOnly = /\b(only here|just this|this screen)\b/i.test(instruction);
-
     const needsQuestion = sharedPrimitive && !localOnly;
+    const screenCount = references.length;
     const scopePrompt = needsQuestion
-      ? "This changes shared Button across 8 screens — Change only here or update shared design system?"
+      ? screenCount > 0
+        ? `This changes shared Button across ${screenCount} screens — Change only here or update the shared design system?`
+        : "Change only here or update the shared design system?"
       : undefined;
-
     const steer: VisualSteerV1Output = {
       target: {
         kind: inferTargetKind(instruction),
@@ -87,10 +105,13 @@ export class VisualSteerRouter {
       needs_question: needsQuestion,
       conflict: null,
     };
-
+    const parsed = VisualSteerV1Schema.safeParse(steer);
+    if (!parsed.success || !("target" in parsed.data)) {
+      return { accepted: false, reason: "visual-steer@1 output was rejected", writeScope: [] };
+    }
     return {
       accepted: true,
-      steer,
+      steer: parsed.data,
       writeScope: [scopedFile],
       ...(scopePrompt !== undefined ? { scopePrompt } : {}),
     };

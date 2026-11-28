@@ -1,23 +1,19 @@
-import path from "node:path";
-
 import type { ParsedEfSource } from "./types.js";
 
-const FORBIDDEN_PREFIXES = [
-  "../../",
-  "..\\",
-  "/windows/",
-  "c:/windows/",
-  "\\\\",
-] as const;
+const FORBIDDEN_PREFIXES = ["../../", "..\\", "/windows/", "c:/windows/", "\\\\"] as const;
 
 export function parseEfSourceAttribute(value: string | null | undefined): ParsedEfSource | null {
   if (!value) return null;
   const match = /^(.+?):(\d+):(\d+)$/.exec(value.trim());
   if (!match) return null;
+  const file = match[1];
+  const lineText = match[2];
+  const columnText = match[3];
+  if (!file || !lineText || !columnText) return null;
   return {
-    file: match[1]!,
-    line: Number.parseInt(match[2]!, 10),
-    column: Number.parseInt(match[3]!, 10),
+    file,
+    line: Number.parseInt(lineText, 10),
+    column: Number.parseInt(columnText, 10),
   };
 }
 
@@ -27,34 +23,47 @@ export interface SourcePathValidation {
   readonly reason?: string;
 }
 
-export function validateEfSourceInWorkspace(
-  sourceFile: string,
-  workspaceRoot: string,
-): SourcePathValidation {
+export function validateEfSourceInWorkspace(sourceFile: string, workspaceRoot: string): SourcePathValidation {
   const lower = sourceFile.replaceAll("\\", "/").toLowerCase();
   for (const bad of FORBIDDEN_PREFIXES) {
     if (lower.includes(bad.toLowerCase())) {
       return { ok: false, reason: "path traversal or external path rejected" };
     }
   }
-  if (path.isAbsolute(sourceFile)) {
-    const resolved = path.resolve(sourceFile);
-    const root = path.resolve(workspaceRoot);
-    const relative = path.relative(root, resolved);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  const normalized = sourceFile.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (isAbsolutePosix(normalized)) {
+    const relative = relativePosix(workspaceRoot, normalized);
+    if (relative.startsWith("..") || isAbsolutePosix(relative)) {
       return { ok: false, reason: "absolute path outside workspace" };
     }
-    return { ok: true, normalized: relative.replaceAll("\\", "/") };
+    return { ok: true, normalized: relative };
   }
-  const normalized = sourceFile.replaceAll("\\", "/").replace(/^\.\//, "");
   if (normalized.split("/").includes("..")) {
     return { ok: false, reason: "relative path escapes workspace" };
   }
-  const resolved = path.resolve(workspaceRoot, normalized);
-  const root = path.resolve(workspaceRoot);
-  const relative = path.relative(root, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    return { ok: false, reason: "resolved path outside workspace" };
+  return { ok: true, normalized };
+}
+
+function isAbsolutePosix(value: string): boolean {
+  const norm = value.replaceAll("\\", "/");
+  return norm.startsWith("/") || /^[A-Za-z]:\//.test(norm);
+}
+
+function relativePosix(root: string, target: string): string {
+  const rootParts = trimSlash(root.replaceAll("\\", "/")).split("/");
+  const targetParts = trimSlash(target.replaceAll("\\", "/")).split("/");
+  let index = 0;
+  while (
+    index < rootParts.length &&
+    index < targetParts.length &&
+    rootParts[index]?.toLowerCase() === targetParts[index]?.toLowerCase()
+  ) {
+    index += 1;
   }
-  return { ok: true, normalized: relative.replaceAll("\\", "/") };
+  const up = Array.from({ length: rootParts.length - index }, () => "..");
+  return [...up, ...targetParts.slice(index)].join("/");
+}
+
+function trimSlash(value: string): string {
+  return value.replace(/\/+$/, "");
 }

@@ -53,9 +53,10 @@ export interface IntegrationCheckout {
  */
 export interface WorktreeSlotPool {
   integrationPath(): string;
-  materialize(sha: string): IntegrationCheckout;
-  noteHead(sha: string): IntegrationCheckout;
+  materialize(sha: string): Promise<IntegrationCheckout>;
+  noteHead(sha: string): Promise<IntegrationCheckout>;
   headSha(): string;
+  shutdown?(): Promise<void>;
 }
 
 export interface SupervisedExit {
@@ -88,7 +89,7 @@ export interface SpawnRequest {
  */
 export interface WindowsJobSupervisor {
   readonly killOnJobClose: true;
-  spawn(input: SpawnRequest): SupervisedProcess;
+  spawn(input: SpawnRequest): Promise<SupervisedProcess>;
   terminate(jobId: string): Promise<void>;
   activePids(): readonly number[];
   leakedPids(): readonly number[];
@@ -250,6 +251,7 @@ export interface LivePreviewDeps {
   readonly scheduler: PreviewScheduler;
   readonly timings: PreviewTimings;
   readonly engine: "sqlite" | "postgres";
+  shutdown?(): Promise<void>;
 }
 
 export interface PersistentDemoDb {

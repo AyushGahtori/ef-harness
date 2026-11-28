@@ -6,7 +6,7 @@ export type { FixtureBoot } from "./fixture-files.js";
 export { LastGoodPreviewFallbackStore } from "./last-good-preview-fallback-store.js";
 export { LivePreviewDaemonRunner } from "./live-preview-daemon-runner.js";
 export { LocalLiveKeyTestRefusalGuard, LocalRuntimeOnlyEnvInjector, stripeLivePrefix, stripeTestPrefix } from "./local-env-injector.js";
-export { LocalWindowsJobSupervisor, pidAlive } from "./local-job-supervisor.js";
+export { PreviewJobSupervisor, pidAlive } from "./preview-job-supervisor.js";
 export { LocalPortLeaseRepo } from "./local-port-lease.js";
 export { LocalTemplateDbSeeder, LocalTestEnvOrchestrator } from "./local-template-seeder.js";
 export { LocalWorktreeSlotPool } from "./local-worktree-pool.js";

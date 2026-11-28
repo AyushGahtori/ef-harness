@@ -29,7 +29,7 @@ export class LocalWorktreeSlotPool implements WorktreeSlotPool {
     return resolved;
   }
 
-  materialize(sha: string): IntegrationCheckout {
+  async materialize(sha: string): Promise<IntegrationCheckout> {
     const files = this.options.commits[sha];
     if (!files) throw new Error(`unknown integration commit ${sha}`);
     const dir = this.integrationPath();
@@ -46,7 +46,7 @@ export class LocalWorktreeSlotPool implements WorktreeSlotPool {
     return this.checkout();
   }
 
-  noteHead(sha: string): IntegrationCheckout {
+  async noteHead(sha: string): Promise<IntegrationCheckout> {
     this.head = sha;
     return this.checkout();
   }

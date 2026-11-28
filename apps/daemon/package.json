@@ -20,9 +20,12 @@
   "dependencies": {
     "@ef-harness/db": "workspace:*",
     "@ef-harness/dictation": "workspace:*",
+    "@ef-harness/git-engine": "workspace:*",
     "@ef-harness/governor": "workspace:*",
+    "@ef-harness/integrator": "workspace:*",
     "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/ipc": "workspace:*",
+    "@ef-harness/test-env": "workspace:*",
     "@ef-harness/planner": "workspace:*",
     "@ef-harness/providers": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",

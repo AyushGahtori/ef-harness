@@ -610,6 +610,10 @@ export {
   createPhase0Stack,
   stackPaths,
 } from "./phase0/index.js";
+export {
+  DevOnlyJsxSourceTagPlugin,
+  createDevOnlyJsxSourceTagPlugin,
+} from "./jsx-source-plugin/index.js";
 export type {
   Phase0RunRequest,
   Phase0RunResult,

@@ -1,4 +1,3 @@
-import path from "node:path";
 import { bestGap, cropRect, elementsForRegion, viewportBox } from "./geometry.js";
 import { acceptSourceAttribute, baseName } from "./path-guard.js";
 import { encodeSyntheticPng } from "./png.js";
@@ -270,9 +269,9 @@ export function scrubSnippet(snippet: string): string {
 }
 
 function truncateBytes(value: string, limit: number): string {
-  const buffer = Buffer.from(value);
-  if (buffer.byteLength <= limit) return value;
-  return buffer.subarray(0, limit).toString("utf8");
+  const bytes = new TextEncoder().encode(value);
+  if (bytes.byteLength <= limit) return value;
+  return new TextDecoder().decode(bytes.subarray(0, limit));
 }
 
 function jsonBytes(value: unknown): Uint8Array {
@@ -288,13 +287,31 @@ function bundleWithoutPng(bundle: GroundedContextBundle): unknown {
 
 function toProjectFile(fileName: string, projectRoot: string): string | null {
   const normalized = fileName.replaceAll("\\", "/");
-  if (path.isAbsolute(fileName)) {
-    const relative = path.relative(projectRoot, fileName).replaceAll("\\", "/");
-    if (relative.startsWith("..") || relative.startsWith("/")) return null;
+  if (isAbsolutePosix(normalized)) {
+    const relative = relativePosix(projectRoot, normalized);
+    if (relative.startsWith("..") || isAbsolutePosix(relative)) return null;
     return relative;
   }
   if (normalized.split("/").includes("..")) return null;
   return normalized;
+}
+
+function isAbsolutePosix(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:\//.test(value);
+}
+
+function relativePosix(root: string, target: string): string {
+  const rootParts = root.replaceAll("\\", "/").replace(/\/+$/, "").split("/");
+  const targetParts = target.replace(/\/+$/, "").split("/");
+  let index = 0;
+  while (
+    index < rootParts.length &&
+    index < targetParts.length &&
+    rootParts[index]?.toLowerCase() === targetParts[index]?.toLowerCase()
+  ) {
+    index += 1;
+  }
+  return [...Array.from({ length: rootParts.length - index }, () => ".."), ...targetParts.slice(index)].join("/");
 }
 
 export class SyntheticScrubbedScreenshot implements ScreenshotPort {

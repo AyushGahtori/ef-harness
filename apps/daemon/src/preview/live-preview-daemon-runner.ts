@@ -71,6 +71,7 @@ export class LivePreviewDaemonRunner {
   private failedSha: string | null = null;
   private everStarted = false;
   private quit = false;
+  private tornDown: TeardownReport | null = null;
   private openedBy: "tab" | "pop-out" | null = null;
   private hiddenTimer: { cancel(): void } | null = null;
 
@@ -87,7 +88,7 @@ export class LivePreviewDaemonRunner {
     if (this.state === "suspended") return this.wake();
     this.everStarted = true;
     if (this.deps.target.kind === "cli") {
-      this.deps.worktrees.materialize(this.sha);
+      await this.deps.worktrees.materialize(this.sha);
       this.deps.demo.ensureSeeded();
       this.state = "running";
       this.mode = "cli";
@@ -163,13 +164,13 @@ export class LivePreviewDaemonRunner {
         this.deps.demo.ensureSeeded();
         this.deps.demo.applyAdditiveMigrations(migrations);
       }
-      this.deps.worktrees.noteHead(event.integrationSha);
+      await this.deps.worktrees.noteHead(event.integrationSha);
       this.sha = event.integrationSha;
       this.pill = pill;
       return this.mergeResult("deferred");
     }
     if (!schemaChanged && !configChanged && this.state === "running" && this.mode === "web") {
-      this.deps.worktrees.noteHead(event.integrationSha);
+      await this.deps.worktrees.noteHead(event.integrationSha);
       this.sha = event.integrationSha;
       this.pill = pill;
       return this.mergeResult("hmr");
@@ -181,7 +182,7 @@ export class LivePreviewDaemonRunner {
     }
     this.pill = pill;
     if (this.mode === "cli") {
-      this.deps.worktrees.noteHead(event.integrationSha);
+      await this.deps.worktrees.noteHead(event.integrationSha);
       this.sha = event.integrationSha;
       this.state = "running";
       return this.mergeResult("restart");
@@ -211,7 +212,7 @@ export class LivePreviewDaemonRunner {
     if (this.quit) throw new Error("preview runner has quit");
     if (this.mode !== "cli" || this.state !== "running") throw new Error("CLI preview is not awake");
     const argv = [...this.deps.target.args, ...args];
-    const checkout = this.deps.worktrees.materialize(this.sha);
+    const checkout = await this.deps.worktrees.materialize(this.sha);
     this.assertIntegration(checkout.worktreePath);
     const prepared = this.deps.env.prepare({
       command: this.deps.target.command,
@@ -222,7 +223,7 @@ export class LivePreviewDaemonRunner {
         DATABASE_URL: this.deps.demo.connectionString(null),
       },
     });
-    const job = this.deps.jobs.spawn({
+    const job = await this.deps.jobs.spawn({
       command: this.deps.target.command,
       args: prepared.argv,
       cwd: checkout.worktreePath,
@@ -286,7 +287,7 @@ export class LivePreviewDaemonRunner {
   }
 
   private async boot(sha: string, options: BootOptions): Promise<void> {
-    const checkout = this.deps.worktrees.materialize(sha);
+    const checkout = await this.deps.worktrees.materialize(sha);
     this.assertIntegration(checkout.worktreePath);
     this.deps.demo.ensureSeeded();
     if (!options.reusePort || this.port === null) {
@@ -322,7 +323,7 @@ export class LivePreviewDaemonRunner {
         EF_PREVIEW_SHA: sha,
       },
     });
-    const job = this.deps.jobs.spawn({
+    const job = await this.deps.jobs.spawn({
       command: this.deps.target.command,
       args: prepared.argv,
       cwd: checkout.worktreePath,
@@ -446,20 +447,24 @@ export class LivePreviewDaemonRunner {
   }
 
   private async teardown(reason: TeardownReport["reason"]): Promise<TeardownReport> {
+    if (this.tornDown) return this.tornDown;
     this.hiddenTimer?.cancel();
     this.hiddenTimer = null;
     await this.stopJob();
     await this.releasePorts();
+    const leasedPorts = this.deps.ports.list().filter((lease) => lease.projectId === this.deps.projectId).length;
     this.deps.demo.close();
     await this.deps.jobs.close();
+    await this.deps.shutdown?.();
     this.state = "stopped";
     this.quit = true;
     this.pid = null;
-    return {
+    this.tornDown = {
       reason,
       leakedPids: this.deps.jobs.leakedPids(),
-      leasedPorts: this.deps.ports.list().filter((lease) => lease.projectId === this.deps.projectId).length,
+      leasedPorts,
     };
+    return this.tornDown;
   }
 
   private mergeRefreshMode(integrationSha: string): MergeRefreshResult["mode"] {

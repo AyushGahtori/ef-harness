@@ -149,9 +149,15 @@ importers:
       '@ef-harness/dictation':
         specifier: workspace:*
         version: link:../../packages/dictation
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../../packages/git-engine
       '@ef-harness/governor':
         specifier: workspace:*
         version: link:../../packages/governor
+      '@ef-harness/integrator':
+        specifier: workspace:*
+        version: link:../../packages/integrator
       '@ef-harness/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
@@ -170,6 +176,9 @@ importers:
       '@ef-harness/steering':
         specifier: workspace:*
         version: link:../../packages/steering
+      '@ef-harness/test-env':
+        specifier: workspace:*
+        version: link:../../packages/test-env
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
