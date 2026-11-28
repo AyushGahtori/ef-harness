@@ -78,7 +78,7 @@
 | C63 | Wave 6 | done | 84b11e47 | F-069 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); dictation 11 files 37/37, 0 skipped; dist import loads gpt2.tiktoken; schema 67/67 |
 | C64 | Wave 6 | done | 04048a18 | F-067, F-068 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); db 68 files 377/377, 0 skipped; daemon 17 files 77/77, 0 skipped; renderer command 39 files 196/196, 0 skipped; pinned canvas_layout row survives reopen; schema 67/67 |
 | C65 | Wave 6 | done | 2a1a5e39 | F-067, F-068 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); daemon 17 files 78/78, 0 skipped; renderer command 45 files 235/235, 0 skipped; rg node:(sqlite|fs|crypto) in apps/renderer/src/canvas is 0; schema 67/67 |
-| C66 | Wave 6 | pending | - | F-042, F-070 | - |
+| C66 | Wave 6 | done | d2d3b8f7 | F-042, F-070 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); planner command 70 files 382/382, 0 skipped; daemon command 21 files 97/97, 0 skipped; renderer command 49 files 254/254, 0 skipped; rg import node: in apps/renderer/src/preview is 0; schema 67/67 |
 | C67 | Wave 6 | pending | - | F-071, F-072 | - |
 | C68 | Wave 6 | pending | - | F-072 | - |
 | C69 | Wave 6 | pending | - | F-052, F-075 | - |
