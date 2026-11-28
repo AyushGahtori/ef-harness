@@ -2,7 +2,7 @@
 
 - **GitHub Repository:** `https://github.com/AyushGahtori/ef-harness`
 - **Base:** `harness/integration` @ `30f2e9cb41169e3cea11f1a9946db74a5b32cfde`
-- **Current Verified `harness/integration` `HEAD`:** `8024fcee977dd27c4ebd3011479eff6d76af86f2` (`integrate: wire steering router/dispatcher`; parents include Task 113 `e2dcb5e` and Task 114 `9cc29a9` on top of C43 `95062f7`)
+- **Current Verified `harness/integration` `HEAD`:** `3e8e9c18e84f37c58ae4bbbe526b63b189905d36` (`integrate: wire steering m3 barrels/seams`; parents include Task 115 `f6e78e0`, Task 116 `00aedbe`, and Task 130 `82b6ae1` on top of C44 `8024fce`)
 - **Reconcile 2026-11-28:** the 096/101/102/C39 work existed twice with different SHAs (`origin` = `a3134a1`/`221c378`/`4522aa2`/`4457ba9`, local = `8010128`/`784e592`/`4aafbc5`/`09525f2`), so the branches had diverged (local 14 ahead / 4 behind). Merged `origin/harness/integration` into local `harness/integration` as `1328765`; 22 content conflicts were resolved to the local C41 tree, and `git diff --stat 658248a` is **empty**, i.e. the merged tree is byte-identical to pre-merge `658248a`, so no product content was lost and the C41 proof below still holds. Pushed fast-forward `4457ba9..1328765`. Behind/ahead = 0/0. `main` untouched (`6497730`).
 - **Wave 2 proof gate:** pass at `40201d11ab38446c014f0065a3e4565f1a76e6cf`. No product commit. Workspace build/typecheck/lint OK (lint needed `NODE_OPTIONS=--max-old-space-size=4096` after a default-heap OOM). git-engine 17 files 121/121; sandbox 169 passed, 14 skipped, 0 failed; mcp-server 17/17; test-env 87 passed, 3 skipped; worker-loop 25 files 146/146; completeness-gate 7 files 50/50; verifier 34 files 188/188 after `pnpm exec playwright install chromium` (first run exit 1, missing Chromium); daemon 3 files 18/18; desktop 2 files 2/2; e2e `-- m1` 2 files 3/3; schema 67/67; diagrams 31 merged, 1219 lines. `git status --short` clean.
 - **`C05`:** committed on `harness/integration` as `159657cc76ac6afbb534f78f713543399e9e0ca4` (`integrate: C05 unified db connections and ef_search_text`). `origin/harness/c05-wip` remains `df255ed87aae1083b6c04eb350f2ebd185ed2eb7` and is not an ancestor of that commit.
@@ -53,7 +53,7 @@
 | C42 | Wave 4 | done | 0d36570 | F-049, F-050 | build/typecheck/lint OK; db 67 files 374/374; mcp-server 2 files 18/18; integrator `-- handoffs feature-branches` 24 files 100/100; schema 67/67 |
 | C43 | Wave 4 | done | 95062f7 | F-049, F-050 | build/typecheck/lint OK; db 67 files 374/374; integrator `-- merge-queue ccr undo feature-integrator final-audit` 29 files 179/179; schema 67/67 |
 | C44 | Wave 4 | done | 8024fce | F-053, F-054 | build/typecheck/lint OK; db 67 files 374/374; steering `-- router dispatcher` 5 files 35/35; schema 67/67 |
-| C45 | Wave 4 | pending | - | F-053, F-054 | - |
+| C45 | Wave 4 | done | 3e8e9c1 | F-053, F-054 | build/typecheck/lint OK; db 67 files 374/374; steering 16 files 102/102; renderer 2 files 4/4; schema 67/67 |
 | C46 | Wave 4 | pending | - | F-045, F-055 | - |
 | C47 | Wave 4 | pending | - | F-055 | - |
 | C48 | Wave 4 | pending | - | F-027, F-063 | - |
