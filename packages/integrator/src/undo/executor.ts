@@ -68,7 +68,7 @@ const EMPTY_AUDIT: StaticAuditReport = { ok: true, deadNav: [], danglingImports:
 export class FeatureUndoExecutor {
   constructor(private readonly deps: ExecutorDeps) {}
 
-  execute(featureId: string, choice: UndoChoice): UndoResult {
+  async execute(featureId: string, choice: UndoChoice): Promise<UndoResult> {
     const started = performance.now();
     const previousSha = this.deps.git.integrationSha();
     const inventory = this.deps.analyzer.analyze(featureId);
@@ -140,7 +140,7 @@ export class FeatureUndoExecutor {
     return { halted, retired };
   }
 
-  private land(
+  private async land(
     inventories: readonly UndoInventory[],
     transfers: readonly OwnershipTransfer[],
     preview: UndoPreview,
@@ -149,7 +149,7 @@ export class FeatureUndoExecutor {
     dataHandling: DataHandlingChoice,
     halted: readonly string[],
     retiredAlready: readonly string[],
-  ): UndoResult {
+  ): Promise<UndoResult> {
     const featureIds = inventories.map((item) => item.featureId);
     const fastPath = inventories.every((item) => item.fastPathCandidate);
     const lease = this.deps.lease.acquire(previousSha);
@@ -163,7 +163,7 @@ export class FeatureUndoExecutor {
       this.assertMigrationsUntouched(slot, previousSha);
       const symbols = this.removedSymbols(inventories, previousSha);
       const audit = runStaticAudit(slot, symbols.routes, symbols.permissions);
-      const regression = this.deps.gate.run(slot, featureIds, audit);
+      const regression = await this.deps.gate.run(slot, featureIds, audit);
       if (!audit.ok || !regression.ok) {
         return this.finish({
           landed: false,

@@ -251,7 +251,10 @@ export class ProjectMergeQueue {
   }
 
   runtimeState(featureId: string): string {
-    const row = this.db.get("SELECT state FROM feature_queue_runtime WHERE feature_id = ?", [featureId]);
+    const row = this.db.get(
+      "SELECT runtime_state AS state FROM merge_queue_items WHERE feature_id = ? ORDER BY updated_at DESC LIMIT 1",
+      [featureId],
+    );
     return sqlText(row, "state");
   }
 
@@ -273,6 +276,7 @@ export class ProjectMergeQueue {
     for (const slot of [...this.worktrees.recorded()]) {
       this.worktrees.remove(slot);
     }
+    this.gate.close();
     this.db.close();
   }
 
@@ -357,7 +361,7 @@ export class ProjectMergeQueue {
     const slot = this.worktrees.acquire(expectedSha);
     try {
       for (const feature of features) {
-        const merged = this.mergeFeature(slot.slotPath, feature, features);
+        const merged = await this.mergeFeature(slot.slotPath, feature, features);
         if (!merged.ok) {
           return {
             ok: false,
@@ -370,7 +374,7 @@ export class ProjectMergeQueue {
           };
         }
       }
-      const migrated = this.repairMigrations(slot.slotPath, features);
+      const migrated = await this.repairMigrations(slot.slotPath, features);
       if (!migrated.ok) {
         return {
           ok: false,
@@ -392,7 +396,7 @@ export class ProjectMergeQueue {
         headSha: sha,
       });
       if (!gate.ok && fix) {
-        const resolved = this.resolveTree(slot.slotPath, features, {
+        const resolved = await this.resolveTree(slot.slotPath, features, {
           conflicts: [],
           migrationIssues: [],
           failingChecks: fix.failingChecks,
@@ -489,11 +493,11 @@ export class ProjectMergeQueue {
     return "landed";
   }
 
-  private mergeFeature(
+  private async mergeFeature(
     worktree: string,
     feature: QueuedFeature,
     batch: readonly QueuedFeature[],
-  ): { ok: true } | { ok: false; trace: string } {
+  ): Promise<{ ok: true } | { ok: false; trace: string }> {
     const trailers = buildTrailers({
       featureId: feature.featureId,
       taskIds: feature.request.taskIds,
@@ -515,7 +519,7 @@ export class ProjectMergeQueue {
       let trace = `conflict in ${paths.join(", ")}`;
       let fixed = false;
       for (let attempt = 1; attempt <= MAX_INTEGRATOR_ATTEMPTS; attempt += 1) {
-        const resolved = this.resolveTree(worktree, batch, {
+        const resolved = await this.resolveTree(worktree, batch, {
           conflicts: conflictHunks(worktree, paths),
           migrationIssues: [],
           failingChecks: [],
@@ -545,12 +549,12 @@ export class ProjectMergeQueue {
     return { ok: true };
   }
 
-  private repairMigrations(worktree: string, features: readonly QueuedFeature[]): { ok: boolean; trace: string } {
+  private async repairMigrations(worktree: string, features: readonly QueuedFeature[]): Promise<{ ok: boolean; trace: string }> {
     let issues = lintMigrations(readMigrationFiles(worktree));
     if (issues.length === 0) return { ok: true, trace: "" };
     let trace = issues.map((issue) => issue.detail).join("\n");
     for (let attempt = 1; attempt <= MAX_INTEGRATOR_ATTEMPTS; attempt += 1) {
-      const resolved = this.resolveTree(worktree, features, {
+      const resolved = await this.resolveTree(worktree, features, {
         conflicts: [],
         migrationIssues: issues,
         failingChecks: [],
@@ -568,7 +572,7 @@ export class ProjectMergeQueue {
     return { ok: false, trace };
   }
 
-  private resolveTree(
+  private async resolveTree(
     worktree: string,
     features: readonly QueuedFeature[],
     input: {
@@ -577,9 +581,9 @@ export class ProjectMergeQueue {
       readonly failingChecks: readonly FailingCheck[];
       readonly attempt: number;
     },
-  ): { ok: boolean; trace: string } {
+  ): Promise<{ ok: boolean; trace: string }> {
     const before = readTextFiles(worktree);
-    const resolution = this.engine.resolve({
+    const resolution = await this.engine.resolve({
       attempt: input.attempt,
       featureIds: features.map((feature) => feature.featureId),
       conflicts: input.conflicts,
@@ -938,18 +942,16 @@ export class ProjectMergeQueue {
   }
 
   private setRuntime(featureId: string, state: string, branch: string, doneJson: string): void {
-    const existing = this.db.get("SELECT epoch FROM feature_queue_runtime WHERE feature_id = ?", [featureId]);
+    const existing = this.db.get(
+      "SELECT runtime_epoch AS epoch FROM merge_queue_items WHERE feature_id = ? ORDER BY runtime_epoch DESC LIMIT 1",
+      [featureId],
+    );
     const epoch = Math.max(1, sqlNumber(existing, "epoch") + 1);
     this.db.run(
-      `INSERT INTO feature_queue_runtime (feature_id, state, epoch, branch, updated_at, done_json)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(feature_id) DO UPDATE SET
-         state = excluded.state,
-         epoch = excluded.epoch,
-         branch = excluded.branch,
-         updated_at = excluded.updated_at,
-         done_json = excluded.done_json`,
-      [featureId, state, epoch, branch, this.now(), doneJson],
+      `UPDATE merge_queue_items
+       SET runtime_state = ?, runtime_epoch = ?, runtime_branch = ?, runtime_updated_at = ?, runtime_done_json = ?
+       WHERE feature_id = ?`,
+      [state, epoch, branch, this.now(), doneJson, featureId],
     );
   }
 

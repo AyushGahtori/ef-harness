@@ -79,7 +79,7 @@ function passingTest(id: string): string {
 }
 
 describe("planned feature undo", { timeout: 30_000 }, () => {
-  it("partitions exclusive files, shared imports and graph edges, and persistent schema", () => {
+  it("partitions exclusive files, shared imports and graph edges, and persistent schema", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -169,7 +169,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("reverts an exclusive non-ff merge at 0 LLM tokens and keeps history forward", () => {
+  it("reverts an exclusive non-ff merge at 0 LLM tokens and keeps history forward", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -203,7 +203,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
       expect(inventory.fastPathCandidate).toBe(true);
       expect(inventory.exclusiveRatio).toBe(1);
       expect(inventory.llmTokens).toBe(0);
-      const result = engine.execute("F-Print", { apply: true });
+      const result = await engine.execute("F-Print", { apply: true });
       expect(result.landed).toBe(true);
       expect(result.mode).toBe("fast_path_revert");
       expect(result.llmTokens).toBe(0);
@@ -232,7 +232,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("transfers currency.ts to the consuming feature and leaves that feature green", () => {
+  it("transfers currency.ts to the consuming feature and leaves that feature green", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -278,7 +278,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
         dst: "F-Menu",
         artifactPath: "src/lib/currency.ts",
       });
-      const result = engine.execute("F-Menu", { apply: true });
+      const result = await engine.execute("F-Menu", { apply: true });
       expect(result.landed).toBe(true);
       expect(result.mode).toBe("surgical_removal");
       expect(result.regression?.ok).toBe(true);
@@ -302,7 +302,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("falls back to surgical removal when merge-tree reports a nav-line conflict", () => {
+  it("falls back to surgical removal when merge-tree reports a nav-line conflict", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -348,7 +348,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
       expect(inventory.fastPathCandidate).toBe(false);
       expect(inventory.revertConflicts.length).toBeGreaterThan(0);
       expect(inventory.laterOverlapPaths).toContain("src/App.tsx");
-      const result = engine.execute("F-Print", { apply: true });
+      const result = await engine.execute("F-Print", { apply: true });
       expect(result.landed).toBe(true);
       expect(result.mode).toBe("surgical_removal");
       expect(result.commands.some((command) => command.startsWith("merge-tree "))).toBe(true);
@@ -362,7 +362,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("cancels an in-flight feature without moving harness/integration", () => {
+  it("cancels an in-flight feature without moving harness/integration", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -400,7 +400,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
         status: "open",
         text: "Which columns?",
       });
-      const result = engine.execute("F-Reports", { apply: true });
+      const result = await engine.execute("F-Reports", { apply: true });
       expect(result.mode).toBe("in_flight_cancel");
       expect(result.landed).toBe(false);
       expect(result.integrationUnchanged).toBe(true);
@@ -421,7 +421,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("keeps loyalty schema dormant unless a new drop migration is explicitly confirmed", () => {
+  it("keeps loyalty schema dormant unless a new drop migration is explicitly confirmed", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     const migration = "migrations/20240101_loyalty.sql";
@@ -459,11 +459,11 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
       expect(preview.plainEnglish).toContain("loyalty_ledger");
       expect(preview.plainEnglish).toContain("Keep schema/data dormant (Safe default — expand-then-contract)");
       expect(preview.dataChoiceDefault).toBe("keep_dormant");
-      expect(() => engine.execute("F-LoyaltyPoints", { apply: true, dataHandling: "drop_in_new_migration" })).toThrow(
-        /explicit destructive confirmation/,
-      );
+      await expect(
+        engine.execute("F-LoyaltyPoints", { apply: true, dataHandling: "drop_in_new_migration" }),
+      ).rejects.toThrow(/explicit destructive confirmation/);
       expect(createHash("sha256").update(show(git, `harness/integration:${migration}`)).digest("hex")).toBe(beforeHash);
-      const dormant = engine.execute("F-LoyaltyPoints", { apply: true });
+      const dormant = await engine.execute("F-LoyaltyPoints", { apply: true });
       expect(dormant.landed).toBe(true);
       expect(dormant.mode).toBe("surgical_removal");
       expect(show(git, `harness/integration:${migration}`)).toBe(sql);
@@ -475,7 +475,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("writes a new drop migration and does not edit the historical loyalty migration", () => {
+  it("writes a new drop migration and does not edit the historical loyalty migration", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     const migration = "migrations/20240101_loyalty.sql";
@@ -497,7 +497,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
         landed: true,
       });
       const beforeHash = createHash("sha256").update(show(git, `harness/integration:${migration}`)).digest("hex");
-      const result = engine.execute("F-LoyaltyPoints", {
+      const result = await engine.execute("F-LoyaltyPoints", {
         apply: true,
         dataHandling: "drop_in_new_migration",
         destructiveConfirmation: true,
@@ -515,7 +515,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("blocks undo of a hard dependency unless the dependent features are undone together", () => {
+  it("blocks undo of a hard dependency unless the dependent features are undone together", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -568,7 +568,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
       engine.graph.addEdge({ src: "F-Billing", type: "depends_on", dst: "F-AdminDashboard", artifactPath: "" });
       expect(engine.impact.hardDependents("F-Auth")).toEqual(["F-AdminDashboard", "F-Billing"]);
       const before = git.revParse("harness/integration");
-      const blocked = engine.execute("F-Auth", { apply: true });
+      const blocked = await engine.execute("F-Auth", { apply: true });
       expect(blocked.mode).toBe("blocked");
       expect(blocked.landed).toBe(false);
       expect(blocked.integrationUnchanged).toBe(true);
@@ -577,7 +577,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
         "Cancel undo",
       ]);
       expect(git.revParse("harness/integration")).toBe(before);
-      const cancelled = engine.execute("F-Auth", { apply: true, dependents: "cancel" });
+      const cancelled = await engine.execute("F-Auth", { apply: true, dependents: "cancel" });
       expect(cancelled.mode).toBe("cancelled");
       expect(git.revParse("harness/integration")).toBe(before);
       expect(show(git, "harness/integration:features/F-Auth/login.tsx")).toContain("login");
@@ -586,7 +586,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("undoes a feature and its hard dependents in one forward commit", () => {
+  it("undoes a feature and its hard dependents in one forward commit", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -620,7 +620,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
       });
       engine.graph.addEdge({ src: "F-AdminDashboard", type: "depends_on", dst: "F-Auth", artifactPath: "" });
       const before = git.revParse("harness/integration");
-      const result = engine.execute("F-Auth", { apply: true, dependents: "undo_together" });
+      const result = await engine.execute("F-Auth", { apply: true, dependents: "undo_together" });
       expect(result.landed).toBe(true);
       expect(result.featureIds).toEqual(["F-Auth", "F-AdminDashboard"]);
       expect(git.parents(result.commitSha)[0]).toBe(before);
@@ -636,7 +636,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("refuses to land while a dangling print link or orphan permission remains", () => {
+  it("refuses to land while a dangling print link or orphan permission remains", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo);
     try {
@@ -658,7 +658,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
         taskIds: ["T-F-Print"],
         landed: true,
       });
-      const result = engine.execute("F-Print", { apply: true });
+      const result = await engine.execute("F-Print", { apply: true });
       expect(result.landed).toBe(false);
       expect(result.audit.deadNav.some((item) => item.includes("/print"))).toBe(true);
       expect(result.audit.orphanPermissions.some((item) => item.includes("print.view"))).toBe(true);
@@ -671,7 +671,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
     }
   });
 
-  it("does not move harness/integration when the compare-and-swap loses", () => {
+  it("does not move harness/integration when the compare-and-swap loses", async () => {
     const { root, repo, git } = initRepo();
     const engine = engineFor(root, repo, () => {
       git.ok(["commit", "--allow-empty", "-m", "integration moved during undo"]);
@@ -691,7 +691,7 @@ describe("planned feature undo", { timeout: 30_000 }, () => {
         taskIds: ["T-F-Print"],
         landed: true,
       });
-      const result = engine.execute("F-Print", { apply: true });
+      const result = await engine.execute("F-Print", { apply: true });
       expect(result.landed).toBe(false);
       expect(result.blockedReason).toBe("cas_mismatch");
       expect(engine.graph.getFeature("F-Print")?.nodeStatus).toBe("active");

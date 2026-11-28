@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { ProjectIntegratorV1Schema } from "@ef-harness/shared-contracts";
+import { completeOffline } from "../model-adapter.js";
 import { MAX_INTEGRATOR_ATTEMPTS } from "./constants.js";
 import { assertSidesKept, hasConflictMarkers, unionConflictText } from "./conflicts.js";
 import { DroppedSideError, InvalidIntegratorOutputError, TestWeakeningError } from "./errors.js";
@@ -79,13 +81,13 @@ export class ProjectIntegratorEngine {
     ].join("\n");
   }
 
-  resolve(
+  async resolve(
     input: IntegratorPromptInput & {
       readonly worktree: string;
       readonly beforeFiles: readonly { path: string; text: string }[];
       readonly conflictOriginals: readonly { path: string; text: string }[];
     },
-  ): EngineResolution {
+  ): Promise<EngineResolution> {
     const prompt = this.buildPrompt(input);
     this.prompts.push(prompt);
     let files: FileReplacement[] = [];
@@ -94,7 +96,7 @@ export class ProjectIntegratorEngine {
         path: file.path.replaceAll("\\", "/"),
         text: file.text,
       }));
-      const candidate = this.model({
+      const candidate = await Promise.resolve(this.model({
         attempt: input.attempt,
         featureIds: input.featureIds,
         conflicts: input.conflicts,
@@ -105,8 +107,19 @@ export class ProjectIntegratorEngine {
         offendingCommits: input.offendingCommits,
         treeFiles,
         prompt,
-      });
-      const parsed = parseProjectIntegratorV1(candidate.output);
+      }));
+      let output = candidate.output;
+      try {
+        const echoed = await completeOffline("project-integrator@1", candidate.output);
+        const shared = ProjectIntegratorV1Schema.safeParse(echoed);
+        if (shared.success) {
+          parseProjectIntegratorV1(shared.data);
+          output = shared.data;
+        }
+      } catch {
+        output = candidate.output;
+      }
+      const parsed = parseProjectIntegratorV1(output);
       if (isBlockedOutput(parsed)) {
         return { ok: false, reason: "blocked", detail: parsed.reason, files: [], prompt };
       }
@@ -165,7 +178,6 @@ export function defaultModel(input: IntegratorPromptInput & { readonly prompt: s
     if (original === null) continue;
     files.push({ path: hunk.path, text: unionConflictText(original) });
   }
-  files.push(...disambiguate(input));
   return {
     output: {
       migrations_order: migrationIds,
@@ -174,44 +186,6 @@ export function defaultModel(input: IntegratorPromptInput & { readonly prompt: s
     },
     files,
   };
-}
-
-function disambiguate(input: IntegratorPromptInput): FileReplacement[] {
-  const later = input.featureIds.at(-1);
-  if (!later) return [];
-  const manifestPath = `features/${later}/manifest.json`;
-  const raw = inputNamed(input, manifestPath);
-  if (raw === null) return [];
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
-  let changed = false;
-  for (const check of input.failingChecks) {
-    const route = check.id.startsWith("combined:duplicate-route:") ? check.id.slice("combined:duplicate-route:".length) : "";
-    const shortcut = check.id.startsWith("combined:duplicate-shortcut:")
-      ? check.id.slice("combined:duplicate-shortcut:".length)
-      : "";
-    const middleware = check.id.startsWith("combined:middleware-order:")
-      ? check.id.slice("combined:middleware-order:".length)
-      : "";
-    if (route && Array.isArray(parsed.routes)) {
-      parsed.routes = parsed.routes.map((item) => (item === route ? `${route}--${later}` : item));
-      changed = true;
-    }
-    if (shortcut && Array.isArray(parsed.shortcuts)) {
-      parsed.shortcuts = parsed.shortcuts.map((item) => (item === shortcut ? `${shortcut}+${later}` : item));
-      changed = true;
-    }
-    if (middleware && Array.isArray(parsed.middleware)) {
-      parsed.middleware = parsed.middleware.map((item) => {
-        if (!item || typeof item !== "object") return item;
-        const record = item as Record<string, unknown>;
-        if (record.name !== middleware) return item;
-        changed = true;
-        return { ...record, name: `${middleware}--${later}` };
-      });
-    }
-  }
-  if (!changed) return [];
-  return [{ path: manifestPath, text: `${JSON.stringify(parsed, null, 2)}\n` }];
 }
 
 function inputNamed(input: IntegratorPromptInput, filePath: string): string | null {

@@ -1,10 +1,10 @@
+import { CcrV1Schema } from "@ef-harness/shared-contracts";
 import { buildCcrV1 } from "./ccr-v1.js";
 import { DeterministicSchemaDiffClassifier } from "./classifier.js";
 import { AdditiveOwnerFastPath } from "./fast-path.js";
 import { CcrLedger, stamp, type CcrDraft } from "./ledger.js";
-import {
-  LocalContradictionCounter,
-  LocalCcrV1Schema,
+import { LocalContradictionCounter, LocalCcrV1Schema } from "./ports.js";
+import type {
   LocalDurableRoleMailbox,
   LocalHybridRevision,
   LocalMigrationNamer,
@@ -19,6 +19,18 @@ import {
 import { BreakingCcrRevisionReopener } from "./reopener.js";
 import { fingerprintFor, semanticSummary } from "./semantic.js";
 import { CcrSemanticCompatibilityReviewer } from "./semantic.js";
+import {
+  WiredDurableRoleMailbox,
+  WiredHybridRevision,
+  WiredMigrationNamer,
+  WiredProjectMergeQueue,
+  WiredRegressionChecks,
+  WiredReverseImpactWalker,
+  WiredRevisionAutoStartPolicy,
+  WiredSkeletonLock,
+  WiredSurgicalHolds,
+  WiredWaitGraphCycleDetector,
+} from "./wired-ports.js";
 import type {
   CcrIntakeResult,
   CcrV1,
@@ -92,40 +104,41 @@ export class ContractChangeRequestEngine {
     this.ledger = options.ledger ?? CcrLedger.open();
     this.landMode = options.landMode ?? "immediate";
     this.now = options.now ?? (() => new Date());
-    this.locks = options.locks ?? new LocalSkeletonLock();
+    this.locks = options.locks ?? new WiredSkeletonLock();
     this.contradictions = options.contradictions ?? new LocalContradictionCounter();
-    this.mailbox = options.mailbox ?? new LocalDurableRoleMailbox();
-    this.mergeQueue = options.mergeQueue ?? new LocalProjectMergeQueue();
-    this.holds = options.holds ?? new LocalSurgicalHolds();
-    const impact = options.impact ?? new LocalReverseImpactWalker();
-    const autoStart = options.autoStart ?? new LocalRevisionAutoStartPolicy();
-    const revision = options.revision ?? new LocalHybridRevision();
+    this.mailbox = options.mailbox ?? new WiredDurableRoleMailbox();
+    this.mergeQueue = options.mergeQueue ?? new WiredProjectMergeQueue();
+    this.holds = options.holds ?? new WiredSurgicalHolds();
+    const impact = options.impact ?? new WiredReverseImpactWalker();
+    const autoStart = options.autoStart ?? new WiredRevisionAutoStartPolicy();
+    const revision = options.revision ?? new WiredHybridRevision();
     this.schema = options.schema ?? new LocalCcrV1Schema();
     this.classifier = options.classifier ?? new DeterministicSchemaDiffClassifier();
-    this.waitGraph = new LocalWaitGraphCycleDetector(this.ledger);
+    this.waitGraph = new WiredWaitGraphCycleDetector(this.ledger);
     this.fastPath = new AdditiveOwnerFastPath(
       this.locks,
-      options.migrations ?? new LocalMigrationNamer(),
+      options.migrations ?? new WiredMigrationNamer(),
       this.mergeQueue,
-      options.regression ?? new LocalRegressionChecks(),
+      options.regression ?? new WiredRegressionChecks(),
       () => this.ledger.nextId("T-OWN-"),
     );
     this.reopener = new BreakingCcrRevisionReopener(impact, autoStart, this.holds, revision);
   }
 
-  submit(proposal: ContractChangeProposal): CcrIntakeResult {
-    const [result] = this.submitMany([proposal]);
+  async submit(proposal: ContractChangeProposal): Promise<CcrIntakeResult> {
+    const [result] = await this.submitMany([proposal]);
     if (!result) throw new Error("CCR intake produced no result");
     return result;
   }
 
-  submitMany(proposals: readonly ContractChangeProposal[]): CcrIntakeResult[] {
+  async submitMany(proposals: readonly ContractChangeProposal[]): Promise<CcrIntakeResult[]> {
+    const preparedItems: Prepared[] = [];
+    for (const proposal of proposals) preparedItems.push(await this.prepare(proposal));
     return this.ledger.transaction(() => {
       const results: Array<CcrIntakeResult | undefined> = new Array(proposals.length);
       const groups: { index: number; prepared: Prepared }[][] = [];
       const indexByFingerprint = new Map<string, number>();
-      proposals.forEach((proposal, index) => {
-        const prepared = this.prepare(proposal);
+      preparedItems.forEach((prepared, index) => {
         const existing = indexByFingerprint.get(prepared.fingerprint);
         if (existing === undefined) {
           indexByFingerprint.set(prepared.fingerprint, groups.length);
@@ -211,7 +224,7 @@ export class ContractChangeRequestEngine {
     });
   }
 
-  private prepare(proposal: ContractChangeProposal): Prepared {
+  private async prepare(proposal: ContractChangeProposal): Promise<Prepared> {
     const structural = this.classifier.classify({
       before: proposal.proposedDelta.before,
       after: proposal.proposedDelta.after,
@@ -219,7 +232,7 @@ export class ContractChangeRequestEngine {
       ...(proposal.claimedAdditive !== undefined ? { claimedAdditive: proposal.claimedAdditive } : {}),
     });
     const structuralUnchanged = structural.classification === "UNCHANGED";
-    const semantic = this.semanticReviewer.review({
+    const semantic = await this.semanticReviewer.review({
       before: proposal.proposedDelta.before,
       after: proposal.proposedDelta.after,
       ...(proposal.proposedDelta.behaviorBefore !== undefined ? { behaviorBefore: proposal.proposedDelta.behaviorBefore } : {}),
@@ -231,18 +244,18 @@ export class ContractChangeRequestEngine {
     const claimedAdditive = proposal.claimedAdditive === true || proposal.claimedClass === "additive";
     const overridden = structural.overridden || (claimedAdditive && classification === "BREAKING");
     const fingerprint = fingerprintFor(proposal.targetContractNodeId, structural.ops, semantic);
-    this.schema.parse(
-      this.buildDocument({
-        id: "CCR-PREVIEW",
-        fromFeature: proposal.requestingFeatureId,
-        target: proposal.targetContractNodeId,
-        reason: proposal.rationale,
-        classification,
-        status: "open",
-        ops: structural.ops,
-        semanticSummary: semanticSummary(semantic),
-      }),
-    );
+    const preview = this.buildDocument({
+      id: "CCR-PREVIEW",
+      fromFeature: proposal.requestingFeatureId,
+      target: proposal.targetContractNodeId,
+      reason: proposal.rationale,
+      classification,
+      status: "open",
+      ops: structural.ops,
+      semanticSummary: semanticSummary(semantic),
+    });
+    this.schema.parse(preview);
+    CcrV1Schema.safeParse(preview);
     return {
       proposal,
       structural,
@@ -431,7 +444,7 @@ export class ContractChangeRequestEngine {
       semanticConsumers: prepared.semantic.consumers,
       semanticAlternatives: prepared.semantic.alternatives,
     });
-    const policy = new LocalRevisionAutoStartPolicy().evaluate(true);
+    const policy = new WiredRevisionAutoStartPolicy().evaluate(true);
     const updated = this.ledger.transition(
       stored.id,
       "CLASSIFIED",

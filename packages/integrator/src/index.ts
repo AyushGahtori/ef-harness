@@ -137,3 +137,22 @@ export type {
   WeakCheckFinding,
   WebRoute,
 } from "./final-audit/index.js";
+
+export {
+  ArtifactHandoffStore,
+  DurableRoleMailbox,
+  ReadResultToolHandler,
+  WaitGraphCycleDetector,
+} from "./handoffs/index.js";
+export {
+  DependencyIntentAggregator,
+  MigrationIntentAndConflictLinter,
+  ParallelFeatureBranchManager,
+} from "./feature-branches/index.js";
+export {
+  CombinedRegressionGate,
+  ProjectIntegratorEngine,
+  ProjectMergeQueue,
+} from "./merge-queue/index.js";
+export { ContractChangeRequestEngine } from "./ccr/index.js";
+export { FeatureUndoEngine } from "./undo/index.js";

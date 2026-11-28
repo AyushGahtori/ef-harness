@@ -164,7 +164,7 @@ describe("project-integrator@1 guards", () => {
     });
   });
 
-  it("rejects a candidate that skips a passing test or drops the other side of a conflict", () => {
+  it("rejects a candidate that skips a passing test or drops the other side of a conflict", async () => {
     expect(() =>
       assertNoTestWeakening(
         [{ path: "features/F1/journey.test.mjs", text: "expect(true).toBe(true);\n" }],
@@ -176,7 +176,7 @@ describe("project-integrator@1 guards", () => {
       files: [{ path: "shared/nav.txt", text: "home\nmenu\n" }],
     }));
     const conflict = "home\n<<<<<<< HEAD\nmenu\n=======\norders\n>>>>>>> feature\n";
-    const dropped = engine.resolve({
+    const dropped = await engine.resolve({
       attempt: 1,
       featureIds: ["F-Menu", "F-Orders"],
       conflicts: [
@@ -207,11 +207,11 @@ describe("project-integrator@1 guards", () => {
     expect(dropped.prompt).not.toContain("SENTINEL_NOT_FOR_MODEL");
   });
 
-  it("keeps both conflict sides and renames a duplicate route without weakening tests", () => {
+  it("keeps both conflict sides without rewriting feature manifests", async () => {
     const engine = new ProjectIntegratorEngine();
     const conflict = "home\n<<<<<<< HEAD\nmenu\n=======\norders\n>>>>>>> feature\n";
     const manifest = `${JSON.stringify({ id: "F-Orders", routes: ["/settings"], shortcuts: ["Ctrl+K"], middleware: [{ name: "auth", order: 2 }] }, null, 2)}\n`;
-    const resolved = engine.resolve({
+    const resolved = await engine.resolve({
       attempt: 1,
       featureIds: ["F-Menu", "F-Orders"],
       conflicts: [
@@ -248,10 +248,7 @@ describe("project-integrator@1 guards", () => {
     const nav = resolved.files.find((file) => file.path === "shared/nav.txt")?.text ?? "";
     expect(nav).toContain("menu");
     expect(nav).toContain("orders");
-    const nextManifest = resolved.files.find((file) => file.path === "features/F-Orders/manifest.json")?.text ?? "";
-    expect(nextManifest).toContain("/settings--F-Orders");
-    expect(nextManifest).toContain("Ctrl+K+F-Orders");
-    expect(nextManifest).toContain("auth--F-Orders");
+    expect(resolved.files.some((file) => file.path.endsWith("manifest.json"))).toBe(false);
     expect(resolved.prompt).not.toContain("SENTINEL_NOT_FOR_MODEL");
     expect(resolved.prompt).toContain("bbbb");
   });

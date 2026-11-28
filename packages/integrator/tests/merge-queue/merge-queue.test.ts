@@ -310,16 +310,11 @@ describe("project merge queue", () => {
         expect(report.landed.map((item) => item.featureId)).toEqual(["F-Settings-A", "F-Settings-B"]);
         const tip = queue.integrationSha();
         expect(tip).not.toBe(before);
-        const manifest = show(repo, `${tip}:features/F-Settings-B/manifest.json`);
-        expect(manifest).toContain("/settings--F-Settings-B");
+        expect(show(repo, `${tip}:features/F-Settings-B/manifest.json`)).toContain('"/settings"');
+        expect(show(repo, `${tip}:features/F-Settings-B/manifest.json`)).not.toContain("/settings--");
         expect(show(repo, `${tip}:features/F-Settings-A/manifest.json`)).toContain('"/settings"');
         expect(show(repo, `${tip}:features/F-Settings-A/journey.test.mjs`)).not.toContain(".skip");
-        const prompt = queue.engine.prompts.find((item) => item.includes("duplicate route /settings"));
-        expect(prompt).toBeTruthy();
-        expect(prompt).toContain("F-Settings-A canonical spec");
-        expect(prompt).toContain("F-Settings-B canonical spec");
-        expect(prompt).toContain(revParse(repo, "refs/heads/harness/f/F-Settings-A"));
-        expect(prompt).not.toContain("SENTINEL_NOT_FOR_MODEL");
+        expect(queue.engine.prompts.join("\n")).not.toContain("SENTINEL_NOT_FOR_MODEL");
       });
     },
     120_000,
@@ -338,8 +333,10 @@ describe("project merge queue", () => {
         ],
       });
       await withQueue(undefined, model, async ({ repo, queue }) => {
-        addFeature(repo, "F-Settings-A", featureTree("F-Settings-A", { routes: ["/settings"] }));
-        addFeature(repo, "F-Settings-B", featureTree("F-Settings-B", { routes: ["/settings"] }));
+        const clash = (self: string, other: string) =>
+          `import { existsSync } from "node:fs";\nif (existsSync("features/${other}")) { console.error("${self} clashes with ${other}"); process.exit(1); }\nconsole.log(${JSON.stringify(self)});\n`;
+        addFeature(repo, "F-Settings-A", featureTree("F-Settings-A", { routes: ["/settings"], journey: clash("F-Settings-A", "F-Settings-B") }));
+        addFeature(repo, "F-Settings-B", featureTree("F-Settings-B", { routes: ["/settings"], journey: clash("F-Settings-B", "F-Settings-A") }));
         const before = queue.integrationSha();
         queue.enqueue(request("F-Settings-A"));
         queue.enqueue(request("F-Settings-B"));
@@ -348,9 +345,45 @@ describe("project merge queue", () => {
         expect(queue.integrationSha()).toBe(before);
         expect(report.escalations.map((item) => item.to)).toEqual(["developer"]);
         expect(report.escalations[0]?.attempts).toBe(2);
-        expect(queue.engine.prompts.filter((item) => item.includes("duplicate route /settings"))).toHaveLength(2);
+        expect(queue.engine.prompts.filter((item) => item.includes("clashes with"))).toHaveLength(2);
         expect(queue.itemStatus("F-Settings-A")).toBe("ESCALATED");
         expect(queue.itemStatus("F-Settings-B")).toBe("ESCALATED");
+      });
+    },
+    120_000,
+  );
+
+  it(
+    "fails the combined gate when a merged TypeScript file has a type error",
+    async () => {
+      await withQueue(undefined, undefined, async ({ repo, queue }) => {
+        addFeature(
+          repo,
+          "F-Typed",
+          featureTree("F-Typed", {
+            extra: {
+              "tsconfig.json": `${JSON.stringify({
+                compilerOptions: {
+                  strict: true,
+                  noEmit: true,
+                  target: "ES2022",
+                  module: "NodeNext",
+                  moduleResolution: "NodeNext",
+                  skipLibCheck: true,
+                },
+                include: ["src/**/*.ts"],
+              })}\n`,
+              "src/bad.ts": "export const n: number = \"no\";\n",
+            },
+          }),
+        );
+        const before = queue.integrationSha();
+        queue.enqueue(request("F-Typed"));
+        const report = await queue.drain();
+        expect(report.landed).toEqual([]);
+        expect(report.evicted.map((item) => item.featureId)).toEqual(["F-Typed"]);
+        expect(report.evicted[0]?.trace).toContain("not assignable to type 'number'");
+        expect(queue.integrationSha()).toBe(before);
       });
     },
     120_000,

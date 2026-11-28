@@ -100,10 +100,10 @@ function proposal(patch: Partial<ContractChangeProposal> & Pick<ContractChangePr
 
 const orderBefore = "CREATE TABLE orders ( id INTEGER PRIMARY KEY, price_cents INTEGER NOT NULL );";
 
-describe("ContractChangeRequestEngine", () => {
-  it("routes a nullable column to the contract owner and wakes only the consumer", () => {
+describe("ContractChangeRequestEngine", async () => {
+  it("routes a nullable column to the contract owner and wakes only the consumer", async () => {
     const { engine, mergeQueue } = harness();
-    const result = engine.submit(
+    const result = await engine.submit(
       proposal({
         proposedDelta: {
           before: { sql: orderBefore },
@@ -131,9 +131,9 @@ describe("ContractChangeRequestEngine", () => {
     expect(audit.map((event) => event.lifecycle)).toEqual(["PROPOSED", "CLASSIFIED", "APPROVED", "LANDED"]);
   });
 
-  it("overrides a false additive claim and blocks the fast path", () => {
+  it("overrides a false additive claim and blocks the fast path", async () => {
     const { engine, mergeQueue } = harness();
-    const result = engine.submit(
+    const result = await engine.submit(
       proposal({
         proposedDelta: {
           before: { sql: orderBefore },
@@ -157,13 +157,13 @@ describe("ContractChangeRequestEngine", () => {
     expect(mergeQueue.landings).toHaveLength(0);
   });
 
-  it("dedupes concurrent identical CCRs into one owner task and wakes both", () => {
+  it("dedupes concurrent identical CCRs into one owner task and wakes both", async () => {
     const { engine, mergeQueue } = harness();
     const delta = {
       before: { sql: orderBefore },
       after: { sql: "CREATE TABLE orders ( id INTEGER PRIMARY KEY, price_cents INTEGER NOT NULL, submitted_at TEXT NULL );" },
     };
-    const [first, second] = engine.submitMany([
+    const [first, second] = await engine.submitMany([
       proposal({ requestingTaskId: "W-Orders", requestingFeatureId: "F-Orders", proposedDelta: delta, rationale: "Orders needs submitted_at." }),
       proposal({ requestingTaskId: "W-Reports", requestingFeatureId: "F-Reports", proposedDelta: delta, rationale: "Reports needs submitted_at." }),
     ]);
@@ -175,9 +175,9 @@ describe("ContractChangeRequestEngine", () => {
     expect(mergeQueue.landings).toHaveLength(1);
   });
 
-  it("breaks a mutual CCR wait and lands both additive fields in one coordinator commit", () => {
+  it("breaks a mutual CCR wait and lands both additive fields in one coordinator commit", async () => {
     const { engine, mergeQueue } = harness({ landMode: "queued" });
-    const waiting = engine.submit(
+    const waiting = await engine.submit(
       proposal({
         requestingTaskId: "W-B",
         requestingFeatureId: "F-B",
@@ -191,7 +191,7 @@ describe("ContractChangeRequestEngine", () => {
     expect(waiting.queueState).toBe("waiting_on_ccr");
     expect(waiting.waitingOnCcr).toBe(true);
     expect(engine.ledger.listEdges()).toHaveLength(1);
-    const broken = engine.submit(
+    const broken = await engine.submit(
       proposal({
         requestingTaskId: "W-A",
         requestingFeatureId: "F-A",
@@ -215,7 +215,7 @@ describe("ContractChangeRequestEngine", () => {
     expect(engine.ledger.notices().some((notice) => notice.reason === "wait_graph_deadlock")).toBe(true);
   });
 
-  it("sends a semantic sort change through review when the JSON schema is unchanged", () => {
+  it("sends a semantic sort change through review when the JSON schema is unchanged", async () => {
     const { engine, mergeQueue } = harness();
     const jsonSchema = JSON.stringify({
       title: "OrderList",
@@ -223,7 +223,7 @@ describe("ContractChangeRequestEngine", () => {
       properties: { id: { type: "string" } },
       required: ["id"],
     });
-    const result = engine.submit(
+    const result = await engine.submit(
       proposal({
         proposedDelta: {
           before: { jsonSchema },
@@ -246,9 +246,9 @@ describe("ContractChangeRequestEngine", () => {
     expect(mergeQueue.landings).toHaveLength(0);
   });
 
-  it("rejects a breaking CCR and tells the worker to adapt inside its scope", () => {
+  it("rejects a breaking CCR and tells the worker to adapt inside its scope", async () => {
     const { engine } = harness();
-    const opened = engine.submit(
+    const opened = await engine.submit(
       proposal({
         proposedDelta: {
           before: { sql: orderBefore },
@@ -265,9 +265,9 @@ describe("ContractChangeRequestEngine", () => {
     expect(engine.ledger.audit(opened.ccrId ?? "").map((event) => event.lifecycle)).toContain("REJECTED");
   });
 
-  it("approves a breaking CCR into Task 087 holds without auto-start", () => {
+  it("approves a breaking CCR into Task 087 holds without auto-start", async () => {
     const { engine, mergeQueue } = harness();
-    const opened = engine.submit(
+    const opened = await engine.submit(
       proposal({
         proposedDelta: {
           before: { sql: orderBefore },
@@ -293,9 +293,9 @@ describe("ContractChangeRequestEngine", () => {
     expect(mergeQueue.landings).toHaveLength(0);
   });
 
-  it("queues a CCR when the owner feature is on hold and notifies the coordinator", () => {
+  it("queues a CCR when the owner feature is on hold and notifies the coordinator", async () => {
     const { engine, mergeQueue } = harness();
-    const result = engine.submit(
+    const result = await engine.submit(
       proposal({
         requestingTaskId: "W-Menu",
         requestingFeatureId: "F-Menu",
@@ -315,19 +315,22 @@ describe("ContractChangeRequestEngine", () => {
     expect(engine.ledger.notices().some((notice) => notice.reason === "blocked_by_owner_hold" && notice.targetRole === "project-integrator@1")).toBe(true);
   });
 
-  it("halts the fourth CCR from one task and escalates for architectural review", () => {
+  it("halts the fourth CCR from one task and escalates for architectural review", async () => {
     const { engine } = harness();
-    const results = ["one", "two", "three", "four"].map((name) =>
-      engine.submit(
-        proposal({
-          proposedDelta: {
-            before: { sql: orderBefore },
-            after: { sql: `CREATE TABLE orders ( id INTEGER PRIMARY KEY, price_cents INTEGER NOT NULL, ${name} TEXT NULL );` },
-          },
-          rationale: `Add ${name}.`,
-        }),
-      ),
-    );
+    const results = [];
+    for (const name of ["one", "two", "three", "four"]) {
+      results.push(
+        await engine.submit(
+          proposal({
+            proposedDelta: {
+              before: { sql: orderBefore },
+              after: { sql: `CREATE TABLE orders ( id INTEGER PRIMARY KEY, price_cents INTEGER NOT NULL, ${name} TEXT NULL );` },
+            },
+            rationale: `Add ${name}.`,
+          }),
+        ),
+      );
+    }
     expect(results.slice(0, 3).every((result) => result.lifecycle === "LANDED")).toBe(true);
     expect(results[3]?.spamHalted).toBe(true);
     expect(results[3]?.ccrId).toBeNull();
@@ -337,9 +340,9 @@ describe("ContractChangeRequestEngine", () => {
     expect(notices.map((notice) => notice.targetRole).sort()).toEqual(["planner", "project-integrator@1"]);
   });
 
-  it("refuses to land an additive CCR when compatibility checks fail", () => {
+  it("refuses to land an additive CCR when compatibility checks fail", async () => {
     const { engine, mergeQueue } = harness({ failChecks: ["compat:entity:Order"] });
-    const result = engine.submit(
+    const result = await engine.submit(
       proposal({
         proposedDelta: {
           before: { sql: orderBefore },
@@ -353,12 +356,12 @@ describe("ContractChangeRequestEngine", () => {
     expect(mergeQueue.landings).toHaveLength(0);
   });
 
-  it("keeps the audit ledger when the database is reopened", () => {
+  it("keeps the audit ledger when the database is reopened", async () => {
     const directory = mkdtempSync(path.join(tmpdir(), "ccr-ledger-"));
     const file = path.join(directory, "state.db");
     const ledger = CcrLedger.open(file);
     const { engine } = harness({ ledger });
-    const result = engine.submit(
+    const result = await engine.submit(
       proposal({
         proposedDelta: {
           before: { sql: orderBefore },
@@ -376,7 +379,7 @@ describe("ContractChangeRequestEngine", () => {
     reopened.close();
   });
 
-  it("rejects extra fields on ccr@1", () => {
+  it("rejects extra fields on ccr@1", async () => {
     expect(() => parseCcrV1({ schema: "ccr@1", id: "CCR-1", from_feature: "F-Orders", target: "entity:Order", change: { add_column: { name: "note", type: "text", nullable: true } }, reason: "need it", class: "additive", status: "open", bypass: true })).toThrow(/unknown field/);
   });
 });

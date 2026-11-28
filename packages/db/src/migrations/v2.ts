@@ -231,6 +231,133 @@ CREATE TABLE IF NOT EXISTS feature_worktree_slots (
 ) STRICT;
 `;
 
+/** Merge queue, CCR ledger, and undo archival. No second ref_leases, feature_queue_runtime, or undo_nodes. */
+const INTEGRATOR_M3_SQL = `
+INSERT OR IGNORE INTO feature_states (state, terminal) VALUES ('UNDONE', 1);
+
+CREATE TABLE IF NOT EXISTS merge_queue_items (
+  id               TEXT PRIMARY KEY,
+  feature_id       TEXT NOT NULL,
+  feature_ref      TEXT NOT NULL,
+  priority         INTEGER NOT NULL,
+  sequence         INTEGER NOT NULL,
+  status           TEXT NOT NULL,
+  phase            TEXT NOT NULL,
+  enqueued_at      INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL,
+  eviction_count   INTEGER NOT NULL DEFAULT 0,
+  failure_trace    TEXT NOT NULL DEFAULT '',
+  request_json     TEXT NOT NULL,
+  merge_sha        TEXT NOT NULL DEFAULT '',
+  escalation_json  TEXT NOT NULL DEFAULT '',
+  gate_json        TEXT NOT NULL DEFAULT '',
+  runtime_state    TEXT NOT NULL DEFAULT 'QUEUED_FOR_MERGE',
+  runtime_epoch    INTEGER NOT NULL DEFAULT 0,
+  runtime_branch   TEXT NOT NULL DEFAULT '',
+  runtime_updated_at INTEGER NOT NULL DEFAULT 0,
+  runtime_done_json TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS merge_queue_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind         TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS merge_queue_worktrees (
+  path       TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ccr_requests (
+  id TEXT PRIMARY KEY,
+  target_contract_node_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  requesting_task_id TEXT NOT NULL,
+  requesting_feature_id TEXT NOT NULL,
+  lifecycle TEXT NOT NULL,
+  queue_state TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  overridden INTEGER NOT NULL,
+  claimed_class TEXT,
+  rationale TEXT NOT NULL,
+  urgency TEXT NOT NULL,
+  owner_task_id TEXT,
+  owner_role TEXT NOT NULL,
+  owner_commit_sha TEXT,
+  woken_task_ids TEXT NOT NULL,
+  subscriber_task_ids TEXT NOT NULL,
+  ccr_v1 TEXT NOT NULL,
+  migration_name TEXT,
+  schema_diff TEXT NOT NULL,
+  decision_json TEXT,
+  owner_task_json TEXT,
+  semantic_breaking INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ccr_audit_ledger (
+  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ccr_id TEXT NOT NULL,
+  lifecycle TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ccr_wait_edges (
+  from_task_id TEXT NOT NULL,
+  to_task_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  ccr_id TEXT,
+  PRIMARY KEY (from_task_id, to_task_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS ccr_notices (
+  notice_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_role TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ccr_id_sequences (
+  name TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS undo_edges (
+  src           TEXT NOT NULL,
+  type          TEXT NOT NULL,
+  dst           TEXT NOT NULL,
+  artifact_path TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (src, type, dst, artifact_path)
+);
+
+CREATE TABLE IF NOT EXISTS undo_inbox (
+  id          TEXT PRIMARY KEY,
+  feature_id  TEXT NOT NULL,
+  exclusive   INTEGER NOT NULL,
+  status      TEXT NOT NULL,
+  text        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS undo_workers (
+  id          TEXT PRIMARY KEY,
+  feature_id  TEXT NOT NULL,
+  pid         INTEGER NOT NULL,
+  halted      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS undo_ownership (
+  path              TEXT PRIMARY KEY,
+  owner_feature_id  TEXT NOT NULL,
+  previous_owner    TEXT NOT NULL,
+  transferred_at    INTEGER NOT NULL
+);
+`;
+
 const CODE_INDEX_MODULE_CARDS_DDL = `
 CREATE TABLE IF NOT EXISTS module_cards (
   file_path TEXT NOT NULL,
@@ -255,11 +382,23 @@ const STATE_V2_TABLES = [
   "feature_write_scopes",
   "feature_turns",
   "feature_worktree_slots",
+  "merge_queue_items",
+  "merge_queue_events",
+  "merge_queue_worktrees",
+  "ccr_requests",
+  "ccr_audit_ledger",
+  "ccr_wait_edges",
+  "ccr_notices",
+  "ccr_id_sequences",
+  "undo_edges",
+  "undo_inbox",
+  "undo_workers",
+  "undo_ownership",
 ] as const;
 
-/** Additive state v2 DDL, including handoff pointers and feature coordination. */
+/** Additive state v2 DDL, including handoff pointers, feature coordination, and integrator m3 tables. */
 export function stateV2Sql(): string {
-  return STATE_V2_SQL;
+  return `${STATE_V2_SQL}\n${INTEGRATOR_M3_SQL}`;
 }
 
 function flag(value: unknown): number {
@@ -280,7 +419,7 @@ export const stateV2Migration: MigrationDefinition = {
   name: STATE_V2_MIGRATION_NAME,
   targetDb: "state",
   apply(conn) {
-    conn.exec(STATE_V2_SQL);
+    conn.exec(stateV2Sql());
   },
   check(conn) {
     for (const type of SEEDED_EDGE_TYPES) {
@@ -291,6 +430,8 @@ export const stateV2Migration: MigrationDefinition = {
       }
     }
     for (const table of STATE_V2_TABLES) assertTable(conn, table);
+    const undone = conn.prepare("SELECT terminal FROM feature_states WHERE state = 'UNDONE'").get();
+    if (flag(undone?.terminal) !== 1) throw new SchemaInvariantError("feature state UNDONE was not seeded");
   },
 };
 

@@ -1,4 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import { openSharedStateFile } from "../shared-state.js";
 import { UndoError } from "./errors.js";
 import type {
   FeatureRecord,
@@ -12,81 +14,37 @@ import type {
 
 export type SqlValue = null | number | string | bigint | Uint8Array;
 
-const DDL = `
-CREATE TABLE IF NOT EXISTS undo_nodes (
-  feature_id          TEXT PRIMARY KEY,
-  title               TEXT NOT NULL,
-  lifecycle           TEXT NOT NULL,
-  node_status         TEXT NOT NULL,
-  branch              TEXT NOT NULL,
-  merge_sha           TEXT NOT NULL DEFAULT '',
-  specs               TEXT NOT NULL DEFAULT '',
-  decisions_json      TEXT NOT NULL DEFAULT '[]',
-  tasks_json          TEXT NOT NULL DEFAULT '[]',
-  landed              INTEGER NOT NULL DEFAULT 0,
-  previous_lifecycle  TEXT NOT NULL DEFAULT ''
-) STRICT;
+const CHANGE_SET = "CS-UNDO";
 
-CREATE TABLE IF NOT EXISTS undo_edges (
-  src           TEXT NOT NULL,
-  type          TEXT NOT NULL,
-  dst           TEXT NOT NULL,
-  artifact_path TEXT NOT NULL DEFAULT '',
-  PRIMARY KEY (src, type, dst, artifact_path)
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS undo_inbox (
-  id          TEXT PRIMARY KEY,
-  feature_id  TEXT NOT NULL,
-  exclusive   INTEGER NOT NULL,
-  status      TEXT NOT NULL,
-  text        TEXT NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS undo_workers (
-  id          TEXT PRIMARY KEY,
-  feature_id  TEXT NOT NULL,
-  pid         INTEGER NOT NULL,
-  halted      INTEGER NOT NULL DEFAULT 0
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS undo_ownership (
-  path              TEXT PRIMARY KEY,
-  owner_feature_id  TEXT NOT NULL,
-  previous_owner    TEXT NOT NULL,
-  transferred_at    INTEGER NOT NULL
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS ref_leases (
-  ref          TEXT PRIMARY KEY,
-  holder       TEXT NOT NULL,
-  epoch        INTEGER NOT NULL,
-  expected_sha TEXT,
-  expires_at   INTEGER
-) STRICT, WITHOUT ROWID;
-`;
+const FEATURE_STATES = new Set([
+  "PLANNED",
+  "JIT_READY",
+  "IN_WAVE",
+  "LEAVES_MERGED",
+  "WIRED",
+  "JOURNEY_PASSED",
+  "QUEUED_FOR_MERGE",
+  "MERGED",
+  "DONE",
+  "BLOCKED",
+  "REOPENED",
+  "DEFERRED",
+  "ABANDONED",
+  "UNDONE",
+]);
 
 /**
- * Local port of Task 017 `KnowledgeGraphRepo`.
- * Frozen `schema/state.sql` cannot store node status `undone` (nodes.status and
- * feature_states are closed lists). Undo archival lives in this runtime database
- * until a schema change accepts `undone` while preserving `feature_id`.
- * Usage edges accept the task vocabulary `consumes` plus the frozen name
- * `consumes_contract`, and `depends_on` / `implements`.
+ * Features live on canonical nodes plus feature_runtime.
+ * `nodes.status` has no `undone` value, so an archived feature is `retired`
+ * with feature_runtime state `UNDONE`. The public nodeStatus stays `undone`.
+ * Inbox questions stay on undo_inbox: canonical inbox_items cannot store `retired`.
+ * Usage edges stay on undo_edges because `consumes` is not a canonical edge type.
  */
 export class KnowledgeGraphPort {
   private constructor(private readonly db: UndoDb) {}
 
   static open(filePath: string): KnowledgeGraphPort {
-    const sqlite = new DatabaseSync(filePath);
-    sqlite.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = FULL;
-      PRAGMA foreign_keys = ON;
-      PRAGMA busy_timeout = 5000;
-    `);
-    sqlite.exec(DDL);
-    return new KnowledgeGraphPort(new UndoDb(sqlite));
+    return new KnowledgeGraphPort(new UndoDb(openSharedStateFile(filePath)));
   }
 
   transaction<T>(fn: () => T): T {
@@ -107,46 +65,32 @@ export class KnowledgeGraphPort {
 
   registerFeature(input: FeatureRegistration): FeatureRecord {
     const existing = this.getFeature(input.featureId);
-    const decisions = JSON.stringify(input.decisions ?? existing?.decisions ?? []);
-    const tasks = JSON.stringify(input.taskIds ?? existing?.taskIds ?? []);
-    this.db.run(
-      `INSERT INTO undo_nodes (
-         feature_id, title, lifecycle, node_status, branch, merge_sha, specs, decisions_json, tasks_json, landed, previous_lifecycle
-       ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, '')
-       ON CONFLICT(feature_id) DO UPDATE SET
-         title = excluded.title,
-         lifecycle = excluded.lifecycle,
-         node_status = 'active',
-         branch = excluded.branch,
-         merge_sha = excluded.merge_sha,
-         specs = excluded.specs,
-         decisions_json = excluded.decisions_json,
-         tasks_json = excluded.tasks_json,
-         landed = excluded.landed`,
-      [
-        input.featureId,
-        input.title,
-        input.lifecycle,
-        input.branch,
-        input.mergeSha ?? existing?.mergeSha ?? "",
-        input.specs ?? existing?.specs ?? "",
-        decisions,
-        tasks,
-        input.landed ? 1 : 0,
-      ],
-    );
+    this.writeFeature({
+      featureId: input.featureId,
+      title: input.title,
+      lifecycle: input.lifecycle,
+      nodeStatus: "active",
+      runtimeState: runtimeStateFor(input.lifecycle),
+      branch: input.branch,
+      mergeSha: input.mergeSha ?? existing?.mergeSha ?? "",
+      specs: input.specs ?? existing?.specs ?? "",
+      decisions: input.decisions ?? existing?.decisions ?? [],
+      taskIds: input.taskIds ?? existing?.taskIds ?? [],
+      landed: input.landed,
+      previousLifecycle: existing?.previousLifecycle ?? "",
+    });
     const stored = this.getFeature(input.featureId);
     if (!stored) throw new UndoError("feature_missing", input.featureId);
     return stored;
   }
 
   getFeature(featureId: string): FeatureRecord | null {
-    const row = this.db.get("SELECT * FROM undo_nodes WHERE feature_id = ?", [featureId]);
-    return row ? rowToFeature(row) : null;
+    const row = this.db.get(`${FEATURE_SELECT} WHERE n.id = ? AND n.kind = 'feature'`, [featureId]);
+    return row ? featureFromRow(row) : null;
   }
 
   listFeatures(): FeatureRecord[] {
-    return this.db.all("SELECT * FROM undo_nodes ORDER BY feature_id", []).map(rowToFeature);
+    return this.db.all(`${FEATURE_SELECT} WHERE n.kind = 'feature' ORDER BY n.id`, []).map(featureFromRow);
   }
 
   addEdge(edge: UsageEdge): void {
@@ -226,12 +170,13 @@ export class KnowledgeGraphPort {
   markUndone(featureId: string): void {
     const current = this.getFeature(featureId);
     if (!current) throw new UndoError("feature_missing", featureId);
-    this.db.run(
-      `UPDATE undo_nodes
-       SET previous_lifecycle = lifecycle, lifecycle = 'undone', node_status = 'undone'
-       WHERE feature_id = ?`,
-      [featureId],
-    );
+    this.writeFeature({
+      ...current,
+      lifecycle: "undone",
+      nodeStatus: "retired",
+      runtimeState: "UNDONE",
+      previousLifecycle: current.lifecycle,
+    });
   }
 
   revive(featureId: string): FeatureRecord {
@@ -240,10 +185,82 @@ export class KnowledgeGraphPort {
     if (current.nodeStatus !== "undone") {
       throw new UndoError("not_undone", `${featureId} is ${current.nodeStatus}, not archived as undone.`);
     }
-    this.db.run("UPDATE undo_nodes SET lifecycle = 'active', node_status = 'active' WHERE feature_id = ?", [featureId]);
+    this.writeFeature({
+      ...current,
+      lifecycle: "active",
+      nodeStatus: "active",
+      runtimeState: "REOPENED",
+    });
     const revived = this.getFeature(featureId);
     if (!revived) throw new UndoError("feature_missing", featureId);
     return revived;
+  }
+
+  private writeFeature(input: {
+    readonly featureId: string;
+    readonly title: string;
+    readonly lifecycle: string;
+    readonly nodeStatus: "active" | "retired";
+    readonly runtimeState: string;
+    readonly branch: string;
+    readonly mergeSha: string;
+    readonly specs: string;
+    readonly decisions: readonly string[];
+    readonly taskIds: readonly string[];
+    readonly landed: boolean;
+    readonly previousLifecycle: string;
+  }): void {
+    this.ensureChangeSet();
+    const fields = JSON.stringify({
+      feature: input.featureId,
+      lifecycle: input.lifecycle,
+      branch: input.branch,
+      mergeSha: input.mergeSha,
+      specs: input.specs,
+      decisions: [...input.decisions],
+      tasks: [...input.taskIds],
+      landed: input.landed,
+      previousLifecycle: input.previousLifecycle,
+    });
+    const hash = createHash("sha256").update(`${input.title}\n${fields}`).digest("hex");
+    const current = this.db.get("SELECT version FROM nodes WHERE id = ?", [input.featureId]);
+    if (!current) {
+      this.db.run(
+        `INSERT INTO nodes (id, kind, version, content_hash, title, text, fields, status, change_set, created_rev, updated_rev)
+         VALUES (?, 'feature', 1, ?, ?, ?, ?, ?, ?, 1, 1)`,
+        [input.featureId, hash, input.title, input.specs, fields, input.nodeStatus, CHANGE_SET],
+      );
+      this.db.run(
+        `INSERT INTO feature_runtime (feature, state, epoch, branch, updated_rev) VALUES (?, ?, 1, ?, 1)`,
+        [input.featureId, input.runtimeState, input.branch],
+      );
+      return;
+    }
+    const version = sqlNumber(current, "version") + 1;
+    this.db.run(
+      `UPDATE nodes
+       SET version = ?, content_hash = ?, title = ?, text = ?, fields = ?, status = ?, updated_rev = ?
+       WHERE id = ?`,
+      [version, hash, input.title, input.specs, fields, input.nodeStatus, version, input.featureId],
+    );
+    this.db.run(
+      `INSERT INTO feature_runtime (feature, state, epoch, branch, updated_rev)
+       VALUES (?, ?, 1, ?, ?)
+       ON CONFLICT(feature) DO UPDATE SET
+         state = excluded.state,
+         branch = excluded.branch,
+         updated_rev = excluded.updated_rev`,
+      [input.featureId, input.runtimeState, input.branch, version],
+    );
+  }
+
+  private ensureChangeSet(): void {
+    this.db.run(
+      `INSERT INTO change_sets (id, rev, origin, origin_ref, author, created_at, summary)
+       VALUES (?, NULL, 'undo', 'feature-undo', 'feature-undo', ?, 'feature undo archival')
+       ON CONFLICT(id) DO NOTHING`,
+      [CHANGE_SET, Date.now()],
+    );
   }
 
   findUndoneByText(text: string): FeatureRecord | null {
@@ -337,20 +354,56 @@ export function sqlNumber(row: Readonly<Record<string, SqlValue>> | undefined, k
   return 0;
 }
 
-function rowToFeature(row: Readonly<Record<string, SqlValue>>): FeatureRecord {
+const FEATURE_SELECT = `
+SELECT n.id AS feature_id, n.title, n.status AS node_status, n.fields, COALESCE(r.state, '') AS runtime_state
+FROM nodes n
+LEFT JOIN feature_runtime r ON r.feature = n.id
+`;
+
+function featureFromRow(row: Readonly<Record<string, SqlValue>>): FeatureRecord {
+  const fields = parseFields(sqlText(row, "fields"));
+  const retired = sqlText(row, "node_status") === "retired";
+  const undone = retired && sqlText(row, "runtime_state") === "UNDONE";
   return {
     featureId: sqlText(row, "feature_id"),
     title: sqlText(row, "title"),
-    lifecycle: sqlText(row, "lifecycle"),
-    nodeStatus: sqlText(row, "node_status"),
-    branch: sqlText(row, "branch"),
-    mergeSha: sqlText(row, "merge_sha"),
-    specs: sqlText(row, "specs"),
-    decisions: parseStringArray(sqlText(row, "decisions_json")),
-    taskIds: parseStringArray(sqlText(row, "tasks_json")),
-    landed: sqlNumber(row, "landed") === 1,
-    previousLifecycle: sqlText(row, "previous_lifecycle"),
+    lifecycle: fieldText(fields, "lifecycle"),
+    nodeStatus: undone ? "undone" : "active",
+    branch: fieldText(fields, "branch"),
+    mergeSha: fieldText(fields, "mergeSha"),
+    specs: fieldText(fields, "specs"),
+    decisions: stringArray(fields.decisions),
+    taskIds: stringArray(fields.tasks),
+    landed: fields.landed === true,
+    previousLifecycle: fieldText(fields, "previousLifecycle"),
   };
+}
+
+function runtimeStateFor(lifecycle: string): string {
+  if (FEATURE_STATES.has(lifecycle)) return lifecycle;
+  if (lifecycle === "active") return "REOPENED";
+  if (lifecycle === "undone") return "UNDONE";
+  return "PLANNED";
+}
+
+function parseFields(text: string): Record<string, unknown> {
+  try {
+    const value = JSON.parse(text) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function fieldText(fields: Record<string, unknown>, key: string): string {
+  const value = fields[key];
+  return typeof value === "string" ? value : "";
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 function rowToInbox(row: Readonly<Record<string, SqlValue>>): InboxQuestion {
@@ -371,16 +424,6 @@ function rowToWorker(row: Readonly<Record<string, SqlValue>>): WorkerRecord {
     pid: sqlNumber(row, "pid"),
     halted: sqlNumber(row, "halted") === 1,
   };
-}
-
-function parseStringArray(text: string): string[] {
-  try {
-    const value = JSON.parse(text) as unknown;
-    if (!Array.isArray(value)) return [];
-    return value.filter((item): item is string => typeof item === "string");
-  } catch {
-    return [];
-  }
 }
 
 const SEARCH_STOP = new Set(["add", "the", "back", "page", "actually", "bring", "view", "please", "feature", "this", "that", "with"]);

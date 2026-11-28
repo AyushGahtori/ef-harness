@@ -61,7 +61,7 @@ export class FeatureUndoEngine {
     this.executor = new FeatureUndoExecutor(deps);
   }
 
-  execute(featureId: string, choice: UndoChoice): UndoResult {
+  execute(featureId: string, choice: UndoChoice): Promise<UndoResult> {
     return this.executor.execute(featureId, choice);
   }
 

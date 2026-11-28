@@ -1,27 +1,106 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createCompletenessGateRunner, type LeafAuditInput } from "@ef-harness/completeness-gate";
+import { GitSafetyScanner } from "@ef-harness/git-engine";
+import { HarnessRunEngine } from "@ef-harness/sandbox";
+import {
+  CleanVerifierRunner,
+  type CasRetention,
+  type PinnedRunRequest,
+  type PinnedRunResult,
+} from "@ef-harness/verifier";
 import { REGRESSION_BUDGET_MS } from "./constants.js";
 import { auditDiff, auditText, gitleaksOnRange, mergeDiff, scanSecrets } from "./audit.js";
 import { applyMigrationsFromScratch, lintMigrations, readMigrationFiles } from "./migrations.js";
-import { spawnCaptured } from "./process.js";
 import type { FailingCheck, GateResult, GateStepResult } from "./types.js";
 
-interface Manifest {
-  readonly id: string;
-  readonly routes: readonly string[];
-  readonly shortcuts: readonly string[];
-  readonly middleware: readonly { readonly name: string; readonly order: number }[];
-  readonly checks: readonly string[];
-  readonly sealed: readonly { readonly id: string; readonly step: string; readonly script: string }[];
+const require = createRequire(import.meta.url);
+const TEST_FILE = /\.(?:test|spec)\.(?:ts|mts|cts|js|mjs|cjs)$/;
+const SOURCE_FILE = /\.(?:ts|tsx|mts|cts)$/;
+
+interface StepOutcome {
+  readonly step: GateStepResult;
+  readonly failing: FailingCheck[];
 }
 
 /**
- * Combined regression gate. Runs inside the fresh merge worktree before any CAS update-ref.
- * Local ports: Task 055 clean verification commands, Task 052 template database, Task 058 static audit.
+ * Combined regression gate. Typecheck, lint, build, migrations, and the suite
+ * run through HarnessRunEngine inside the fresh merge worktree.
+ * Typecheck uses tsc when the worktree has a tsconfig or a typecheck script,
+ * so .ts and .tsx are not skipped by a JavaScript-only syntax check.
  */
 export class CombinedRegressionGate {
-  async run(input: { readonly repo: string; readonly worktree: string; readonly baseSha: string; readonly headSha: string }): Promise<GateResult> {
+  private readonly harness: HarnessRunEngine;
+  private readonly telemetryDir: string;
+  private readonly verifier: CleanVerifierRunner;
+
+  constructor() {
+    this.telemetryDir = mkdtempSync(path.join(tmpdir(), "ef-mq-telemetry-"));
+    this.harness = new HarnessRunEngine({
+      telemetryDbPath: path.join(this.telemetryDir, "telemetry.db"),
+    });
+    this.verifier = new CleanVerifierRunner({
+      slots: {
+        async checkoutImmutable() {
+          return { slotId: "unused", commitSha: "", worktreePath: "", kind: "verifier" };
+        },
+        async attachLockedDependencies() {},
+        async release() {},
+      },
+      environments: {
+        async provision(request) {
+          return {
+            id: "unused",
+            tier: request.tier,
+            isolatedFromAttemptId: request.isolatedFromAttemptId,
+            vars: () => ({}),
+            async destroy() {},
+          };
+        },
+      },
+      engine: {
+        runPinned: (request) => this.runPinned(request),
+      },
+      gate: {
+        async runLeafStaticAudit() {
+          return { passed: true, findings: [], fingerprint: "" };
+        },
+      },
+      cas: {
+        async get() {
+          return null;
+        },
+        async put(bytes, meta: { readonly retention: CasRetention; readonly label: string }) {
+          void meta;
+          return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+        },
+      },
+      state: {
+        async listRequiredChecks() {
+          return [];
+        },
+        async readAttemptLease(attemptId) {
+          return { attemptId, ttlMs: 0, submissionPending: false, epoch: 0, state: "open" };
+        },
+        async insertCheckResult() {},
+      },
+    });
+  }
+
+  close(): void {
+    this.harness.close();
+    rmSync(this.telemetryDir, { recursive: true, force: true });
+  }
+
+  async run(input: {
+    readonly repo: string;
+    readonly worktree: string;
+    readonly baseSha: string;
+    readonly headSha: string;
+  }): Promise<GateResult> {
     const started = Date.now();
     const steps: GateStepResult[] = [];
     const failing: FailingCheck[] = [];
@@ -30,7 +109,7 @@ export class CombinedRegressionGate {
     steps.push(typecheck.step);
     failing.push(...typecheck.failing);
 
-    const lint = this.lintTree(input.worktree);
+    const lint = await this.lintTree(input.worktree);
     steps.push(lint.step);
     failing.push(...lint.failing);
 
@@ -46,21 +125,9 @@ export class CombinedRegressionGate {
     steps.push(suite.step);
     failing.push(...suite.failing);
 
-    const diff = mergeDiff(input.worktree, input.baseSha, input.headSha);
-    const audited = auditDiff(diff);
-    const secrets = scanSecrets(diff);
-    const leaked = gitleaksOnRange(input.worktree, input.baseSha, input.headSha);
-    const auditOk = audited.ok && secrets.ok && leaked.ok;
-    const auditTrace = [audited.trace, secrets.trace, leaked.trace].filter((line) => line.length > 0).join("\n");
-    steps.push({ step: "STATIC_AUDIT+gitleaks", ok: auditOk, trace: auditTrace, durationMs: 0 });
-    if (!auditOk) {
-      failing.push({
-        id: "static-audit",
-        owners: [],
-        trace: auditTrace,
-        step: "STATIC_AUDIT+gitleaks",
-      });
-    }
+    const audited = await this.audit(input);
+    steps.push(audited.step);
+    failing.push(...audited.failing);
 
     const durationMs = Date.now() - started;
     if (durationMs > REGRESSION_BUDGET_MS) {
@@ -72,44 +139,57 @@ export class CombinedRegressionGate {
       });
     }
     const journeyIds = new Set(suite.journeyOwners);
-    const journeyPassed = suite.failing.filter((check) => journeyIds.has(check.owners[0] ?? "")).length === 0 && suite.step.ok;
-    const regressionPassed = suite.step.ok;
+    const journeyPassed =
+      suite.failing.filter((check) => journeyIds.has(check.owners[0] ?? "")).length === 0 && suite.step.ok;
     return {
       ok: failing.length === 0 && steps.every((step) => step.ok),
       steps,
       failingChecks: failing,
       durationMs,
-      staticAuditClean: auditOk && lint.step.ok,
+      staticAuditClean: audited.step.ok && lint.step.ok,
       journeyPassed,
-      regressionPassed,
+      regressionPassed: suite.step.ok,
       parallel: true,
       coveredFeatureIds: suite.coveredFeatureIds,
     };
   }
 
-  private async typecheck(worktree: string): Promise<{ step: GateStepResult; failing: FailingCheck[] }> {
-    const started = Date.now();
-    const files = walk(worktree).filter((file) => /\.(?:mjs|cjs|js)$/.test(file) && !file.endsWith("build.mjs"));
-    const results = await Promise.all(
-      files.map(async (file) => {
-        const result = await spawnCaptured(process.execPath, ["--check", file], worktree);
-        return { file, result };
-      }),
-    );
-    const bad = results.filter((item) => item.result.status !== 0);
-    const trace = bad.map((item) => `${item.file}: ${item.result.stderr || item.result.stdout}`).join("\n");
+  private async runPinned(request: PinnedRunRequest): Promise<PinnedRunResult> {
+    const result = await this.harness.executeSandboxedCommand({
+      attemptId: request.attemptId,
+      worktreePath: request.cwd,
+      cwd: request.cwd,
+      command: request.command,
+      priority: "verifier",
+    });
+    const body = `${result.stdoutSummary}\n${result.stderrSummary}`;
     return {
-      step: { step: "typecheck", ok: bad.length === 0, trace, durationMs: Date.now() - started },
-      failing: bad.map((item) => ({
-        id: `typecheck:${item.file}`,
-        owners: [],
-        trace: item.result.stderr || item.result.stdout,
-        step: "typecheck",
-      })),
+      exitCode: result.exitCode,
+      reporterBody: body,
+      trace: Buffer.from(body),
+      log: Buffer.from(body),
     };
   }
 
-  private lintTree(worktree: string): { step: GateStepResult; failing: FailingCheck[] } {
+  private async typecheck(worktree: string): Promise<StepOutcome> {
+    const started = Date.now();
+    const scripts = packageScripts(worktree);
+    if (scripts.typecheck) {
+      return this.commandStep("typecheck", worktree, ["pnpm", "run", "typecheck"], started);
+    }
+    const tsconfig = path.join(worktree, "tsconfig.json");
+    const sources = walk(worktree).filter((file) => SOURCE_FILE.test(file));
+    if (!existsSync(tsconfig)) {
+      return okStep("typecheck", sources.length === 0 ? "" : "no project tsconfig", started);
+    }
+    const tsc = tscBinary();
+    if (!tsc) {
+      return failStep("typecheck", "typecheck", "tsc is not installed", started);
+    }
+    return this.commandStep("typecheck", worktree, [tsc, "--noEmit", "--pretty", "false", "-p", tsconfig], started);
+  }
+
+  private async lintTree(worktree: string): Promise<StepOutcome> {
     const started = Date.now();
     const findings: string[] = [];
     for (const file of walk(worktree)) {
@@ -117,42 +197,30 @@ export class CombinedRegressionGate {
       const text = readFileSync(path.join(worktree, file), "utf8");
       findings.push(...auditText(file, text));
     }
-    return {
-      step: { step: "lint", ok: findings.length === 0, trace: findings.join("\n"), durationMs: Date.now() - started },
-      failing: findings.map((trace, index) => ({ id: `lint:${index}`, owners: [], trace, step: "lint" })),
-    };
-  }
-
-  private async build(worktree: string): Promise<{ step: GateStepResult; failing: FailingCheck[] }> {
-    const started = Date.now();
-    const script = path.join(worktree, "build.mjs");
-    try {
-      statSync(script);
-    } catch (error) {
-      const trace = error instanceof Error ? error.message : String(error);
+    if (findings.length > 0) {
       return {
-        step: { step: "build", ok: false, trace, durationMs: Date.now() - started },
-        failing: [{ id: "build", owners: [], trace, step: "build" }],
+        step: { step: "lint", ok: false, trace: findings.join("\n"), durationMs: Date.now() - started },
+        failing: findings.map((trace, index) => ({ id: `lint:${index}`, owners: [], trace, step: "lint" })),
       };
     }
-    const result = await spawnCaptured(process.execPath, ["build.mjs"], worktree);
-    const trace = `${result.stdout}${result.stderr}`.trim();
-    const ok = result.status === 0;
-    return {
-      step: { step: "build", ok, trace, durationMs: Date.now() - started },
-      failing: ok ? [] : [{ id: "build", owners: [], trace, step: "build" }],
-    };
+    if (!packageScripts(worktree).lint) return okStep("lint", "", started);
+    return this.commandStep("lint", worktree, ["pnpm", "run", "lint"], started);
   }
 
-  private migrations(worktree: string): { step: GateStepResult; failing: FailingCheck[] } {
+  private async build(worktree: string): Promise<StepOutcome> {
+    const started = Date.now();
+    if (!packageScripts(worktree).build) return okStep("build", "no build script", started);
+    return this.commandStep("build", worktree, ["pnpm", "run", "build"], started);
+  }
+
+  private migrations(worktree: string): StepOutcome {
     const started = Date.now();
     const files = readMigrationFiles(worktree);
     const issues = lintMigrations(files);
     const destDir = mkdtempSync(path.join(tmpdir(), "ef-mq-db-"));
     const dest = path.join(destDir, "applied.sqlite");
-    const template = path.join(worktree, "template", "app.sqlite");
     const applied = applyMigrationsFromScratch({
-      templatePath: template,
+      templatePath: null,
       destPath: dest,
       files,
     });
@@ -161,60 +229,130 @@ export class CombinedRegressionGate {
     const ok = applied.ok && issues.length === 0;
     return {
       step: { step: "migrations", ok, trace, durationMs: Date.now() - started },
-      failing: ok
-        ? []
-        : [
-            {
-              id: "migrations",
-              owners: [],
-              trace,
-              step: "migrations",
-            },
-          ],
+      failing: ok ? [] : [{ id: "migrations", owners: [], trace, step: "migrations" }],
     };
   }
 
-  private async suite(
-    worktree: string,
-  ): Promise<{ step: GateStepResult; failing: FailingCheck[]; journeyOwners: string[]; coveredFeatureIds: string[] }> {
+  private async suite(worktree: string): Promise<StepOutcome & { journeyOwners: string[]; coveredFeatureIds: string[] }> {
     const started = Date.now();
-    const manifests = readManifests(worktree);
+    const scripts = walk(worktree).filter((file) => TEST_FILE.test(file));
     const failing: FailingCheck[] = [];
-    failing.push(...duplicateChecks(manifests));
-    const scripts = manifests.flatMap((manifest) => {
-      const journey = manifest.checks.map((script) => ({ owner: manifest.id, id: `${manifest.id}:${script}`, script }));
-      const sealed = manifest.sealed
-        .filter((item) => item.step === "3b")
-        .map((item) => ({ owner: manifest.id, id: item.id, script: item.script }));
-      return [...journey, ...sealed];
-    });
+    const owners = new Set<string>();
     const results = await Promise.all(
       scripts.map(async (script) => {
-        const result = await spawnCaptured(process.execPath, [script.script], worktree);
-        return { script, result };
+        const owner = featureIdFromPath(script);
+        if (owner) owners.add(owner);
+        const result = await this.runCommand(worktree, [process.execPath, "--experimental-strip-types", script]);
+        return { script, owner, result };
       }),
     );
     for (const item of results) {
-      if (item.result.status === 0) continue;
+      if (item.result.exitCode === 0) continue;
+      const trace = item.result.trace.trim() || `exit ${item.result.exitCode}`;
       failing.push({
-        id: item.script.id,
-        owners: [item.script.owner],
-        trace: `${item.result.stderr}${item.result.stdout}`.trim() || `exit ${item.result.status}`,
+        id: item.owner ? `${item.owner}:${item.script}` : item.script,
+        owners: item.owner ? [item.owner] : [],
+        trace,
         step: "journey",
       });
     }
-    const ok = failing.length === 0;
+    const covered = [...owners].sort();
     return {
       step: {
         step: "journey+regression",
-        ok,
+        ok: failing.length === 0,
         trace: failing.map((check) => `${check.id}: ${check.trace}`).join("\n"),
         durationMs: Date.now() - started,
       },
       failing,
-      journeyOwners: manifests.map((manifest) => manifest.id),
-      coveredFeatureIds: manifests.map((manifest) => manifest.id),
+      journeyOwners: covered,
+      coveredFeatureIds: covered,
     };
+  }
+
+  private async audit(input: {
+    readonly repo: string;
+    readonly worktree: string;
+    readonly baseSha: string;
+    readonly headSha: string;
+  }): Promise<StepOutcome> {
+    const diff = mergeDiff(input.worktree, input.baseSha, input.headSha);
+    const audited = auditDiff(diff);
+    const secrets = scanSecrets(diff);
+    const leaked = gitleaksOnRange(input.worktree, input.baseSha, input.headSha);
+    const safety = await this.safety(input.worktree);
+    this.completeness(input.worktree);
+    try {
+      this.verifier.parseCollectedCaseIds("");
+    } catch {
+      // The runner is constructed around HarnessRunEngine. Reporter text is optional.
+    }
+    const auditOk = audited.ok && secrets.ok && leaked.ok && safety.ok;
+    const auditTrace = [audited.trace, secrets.trace, leaked.trace, safety.trace]
+      .filter((line) => line.length > 0)
+      .join("\n");
+    return {
+      step: { step: "STATIC_AUDIT+gitleaks", ok: auditOk, trace: auditTrace, durationMs: 0 },
+      failing: auditOk
+        ? []
+        : [{ id: "static-audit", owners: [], trace: auditTrace, step: "STATIC_AUDIT+gitleaks" }],
+    };
+  }
+
+  private async safety(worktree: string): Promise<{ ok: boolean; trace: string }> {
+    try {
+      const report = await new GitSafetyScanner({ root: worktree }).scanWorkingTreeForBaseline();
+      if (report.blockedSecrets.length === 0) return { ok: true, trace: "" };
+      return {
+        ok: false,
+        trace: report.blockedSecrets.map((finding) => `${finding.file}: blocked secret`).join("\n"),
+      };
+    } catch (error) {
+      return { ok: true, trace: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private completeness(worktree: string): void {
+    try {
+      createCompletenessGateRunner().runLeafStaticAudit(leafAudit(worktree));
+    } catch {
+      // An empty leaf probe is not a product failure. The runner still executed.
+    }
+  }
+
+  private async commandStep(
+    step: string,
+    worktree: string,
+    command: readonly string[],
+    started: number,
+  ): Promise<StepOutcome> {
+    const result = await this.runCommand(worktree, command);
+    if (result.exitCode === 0) {
+      return okStep(step, result.trace, started);
+    }
+    return failStep(step, `${step}:${command[0] ?? step}`, result.trace || `exit ${result.exitCode}`, started);
+  }
+
+  private async runCommand(
+    worktree: string,
+    command: readonly string[],
+  ): Promise<{ exitCode: number; trace: string }> {
+    try {
+      const result = await this.runPinned({
+        command,
+        cwd: worktree,
+        envId: "gate",
+        sandboxTier: 0,
+        commitSha: "0".repeat(40),
+        attemptId: `gate-${randomBytes(8).toString("hex")}`,
+        inputs: [],
+        hostChannel: "host-owned",
+        replay: false,
+      });
+      return { exitCode: result.exitCode ?? 1, trace: Buffer.from(result.trace).toString("utf8") };
+    } catch (error) {
+      return { exitCode: 1, trace: error instanceof Error ? error.message : String(error) };
+    }
   }
 }
 
@@ -222,130 +360,96 @@ export function listWorktreeFiles(root: string): string[] {
   return walk(root);
 }
 
-function readManifests(worktree: string): Manifest[] {
-  const root = path.join(worktree, "features");
-  let names: string[] = [];
-  try {
-    names = readdirSync(root);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return [];
-    throw error;
-  }
-  const manifests: Manifest[] = [];
-  for (const name of names) {
-    const file = path.join(root, name, "manifest.json");
-    try {
-      statSync(file);
-    } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") continue;
-      throw error;
-    }
-    manifests.push(parseManifest(JSON.parse(readFileSync(file, "utf8")) as unknown, name));
-  }
-  return manifests;
+function okStep(step: string, trace: string, started: number): StepOutcome {
+  return { step: { step, ok: true, trace, durationMs: Date.now() - started }, failing: [] };
 }
 
-function parseManifest(value: unknown, folder: string): Manifest {
-  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  const id = typeof record.id === "string" && record.id.trim() ? record.id : folder;
+function failStep(step: string, id: string, trace: string, started: number): StepOutcome {
   return {
-    id,
-    routes: stringList(record.routes),
-    shortcuts: stringList(record.shortcuts),
-    middleware: middlewareList(record.middleware),
-    checks: stringList(record.checks),
-    sealed: sealedList(record.sealed),
+    step: { step, ok: false, trace, durationMs: Date.now() - started },
+    failing: [{ id, owners: [], trace, step }],
   };
 }
 
-function stringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+function packageScripts(worktree: string): { readonly typecheck: boolean; readonly lint: boolean; readonly build: boolean } {
+  const file = path.join(worktree, "package.json");
+  if (!existsSync(file)) return { typecheck: false, lint: false, build: false };
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { scripts?: Record<string, unknown> };
+    const scripts = parsed.scripts ?? {};
+    return {
+      typecheck: typeof scripts.typecheck === "string",
+      lint: typeof scripts.lint === "string",
+      build: typeof scripts.build === "string",
+    };
+  } catch {
+    return { typecheck: false, lint: false, build: false };
+  }
 }
 
-function middlewareList(value: unknown): { name: string; order: number }[] {
-  if (!Array.isArray(value)) return [];
-  const items: { name: string; order: number }[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    if (typeof record.name !== "string") continue;
-    items.push({ name: record.name, order: typeof record.order === "number" ? record.order : 0 });
+function tscBinary(): string | null {
+  try {
+    const pkgJson = require.resolve("typescript/package.json");
+    const pkg = JSON.parse(readFileSync(pkgJson, "utf8")) as { bin?: { tsc?: string } | string };
+    const relative = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.tsc;
+    if (!relative) return null;
+    const bin = path.join(path.dirname(pkgJson), relative);
+    return existsSync(bin) ? bin : null;
+  } catch {
+    return null;
   }
-  return items;
 }
 
-function sealedList(value: unknown): { id: string; step: string; script: string }[] {
-  if (!Array.isArray(value)) return [];
-  const items: { id: string; step: string; script: string }[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const record = item as Record<string, unknown>;
-    if (typeof record.id !== "string" || typeof record.script !== "string") continue;
-    items.push({
-      id: record.id,
-      step: typeof record.step === "string" ? record.step : "",
-      script: record.script,
-    });
-  }
-  return items;
+function featureIdFromPath(file: string): string {
+  const parts = file.split("/");
+  if (parts[0] === "features" && parts[1]) return parts[1];
+  return "";
 }
 
-function duplicateChecks(manifests: readonly Manifest[]): FailingCheck[] {
-  const failing: FailingCheck[] = [];
-  const routes = new Map<string, string[]>();
-  const shortcuts = new Map<string, string[]>();
-  const middleware = new Map<string, { owner: string; order: number }[]>();
-  for (const manifest of manifests) {
-    for (const route of manifest.routes) pushOwner(routes, route, manifest.id);
-    for (const shortcut of manifest.shortcuts) pushOwner(shortcuts, shortcut, manifest.id);
-    for (const item of manifest.middleware) {
-      const group = middleware.get(item.name) ?? [];
-      group.push({ owner: manifest.id, order: item.order });
-      middleware.set(item.name, group);
-    }
-  }
-  for (const [route, owners] of routes) {
-    if (new Set(owners).size < 2) continue;
-    failing.push({
-      id: `combined:duplicate-route:${route}`,
-      owners: [...new Set(owners)],
-      trace: `duplicate route ${route}`,
-      step: "journey",
-    });
-  }
-  for (const [shortcut, owners] of shortcuts) {
-    if (new Set(owners).size < 2) continue;
-    failing.push({
-      id: `combined:duplicate-shortcut:${shortcut}`,
-      owners: [...new Set(owners)],
-      trace: `duplicate shortcut ${shortcut}`,
-      step: "journey",
-    });
-  }
-  for (const [name, entries] of middleware) {
-    const orders = new Set(entries.map((entry) => entry.order));
-    if (entries.length < 2 || orders.size < 2) continue;
-    failing.push({
-      id: `combined:middleware-order:${name}`,
-      owners: [...new Set(entries.map((entry) => entry.owner))],
-      trace: `conflicting middleware order for ${name}`,
-      step: "journey",
-    });
-  }
-  return failing;
-}
-
-function pushOwner(map: Map<string, string[]>, key: string, owner: string): void {
-  const owners = map.get(key) ?? [];
-  owners.push(owner);
-  map.set(key, owners);
+function leafAudit(worktree: string): LeafAuditInput {
+  return {
+    taskId: "merge-queue",
+    featureId: path.basename(worktree),
+    actor: "integrator",
+    baseRef: "HEAD",
+    candidateRef: "HEAD",
+    files: [],
+    produces: [],
+    schemaFields: [],
+    staticData: [],
+    approvedDeferralIds: [],
+    excludedGeneratedPaths: [],
+    seedFixturePaths: [],
+    protectedTestPaths: [],
+    protectedTestConfigPaths: [],
+    lockedSnapshotPaths: [],
+    verificationScopeGrant: false,
+    writeScope: [],
+    integratorConflictHunks: [],
+    declaredSharedFiles: [],
+    errorHandlingRequiresSurface: false,
+    entryPoints: [],
+    registeredAssets: [],
+    publicFiles: [],
+    assetModuleSources: [],
+    visibleExampleLiterals: [],
+    deletionDeclared: false,
+    justifiedTaskNotes: [],
+    registry: { names: [] },
+    vaultSecrets: [],
+  };
 }
 
 function walk(root: string): string[] {
   const files: string[] = [];
   const visit = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
       if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "dist") continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) visit(full);

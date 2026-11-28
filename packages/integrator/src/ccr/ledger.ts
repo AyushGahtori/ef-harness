@@ -1,4 +1,5 @@
-import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { type DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { openSharedStateFile } from "../shared-state.js";
 
 import { isoTime } from "./clock.js";
 import { CcrError } from "./errors.js";
@@ -112,7 +113,7 @@ export class CcrLedger {
   }
 
   static open(path = ":memory:"): CcrLedger {
-    return new CcrLedger(new DatabaseSync(path));
+    return new CcrLedger(openSharedStateFile(path));
   }
 
   close(): void {

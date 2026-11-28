@@ -1,4 +1,5 @@
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openSharedStateFile } from "../shared-state.js";
 
 export type SqlValue = null | number | string | bigint | Uint8Array;
 
@@ -10,64 +11,9 @@ export interface MergeQueueStateDb {
   close(): void;
 }
 
-const DDL = `
-CREATE TABLE IF NOT EXISTS ref_leases (
-  ref          TEXT PRIMARY KEY,
-  holder       TEXT NOT NULL,
-  epoch        INTEGER NOT NULL,
-  expected_sha TEXT,
-  expires_at   INTEGER
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS merge_queue_items (
-  id               TEXT PRIMARY KEY,
-  feature_id       TEXT NOT NULL,
-  feature_ref      TEXT NOT NULL,
-  priority         INTEGER NOT NULL,
-  sequence         INTEGER NOT NULL,
-  status           TEXT NOT NULL,
-  phase            TEXT NOT NULL,
-  enqueued_at      INTEGER NOT NULL,
-  updated_at       INTEGER NOT NULL,
-  eviction_count   INTEGER NOT NULL DEFAULT 0,
-  failure_trace    TEXT NOT NULL DEFAULT '',
-  request_json     TEXT NOT NULL,
-  merge_sha        TEXT NOT NULL DEFAULT '',
-  escalation_json  TEXT NOT NULL DEFAULT '',
-  gate_json        TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS feature_queue_runtime (
-  feature_id  TEXT PRIMARY KEY,
-  state       TEXT NOT NULL,
-  epoch       INTEGER NOT NULL,
-  branch      TEXT NOT NULL,
-  updated_at  INTEGER NOT NULL,
-  done_json   TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS merge_queue_events (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind         TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  created_at   INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS merge_queue_worktrees (
-  path       TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL
-);
-`;
-
 export function openMergeQueueStateDb(filePath: string): MergeQueueStateDb {
-  const db = new DatabaseSync(filePath);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = FULL;
-    PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 5000;
-  `);
-  db.exec(DDL);
+  const db = openSharedStateFile(filePath);
+  db.exec("PRAGMA journal_mode = WAL");
   return new SqliteMergeQueueStateDb(db);
 }
 

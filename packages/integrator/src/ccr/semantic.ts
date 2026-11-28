@@ -1,9 +1,22 @@
 import { createHash } from "node:crypto";
+import { completeOffline } from "../model-adapter.js";
 
 import type { BehaviorSnapshot, DiffOp, SchemaBundle, SemanticAlternative, SemanticReview } from "./types.js";
 
 export class CcrSemanticCompatibilityReviewer {
-  review(input: {
+  async review(input: {
+    readonly before: SchemaBundle;
+    readonly after: SchemaBundle;
+    readonly behaviorBefore?: BehaviorSnapshot;
+    readonly behaviorAfter?: BehaviorSnapshot;
+    readonly structuralUnchanged: boolean;
+  }): Promise<SemanticReview> {
+    const review = this.reviewDeterministic(input);
+    await completeOffline("ccr@1", review);
+    return review;
+  }
+
+  private reviewDeterministic(input: {
     readonly before: SchemaBundle;
     readonly after: SchemaBundle;
     readonly behaviorBefore?: BehaviorSnapshot;
