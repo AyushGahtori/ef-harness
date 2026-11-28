@@ -1,15 +1,17 @@
+import { capacityPools } from "@ef-harness/governor";
 import type { Clock } from "./clock.js";
 import { SystemClock } from "./clock.js";
 import type { AttemptCheckpointStore } from "./checkpoint-store.js";
 import { SqliteAttemptCheckpointStore } from "./checkpoint-store.js";
-import { LocalAdditiveVsContradictoryResumer } from "./delta.js";
+import type { DeltaInspection } from "./delta.js";
 import { ResumeError } from "./errors.js";
-import { LocalDirtySnapshotEngine, LocalGitTreeSafety } from "./git-work.js";
-import type { DirtySnapshotEngine, GitTreeSafety } from "./git-work.js";
+import { GitEngineDirtySnapshot, LocalGitTreeSafety } from "./git-work.js";
+import type { DirtySnapshot, DirtySnapshotEngine, GitTreeSafety } from "./git-work.js";
+import { PlannerBriefCompiler, PooledWorktreeSlot, SteeringDeltaResumer } from "./live-ports.js";
 import { AttemptMutex } from "./mutex.js";
 import { IdleWrappedAgentAutoParker } from "./parker.js";
 import type { ParkRequest, ParkResult } from "./parker.js";
-import { IdentityBriefCompiler, versionsCompatible } from "./ports.js";
+import { versionsCompatible } from "./ports.js";
 import type {
   BriefCompilerPort,
   ChildProcessPort,
@@ -17,7 +19,6 @@ import type {
   ResumeCallResult,
   WorktreeSlotPort,
 } from "./ports.js";
-import { NoopWorktreeSlot } from "./ports.js";
 import { LabeledWipFreshSessionRebuilder } from "./rebuilder.js";
 import {
   CONTEXT_FRESH_SESSION_ABOVE,
@@ -91,7 +92,7 @@ export interface CoordinatorOptions {
   readonly clock?: Clock;
   readonly slots?: WorktreeSlotPort;
   readonly briefs?: BriefCompilerPort;
-  readonly delta?: LocalAdditiveVsContradictoryResumer;
+  readonly delta?: { inspect(pinned: { readonly sliceSha256: string; readonly briefText: string; readonly requirements: readonly string[] }, next: CompiledBrief): DeltaInspection };
   readonly mutex?: AttemptMutex;
   readonly resumeTimeoutMs?: number;
 }
@@ -104,7 +105,8 @@ export class ForeignRuntimeResumeCoordinator {
   readonly parker: IdleWrappedAgentAutoParker;
   readonly rebuilder: LabeledWipFreshSessionRebuilder;
   private readonly snapshots: DirtySnapshotEngine;
-  private readonly delta: LocalAdditiveVsContradictoryResumer;
+  private readonly delta: { inspect(pinned: { readonly sliceSha256: string; readonly briefText: string; readonly requirements: readonly string[] }, next: CompiledBrief): DeltaInspection };
+  private readonly sessionCaps: capacityPools.SessionProcessCapGuard;
   private readonly processes: ChildProcessPort;
   private readonly adapters: ReadonlyMap<string, ForeignAdapterPort>;
   private readonly clock: Clock;
@@ -116,16 +118,19 @@ export class ForeignRuntimeResumeCoordinator {
     this.adapters = options.adapters;
     this.processes = options.processes;
     this.clock = options.clock ?? new SystemClock();
-    this.slots = options.slots ?? new NoopWorktreeSlot();
+    this.slots = options.slots ?? new PooledWorktreeSlot();
     this.store = options.store ?? new SqliteAttemptCheckpointStore();
-    this.snapshots = options.snapshots ?? new LocalDirtySnapshotEngine();
+    this.snapshots = options.snapshots ?? new GitEngineDirtySnapshot();
     const trees = options.trees ?? new LocalGitTreeSafety();
-    const briefs = options.briefs ?? new IdentityBriefCompiler();
+    const briefs = options.briefs ?? new PlannerBriefCompiler();
     this.rebuilder = options.rebuilder ?? new LabeledWipFreshSessionRebuilder(trees, briefs);
     this.parker =
       options.parker ??
       new IdleWrappedAgentAutoParker(this.store, this.snapshots, this.processes, this.clock);
-    this.delta = options.delta ?? new LocalAdditiveVsContradictoryResumer();
+    this.delta = options.delta ?? new SteeringDeltaResumer();
+    this.sessionCaps = new capacityPools.SessionProcessCapGuard(this.clock, capacityPools.defaultSessionProcessCap(16), {
+      checkpointAndPark: (request) => this.parker.checkpointAndPark(request),
+    });
     this.mutex = options.mutex ?? new AttemptMutex();
     this.resumeTimeoutMs = options.resumeTimeoutMs ?? DEFAULT_RESUME_TIMEOUT_MS;
   }
@@ -157,12 +162,19 @@ export class ForeignRuntimeResumeCoordinator {
       });
       if (result && result.reclaimedRamMb > 0) parked.push(result);
     }
+    // SIGKILL is reported on a later timer turn. Wait so callers observe the exit.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 50);
+    });
     return parked;
   }
 
   /** Immediate eviction when `SessionProcessCapGuard` needs a resident slot. */
   async evictForCapacity(request: ParkRequest): Promise<ParkResult> {
     return this.mutex.run(request.sessionId, () => {
+      if (this.sessionCaps.activeCount() > this.sessionCaps.cap) {
+        return this.parker.checkpointAndPark(request);
+      }
       if (!this.parker.isWaiting(request.sessionId)) return { parked: true, reclaimedRamMb: 0 };
       return this.parker.checkpointAndPark(request);
     });
@@ -208,8 +220,8 @@ export class ForeignRuntimeResumeCoordinator {
   }
 
   async onChildCrash(input: CrashInput): Promise<ForeignRuntimeCheckpoint> {
-    return this.mutex.run(input.attemptId, () => {
-      const snapshot = this.snapshots.capture(input.repoPath);
+    return this.mutex.run(input.attemptId, async () => {
+      const snapshot = await readSnapshot(this.snapshots, input.repoPath);
       const previous = this.store.get(input.attemptId);
       const at = this.clock.now();
       const message = `Salvaged worktree edits after ${input.signal} exit ${input.exitCode} before slot reset`;
@@ -257,9 +269,9 @@ export class ForeignRuntimeResumeCoordinator {
     return this.require(attemptId).timeline;
   }
 
-  private persistUnlocked(input: PersistInput): ForeignRuntimeCheckpoint {
+  private async persistUnlocked(input: PersistInput): Promise<ForeignRuntimeCheckpoint> {
     const previous = this.store.get(input.attemptId);
-    const snapshot = this.snapshots.capture(input.repoPath);
+    const snapshot = await readSnapshot(this.snapshots, input.repoPath);
     const at = this.clock.now();
     const requestedPid = input.childPid === undefined ? (previous?.childPid ?? null) : input.childPid;
     const processAlive = input.reason !== "crash" && requestedPid !== null;
@@ -537,6 +549,11 @@ function outcomeFromLive(checkpoint: ForeignRuntimeCheckpoint, message: string):
     wipedPaths: [],
     keptPaths: [],
   };
+}
+
+async function readSnapshot(engine: DirtySnapshotEngine, repoPath: string): Promise<DirtySnapshot> {
+  if (engine instanceof GitEngineDirtySnapshot) return engine.captureCommitted(repoPath);
+  return engine.capture(repoPath);
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

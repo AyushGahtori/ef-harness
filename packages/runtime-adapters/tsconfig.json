@@ -16,10 +16,16 @@
       "path": "../db"
     },
     {
+      "path": "../git-engine"
+    },
+    {
       "path": "../governor"
     },
     {
       "path": "../mcp-server"
+    },
+    {
+      "path": "../planner"
     },
     {
       "path": "../providers"
@@ -32,6 +38,12 @@
     },
     {
       "path": "../shared-observability"
+    },
+    {
+      "path": "../steering"
+    },
+    {
+      "path": "../worker-loop"
     }
   ]
 }

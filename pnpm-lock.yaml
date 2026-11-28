@@ -750,12 +750,18 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../db
+      '@ef-harness/git-engine':
+        specifier: workspace:*
+        version: link:../git-engine
       '@ef-harness/governor':
         specifier: workspace:*
         version: link:../governor
       '@ef-harness/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@ef-harness/planner':
+        specifier: workspace:*
+        version: link:../planner
       '@ef-harness/providers':
         specifier: workspace:*
         version: link:../providers
@@ -768,6 +774,12 @@ importers:
       '@ef-harness/shared-observability':
         specifier: workspace:*
         version: link:../shared-observability
+      '@ef-harness/steering':
+        specifier: workspace:*
+        version: link:../steering
+      '@ef-harness/worker-loop':
+        specifier: workspace:*
+        version: link:../worker-loop
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

@@ -1,4 +1,5 @@
-import { DatabaseSync } from "node:sqlite";
+import { AttemptCheckpointRepo, openStateConnection, type SqlConnection } from "@ef-harness/db";
+import { defaultCheckpointUpcasters } from "@ef-harness/shared-contracts";
 import { ResumeError } from "./errors.js";
 import type {
   DeltaKind,
@@ -10,28 +11,11 @@ import type {
 import { PARK_REASONS, IDLE_WAIT_KINDS } from "./types.js";
 
 /**
- * Local port of Task 053 `AttemptCheckpointStore` on the frozen
- * `attempt_checkpoints` table. Rich foreign-runtime fields live in
- * `contract_versions.foreignRuntimeCheckpoint` because `schema/state.sql`
- * cannot be altered from this task.
+ * Foreign-runtime rows live in `attempt_checkpoints.contract_versions` under
+ * `foreignRuntimeCheckpoint`. Sibling keys written by Task 053 stay in place.
+ * The connection is `@ef-harness/db` `openStateConnection` (schema/state.sql).
  */
 export const FOREIGN_RUNTIME_CHECKPOINT_KEY = "foreignRuntimeCheckpoint";
-
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS attempts (
-  id TEXT PRIMARY KEY
-);
-CREATE TABLE IF NOT EXISTS attempt_checkpoints (
-  attempt           TEXT PRIMARY KEY REFERENCES attempts(id),
-  step              INTEGER NOT NULL,
-  wip_ref           TEXT,
-  session_ref       TEXT,
-  contract_versions TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(contract_versions)),
-  pending_effects   TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(pending_effects)),
-  handoff_artifact  TEXT,
-  updated_at        INTEGER NOT NULL
-);
-`;
 
 export interface AttemptCheckpointStore {
   save(record: ForeignRuntimeCheckpoint, updatedAt: number): void;
@@ -39,20 +23,21 @@ export interface AttemptCheckpointStore {
 }
 
 export interface CheckpointStoreOptions {
-  readonly database?: DatabaseSync;
-  /** When true, ensure a stub `attempts` row so the frozen foreign key holds. */
+  readonly database?: SqlConnection;
+  /** When true, insert the task, runtime, and attempt rows the frozen foreign keys need. */
   readonly ensureAttemptRow?: boolean;
 }
 
 export class SqliteAttemptCheckpointStore implements AttemptCheckpointStore {
-  private readonly db: DatabaseSync;
+  private readonly db: SqlConnection;
+  private readonly checkpoints: AttemptCheckpointRepo;
   private readonly ensureAttemptRow: boolean;
   private failNext = false;
 
   constructor(options: CheckpointStoreOptions = {}) {
-    this.db = options.database ?? new DatabaseSync(":memory:");
+    this.db = options.database ?? openStateConnection();
+    this.checkpoints = new AttemptCheckpointRepo(this.db);
     this.ensureAttemptRow = options.ensureAttemptRow ?? true;
-    this.db.exec(SCHEMA);
   }
 
   /** Test hook. The next save aborts inside the transaction and leaves the prior row intact. */
@@ -61,39 +46,42 @@ export class SqliteAttemptCheckpointStore implements AttemptCheckpointStore {
   }
 
   save(record: ForeignRuntimeCheckpoint, updatedAt: number): void {
-    const payload = JSON.stringify({ [FOREIGN_RUNTIME_CHECKPOINT_KEY]: record });
+    upcastHeader(record, updatedAt);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       if (this.failNext) {
         this.failNext = false;
         throw new ResumeError("store_fault", "Injected checkpoint transaction fault");
       }
-      if (this.ensureAttemptRow) {
-        this.db.prepare("INSERT INTO attempts (id) VALUES (?) ON CONFLICT(id) DO NOTHING").run(record.attemptId);
-      }
+      if (this.ensureAttemptRow) this.ensureGraph(record, updatedAt);
+      const existing = this.existingContract(record.attemptId);
+      const payload = JSON.stringify(mergeContract(existing, record));
       this.db
         .prepare(
           `INSERT INTO attempt_checkpoints (
              attempt, step, wip_ref, session_ref, contract_versions, pending_effects, handoff_artifact, updated_at
-           ) VALUES (?, ?, ?, ?, ?, '[]', ?, ?)
+           ) VALUES (
+             :attempt, :step, :wip_ref, :session_ref, :contract_versions, :pending_effects, :handoff_artifact, :updated_at
+           )
            ON CONFLICT(attempt) DO UPDATE SET
              step = excluded.step,
              wip_ref = excluded.wip_ref,
              session_ref = excluded.session_ref,
              contract_versions = excluded.contract_versions,
-             pending_effects = excluded.pending_effects,
+             pending_effects = attempt_checkpoints.pending_effects,
              handoff_artifact = excluded.handoff_artifact,
              updated_at = excluded.updated_at`,
         )
-        .run(
-          record.attemptId,
-          record.step,
-          record.wipTreeSha,
-          record.nativeSessionId,
-          payload,
-          record.lastHandoff,
-          updatedAt,
-        );
+        .run({
+          attempt: record.attemptId,
+          step: record.step,
+          wip_ref: record.wipTreeSha,
+          session_ref: record.nativeSessionId,
+          contract_versions: payload,
+          pending_effects: "[]",
+          handoff_artifact: record.lastHandoff,
+          updated_at: updatedAt,
+        });
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -103,8 +91,8 @@ export class SqliteAttemptCheckpointStore implements AttemptCheckpointStore {
 
   get(attemptId: string): ForeignRuntimeCheckpoint | null {
     const row = this.db
-      .prepare("SELECT contract_versions FROM attempt_checkpoints WHERE attempt = ?")
-      .get(attemptId);
+      .prepare("SELECT contract_versions FROM attempt_checkpoints WHERE attempt = :attempt")
+      .get({ attempt: attemptId });
     if (!row) return null;
     const raw = row.contract_versions;
     if (typeof raw !== "string") {
@@ -123,9 +111,10 @@ export class SqliteAttemptCheckpointStore implements AttemptCheckpointStore {
   } | null {
     const row = this.db
       .prepare(
-        "SELECT attempt, step, wip_ref, session_ref, handoff_artifact FROM attempt_checkpoints WHERE attempt = ?",
+        `SELECT attempt, step, wip_ref, session_ref, handoff_artifact
+           FROM attempt_checkpoints WHERE attempt = :attempt`,
       )
-      .get(attemptId);
+      .get({ attempt: attemptId });
     if (!row) return null;
     return {
       attempt: stringField(row.attempt, "attempt"),
@@ -135,20 +124,107 @@ export class SqliteAttemptCheckpointStore implements AttemptCheckpointStore {
       handoffArtifact: nullableString(row.handoff_artifact),
     };
   }
+
+  private existingContract(attemptId: string): Record<string, unknown> {
+    const raw = this.rawContract(attemptId);
+    const parsed = raw ? parseObject(raw) : {};
+    try {
+      const native = this.checkpoints.read(attemptId);
+      if (!native) return parsed;
+      return { ...native.contractVersions, ...parsed };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("must be an integer")) return parsed;
+      throw error;
+    }
+  }
+
+  private rawContract(attemptId: string): string | null {
+    const row = this.db
+      .prepare("SELECT contract_versions FROM attempt_checkpoints WHERE attempt = :attempt")
+      .get({ attempt: attemptId });
+    if (!row) return null;
+    return typeof row.contract_versions === "string" ? row.contract_versions : null;
+  }
+
+  private ensureGraph(record: ForeignRuntimeCheckpoint, updatedAt: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO change_sets(id, rev, origin, author, created_at)
+         VALUES ('CS-resume', 1, 'kernel', 'resume', 0)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run();
+    this.db
+      .prepare(
+        `INSERT INTO nodes(id, kind, version, content_hash, title, text, fields, change_set, created_rev, updated_rev)
+         VALUES (:id, 'task', 1, :hash, :title, '', '{}', 'CS-resume', 1, 1)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run({
+        id: record.attemptId,
+        hash: `h-${record.attemptId}`,
+        title: record.attemptId,
+      });
+    this.db
+      .prepare(
+        `INSERT INTO task_runtime(task, feature, state, level, epoch, updated_rev)
+         VALUES (:task, 'F-resume', 'READY', 'Mid', 1, 1)
+         ON CONFLICT(task) DO NOTHING`,
+      )
+      .run({ task: record.attemptId });
+    this.db
+      .prepare(
+        `INSERT INTO attempts(
+           id, task, n, epoch, brief_version, runtime, model, connection, base_commit, state, started_at
+         ) VALUES (
+           :id, :task, 1, 1, 1, :runtime, 'model', 'connection', :base, 'parked', :started
+         )
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run({
+        id: record.attemptId,
+        task: record.attemptId,
+        runtime: record.adapterId,
+        base: record.pinnedBaseCommitSha,
+        started: updatedAt,
+      });
+  }
 }
 
-function parseStoredCheckpoint(raw: string, attemptId: string): ForeignRuntimeCheckpoint {
+function upcastHeader(record: ForeignRuntimeCheckpoint, updatedAt: number): void {
+  if (record.attemptId.length === 0 || record.attemptId.length > 128) return;
+  const step = Math.trunc(record.step);
+  const at = Math.trunc(updatedAt);
+  if (step < 0 || at < 0) return;
+  defaultCheckpointUpcasters.upcast({
+    format_version: 0,
+    attempt: record.attemptId,
+    step,
+    updated_at: at,
+  });
+}
+
+function mergeContract(existing: Record<string, unknown>, record: ForeignRuntimeCheckpoint): Record<string, unknown> {
+  return {
+    ...existing,
+    [FOREIGN_RUNTIME_CHECKPOINT_KEY]: record,
+  };
+}
+
+function parseObject(raw: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid json";
-    throw new ResumeError("store", `Checkpoint ${attemptId} JSON is unreadable: ${message}`);
+    throw new ResumeError("store", `Checkpoint JSON is unreadable: ${message}`);
   }
-  if (!parsed || typeof parsed !== "object") {
-    throw new ResumeError("store", `Checkpoint ${attemptId} payload is not an object`);
-  }
-  const envelope = parsed as Record<string, unknown>;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return { ...parsed };
+}
+
+function parseStoredCheckpoint(raw: string, attemptId: string): ForeignRuntimeCheckpoint {
+  const envelope = parseObject(raw);
   return asCheckpoint(envelope[FOREIGN_RUNTIME_CHECKPOINT_KEY], attemptId);
 }
 

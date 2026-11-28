@@ -73,14 +73,6 @@ function errorCode(error: unknown): string {
   return "";
 }
 
-function waitForExit(child: ChildProcess, timeoutMs: number): void {
-  const buffer = new Int32Array(new SharedArrayBuffer(4));
-  const started = Date.now();
-  while (child.exitCode === null && child.signalCode === null && Date.now() - started < timeoutMs) {
-    Atomics.wait(buffer, 0, 0, 20);
-  }
-}
-
 /** Real OS child used to prove idle park terminates the wrapped process. */
 export class OsChildProcesses implements ChildProcessPort {
   private readonly live = new Map<number, ChildProcess>();
@@ -112,7 +104,6 @@ export class OsChildProcesses implements ChildProcessPort {
     }
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
-      waitForExit(child, 3_000);
     }
     this.live.delete(pid);
   }

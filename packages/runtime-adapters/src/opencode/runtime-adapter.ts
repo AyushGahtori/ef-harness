@@ -1,11 +1,14 @@
 import fs from "node:fs";
+import { assertAgentRuntimeAdapter } from "../core/interface.js";
+import type { PermissionReply } from "../core/types.js";
 import { AcpConnection, LocalGenericAcpClient, type AcpSpawnRequest, type JsonRpcRequest } from "./acp-client.js";
+import { OpenCodeGenericAcp } from "./generic-acp.js";
+import { OsOpenCodeJob } from "./os-ports.js";
 import { OpenCodeCompactionController, type CompactionAssessment } from "./compaction-controller.js";
 import { OpenCodeConfigGenerator, type GeneratedOpenCodeConfig } from "./config-generator.js";
 import { OpenCodeAdapterError } from "./errors.js";
 import { isRecord, readString } from "./json.js";
 import type { WindowsJobObjectPort } from "./job-object.js";
-import { InMemoryWindowsJobObject } from "./job-object.js";
 import { LocalDeterministicSupervisionPolicyEngine, type PolicyDecision } from "./policy-engine.js";
 import {
   AllowAllPacing,
@@ -55,6 +58,9 @@ export interface TurnResult {
   readonly stopReason: string;
   readonly compaction: CompactionAssessment;
   readonly usage: NormalizedUsageReceipt;
+  readonly sessionId: string;
+  readonly turnId: string;
+  readonly deliveredPrompt: string;
 }
 
 export interface SessionInspection {
@@ -158,6 +164,7 @@ function acpPermissionResult(decision: PolicyDecision, options: ParsedPermission
 }
 
 export class OpenCodeRuntimeAdapter {
+  readonly runtime = "opencode" as const;
   private readonly binaryPath: string;
   private readonly versionPolicy: CliVersionPolicy;
   private readonly commandRunner: CommandRunner | undefined;
@@ -170,6 +177,7 @@ export class OpenCodeRuntimeAdapter {
   private readonly hostEnv: Readonly<Record<string, string | undefined>>;
   private readonly spawnAcp: ((request: AcpSpawnRequest) => AcpConnection) | undefined;
   private readonly acp = new LocalGenericAcpClient();
+  private readonly genericAcp = new OpenCodeGenericAcp();
   private readonly generator = new OpenCodeConfigGenerator();
   private readonly skillMounter = new OpenCodeSkillMounter();
   private readonly policy = new LocalDeterministicSupervisionPolicyEngine();
@@ -185,18 +193,44 @@ export class OpenCodeRuntimeAdapter {
     this.pacing = options.pacing ?? new AllowAllPacing();
     this.ledger = options.ledger ?? new InMemoryBudgetLedger();
     this.checkpoints = options.checkpoints ?? new InMemoryCheckpointStore();
-    this.jobs = options.jobs ?? new InMemoryWindowsJobObject();
+    this.jobs = options.jobs ?? new OsOpenCodeJob();
+    assertAgentRuntimeAdapter(this);
     this.steering = options.steering ?? new PrefixSteeringClassifier();
     this.hostEnv = options.hostEnv ?? process.env;
     this.spawnAcp = options.spawnAcp;
     this.connection = options.connection;
   }
 
-  probe(): VersionProbe {
-    return probeOpenCodeBinary(this.binaryPath, this.versionPolicy, this.commandRunner);
+  async probe(): Promise<VersionProbe & {
+    readonly runtime: "opencode";
+    readonly status: "ready" | "missing" | "version_too_old" | "non_compliant";
+    readonly compliant: boolean;
+    readonly complianceReason: string;
+    readonly minVersion: string | null;
+    readonly gateReason: "ok" | "missing" | "below_minimum" | "unknown_runtime";
+    readonly modes: readonly ("wrapped" | "stripped")[];
+    readonly launchCodingTasks: boolean;
+  }> {
+    const probed = probeOpenCodeBinary(this.binaryPath, this.versionPolicy, this.commandRunner);
+    const status = probed.trust === "conformance_verified" ? "ready" : probed.installed ? "version_too_old" : "missing";
+    return {
+      ...probed,
+      runtime: "opencode",
+      status,
+      compliant: probed.trust === "conformance_verified",
+      complianceReason: probed.message,
+      minVersion: this.versionPolicy.minVersion,
+      gateReason: !probed.installed ? "missing" : status === "ready" ? "ok" : "below_minimum",
+      modes: ["wrapped", "stripped"],
+      launchCodingTasks: status === "ready",
+    };
   }
 
-  authStatus(): AuthStatus {
+  async authStatus(): Promise<AuthStatus & {
+    readonly expiresAt: null;
+    readonly quota: null;
+    readonly source: "injected" | "none";
+  }> {
     if (!this.connection) {
       return {
         runtime: "opencode",
@@ -204,6 +238,9 @@ export class OpenCodeRuntimeAdapter {
         provider: null,
         scrapedHomeDirectory: false,
         destructive: false,
+        expiresAt: null,
+        quota: null,
+        source: "none",
       };
     }
     return {
@@ -212,6 +249,9 @@ export class OpenCodeRuntimeAdapter {
       provider: this.connection.provider,
       scrapedHomeDirectory: false,
       destructive: false,
+      expiresAt: null,
+      quota: null,
+      source: "injected",
     };
   }
 
@@ -221,8 +261,21 @@ export class OpenCodeRuntimeAdapter {
     readonly mode: ExecutionMode;
     readonly trust: "conformance_verified";
     readonly configPath: string;
+    readonly runtime: "opencode";
+    readonly modeReason: ExecutionMode;
+    readonly jobId: string;
+    readonly sandboxTier: "A" | "B" | "C" | "D";
+    readonly proxyEndpoint: string;
+    readonly mcpLeaseId: string;
+    readonly mcpEndpoint: string;
+    readonly mcpTools: readonly string[];
+    readonly pid: number;
+    readonly nativeFileTools: boolean;
+    readonly nativeShell: false;
+    readonly nativeWeb: false;
+    readonly environment: Readonly<Record<string, string>>;
   }> {
-    const probed = this.probe();
+    const probed = await this.probe();
     if (probed.trust !== "conformance_verified" || !probed.version) {
       throw new OpenCodeAdapterError("version_blocked", probed.message);
     }
@@ -317,8 +370,21 @@ export class OpenCodeRuntimeAdapter {
         sessionId: nativeSessionId,
         attemptId: spec.attemptId,
         mode,
-        trust: "conformance_verified",
+        trust: "conformance_verified" as const,
         configPath: generated.configPath,
+        runtime: "opencode" as const,
+        modeReason: mode,
+        jobId: nativeSessionId,
+        sandboxTier: sandbox.tier,
+        proxyEndpoint: spec.mcp.url,
+        mcpLeaseId: spec.attemptId,
+        mcpEndpoint: spec.mcp.url,
+        mcpTools: ["kb.*", "harness.run", "harness.read_result"] as const,
+        pid: connection.pid ?? 0,
+        nativeFileTools: mode === "wrapped",
+        nativeShell: false,
+        nativeWeb: false,
+        environment: childEnv,
       };
     } catch (error) {
       connection?.close();
@@ -365,7 +431,14 @@ export class OpenCodeRuntimeAdapter {
       writeScope: session.spec.writeScope,
       lastStepSummary: stopReason,
     });
-    return { stopReason, compaction, usage };
+    return {
+      stopReason,
+      compaction,
+      usage,
+      sessionId,
+      turnId: `${sessionId}:${session.prompts.length}`,
+      deliveredPrompt: prompt,
+    };
   }
 
   steer(sessionId: string, deltaNote: string): SteerResult {
@@ -389,7 +462,12 @@ export class OpenCodeRuntimeAdapter {
     };
   }
 
-  async interrupt(sessionId: string): Promise<void> {
+  async interrupt(sessionId: string): Promise<{
+    readonly sessionId: string;
+    readonly denied: readonly { readonly requestId: string; readonly reason: string }[];
+    readonly killedPids: readonly number[];
+    readonly elapsedMs: number;
+  }> {
     const session = this.require(sessionId);
     session.interrupted = true;
     let timedOut = false;
@@ -410,14 +488,14 @@ export class OpenCodeRuntimeAdapter {
         },
       );
     });
-    if (timedOut) {
-      await this.jobs.terminateTree(sessionId);
-    }
+    const killed = timedOut ? await this.jobs.terminateTree(sessionId) : { killedPids: [] as readonly number[] };
+    return { sessionId, denied: [], killedPids: killed.killedPids, elapsedMs: 0 };
   }
 
-  async resume(sessionId: string, checkpointRef: CheckpointRef): Promise<ResumeResult> {
+  async resume(sessionId: string, checkpointRef: CheckpointRef | string): Promise<ResumeResult> {
+    const ref = typeof checkpointRef === "string" ? { nativeSessionId: checkpointRef, delta: "none" as const } : checkpointRef;
     const session = this.require(sessionId);
-    if (checkpointRef.delta === "contradictory") {
+    if (ref.delta === "contradictory") {
       return this.freshSession(session, "contradictory");
     }
     if (!session.loadSession) {
@@ -425,12 +503,12 @@ export class OpenCodeRuntimeAdapter {
     }
     try {
       await session.connection.request("session/load", {
-        sessionId: checkpointRef.nativeSessionId,
+        sessionId: ref.nativeSessionId,
         cwd: session.spec.worktreePath,
       });
       return {
         supported: true,
-        sessionId: checkpointRef.nativeSessionId,
+        sessionId: ref.nativeSessionId,
         fallback: "none",
         reason: "loaded",
         labeledWip: "",
@@ -462,21 +540,57 @@ export class OpenCodeRuntimeAdapter {
     }
   }
 
-  respondPermission(sessionId: string, requestId: string, decision: "allow" | "deny"): StoredDecision {
+  async respondPermission(
+    sessionId: string,
+    requestId: string,
+    decision: "allow" | "deny" | PermissionReply,
+  ): Promise<StoredDecision & PermissionReply> {
+    const effect = typeof decision === "string" ? decision : decision.effect;
     const session = this.require(sessionId);
     const stored = session.decisions.find((item) => item.requestId === requestId);
     if (!stored) {
       throw new OpenCodeAdapterError("permission", "unknown permission request");
     }
-    if (decision === "allow" && stored.decision === "deny") return stored;
-    if (decision === "deny" && stored.decision === "allow") {
-      return { ...stored, decision: "deny", acpOutcome: "reject_once", reason: stored.reason };
+    if (effect === "allow" && stored.decision === "deny") return { ...stored, effect: stored.decision };
+    if (effect === "deny" && stored.decision === "allow") {
+      return { ...stored, decision: "deny", acpOutcome: "reject_once", reason: stored.reason, effect: "deny" };
     }
-    return stored;
+    return { ...stored, effect: stored.decision };
   }
 
-  usage(sessionId: string): NormalizedUsageReceipt {
-    return this.receipt(this.require(sessionId));
+  async usage(sessionId: string): Promise<NormalizedUsageReceipt & {
+    readonly cachedInputTokens: number;
+    readonly cacheReadInputTokens: number;
+    readonly cacheCreationInputTokens: number;
+  }> {
+    const receipt = this.receipt(this.require(sessionId));
+    return {
+      ...receipt,
+      cachedInputTokens: receipt.cacheReadTokens,
+      cacheReadInputTokens: receipt.cacheReadTokens,
+      cacheCreationInputTokens: receipt.cacheWriteTokens,
+    };
+  }
+
+  async terminate(sessionId: string): Promise<{
+    readonly sessionId: string;
+    readonly denied: readonly [];
+    readonly killedPids: readonly number[];
+    readonly elapsedMs: number;
+  }> {
+    const closed = await this.closeSession(sessionId);
+    return { sessionId, denied: [], killedPids: closed.leakedPids, elapsedMs: 0 };
+  }
+
+  async dispose(): Promise<void> {
+    await this.genericAcp.adapter.dispose();
+    for (const sessionId of [...this.sessions.keys()]) {
+      try {
+        await this.closeSession(sessionId);
+      } catch {
+        /* a session that already exited still leaves the map */
+      }
+    }
   }
 
   inspect(sessionId: string): SessionInspection {

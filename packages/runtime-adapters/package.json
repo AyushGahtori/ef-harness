@@ -20,12 +20,16 @@
   "dependencies": {
     "@ef-harness/corpus": "workspace:*",
     "@ef-harness/db": "workspace:*",
+    "@ef-harness/git-engine": "workspace:*",
     "@ef-harness/governor": "workspace:*",
     "@ef-harness/mcp-server": "workspace:*",
+    "@ef-harness/planner": "workspace:*",
     "@ef-harness/providers": "workspace:*",
     "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
-    "@ef-harness/shared-observability": "workspace:*"
+    "@ef-harness/shared-observability": "workspace:*",
+    "@ef-harness/steering": "workspace:*",
+    "@ef-harness/worker-loop": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

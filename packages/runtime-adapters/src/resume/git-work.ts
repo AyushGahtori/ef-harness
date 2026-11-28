@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { SnapshotManager } from "@ef-harness/git-engine";
 import { ResumeError } from "./errors.js";
 import { LARGE_WIP_FILE_BYTES, countLines } from "./types.js";
 
@@ -55,6 +56,44 @@ export class LocalDirtySnapshotEngine implements DirtySnapshotEngine {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  }
+}
+
+/**
+ * Task 037 `SnapshotManager` for committed dirty snapshots.
+ * Park and index checks keep the synchronous temporary-index capture.
+ */
+export class GitEngineDirtySnapshot implements DirtySnapshotEngine {
+  private readonly manager = new SnapshotManager();
+  private readonly local = new LocalDirtySnapshotEngine();
+
+  capture(repoPath: string): DirtySnapshot {
+    return this.local.capture(repoPath);
+  }
+
+  async captureCommitted(repoPath: string): Promise<DirtySnapshot> {
+    const local = this.capture(repoPath);
+    try {
+      const shot = await this.manager.createDirtyWorkSnapshot({
+        repoPath,
+        projectId: "resume",
+        developerCheckout: false,
+      });
+      if (shot.treeSha && /^[0-9a-f]{40}$/i.test(shot.treeSha)) {
+        const headSha =
+          shot.headSha && /^[0-9a-f]{40}$/i.test(shot.headSha) ? shot.headSha : local.headSha;
+        return {
+          treeSha: shot.treeSha,
+          modifiedFiles: local.modifiedFiles,
+          headSha,
+          indexSha256Before: local.indexSha256Before,
+          indexSha256After: local.indexSha256After,
+        };
+      }
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+    }
+    return local;
   }
 }
 

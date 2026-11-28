@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { DeterministicSupervisionPolicyEngine as CoreSupervisionEngine } from "../core/policy.js";
+import type { SupervisionRequest as CoreSupervisionRequest } from "../core/types.js";
 import { OpenCodeAdapterError } from "./errors.js";
 
 const LOCKFILES = new Set(["package-lock.json", "pnpm-lock.yaml"]);
@@ -93,6 +95,7 @@ function readArg(args: Readonly<Record<string, unknown>>, keys: readonly string[
  * with the core engine; call shape stays `decide(input) -> allow_once | reject_once`.
  */
 export class LocalDeterministicSupervisionPolicyEngine {
+  private readonly core = new CoreSupervisionEngine();
   private readonly worktreeCache = new Map<string, string>();
   private readonly pathCache = new Map<string, string>();
 
@@ -103,6 +106,23 @@ export class LocalDeterministicSupervisionPolicyEngine {
   decide(input: PolicyInput): PolicyDecision {
     const started = performance.now();
     const outcome = this.evaluate(input);
+    if (outcome.decision === "allow" && input.tool.toLowerCase() === "harness.run") {
+      const core = this.core.decide(coreRequest(input), {
+        sessionId: "opencode",
+        worktreeRoot: input.worktreePath,
+        cwd: input.worktreePath,
+        writeScope: input.writeScope,
+        readOnlyPaths: [],
+        sealedPaths: [],
+        mode: "wrapped",
+        homeDir: "",
+        appData: "",
+        leasedTools: ["kb.*", "harness.run", "harness.read_result"],
+      });
+      if (core.effect === "deny") {
+        return { decision: "deny", acpOutcome: "reject_once", reason: core.reason, elapsedMs: core.elapsedMs };
+      }
+    }
     const elapsedMs = performance.now() - started;
     return { ...outcome, elapsedMs };
   }
@@ -225,4 +245,10 @@ export class LocalDeterministicSupervisionPolicyEngine {
   private allow(reason: string): Omit<PolicyDecision, "elapsedMs"> {
     return { decision: "allow", acpOutcome: "allow_once", reason };
   }
+}
+
+function coreRequest(input: PolicyInput): CoreSupervisionRequest {
+  const command = readArg(input.args, ["command", "cmd"]);
+  if (command.length > 0) return { kind: "shell", command };
+  return { kind: "mcp", tool: input.tool };
 }

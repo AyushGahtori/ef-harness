@@ -16,7 +16,7 @@ export type { CoordinatorOptions, CrashInput, PersistInput, ResumeRequest } from
 export { LocalAdditiveVsContradictoryResumer, classifyDelta } from "./delta.js";
 export type { DeltaInspection, DeltaPinned } from "./delta.js";
 export { ResumeError } from "./errors.js";
-export { LocalDirtySnapshotEngine, LocalGitTreeSafety, mustGit, runGit } from "./git-work.js";
+export { GitEngineDirtySnapshot, LocalDirtySnapshotEngine, LocalGitTreeSafety, mustGit, runGit } from "./git-work.js";
 export type { ChangedWorktreeFile, DirtySnapshot, DirtySnapshotEngine, GitTreeSafety, TreeVerification } from "./git-work.js";
 export { AttemptMutex } from "./mutex.js";
 export { IdleWrappedAgentAutoParker } from "./parker.js";

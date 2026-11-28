@@ -97,9 +97,10 @@ describe("OpenCodeRuntimeAdapter", () => {
         OPENAI_API_KEY: "host-openai-key",
       },
     });
-    const probed = adapter.probe();
+    const probed = await adapter.probe();
     expect(probed.trust).toBe("conformance_verified");
-    expect(adapter.authStatus()).toMatchObject({ signedIn: true, provider: "openai", scrapedHomeDirectory: false });
+    expect(probed.runtime).toBe("opencode");
+    expect(await adapter.authStatus()).toMatchObject({ signedIn: true, provider: "openai", scrapedHomeDirectory: false });
     const started = await adapter.startSession(spec(paths));
     expect(started.mode).toBe("wrapped");
     expect(started.trust).toBe("conformance_verified");
@@ -122,7 +123,7 @@ describe("OpenCodeRuntimeAdapter", () => {
     expect(decision("edit-ok")).toMatchObject({ decision: "allow", acpOutcome: "allow_once" });
     expect(decision("edit-bad")).toMatchObject({ decision: "deny", reason: "path_escape" });
     expect(decision("run-1")).toMatchObject({ decision: "allow", reason: "routed through harness.run" });
-    expect(adapter.respondPermission(started.sessionId, "bash-1", "allow").decision).toBe("deny");
+    expect((await adapter.respondPermission(started.sessionId, "bash-1", "allow")).decision).toBe("deny");
     expect(turn.usage).toMatchObject({
       inputTokens: 1200,
       outputTokens: 300,
@@ -134,7 +135,7 @@ describe("OpenCodeRuntimeAdapter", () => {
     });
     expect(ledger.entries).toHaveLength(1);
     expect(ledger.entries[0]).toMatchObject({ attemptId: "attempt-149", connectionId: "conn-openai" });
-    expect(adapter.usage(started.sessionId).inputTokens).toBe(1200);
+    expect((await adapter.usage(started.sessionId)).inputTokens).toBe(1200);
     expect(checkpoints.get("attempt-149")?.nativeSessionId).toBe(started.sessionId);
     expect(seen.childEnv.OPENCODE_CONFIG).toBe(started.configPath);
     expect(seen.childEnv.OPENCODE_CONFIG_DIR).toBe(path.resolve(paths.configDir));
