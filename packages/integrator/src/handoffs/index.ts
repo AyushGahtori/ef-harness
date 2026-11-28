@@ -37,7 +37,7 @@ export {
 } from "./ports.js";
 export type { CasBlobStorePort, CasPutPin, KnowledgeGraphPort, SlicePinPort, TaskHoldsPort } from "./ports.js";
 export { ReadResultToolHandler, notFoundResult } from "./read-result.js";
-export { HandoffRuntime } from "./runtime.js";
+export { HandoffRuntime, registerReadResultTool } from "./runtime.js";
 export type { HandoffRuntimeOptions } from "./runtime.js";
 export type {
   ActiveAttempt,

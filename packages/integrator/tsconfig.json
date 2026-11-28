@@ -19,7 +19,19 @@
       "path": "../git-engine"
     },
     {
+      "path": "../mcp-server"
+    },
+    {
+      "path": "../planner"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
       "path": "../shared-contracts"
+    },
+    {
+      "path": "../shared-observability"
     },
     {
       "path": "../verifier"

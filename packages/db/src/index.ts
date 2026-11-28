@@ -266,6 +266,7 @@ export {
   migrateDatabase,
   openNodeSqliteConnection,
   productionMigrations,
+  stateV2Sql,
   readProjectStatus,
   rebuildNodesSearchIndexes,
   rehearseMigration,

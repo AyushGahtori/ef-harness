@@ -1,6 +1,9 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { blobFilePath } from "@ef-harness/db";
+import { toBareSha256Hex, toPrefixedSha256 } from "@ef-harness/shared-contracts";
 import { COMMIT_SHA, NUMERIC_PID, SHA256_HEX } from "./constants.js";
-import { HandoffDatabase } from "./database.js";
-import { CasBlobMissingError, InvalidPinError, RoleAddressError, SchemaValidationError } from "./errors.js";
+import { CasBlobMissingError, CasIntegrityError, InvalidPinError, RoleAddressError, SchemaValidationError } from "./errors.js";
 import { sha256Hex } from "./json.js";
 
 export interface CasPutPin {
@@ -25,22 +28,31 @@ export function assertCasPin(pin: CasPutPin): void {
   }
 }
 
+/** Filesystem CAS using the shared `CasBlobStore` layout. SQLite never holds the bytes. */
 export class SqliteCasBlobStore implements CasBlobStorePort {
-  constructor(
-    private readonly db: HandoffDatabase,
-    private readonly now: () => number,
-  ) {}
+  constructor(private readonly rootDir: string) {
+    mkdirSync(this.rootDir, { recursive: true });
+  }
 
   putBlob(content: Uint8Array, pin: CasPutPin): CasWriteResult {
     assertCasPin(pin);
-    return this.db.saveBlob(content, this.now());
+    const bare = sha256Hex(content);
+    const hash = toPrefixedSha256(bare);
+    const file = blobFilePath(this.rootDir, hash, "raw");
+    mkdirSync(path.dirname(file), { recursive: true });
+    if (!existsSync(file)) writeFileSync(file, content);
+    const stored = new Uint8Array(readFileSync(file));
+    if (sha256Hex(stored) !== bare) throw new CasIntegrityError(hash);
+    return { hash, bytes: content.byteLength };
   }
 
   getBlob(hash: string, retention: "evidence"): Uint8Array {
     if (retention !== "evidence") throw new SchemaValidationError("CAS reads are evidence-class only.");
-    if (!SHA256_HEX.test(hash)) throw new SchemaValidationError("CAS hash is not sha256 hex.");
-    const stored = this.db.readBlob(hash);
-    if (!stored) throw new CasBlobMissingError(hash);
+    const bare = toBareSha256Hex(hash);
+    const file = blobFilePath(this.rootDir, bare, "raw");
+    if (!existsSync(file)) throw new CasBlobMissingError(hash);
+    const stored = new Uint8Array(readFileSync(file));
+    if (sha256Hex(stored) !== bare) throw new CasIntegrityError(hash);
     return stored;
   }
 }

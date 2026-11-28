@@ -29,7 +29,7 @@ function use(verifier?: Parameters<typeof createHarness>[0]): Harness {
 
 describe("parallel feature branch lifecycle", { timeout: 30_000 }, () => {
   it("opens isolated harness/f branches from verified integration", () => {
-    const { repo, manager } = use();
+    const { repo, manager, state } = use();
     const integration = revParse(repo, "refs/heads/harness/integration");
     const slugs = ["F-Menu", "F-Orders", "F-Email"] as const;
     for (const slug of slugs) {
@@ -44,6 +44,12 @@ describe("parallel feature branch lifecycle", { timeout: 30_000 }, () => {
       expect(record.worktreePath && fs.existsSync(record.worktreePath)).toBe(true);
     }
     expect(manager.listActive()).toHaveLength(3);
+    expect(manager.refCas.readRefLease("refs/heads/harness/f/F-Menu")?.holder).toBe("parallel-feature-branch-manager");
+    expect(manager.worktrees).toBeDefined();
+    expect(state.get(`SELECT state FROM feature_runtime WHERE feature = ?`, ["F-Menu"])?.state).toBe("IN_WAVE");
+    expect(
+      state.get(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'feature_branch_runtime'`, []),
+    ).toBeUndefined();
     expect(() => manager.openFeature({ featureId: "F-Menu", featureSlug: "F-Menu-2", waveId: "wave-3" })).toThrow(
       FeatureBranchError,
     );

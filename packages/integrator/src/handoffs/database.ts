@@ -1,8 +1,18 @@
+import { createHash } from "node:crypto";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import {
+  KnowledgeGraphRepo,
+  knowledgeLoadQueryCatalog,
+  readQueriesSql,
+  type KnowledgeSqlRow,
+  type KnowledgeSqlValue,
+  type SqlConnection,
+  type SqlStatement,
+} from "@ef-harness/db";
+import { toPrefixedSha256 } from "@ef-harness/shared-contracts";
 import type { ArtifactType, MailboxKind } from "./constants.js";
-import { HANDOFF_DDL } from "./ddl.js";
-import { CasIntegrityError } from "./errors.js";
-import { canonicalJson, parseJsonObject, parseJsonValue, sha256Hex, type JsonObject, type JsonValue } from "./json.js";
+import { canonicalJson, parseJsonObject, parseJsonValue, type JsonObject, type JsonValue } from "./json.js";
+import { openSharedStateFile } from "../shared-state.js";
 import type {
   ActiveAttempt,
   ContractOwner,
@@ -37,22 +47,25 @@ function integerOrNull(value: SQLOutputValue | undefined, label: string): number
   return integer(value, label);
 }
 
-function blobBytes(value: SQLOutputValue | undefined, label: string): Uint8Array {
-  if (value instanceof Uint8Array) return new Uint8Array(value);
-  throw new Error(`${label} is not a blob`);
-}
-
 export class HandoffDatabase {
   private depth = 0;
   private closed = false;
+  private readonly graph: KnowledgeGraphRepo;
 
   constructor(private readonly db: DatabaseSync) {
-    this.db.exec("PRAGMA foreign_keys = ON");
-    this.db.exec(HANDOFF_DDL);
+    const connection = adaptKnowledge(db);
+    this.graph = new KnowledgeGraphRepo(connection, knowledgeLoadQueryCatalog(connection, readQueriesSql()));
   }
 
   static open(path: string): HandoffDatabase {
-    return new HandoffDatabase(new DatabaseSync(path));
+    return new HandoffDatabase(openSharedStateFile(path));
+  }
+
+  tables(): readonly string[] {
+    return this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => text(row["name"], "name"));
   }
 
   close(): void {
@@ -92,35 +105,6 @@ export class HandoffDatabase {
       this.db.prepare("INSERT INTO id_sequences(name, next) VALUES (?, ?)").run(prefix, next + 1);
     }
     return `${prefix}${next}`;
-  }
-
-  saveBlob(content: Uint8Array, createdAt: number): { hash: string; bytes: number } {
-    const hash = sha256Hex(content);
-    const existing = this.db.prepare("SELECT content FROM cas_blobs WHERE sha256 = ?").get(hash);
-    if (existing) {
-      const stored = blobBytes(existing["content"], "content");
-      if (sha256Hex(stored) !== hash || stored.byteLength !== content.byteLength) {
-        throw new CasIntegrityError(hash);
-      }
-      return { hash, bytes: content.byteLength };
-    }
-    this.db
-      .prepare("INSERT INTO cas_blobs(sha256, bytes, content, created_at) VALUES (?, ?, ?, ?)")
-      .run(hash, content.byteLength, content, createdAt);
-    return { hash, bytes: content.byteLength };
-  }
-
-  readBlob(hash: string): Uint8Array | null {
-    const row = this.db.prepare("SELECT content FROM cas_blobs WHERE sha256 = ?").get(hash);
-    if (!row) return null;
-    const stored = blobBytes(row["content"], "content");
-    if (sha256Hex(stored) !== hash) throw new CasIntegrityError(hash);
-    return stored;
-  }
-
-  hasBlob(hash: string): boolean {
-    const row = this.db.prepare("SELECT 1 AS present FROM cas_blobs WHERE sha256 = ?").get(hash);
-    return row !== undefined;
   }
 
   insertArtifact(artifact: HandoffArtifact): void {
@@ -211,54 +195,91 @@ export class HandoffDatabase {
   }
 
   insertEdge(kind: GraphEdge["kind"], fromNode: string, toNode: string, createdAt: number): boolean {
+    this.ensureCommentNode(fromNode, createdAt);
+    this.ensureCommentNode(toNode, createdAt);
     const result = this.db
       .prepare(
-        "INSERT OR IGNORE INTO graph_edges(kind, from_node, to_node, created_at) VALUES (?, ?, ?, ?)",
+        `INSERT OR IGNORE INTO edges(src, type, dst, change_set, valid_from_rev)
+         VALUES (?, ?, ?, 'CS-handoff', 0)`,
       )
-      .run(kind, fromNode, toNode, createdAt);
+      .run(fromNode, kind, toNode);
     return Number(result.changes) === 1;
   }
 
   hasEdge(kind: GraphEdge["kind"], fromNode: string, toNode: string): boolean {
-    const row = this.db
-      .prepare("SELECT 1 AS present FROM graph_edges WHERE kind = ? AND from_node = ? AND to_node = ?")
-      .get(kind, fromNode, toNode);
-    return row !== undefined;
+    return this.listEdges().some((edge) => edge.kind === kind && edge.fromNode === fromNode && edge.toNode === toNode);
   }
 
   listEdges(): GraphEdge[] {
-    return this.db
-      .prepare("SELECT kind, from_node, to_node FROM graph_edges ORDER BY kind, from_node, to_node")
-      .all()
-      .map((row) => ({
-        kind: text(row["kind"], "kind") === "depends_on" ? "depends_on" : "waits_on",
-        fromNode: text(row["from_node"], "from_node"),
-        toNode: text(row["to_node"], "to_node"),
-      }));
+    const rev = this.graph.currentRevision();
+    const edges: GraphEdge[] = [];
+    let after: string | undefined;
+    for (;;) {
+      const page =
+        after === undefined
+          ? this.graph.getEdgesAsOf(rev, { limit: 500 })
+          : this.graph.getEdgesAsOf(rev, { limit: 500, after });
+      for (const edge of page.edges) {
+        if (edge.type !== "depends_on" && edge.type !== "waits_on") continue;
+        edges.push({ kind: edge.type, fromNode: edge.src, toNode: edge.dst });
+      }
+      if (!page.hasMore || page.nextCursor === null) break;
+      after = page.nextCursor;
+    }
+    edges.sort(
+      (left, right) =>
+        left.kind.localeCompare(right.kind) ||
+        left.fromNode.localeCompare(right.fromNode) ||
+        left.toNode.localeCompare(right.toNode),
+    );
+    return edges;
   }
 
   deleteEdge(kind: GraphEdge["kind"], fromNode: string, toNode: string): void {
+    const rev = Math.max(this.graph.currentRevision(), 1);
+    this.db.prepare("UPDATE meta SET value = ? WHERE key = 'last_rev' AND CAST(value AS INTEGER) < ?").run(String(rev), rev);
     this.db
-      .prepare("DELETE FROM graph_edges WHERE kind = ? AND from_node = ? AND to_node = ?")
-      .run(kind, fromNode, toNode);
+      .prepare(
+        `UPDATE edges SET valid_to_rev = ?
+         WHERE src = ? AND type = ? AND dst = ? AND valid_to_rev IS NULL`,
+      )
+      .run(rev, fromNode, kind, toNode);
   }
 
   insertOwner(owner: ContractOwner, createdAt: number): void {
+    this.ensureChangeSet(createdAt);
+    const nodeId = `contract:${owner.contractId}`;
+    const fields = canonicalJson({
+      ownerTaskId: owner.ownerTaskId,
+      recordedAt: createdAt,
+      names: [{ kind: "contract", value: owner.contractId }],
+    });
     this.db
       .prepare(
-        "INSERT INTO contract_owners(contract_id, owner_role, owner_task_id, created_at) VALUES (?, ?, ?, ?)",
+        `INSERT INTO nodes(
+           id, kind, version, content_hash, title, text, fields, status, owner_role,
+           change_set, created_rev, updated_rev
+         ) VALUES (?, 'contract', 1, ?, ?, '', ?, 'active', ?, 'CS-handoff', 0, 0)`,
       )
-      .run(owner.contractId, owner.ownerRole, owner.ownerTaskId, createdAt);
+      .run(nodeId, contentHash(nodeId), owner.contractId, fields, owner.ownerRole);
   }
 
   getOwner(contractId: string): ContractOwner | null {
-    const row = this.db.prepare("SELECT * FROM contract_owners WHERE contract_id = ?").get(contractId);
+    const row = this.db
+      .prepare(
+        `SELECT n.owner_role, n.fields
+           FROM names m
+           JOIN nodes n ON n.id = m.owner_node
+          WHERE m.kind = 'contract' AND m.value = ? AND n.status = 'active'`,
+      )
+      .get(contractId);
     if (!row) return null;
-    return {
-      contractId: text(row["contract_id"], "contract_id"),
-      ownerRole: text(row["owner_role"], "owner_role"),
-      ownerTaskId: text(row["owner_task_id"], "owner_task_id"),
-    };
+    const fields = parseJsonObject(text(row["fields"], "fields"));
+    const ownerTaskId = fields["ownerTaskId"];
+    if (typeof ownerTaskId !== "string") return null;
+    const ownerRole = textOrNull(row["owner_role"], "owner_role");
+    if (ownerRole === null) return null;
+    return { contractId, ownerRole, ownerTaskId };
   }
 
   insertMailbox(message: MailboxMessage, dedupKey: string): void {
@@ -516,6 +537,30 @@ export class HandoffDatabase {
       }));
   }
 
+  private ensureChangeSet(createdAt: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO change_sets(id, origin, author, created_at)
+         VALUES ('CS-handoff', 'kernel', 'handoff', ?)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(createdAt);
+  }
+
+  private ensureCommentNode(id: string, createdAt: number): void {
+    this.ensureChangeSet(createdAt);
+    const existing = this.db.prepare("SELECT 1 AS ok FROM nodes WHERE id = ?").get(id);
+    if (existing) return;
+    this.db
+      .prepare(
+        `INSERT INTO nodes(
+           id, kind, version, content_hash, title, text, fields, status,
+           change_set, created_rev, updated_rev
+         ) VALUES (?, 'comment', 1, ?, ?, '', '{}', 'active', 'CS-handoff', 0, 0)`,
+      )
+      .run(id, contentHash(id), id);
+  }
+
   private mapMailbox(row: Record<string, SQLOutputValue>): MailboxMessage {
     const resolution = textOrNull(row["resolution_json"], "resolution_json");
     return {
@@ -566,6 +611,40 @@ function mailboxStatus(value: string): MailboxMessage["status"] {
 function escalationTarget(value: string): EscalationTarget {
   if (value === "coordinator" || value === "contract_owner" || value === "developer") return value;
   throw new Error(`unexpected escalation target ${value}`);
+}
+
+function contentHash(id: string): string {
+  return toPrefixedSha256(createHash("sha256").update(id).digest("hex"));
+}
+
+function adaptKnowledge(db: DatabaseSync): SqlConnection {
+  return {
+    exec(sql: string): void {
+      db.exec(sql);
+    },
+    prepare(sql: string): SqlStatement {
+      const statement = db.prepare(sql);
+      statement.setAllowBareNamedParameters(true);
+      return {
+        all(params: Record<string, KnowledgeSqlValue> = {}): KnowledgeSqlRow[] {
+          return statement.all(params) as KnowledgeSqlRow[];
+        },
+        get(params: Record<string, KnowledgeSqlValue> = {}): KnowledgeSqlRow | undefined {
+          return statement.get(params) as KnowledgeSqlRow | undefined;
+        },
+        run(params: Record<string, KnowledgeSqlValue> = {}): { changes: number; lastInsertRowid: number } {
+          const result = statement.run(params);
+          const changes = typeof result.changes === "bigint" ? Number(result.changes) : result.changes;
+          const lastInsertRowid =
+            typeof result.lastInsertRowid === "bigint" ? Number(result.lastInsertRowid) : result.lastInsertRowid;
+          return { changes, lastInsertRowid };
+        },
+      };
+    },
+    close(): void {
+      return;
+    },
+  };
 }
 
 function stringList(value: JsonValue, label: string): string[] {

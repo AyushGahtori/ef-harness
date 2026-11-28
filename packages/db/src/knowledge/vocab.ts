@@ -48,6 +48,7 @@ export const ADDITIVE_EDGE_TYPES = [
   { type: "expands", invalidates: true },
   { type: "contradicts", invalidates: true },
   { type: "informs", invalidates: true },
+  { type: "waits_on", invalidates: false },
 ] as const;
 
 export const SETTLED_BASES = [

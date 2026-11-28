@@ -560,6 +560,27 @@ describe("transports", () => {
   });
 });
 
+describe("handoff read_result", () => {
+  it("dispatches harness.read_result to the bound pull and rejects other tool names", async () => {
+    const world = createWorld();
+    const seen: unknown[] = [];
+    world.server.bindHandoffPull((_caller, args) => {
+      seen.push(args);
+      return { ok: true, mode: "summary" };
+    });
+    try {
+      const pulled = parseDataEnvelope(responseText(await world.server.callTool("harness.read_result", { handoff_id: "HO-1" })));
+      expect(seen).toEqual([{ handoff_id: "HO-1" }]);
+      expect(pulled?.source).toBe("handoff:HO-1");
+      const rejected = responseText(await world.server.pullTool("harness.ask_owner", { question: "free form" }));
+      expect(rejected).toContain("FreeFormChatRejected");
+    } finally {
+      await world.server.stop("accepted");
+      world.db?.close();
+    }
+  });
+});
+
 describe("honest exit", () => {
   it("halts work when the worker flags a suspicious instruction", async () => {
     const world = createWorld();

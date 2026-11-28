@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { KernelPackageInstaller, type DependencyIntent as KernelDependencyIntent } from "@ef-harness/sandbox";
 import type { ParallelFeatureBranchManager } from "./branch-manager.js";
 import { LockfileInstallError, LockfileIntegrityError } from "./errors.js";
 import type { SmartBranchFreshnessSync } from "./freshness.js";
@@ -45,6 +46,7 @@ export class DependencyIntentAggregator {
   private readonly leases: LocalRefLeaseManager;
   private readonly pool: LocalWorktreeSlotPool;
   private readonly installer: LockfileInstaller;
+  private readonly kernel: KernelPackageInstaller;
   private pending: DependencyIntent[] = [];
   private draining = false;
   private serial = 0;
@@ -57,12 +59,14 @@ export class DependencyIntentAggregator {
     readonly freshness: SmartBranchFreshnessSync;
     readonly supplyChain: SupplyChainGate;
     readonly installer?: LockfileInstaller;
+    readonly kernel?: KernelPackageInstaller;
   }) {
     this.repo = options.repo;
     this.branches = options.branches;
     this.freshness = options.freshness;
     this.supplyChain = options.supplyChain;
     this.installer = options.installer ?? new PnpmLockfileOnlyInstaller();
+    this.kernel = options.kernel ?? kernelPackageInstaller(options.repo);
     this.leases = new LocalRefLeaseManager(options.state, options.repo);
     this.pool = new LocalWorktreeSlotPool(options.repo, options.worktreeRoot, options.branches.store);
   }
@@ -91,7 +95,7 @@ export class DependencyIntentAggregator {
     let batch = [...initial];
     const integrationRef = this.branches.integrationRef;
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      const reconciled = reconcileIntents(batch, this.supplyChain);
+      const reconciled = reconcileWithKernel(batch, this.supplyChain, this.kernel);
       if (reconciled.resolved.length === 0) {
         return {
           status: reconciled.denials.length > 0 ? "denied" : "conflict",
@@ -156,6 +160,47 @@ export class DependencyIntentAggregator {
   close(): void {
     this.pool.close();
   }
+}
+
+function kernelPackageInstaller(repo: string): KernelPackageInstaller {
+  return new KernelPackageInstaller({
+    actor: "kernel",
+    tier: "A",
+    worktreePath: repo,
+    proxy: { profile: "kernel_installer", proxyUrl: "http://127.0.0.1:9", allowedHosts: [] },
+    jobRunner: {
+      runCommand: () => Promise.reject(new Error("synchronous aggregation uses reconcileDependencyIntents")),
+    },
+    metadata: { getVersion: () => null },
+    storeDir: path.join(repo, ".ef-kernel-store"),
+  });
+}
+
+function toKernelIntent(intent: DependencyIntent): KernelDependencyIntent {
+  return {
+    taskId: intent.taskId ?? intent.featureId,
+    packageName: intent.packageName,
+    range: intent.versionRange,
+    reason: intent.rationale,
+  };
+}
+
+function reconcileWithKernel(
+  intents: readonly DependencyIntent[],
+  supplyChain: SupplyChainGate,
+  kernel: KernelPackageInstaller,
+): ReturnType<typeof reconcileIntents> {
+  const local = reconcileIntents(intents, supplyChain);
+  const kernelResult = kernel.reconcileDependencyIntents(intents.map(toKernelIntent));
+  const ranges = new Map(kernelResult.updates.map((update) => [update.packageName, update.range]));
+  return {
+    resolved: local.resolved.map((item) => {
+      const range = ranges.get(item.packageName);
+      return range === undefined ? item : { ...item, versionRange: range };
+    }),
+    conflicts: local.conflicts,
+    denials: local.denials,
+  };
 }
 
 export function reconcileIntents(

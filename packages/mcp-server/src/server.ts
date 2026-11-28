@@ -14,6 +14,7 @@ import { leaseFencedError, TOOL_REGISTRATIONS } from "./tools.js";
 import type { RegisteredTool } from "./tools.js";
 import { DEFAULT_QUOTAS } from "./types.js";
 import type {
+  HandoffPull,
   AttemptMcpDependencies,
   AttemptMcpServerOptions,
   AttemptQuotas,
@@ -79,6 +80,18 @@ export class AttemptMcpServer {
 
   registeredToolNames(): readonly McpToolName[] {
     return this.visible;
+  }
+
+  /** Registers the handoff `harness.read_result` pull. Other tool names are free-form chat and are rejected. */
+  bindHandoffPull(pull: HandoffPull): void {
+    this.dependencies.handoffReadResult = pull;
+  }
+
+  async pullTool(tool: string, args: unknown): Promise<CallToolResult> {
+    if (tool !== "harness.read_result") {
+      return toolResult(JSON.stringify({ error: "FreeFormChatRejected" }), true);
+    }
+    return this.callTool(tool, args);
   }
 
   async connect(transport: Transport): Promise<void> {

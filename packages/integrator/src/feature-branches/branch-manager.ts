@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { RefLeaseManager, WorktreeSlotPool, createDirectGitRunner, createProcessGitRunner } from "@ef-harness/git-engine";
+import type { RefLeaseStateDb } from "@ef-harness/git-engine";
 import {
   ActiveTurnSyncError,
   CasMismatchError,
@@ -28,6 +30,26 @@ import { LocalWorktreeSlotPool } from "./worktree-pool.js";
 
 const LEASE_HOLDER = "parallel-feature-branch-manager";
 
+function adaptRefLeaseDb(db: FeatureBranchStateDb): RefLeaseStateDb {
+  return {
+    async transaction<T>(fn: () => T | Promise<T>): Promise<T> {
+      return db.transaction(() => fn());
+    },
+    get(sql, params) {
+      return db.get(sql, params);
+    },
+    all(sql, params) {
+      return db.all(sql, params);
+    },
+    run(sql, params) {
+      return db.run(sql, params);
+    },
+    close() {
+      return;
+    },
+  };
+}
+
 const acceptIntegrationHead: IntegrationHeadVerifier = {
   verify: () => ({ ok: true }),
 };
@@ -36,6 +58,8 @@ export class ParallelFeatureBranchManager {
   readonly store: FeatureBranchStore;
   readonly leases: LocalRefLeaseManager;
   readonly pool: LocalWorktreeSlotPool;
+  readonly refCas: RefLeaseManager;
+  readonly worktrees: WorktreeSlotPool;
   readonly integrationRef: string;
   private readonly verifier: IntegrationHeadVerifier;
   private readonly now: () => number;
@@ -56,6 +80,16 @@ export class ParallelFeatureBranchManager {
     this.store = new FeatureBranchStore(options.state);
     this.leases = new LocalRefLeaseManager(options.state, options.repo, this.now);
     this.pool = new LocalWorktreeSlotPool(options.repo, options.worktreeRoot, this.store);
+    this.refCas = new RefLeaseManager({
+      database: adaptRefLeaseDb(options.state),
+      git: createDirectGitRunner(),
+      repoPath: options.repo,
+      clock: this.now,
+    });
+    this.worktrees = new WorktreeSlotPool({
+      wtRoot: options.worktreeRoot,
+      git: createProcessGitRunner(),
+    });
   }
 
   readonly repo: string;
@@ -75,6 +109,10 @@ export class ParallelFeatureBranchManager {
       throw new FeatureBranchError("duplicate_ref", `Ref ${ref} is already tracked.`);
     }
     const lease = this.leases.acquire(ref, LEASE_HOLDER, null);
+    const recorded = this.refCas.readRefLease(ref);
+    if (!recorded || recorded.holder !== lease.holder || recorded.epoch !== lease.epoch) {
+      throw new FeatureBranchError("lease_unwired", `RefLeaseManager did not observe the lease for ${ref}.`);
+    }
     this.leases.advance(ref, lease.holder, lease.epoch, integrationSha, ZERO_OID);
     const slot = this.pool.acquireFeature({
       slotId: `feature-${input.featureSlug}`,

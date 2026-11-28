@@ -54,6 +54,7 @@ export interface KernelAttemptPorts {
   readonly osJobs?: OsCommandSupervisor;
   readonly snippet?: SnippetBuilder;
   readonly kbPull?: AttemptMcpDependencies["kbPull"];
+  readonly handoffReadResult?: AttemptMcpDependencies["handoffReadResult"];
 }
 
 export function ruleMatchesTags(fields: unknown, tags: readonly string[]): boolean {
@@ -297,6 +298,7 @@ export function createKernelAttemptMcpDeps(input: KernelAttemptPorts): AttemptMc
     readSets: new SqliteReadSetStore(projectReadSetSql(input.state)),
     pullPatterns: input.pullPatterns,
     security: input.security,
+    ...(input.handoffReadResult ? { handoffReadResult: input.handoffReadResult } : {}),
     changedPaths: (worktreePath, baseCommit) => readGitChangedPaths(worktreePath, baseCommit),
     ...(input.snippet ? { snippet: input.snippet } : {}),
     ...(input.kbPull ? { kbPull: input.kbPull } : {}),

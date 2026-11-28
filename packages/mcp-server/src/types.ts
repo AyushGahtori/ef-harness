@@ -430,6 +430,27 @@ export interface SnippetBuilder {
   (text: string, query: string): string;
 }
 
+export interface HandoffPullCaller {
+  readonly taskId: string;
+  readonly role: string;
+}
+
+export interface HandoffPullResult {
+  readonly ok: boolean;
+  readonly code?: string;
+  readonly mode?: string;
+  readonly manifest?: unknown;
+  readonly summary?: unknown;
+  readonly bytes?: Uint8Array;
+  readonly offset?: number;
+  readonly limit?: number;
+  readonly returned?: number;
+}
+
+export interface HandoffPull {
+  (caller: HandoffPullCaller, args: Readonly<Record<string, unknown>>): HandoffPullResult;
+}
+
 /**
  * Everything the per-attempt server needs from tasks that may not have merged.
  * `startService`, `askOwner`, `disputeTest`, and `codeLookup` are required ports.
@@ -455,6 +476,7 @@ export interface AttemptMcpDependencies {
   snippet?: SnippetBuilder;
   changedPaths?: ChangedPathReader;
   kbPull?: KbPullPort;
+  handoffReadResult?: HandoffPull;
 }
 
 export type ShutdownReason = "accepted" | "pause" | "fenced";

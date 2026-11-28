@@ -1,4 +1,13 @@
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import {
+  createLifecycleRepo,
+  type LifecyclesSqlStatement,
+  type LifecyclesSqlValue,
+  type LifecyclesStateConnection,
+} from "@ef-harness/db";
+import { toPrefixedSha256 } from "@ef-harness/shared-contracts";
+import { openSharedStateFile } from "../shared-state.js";
 import type { FeatureBranchRecord, FeatureBranchStatus } from "./types.js";
 
 export type SqlValue = null | number | string | bigint | Uint8Array;
@@ -11,80 +20,16 @@ export interface FeatureBranchStateDb {
   close(): void;
 }
 
-const DDL = `
-CREATE TABLE IF NOT EXISTS ref_leases (
-  ref          TEXT PRIMARY KEY,
-  holder       TEXT NOT NULL,
-  epoch        INTEGER NOT NULL,
-  expected_sha TEXT,
-  expires_at   INTEGER
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS feature_branch_runtime (
-  feature_id TEXT PRIMARY KEY,
-  feature_slug TEXT NOT NULL,
-  wave_id TEXT NOT NULL,
-  ref TEXT NOT NULL UNIQUE,
-  base_integration_sha TEXT NOT NULL,
-  head_sha TEXT NOT NULL,
-  verified_head_sha TEXT NOT NULL,
-  pinned_base_commit_sha TEXT NOT NULL,
-  active_leaf_slots_json TEXT NOT NULL,
-  behind_integration_count INTEGER NOT NULL,
-  status TEXT NOT NULL,
-  sync_reason TEXT,
-  landed_by_task INTEGER,
-  lease_holder TEXT NOT NULL,
-  lease_epoch INTEGER NOT NULL,
-  worktree_path TEXT,
-  updated_at INTEGER NOT NULL
-) STRICT;
-
-CREATE TABLE IF NOT EXISTS feature_read_sets (
-  feature_id TEXT NOT NULL,
-  path TEXT NOT NULL,
-  PRIMARY KEY (feature_id, path)
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS feature_write_scopes (
-  feature_id TEXT NOT NULL,
-  path_prefix TEXT NOT NULL,
-  PRIMARY KEY (feature_id, path_prefix)
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS feature_turns (
-  feature_id TEXT NOT NULL,
-  slot_id TEXT NOT NULL,
-  phase TEXT NOT NULL,
-  PRIMARY KEY (feature_id, slot_id)
-) STRICT, WITHOUT ROWID;
-
-CREATE TABLE IF NOT EXISTS feature_worktree_slots (
-  slot_id TEXT PRIMARY KEY,
-  feature_id TEXT,
-  ref TEXT NOT NULL,
-  path TEXT NOT NULL,
-  role TEXT NOT NULL
-) STRICT;
-`;
-
 export function openFeatureBranchStateDb(filePath: string): FeatureBranchStateDb {
-  const db = new DatabaseSync(filePath);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = FULL;
-    PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA secure_delete = ON;
-    PRAGMA journal_size_limit = 67108864;
-    PRAGMA temp_store = MEMORY;
-  `);
-  db.exec(DDL);
-  return new SqliteFeatureBranchStateDb(db);
+  return new SqliteFeatureBranchStateDb(openSharedStateFile(filePath));
 }
 
 class SqliteFeatureBranchStateDb implements FeatureBranchStateDb {
-  constructor(private readonly db: DatabaseSync) {}
+  readonly lifecycles: LifecyclesStateConnection;
+
+  constructor(private readonly db: DatabaseSync) {
+    this.lifecycles = adaptLifecycle(db);
+  }
 
   transaction<T>(fn: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
@@ -204,8 +149,10 @@ export class FeatureBranchStore {
   constructor(private readonly db: FeatureBranchStateDb) {}
 
   insert(record: FeatureBranchRecord, now: number): void {
+    const lifecycles = lifecycleConnection(this.db);
+    if (lifecycles) recordFeatureLifecycle(lifecycles, record, now);
     this.db.run(
-      `INSERT INTO feature_branch_runtime (
+      `INSERT INTO feature_coordination (
         feature_id, feature_slug, wave_id, ref, base_integration_sha, head_sha, verified_head_sha,
         pinned_base_commit_sha, active_leaf_slots_json, behind_integration_count, status, sync_reason,
         landed_by_task, lease_holder, lease_epoch, worktree_path, updated_at
@@ -233,19 +180,19 @@ export class FeatureBranchStore {
   }
 
   read(featureId: string): FeatureBranchRecord | null {
-    const row = this.db.get(`SELECT * FROM feature_branch_runtime WHERE feature_id = ?`, [featureId]);
+    const row = this.db.get(`SELECT * FROM feature_coordination WHERE feature_id = ?`, [featureId]);
     return row ? rowToRecord(row) : null;
   }
 
   list(): FeatureBranchRecord[] {
     return this.db
-      .all(`SELECT * FROM feature_branch_runtime ORDER BY feature_id`, [])
+      .all(`SELECT * FROM feature_coordination ORDER BY feature_id`, [])
       .map((row) => rowToRecord(row));
   }
 
   save(record: FeatureBranchRecord, now: number): void {
     this.db.run(
-      `UPDATE feature_branch_runtime SET
+      `UPDATE feature_coordination SET
         base_integration_sha = ?, head_sha = ?, verified_head_sha = ?, pinned_base_commit_sha = ?,
         active_leaf_slots_json = ?, behind_integration_count = ?, status = ?, sync_reason = ?,
         landed_by_task = ?, lease_holder = ?, lease_epoch = ?, worktree_path = ?, updated_at = ?
@@ -325,4 +272,61 @@ export class FeatureBranchStore {
       role: text(row, "role"),
     }));
   }
+}
+
+function lifecycleConnection(db: FeatureBranchStateDb): LifecyclesStateConnection | null {
+  if (db instanceof SqliteFeatureBranchStateDb) return db.lifecycles;
+  return null;
+}
+
+function recordFeatureLifecycle(connection: LifecyclesStateConnection, record: FeatureBranchRecord, now: number): void {
+  const raw = connection as LifecyclesStateConnection & {
+    exec(sql: string): void;
+  };
+  raw.exec(
+    "INSERT INTO change_sets(id, origin, author, created_at) VALUES ('CS-feature-branch', 'planner', 'feature-branch', 0) ON CONFLICT(id) DO NOTHING",
+  );
+  const hash = toPrefixedSha256(createHash("sha256").update(record.featureId).digest("hex"));
+  const existing = connection.prepare("SELECT 1 AS ok FROM nodes WHERE id = :id").get({ id: record.featureId });
+  if (!existing) {
+    connection
+      .prepare(
+        `INSERT INTO nodes(
+           id, kind, version, content_hash, title, text, fields, status,
+           change_set, created_rev, updated_rev
+         ) VALUES (:id, 'feature', 1, :hash, :title, '', '{}', 'active', 'CS-feature-branch', 0, 0)`,
+      )
+      .run({ id: record.featureId, hash, title: record.featureSlug });
+  }
+  const repo = createLifecycleRepo(connection);
+  const branch = `harness/f/${record.featureSlug}`;
+  repo.initFeature({ feature: record.featureId, planAuthor: record.leaseHolder, rev: 1, now, branch });
+  repo.transitionFeatureState({ feature: record.featureId, to: "JIT_READY", expectedEpoch: 0, rev: 1, now });
+  repo.transitionFeatureState({ feature: record.featureId, to: "IN_WAVE", expectedEpoch: 0, rev: 1, now });
+}
+
+function adaptLifecycle(db: DatabaseSync): LifecyclesStateConnection {
+  return {
+    exec(sql: string): void {
+      db.exec(sql);
+    },
+    prepare(sql: string): LifecyclesSqlStatement {
+      const statement = db.prepare(sql);
+      statement.setAllowBareNamedParameters(true);
+      return {
+        all(params?: Readonly<Record<string, LifecyclesSqlValue>>) {
+          return statement.all(params ?? {}) as Readonly<Record<string, LifecyclesSqlValue>>[];
+        },
+        get(params?: Readonly<Record<string, LifecyclesSqlValue>>) {
+          const row = statement.get(params ?? {});
+          if (row === undefined || row === null) return undefined;
+          return row as Readonly<Record<string, LifecyclesSqlValue>>;
+        },
+        run(params?: Readonly<Record<string, LifecyclesSqlValue>>) {
+          const result = statement.run(params ?? {});
+          return { changes: result.changes, lastInsertRowid: result.lastInsertRowid };
+        },
+      };
+    },
+  };
 }

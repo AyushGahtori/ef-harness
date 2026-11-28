@@ -8,6 +8,7 @@ import {
   SchemaValidationError,
   UnverifiedSliceError,
 } from "./errors.js";
+import { toBareSha256Hex } from "@ef-harness/shared-contracts";
 import { sha256Hex } from "./json.js";
 import { assertCanonicalRole, assertCommitSha, assertSliceSha, type CasBlobStorePort, type SlicePinPort } from "./ports.js";
 import type {
@@ -148,7 +149,7 @@ export class ArtifactHandoffStore {
       holderId: input.fromTaskId,
       retention: "evidence",
     });
-    if (stored.hash !== digest) throw new CasIntegrityError(stored.hash);
+    if (toBareSha256Hex(stored.hash) !== digest) throw new CasIntegrityError(stored.hash);
     const artifact: HandoffArtifact = {
       handoffId: input.handoffId,
       fromRole: input.fromRole,

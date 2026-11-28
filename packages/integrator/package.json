@@ -21,7 +21,11 @@
     "@ef-harness/completeness-gate": "workspace:*",
     "@ef-harness/db": "workspace:*",
     "@ef-harness/git-engine": "workspace:*",
+    "@ef-harness/mcp-server": "workspace:*",
+    "@ef-harness/planner": "workspace:*",
+    "@ef-harness/sandbox": "workspace:*",
     "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/shared-observability": "workspace:*",
     "@ef-harness/verifier": "workspace:*",
     "@ef-harness/worker-loop": "workspace:*",
     "typescript": "catalog:"

@@ -253,16 +253,63 @@ export const TOOL_REGISTRATIONS: readonly RegisteredTool[] = [
     description: "Return a declared dependency artifact. Drafts are labeled. Concealed checks are NotFound.",
     schema: z
       .object({
-        artifactId: z.string().min(1),
+        artifactId: z.string().min(1).optional(),
         slice: z.string().min(1).optional(),
+        handoff_id: z.string().min(1).optional(),
+        range: z
+          .object({
+            offset: z.number(),
+            limit: z.number(),
+          })
+          .strict()
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine((value, ctx) => {
+        const artifact = value.artifactId !== undefined;
+        const handoff = value.handoff_id !== undefined;
+        if (artifact === handoff) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "harness.read_result accepts artifactId or handoff_id",
+          });
+        }
+      }),
     call: async (ctx, args) => {
       return guarded(ctx, "harness.read_result", async () => {
+        if (args.handoff_id !== undefined) {
+          const pull = ctx.deps.handoffReadResult;
+          if (!pull) {
+            return finishPlain(ctx, "harness.read_result", ctx.text({ error: "HandoffReadResultUnbound" }, true));
+          }
+          try {
+            const result = pull(
+              { taskId: ctx.lease.taskId, role: `worker:${ctx.lease.taskId}` },
+              args.range === undefined ? { handoff_id: args.handoff_id } : { handoff_id: args.handoff_id, range: args.range },
+            );
+            if (!result.ok) return finishPlain(ctx, "harness.read_result", ctx.notFound());
+            const body =
+              result.bytes === undefined
+                ? result
+                : { ...result, bytes: Buffer.from(result.bytes).toString("base64") };
+            const enveloped = ctx.data(`handoff:${args.handoff_id}`, "untrusted", body);
+            const text = enveloped.content?.[0]?.type === "text" ? enveloped.content[0].text : "";
+            ctx.commit("harness.read_result", estimateTokens(text));
+            return enveloped;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const name = error instanceof Error ? error.name : "Error";
+            return finishPlain(ctx, "harness.read_result", ctx.text({ error: name, message }, true));
+          }
+        }
+        if (args.artifactId === undefined) {
+          return finishPlain(ctx, "harness.read_result", ctx.text({ error: "artifactId is required" }, true));
+        }
+        const artifactId = args.artifactId;
         const lookup =
           args.slice === undefined
-            ? { artifactId: args.artifactId, projectId: ctx.lease.projectId }
-            : { artifactId: args.artifactId, slice: args.slice, projectId: ctx.lease.projectId };
+            ? { artifactId, projectId: ctx.lease.projectId }
+            : { artifactId, slice: args.slice, projectId: ctx.lease.projectId };
         const artifact = await ctx.deps.artifacts.readResult(lookup);
         if (!artifact || isConcealed(artifact)) return finishPlain(ctx, "harness.read_result", ctx.notFound());
         const declared = artifact.declared || declaredArtifact(ctx.packet, artifact.id);

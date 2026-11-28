@@ -20,7 +20,8 @@ const STATE_V2_SQL = `
 INSERT OR IGNORE INTO edge_types(type, invalidates) VALUES
   ('expands', 1),
   ('contradicts', 1),
-  ('informs', 1);
+  ('informs', 1),
+  ('waits_on', 0);
 
 CREATE TABLE IF NOT EXISTS canvas_layout (
   node_id TEXT NOT NULL REFERENCES nodes(id),
@@ -67,6 +68,167 @@ CREATE TABLE IF NOT EXISTS stop_events (
   checkpoint_shas TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(checkpoint_shas)),
   recovery_option TEXT
 ) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS id_sequences (
+  name TEXT PRIMARY KEY,
+  next INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS handoff_artifacts (
+  handoff_id TEXT PRIMARY KEY,
+  from_role TEXT NOT NULL,
+  to_role TEXT NOT NULL,
+  from_task_id TEXT NOT NULL,
+  to_task_id TEXT NOT NULL,
+  artifact_type TEXT NOT NULL,
+  pinned_base_commit_sha TEXT NOT NULL,
+  pinned_slice_sha256 TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  summary_json TEXT NOT NULL,
+  blob_sha256 TEXT NOT NULL,
+  blob_bytes INTEGER NOT NULL,
+  prior_handoff_id TEXT REFERENCES handoff_artifacts(handoff_id),
+  supersedes TEXT REFERENCES handoff_artifacts(handoff_id),
+  superseded_by TEXT REFERENCES handoff_artifacts(handoff_id),
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS active_attempts (
+  attempt_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  worker_id TEXT NOT NULL,
+  pinned_base_commit_sha TEXT NOT NULL,
+  pinned_slice_sha256 TEXT NOT NULL,
+  bound_handoff_id TEXT NOT NULL REFERENCES handoff_artifacts(handoff_id),
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS role_mailbox (
+  mailbox_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  target_role TEXT NOT NULL,
+  target_owner_task_id TEXT NOT NULL,
+  contract_id TEXT NOT NULL,
+  question_hash TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('open', 'resolved', 'escalated')),
+  resolution_json TEXT,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  escalated_to TEXT,
+  owner_turns INTEGER NOT NULL,
+  dedup_key TEXT NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS role_mailbox_open_dedup
+  ON role_mailbox(dedup_key) WHERE status = 'open';
+
+CREATE INDEX IF NOT EXISTS role_mailbox_role ON role_mailbox(target_role, status);
+
+CREATE TABLE IF NOT EXISTS mailbox_waiters (
+  mailbox_id TEXT NOT NULL REFERENCES role_mailbox(mailbox_id),
+  waiter_task_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (mailbox_id, waiter_task_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS mailbox_wakes (
+  wake_id TEXT PRIMARY KEY,
+  mailbox_id TEXT NOT NULL,
+  waiter_task_id TEXT NOT NULL,
+  resolution_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS handoff_watches (
+  handoff_id TEXT NOT NULL REFERENCES handoff_artifacts(handoff_id),
+  task_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (handoff_id, task_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS handoff_wakes (
+  wake_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  previous_handoff_id TEXT NOT NULL,
+  fresh_handoff_id TEXT NOT NULL,
+  fresh_base_sha TEXT NOT NULL,
+  fresh_slice_sha TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS wait_graph_deadlock_breaks (
+  break_id TEXT PRIMARY KEY,
+  from_node TEXT NOT NULL,
+  to_node TEXT NOT NULL,
+  cycle_json TEXT NOT NULL,
+  escalated_to TEXT NOT NULL,
+  notified_roles_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS escalation_notices (
+  notice_id TEXT PRIMARY KEY,
+  target_role TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS role_claims (
+  claim_id TEXT PRIMARY KEY,
+  target_role TEXT NOT NULL,
+  worker_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS feature_coordination (
+  feature_id TEXT PRIMARY KEY,
+  feature_slug TEXT NOT NULL,
+  wave_id TEXT NOT NULL,
+  ref TEXT NOT NULL UNIQUE,
+  base_integration_sha TEXT NOT NULL,
+  head_sha TEXT NOT NULL,
+  verified_head_sha TEXT NOT NULL,
+  pinned_base_commit_sha TEXT NOT NULL,
+  active_leaf_slots_json TEXT NOT NULL,
+  behind_integration_count INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  sync_reason TEXT,
+  landed_by_task INTEGER,
+  lease_holder TEXT NOT NULL,
+  lease_epoch INTEGER NOT NULL,
+  worktree_path TEXT,
+  updated_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS feature_read_sets (
+  feature_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  PRIMARY KEY (feature_id, path)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS feature_write_scopes (
+  feature_id TEXT NOT NULL,
+  path_prefix TEXT NOT NULL,
+  PRIMARY KEY (feature_id, path_prefix)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS feature_turns (
+  feature_id TEXT NOT NULL,
+  slot_id TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  PRIMARY KEY (feature_id, slot_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS feature_worktree_slots (
+  slot_id TEXT PRIMARY KEY,
+  feature_id TEXT,
+  ref TEXT NOT NULL,
+  path TEXT NOT NULL,
+  role TEXT NOT NULL
+) STRICT;
 `;
 
 const CODE_INDEX_MODULE_CARDS_DDL = `
@@ -80,8 +242,25 @@ CREATE TABLE IF NOT EXISTS module_cards (
 ) STRICT, WITHOUT ROWID;
 `;
 
-const SEEDED_EDGE_TYPES = ["expands", "contradicts", "informs"] as const;
-const STATE_V2_TABLES = ["canvas_layout", "investigations", "sweep_symbol_maps", "stop_events"] as const;
+const SEEDED_EDGE_TYPES = ["expands", "contradicts", "informs", "waits_on"] as const;
+const STATE_V2_TABLES = [
+  "canvas_layout",
+  "investigations",
+  "sweep_symbol_maps",
+  "stop_events",
+  "handoff_artifacts",
+  "role_mailbox",
+  "feature_coordination",
+  "feature_read_sets",
+  "feature_write_scopes",
+  "feature_turns",
+  "feature_worktree_slots",
+] as const;
+
+/** Additive state v2 DDL, including handoff pointers and feature coordination. */
+export function stateV2Sql(): string {
+  return STATE_V2_SQL;
+}
 
 function flag(value: unknown): number {
   if (typeof value === "bigint") return Number(value);
@@ -106,7 +285,8 @@ export const stateV2Migration: MigrationDefinition = {
   check(conn) {
     for (const type of SEEDED_EDGE_TYPES) {
       const row = conn.prepare("SELECT invalidates FROM edge_types WHERE type = ?").get(type);
-      if (flag(row?.invalidates) !== 1) {
+      const expected = type === "waits_on" ? 0 : 1;
+      if (flag(row?.invalidates) !== expected) {
         throw new SchemaInvariantError(`edge type ${type} was not seeded`);
       }
     }

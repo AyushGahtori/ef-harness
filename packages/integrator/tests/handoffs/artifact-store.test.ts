@@ -125,6 +125,20 @@ describe("ArtifactHandoffStore", () => {
     runtime.close();
   });
 
+  it("keeps payloads in the content-addressed store and pointer rows in state.db", () => {
+    const runtime = HandoffRuntime.open({ stateDbPath: ":memory:", now: clock().now });
+    const stored = runtime.store.put(handoffInput("HO-CAS"));
+    expect(stored.blobSha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(runtime.db.tables()).toContain("handoff_artifacts");
+    expect(runtime.db.tables()).toContain("role_mailbox");
+    expect(runtime.db.tables()).not.toContain("cas_blobs");
+    expect(runtime.db.tables()).not.toContain("graph_edges");
+    expect(runtime.db.tables()).not.toContain("contract_owners");
+    runtime.waitGraph.addDependsOn("planner-task", "T-1");
+    expect(runtime.waitGraph.hasEdge("depends_on", "planner-task", "T-1")).toBe(true);
+    runtime.close();
+  });
+
   it("reopens the same state.db and still returns the pinned blob", () => {
     const stateDbPath = tempDbPath();
     const time = clock();

@@ -1,6 +1,9 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { ArtifactHandoffStore } from "./artifact-store.js";
 import { HandoffAuditTrail } from "./audit.js";
-import { DEFAULT_MAILBOX_TTL } from "./constants.js";
+import { DEFAULT_MAILBOX_TTL, READ_RESULT_TOOL } from "./constants.js";
 import { HandoffDatabase } from "./database.js";
 import { DurableRoleMailbox } from "./mailbox.js";
 import { HandoffMcpSurface } from "./mcp-surface.js";
@@ -66,7 +69,7 @@ export class HandoffRuntime {
   static open(options: HandoffRuntimeOptions): HandoffRuntime {
     const now = options.now ?? (() => Date.now());
     const db = HandoffDatabase.open(options.stateDbPath);
-    const cas = options.cas ?? new SqliteCasBlobStore(db, now);
+    const cas = options.cas ?? new SqliteCasBlobStore(casRootFor(options.stateDbPath));
     const holds = options.holds ?? new LocalTaskHoldsPort();
     const slices = options.slices ?? new FormatSlicePinPort();
     const graph = options.graph ?? new LocalKnowledgeGraphPort();
@@ -85,4 +88,22 @@ export class HandoffRuntime {
   close(): void {
     this.db.close();
   }
+}
+
+export function registerReadResultTool(
+  server: {
+    bindHandoffPull(
+      pull: (caller: { readonly taskId: string; readonly role: string }, args: Readonly<Record<string, unknown>>) => ReturnType<HandoffMcpSurface["dispatch"]>,
+    ): void;
+  },
+  runtime: HandoffRuntime,
+): void {
+  server.bindHandoffPull((caller, args) => runtime.surface.dispatch(READ_RESULT_TOOL, caller, args));
+}
+
+function casRootFor(stateDbPath: string): string {
+  if (stateDbPath === ":memory:" || stateDbPath.trim().length === 0) {
+    return mkdtempSync(path.join(tmpdir(), "ef-handoff-cas-"));
+  }
+  return path.join(path.dirname(stateDbPath), "cas");
 }
