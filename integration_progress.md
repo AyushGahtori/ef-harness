@@ -58,7 +58,7 @@
 | C47 | Wave 4 | done | 8cf8678 | F-055 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); governor 28 files 118 passed, 1 skipped (live-win32); db 67 files 374/374; schema 67/67 |
 | C48 | Wave 4 | done | ef283f1 | F-027, F-063 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); desktop 4 files 20/20; renderer shell+presets 6 files 41/41; schema 67/67 |
 | C49 | Wave 4 | done | b91b02e | F-064 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); daemon 4 files 20/20; renderer shell+cockpit-board+cockpit-health 18 files 79/79; schema 67/67 |
-| C50 | Wave 4 | pending | - | F-065 | - |
+| C50 | Wave 4 | done | 21efed4 | F-065 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); steering 21 files 121/121; daemon 5 files 21/21; renderer cockpit-inspector+cockpit-inbox+stop-card 24 files 118/118; schema 67/67 |
 | C51 | Wave 4 | pending | - | F-066 | - |
 | C52 | Wave 4 | pending | - | F-056 | - |
 | C53 | Wave 5 | pending | - | F-057 | - |
