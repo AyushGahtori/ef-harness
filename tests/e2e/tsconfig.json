@@ -8,7 +8,8 @@
   },
   "include": [
     "src/**/*.ts",
-    "m2-exit-gate/**/*.ts"
+    "m2-exit-gate/**/*.ts",
+    "m3-exit-gate/**/*.ts"
   ],
   "references": [
     {
@@ -43,6 +44,15 @@
     },
     {
       "path": "../../packages/integrator"
+    },
+    {
+      "path": "../../packages/steering"
+    },
+    {
+      "path": "../../packages/governor"
+    },
+    {
+      "path": "../../apps/renderer"
     }
   ]
 }

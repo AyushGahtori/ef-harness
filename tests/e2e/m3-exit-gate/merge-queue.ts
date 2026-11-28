@@ -1,32 +1,24 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import type { MergeCommitRecord, MergeReport, QueueFeature } from "./types.ts";
+import { MergeBatchBisector, ProjectMergeQueue } from "@ef-harness/integrator";
+import type { MergeFeatureRequest, QueuedFeature } from "@ef-harness/integrator";
+import type { MergeCommitRecord, MergeReport, QueueFeature } from "./types.js";
 
-const REQUIRED_TRAILERS = [
-  "EF-Feature",
-  "EF-Tasks",
-  "EF-Requirements",
-  "EF-Checks-Passed",
-  "EF-Harness-Version",
-] as const;
-
-function gitEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    GIT_AUTHOR_NAME: "EF Harness",
-    GIT_AUTHOR_EMAIL: "foundation@ef-harness.local",
-    GIT_COMMITTER_NAME: "EF Harness",
-    GIT_COMMITTER_EMAIL: "foundation@ef-harness.local",
-  };
-}
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "EF Harness",
+  GIT_AUTHOR_EMAIL: "foundation@ef-harness.local",
+  GIT_COMMITTER_NAME: "EF Harness",
+  GIT_COMMITTER_EMAIL: "foundation@ef-harness.local",
+};
 
 function git(cwd: string, args: string[]): string {
   const result = spawnSync("git", ["-c", "commit.gpgsign=false", ...args], {
     cwd,
     encoding: "utf8",
-    windowsHide: true,
-    env: gitEnv(),
+    env: GIT_ENV,
   });
   if (result.status !== 0) {
     throw new Error((result.stderr || result.stdout || `git ${args.join(" ")} failed`).trim());
@@ -34,164 +26,192 @@ function git(cwd: string, args: string[]): string {
   return (result.stdout ?? "").trim();
 }
 
-function trailerMessage(feature: QueueFeature): string {
-  return [
-    `Merge ${feature.id} into harness/integration`,
-    "",
-    `EF-Feature: ${feature.id}`,
-    `EF-Tasks: ${feature.tasks}`,
-    `EF-Requirements: ${feature.requirements}`,
-    `EF-Checks-Passed: ${feature.checks}`,
-    "EF-Harness-Version: 0.0.0",
-  ].join("\n");
+function write(root: string, relative: string, text: string): void {
+  const full = path.join(root, relative);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, text, "utf8");
 }
 
-function parseTrailers(message: string): Record<string, string> {
-  const trailers: Record<string, string> = {};
-  for (const line of message.split(/\r?\n/)) {
-    const match = /^(EF-[A-Za-z0-9-]+):\s*(.*)$/.exec(line);
-    const key = match?.[1];
-    const value = match?.[2]?.trim() ?? "";
-    if (key && value) trailers[key] = value;
-  }
-  return trailers;
+function initRepo(repo: string): void {
+  git(repo, ["init", "--initial-branch=harness/integration"]);
+  write(repo, "build.mjs", "console.log('build ok');\n");
+  git(repo, ["add", "-A"]);
+  git(repo, ["commit", "-m", "base"]);
+  git(repo, ["branch", "main"]);
+  git(repo, ["checkout", "--detach"]);
 }
 
-export class CombinedRegressionGate {
-  pass(features: readonly QueueFeature[]): boolean {
-    return features.every((feature) => !feature.regression);
-  }
-}
-
-export class ProjectMergeQueue {
-  private readonly gate = new CombinedRegressionGate();
-
-  land(dir: string, features: readonly QueueFeature[]): MergeReport {
-    fs.mkdirSync(dir, { recursive: true });
-    git(dir, ["init", "-b", "harness/integration"]);
-    fs.writeFileSync(path.join(dir, ".gitignore"), ".harness/views/\n", "utf8");
-    fs.writeFileSync(path.join(dir, "README.md"), "Kitchen meal ordering\n", "utf8");
-    git(dir, ["add", "--", ".gitignore", "README.md"]);
-    git(dir, ["commit", "-m", "Kitchen base"]);
-    const ordered = [...features].sort(
-      (left, right) => left.finishedAtSec - right.finishedAtSec || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
-    );
-    const commits: MergeCommitRecord[] = [];
-    const held: string[] = [];
-    for (const group of groupSameSecond(ordered)) {
-      const outcome = this.landGroup(dir, group);
-      commits.push(...outcome.commits);
-      held.push(...outcome.held);
-    }
-    const status = git(dir, ["status", "--porcelain"]);
-    const sameSecond = features.filter((feature, index, all) =>
-      all.some((other, otherIndex) => otherIndex !== index && other.finishedAtSec === feature.finishedAtSec),
-    );
-    return {
-      commits,
-      held,
-      clean: status === "",
-      sameSecondSerialized: sameSecond.length === 0 || commitsAreSerial(dir, commits),
+function addFeature(repo: string, feature: QueueFeature): void {
+  const branch = `harness/f/${feature.id}`;
+  git(repo, ["branch", branch, "harness/integration"]);
+  const slot = fs.mkdtempSync(path.join(os.tmpdir(), "m3-feature-"));
+  try {
+    git(repo, ["worktree", "add", slot, branch]);
+    const manifest = {
+      id: feature.id,
+      routes: [`/${feature.slug}`],
+      shortcuts: [],
+      middleware: [],
+      checks: [`features/${feature.id}/journey.test.mjs`],
+      sealed: [{ id: `${feature.id}-3b`, step: "3b", script: `features/${feature.id}/sealed/step-3b.test.mjs` }],
     };
-  }
-
-  private landGroup(dir: string, group: readonly QueueFeature[]): { commits: MergeCommitRecord[]; held: string[] } {
-    if (group.length === 0) return { commits: [], held: [] };
-    if (!this.gate.pass(group)) {
-      if (group.length === 1) {
-        const only = group[0];
-        if (!only) return { commits: [], held: [] };
-        prepareBranch(dir, only);
-        return { commits: [], held: [only.id] };
-      }
-      const mid = Math.floor(group.length / 2);
-      const left = this.landGroup(dir, group.slice(0, mid));
-      const right = this.landGroup(dir, group.slice(mid));
-      return { commits: [...left.commits, ...right.commits], held: [...left.held, ...right.held] };
-    }
-    const commits: MergeCommitRecord[] = [];
-    for (const feature of group) commits.push(landOne(dir, feature));
-    return { commits, held: [] };
+    const journey = feature.regression
+      ? `console.error(${JSON.stringify(`${feature.id} regression`)});\nprocess.exit(1);\n`
+      : `console.log(${JSON.stringify(feature.id)});\n`;
+    write(slot, `features/${feature.id}/manifest.json`, `${JSON.stringify(manifest, null, 2)}\n`);
+    write(slot, `features/${feature.id}/journey.test.mjs`, journey);
+    write(slot, `features/${feature.id}/sealed/step-3b.test.mjs`, "console.log('sealed');\n");
+    write(slot, `src/${feature.slug}.txt`, feature.body);
+    git(slot, ["add", "-A"]);
+    git(slot, ["commit", "-m", `feature ${feature.id}`]);
+  } finally {
+    spawnSync("git", ["worktree", "remove", "--force", slot], { cwd: repo, encoding: "utf8" });
+    fs.rmSync(slot, { recursive: true, force: true });
   }
 }
 
-export class MergeBatchBisector {
-  split<T>(batch: readonly T[]): [T[], T[]] {
-    const mid = Math.floor(batch.length / 2);
-    return [batch.slice(0, mid), batch.slice(mid)];
-  }
-}
-
-function groupSameSecond(features: readonly QueueFeature[]): QueueFeature[][] {
-  const groups: QueueFeature[][] = [];
-  for (const feature of features) {
-    const last = groups[groups.length - 1];
-    if (last && last[0]?.finishedAtSec === feature.finishedAtSec) last.push(feature);
-    else groups.push([feature]);
-  }
-  return groups;
-}
-
-function prepareBranch(dir: string, feature: QueueFeature): void {
-  git(dir, ["checkout", "harness/integration"]);
-  git(dir, ["checkout", "-b", `harness/f/${feature.slug}`]);
-  const src = path.join(dir, "src");
-  fs.mkdirSync(src, { recursive: true });
-  fs.writeFileSync(path.join(src, `${feature.slug}.txt`), feature.body, "utf8");
-  git(dir, ["add", "--", `src/${feature.slug}.txt`]);
-  git(dir, ["commit", "-m", `Build ${feature.id}`]);
-  git(dir, ["checkout", "harness/integration"]);
-}
-
-function landOne(dir: string, feature: QueueFeature): MergeCommitRecord {
-  prepareBranch(dir, feature);
-  git(dir, ["merge", "--no-ff", `harness/f/${feature.slug}`, "-m", trailerMessage(feature)]);
-  return readHead(dir, feature);
-}
-
-function readHead(dir: string, feature: QueueFeature): MergeCommitRecord {
-  const line = git(dir, ["rev-list", "--parents", "-n", "1", "HEAD"]);
-  const parts = line.split(/\s+/).filter(Boolean);
-  const sha = parts[0] ?? "";
-  const parents = Math.max(0, parts.length - 1);
-  const message = git(dir, ["log", "-1", "--format=%B"]);
-  const trailers = parseTrailers(message);
-  for (const key of REQUIRED_TRAILERS) {
-    if (!trailers[key]) throw new Error(`merge commit for ${feature.id} is missing ${key}`);
-  }
-  if (parents !== 2) throw new Error(`merge commit for ${feature.id} is not --no-ff (${parents} parents)`);
-  const subject = message.split(/\r?\n/)[0] ?? "";
+function requestFor(feature: QueueFeature): MergeFeatureRequest {
   return {
     featureId: feature.id,
-    sha,
-    subject,
-    parents,
-    trailers,
-    branch: `harness/f/${feature.slug}`,
+    featureRef: `refs/heads/harness/f/${feature.id}`,
+    spec: {
+      id: feature.id,
+      title: `${feature.id} title`,
+      text: feature.body,
+      contracts: [{ id: `contract-${feature.id}`, text: `${feature.id} contract` }],
+    },
+    snapshot: {
+      tasks: [
+        {
+          id: feature.tasks,
+          state: "MERGED_TO_FEATURE",
+          briefVersion: 1,
+          acceptedBriefVersion: 1,
+          contracts: [{ id: `C-${feature.id}`, pin: 1, currentVersion: 1 }],
+        },
+      ],
+      requirements: [{ id: feature.requirements, kind: "spec_item", status: "passing" }],
+      scopes: [`features/${feature.id}/`],
+      checks: [
+        { id: `S-${feature.id}`, gate: "static_audit", version: 1, status: "pass" },
+        { id: `J-${feature.id}`, gate: "feature_journey", version: 1, status: "pass" },
+        { id: `B-${feature.id}`, gate: "sealed_step_3b", version: 1, status: "pass" },
+      ],
+      screenBearing: false,
+      openCcrIds: [],
+      earlierDoneFeatureIds: [],
+    },
+    taskIds: [feature.tasks],
+    requirementIds: [feature.requirements],
+    checkIds: feature.checks.split(",").filter((id) => id.length > 0),
+    journeyEntryPoint: `/${feature.slug}`,
+    staticAuditPaths: [`features/${feature.id}/`],
   };
 }
 
-function commitsAreSerial(dir: string, commits: readonly MergeCommitRecord[]): boolean {
-  if (commits.length < 2) return true;
-  for (let i = 1; i < commits.length; i += 1) {
-    const current = commits[i];
-    const previous = commits[i - 1];
-    if (!current || !previous) return false;
-    const parents = git(dir, ["rev-list", "--parents", "-n", "1", current.sha]).split(/\s+/);
-    if (!parents.includes(previous.sha)) return false;
+function recordOf(landed: { featureId: string; mergeSha: string; parents: readonly string[]; trailers: { feature: string; tasks: readonly string[]; requirements: readonly string[]; checksPassed: string; harnessVersion: string } }): MergeCommitRecord {
+  return {
+    featureId: landed.featureId,
+    sha: landed.mergeSha,
+    subject: landed.featureId,
+    parents: landed.parents.length,
+    trailers: {
+      "EF-Feature": landed.trailers.feature,
+      "EF-Tasks": landed.trailers.tasks.join(","),
+      "EF-Requirements": landed.trailers.requirements.join(","),
+      "EF-Checks-Passed": landed.trailers.checksPassed,
+      "EF-Harness-Version": landed.trailers.harnessVersion,
+    },
+    branch: `harness/f/${landed.featureId}`,
+  };
+}
+
+export async function landFeatures(dir: string, features: readonly QueueFeature[]): Promise<MergeReport> {
+  initRepo(dir);
+  for (const feature of features) addFeature(dir, feature);
+  const queue = new ProjectMergeQueue({ repo: dir, stateFile: path.join(dir, "merge-queue.db") });
+  try {
+    for (const feature of features) queue.enqueue(requestFor(feature));
+    const report = await queue.drain();
+    const commits = report.landed.map((landed) => recordOf(landed));
+    let serial = true;
+    for (let index = 1; index < commits.length; index += 1) {
+      const current = commits[index];
+      const previous = commits[index - 1];
+      if (!current || !previous) {
+        serial = false;
+        break;
+      }
+      const parents = git(dir, ["rev-list", "--parents", "-n", "1", current.sha]).split(/\s+/);
+      if (!parents.includes(previous.sha)) serial = false;
+    }
+    git(dir, ["checkout", "--force", "harness/integration"]);
+    return {
+      commits,
+      held: report.evicted.map((item) => item.featureId),
+      clean: report.blocked === null && report.escalations.length === 0,
+      sameSecondSerialized: serial,
+    };
+  } finally {
+    queue.close();
   }
-  return true;
+}
+
+export async function bisectHalves(ids: readonly string[]): Promise<string[][]> {
+  const halves: string[][] = [];
+  const batch: QueuedFeature[] = ids.map((id, index) => ({
+    id: `mq-${index + 1}`,
+    featureId: id,
+    featureRef: `refs/heads/harness/f/${id}`,
+    priority: 0,
+    sequence: index + 1,
+    status: "QUEUED",
+    phase: "queued",
+    evictionCount: 0,
+    failureTrace: "",
+    request: {
+      featureId: id,
+      featureRef: `refs/heads/harness/f/${id}`,
+      spec: { id, title: id, text: id, contracts: [] },
+      snapshot: {
+        tasks: [],
+        requirements: [],
+        scopes: [],
+        checks: [],
+        screenBearing: false,
+        openCcrIds: [],
+        earlierDoneFeatureIds: [],
+      },
+      taskIds: [],
+      requirementIds: [],
+      checkIds: [],
+      journeyEntryPoint: "/",
+      staticAuditPaths: [],
+    },
+    mergeSha: "",
+  }));
+  const bisector = new MergeBatchBisector({
+    probe: (features) => {
+      const names = features.map((feature) => feature.featureId);
+      if (names.length === 1) halves.push(names);
+      const failed = names.includes("F-Orders");
+      return Promise.resolve({
+        ok: !failed,
+        trace: failed ? "F-Orders regression" : "",
+        failingChecks: [],
+        kind: "gate" as const,
+      });
+    },
+    land: () => Promise.resolve(),
+    evict: () => undefined,
+    interact: () => Promise.resolve(),
+  });
+  await bisector.resolve(batch);
+  return halves;
 }
 
 export function trackedViews(dir: string): number {
   const listed = git(dir, ["ls-files", "--", ".harness/views"]);
   if (!listed) return 0;
-  return listed.split(/\r?\n/).filter(Boolean).length;
-}
-
-export function writeIgnoredView(dir: string): void {
-  const file = path.join(dir, ".harness", "views", "orders.md");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, "Soup x 2\nSalad x 1\n", "utf8");
-  git(dir, ["check-ignore", "--", ".harness/views/orders.md"]);
+  return listed.split(/\r?\n/).filter((line) => line.length > 0).length;
 }

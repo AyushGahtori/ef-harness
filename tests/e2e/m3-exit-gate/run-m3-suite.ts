@@ -1,4 +1,4 @@
-import { M3ParallelBenchmarkRunner, runLiveCertification } from "./runner.ts";
+import { M3ParallelBenchmarkRunner, runLiveCertification } from "./runner.js";
 
 const live = process.argv.includes("--live");
 if (live) {

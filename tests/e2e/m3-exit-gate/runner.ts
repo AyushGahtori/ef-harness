@@ -1,22 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadM3Fixtures } from "./fixtures.ts";
-import {
-  buildWorkerPrompts,
-  KitchenHiddenAcceptanceSuite,
-  kitchenFromLanded,
-  M2KitchenE2eBenchmarkRunner,
-  promptsLeakHidden,
-  scanTreeForSecrets,
-  WindowsDpapiSecretsVault,
-} from "./kitchen.ts";
-import { ProjectMergeQueue, trackedViews, writeIgnoredView } from "./merge-queue.ts";
-import { evaluateM3ExitGate, renderScorecard, signReport, signingView } from "./report.ts";
-import { M3ScaleAndLatencyCertifier } from "./scale.ts";
-import { DynamicScheduleRebalancer, HeftCriticalPathScheduler, speedupAgainst } from "./schedule.ts";
-import { M3SteeringAndUndoScenarioSuite } from "./scenarios.ts";
-import type { LiveCertification, M3ExitGateReport, QueueFeature, ScheduleResult } from "./types.ts";
+import { M2KitchenE2eBenchmarkRunner } from "../m2-exit-gate/runner.js";
+import { loadM3Fixtures } from "./fixtures.js";
+import { buildWorkerPrompts, promptsLeakHidden, scanTreeForSecrets } from "./kitchen.js";
+import { landFeatures, trackedViews } from "./merge-queue.js";
+import { evaluateM3ExitGate, renderScorecard, signReport, signingView } from "./report.js";
+import { M3ScaleAndLatencyCertifier, storeWithRealVault } from "./scale.js";
+import { M3SteeringAndUndoScenarioSuite } from "./scenarios.js";
+import { finishOf, scheduleKitchen, scheduleWithRetry, speedupAgainst } from "./schedule.js";
+import type { LiveCertification, M3ExitGateReport, QueueFeature } from "./types.js";
 
 const FEATURES: Omit<QueueFeature, "finishedAtSec" | "regression">[] = [
   {
@@ -57,27 +50,15 @@ const FEATURES: Omit<QueueFeature, "finishedAtSec" | "regression">[] = [
   },
 ];
 
-function finishOf(schedule: ScheduleResult, id: string): number {
-  const row = schedule.assignments.find((item) => item.id === id);
-  if (!row) throw new Error(`schedule is missing ${id}`);
-  return row.finishSec;
-}
-
 export class M3ParallelBenchmarkRunner {
   async run(options?: { outDir?: string; dbRounds?: number; jitter?: boolean; root?: string }): Promise<M3ExitGateReport> {
     const started = performance.now();
     const fixtures = loadM3Fixtures(options?.root);
-    const scheduler = new HeftCriticalPathScheduler();
     const schedule = options?.jitter
-      ? new DynamicScheduleRebalancer().withRetry(
-          fixtures.graph,
-          fixtures.profile,
-          fixtures.curve.jitterTaskId,
-          fixtures.curve.jitterRetrySec,
-        )
-      : scheduler.schedule(fixtures.graph, fixtures.profile);
-    const baseline = new M2KitchenE2eBenchmarkRunner(fixtures.baseline).readBaseline();
-    const speedupRatio = speedupAgainst(baseline.totalWallClockSec, schedule.makespanSec);
+      ? scheduleWithRetry(fixtures.graph, fixtures.profile, fixtures.curve.jitterTaskId, fixtures.curve.jitterRetrySec)
+      : scheduleKitchen(fixtures.graph, fixtures.profile);
+    const m2 = await new M2KitchenE2eBenchmarkRunner(fixtures.root).run();
+    const speedupRatio = speedupAgainst(m2.baseline.totalWallClockSec, schedule.makespanSec);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m3-gate-"));
     try {
       const features: QueueFeature[] = FEATURES.map((feature) => ({
@@ -85,27 +66,23 @@ export class M3ParallelBenchmarkRunner {
         finishedAtSec: finishOf(schedule, feature.buildId),
         regression: false,
       }));
-      const merges = new ProjectMergeQueue().land(dir, features);
-      writeIgnoredView(dir);
+      const merges = await landFeatures(dir, features);
       const viewsTracked = trackedViews(dir);
-      const vault = new WindowsDpapiSecretsVault();
       const plaintext = ["sk", "_live_", "m3"].join("");
-      const stored = vault.put("provider-token", plaintext);
-      const vaultFile = path.join(dir, ".harness", "vault", "provider-token.dpapi");
-      fs.mkdirSync(path.dirname(vaultFile), { recursive: true });
-      fs.writeFileSync(vaultFile, `${stored}\n`, "utf8");
+      await storeWithRealVault(path.join(dir, "secrets"), "provider-token", plaintext);
       const secretsFound = scanTreeForSecrets(dir);
-      const suite = new KitchenHiddenAcceptanceSuite(fixtures.suite);
       const prompts = buildWorkerPrompts(
         fixtures.opening,
         fixtures.graph.tasks.filter((task) => task.kind === "model").map((task) => task.id),
-        suite.total,
+        m2.checks.length,
       );
-      if (promptsLeakHidden(prompts, fixtures.suite)) {
-        throw new Error("worker prompts include the hidden suite");
-      }
-      const landed = merges.commits.map((commit) => commit.featureId);
-      const checks = suite.run(kitchenFromLanded(landed));
+      if (promptsLeakHidden(prompts, fixtures.suite)) throw new Error("worker prompts include the hidden suite");
+      const checks = m2.checks.map((check) => ({
+        id: check.id,
+        title: check.title,
+        pass: check.pass,
+        detail: check.detail,
+      }));
       const hiddenPassCount = checks.filter((check) => check.pass).length;
       const scale = new M3ScaleAndLatencyCertifier();
       const db = await scale.certifyDatabase(
@@ -116,8 +93,14 @@ export class M3ParallelBenchmarkRunner {
       const board = scale.certifyBoard();
       const scenarios = await new M3SteeringAndUndoScenarioSuite(fixtures.suite, fixtures.profile).run();
       const m3PassRate = hiddenPassCount / checks.length;
-      const m2PassRate = baseline.passRatePct / 100;
+      const m2PassRate = m2.baseline.passRatePct / 100;
       const scenariosPassed = scenarios.scenarios.filter((scenario) => scenario.pass).length;
+      const productExecuted =
+        schedule.wEff > 0 &&
+        merges.commits.length === features.length &&
+        checks.length >= 25 &&
+        db.workers === 50 &&
+        board.tasks === 500;
       const gate = evaluateM3ExitGate({
         speedupRatio,
         m3PassRate,
@@ -128,7 +111,7 @@ export class M3ParallelBenchmarkRunner {
         stopLatencyMs: scenarios.stop.stopLatencyMs,
         leakedPids: scenarios.stop.leakedPids,
         secretsFound,
-        paperworkPct: baseline.paperworkPct,
+        paperworkPct: m2.baseline.paperworkPct,
         viewsTracked,
         postStopMerges: scenarios.stop.postStopMerges,
         unauthorizedClaims: scenarios.stop.unauthorizedClaims,
@@ -137,23 +120,27 @@ export class M3ParallelBenchmarkRunner {
         scenariosPassed,
         scenariosTotal: scenarios.scenarios.length,
       });
+      if (!productExecuted) {
+        gate.exitCode = 1;
+        gate.reasons.push("productExecuted");
+        gate.detail.push("M3 exit gate did not execute the integrated packages");
+      }
       for (const line of [...db.detail, ...board.detail]) {
         if (!gate.detail.includes(line)) gate.detail.push(line);
       }
-      const hostElapsedMs = performance.now() - started;
       const report: M3ExitGateReport = {
         schema: "m3-exit-gate-report@1",
         mode: "ci-replay",
         signature: "",
-        m2: baseline,
+        m2: m2.baseline,
         m3: {
           totalWallClockSec: schedule.makespanSec,
           phase0Sec: schedule.phase0Sec,
           waveBuildSec: schedule.waveBuildSec,
           mergeQueueSec: schedule.mergeQueueSec,
           completionAuditSec: schedule.completionAuditSec,
-          totalTokens: baseline.totalTokens,
-          paperworkPct: baseline.paperworkPct,
+          totalTokens: m2.baseline.totalTokens,
+          paperworkPct: m2.baseline.paperworkPct,
           hiddenPassCount,
           hiddenTotalCount: checks.length,
           passRatePct: m3PassRate * 100,
@@ -183,8 +170,9 @@ export class M3ParallelBenchmarkRunner {
         checks,
         mergeCommits: merges.commits,
         gate,
-        claimedCertification: gate.exitCode === 0,
-        hostElapsedMs,
+        claimedCertification: gate.exitCode === 0 && productExecuted,
+        productExecuted,
+        hostElapsedMs: performance.now() - started,
       };
       report.signature = signReport(signingView(report));
       if (options?.outDir) {
@@ -212,6 +200,6 @@ export function runLiveCertification(env: NodeJS.ProcessEnv = process.env): Live
   return {
     ran: false,
     claimedCertification: false,
-    reason: "Live provider certification is not claimed on this base. Sibling M3 runtimes stay local ports until integration.",
+    reason: "Live provider certification is not claimed on this base. The ci-replay gate is the integrated M3 proof.",
   };
 }

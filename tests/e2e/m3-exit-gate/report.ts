@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { GateDecision, M3ExitGateReport } from "./types.ts";
+import type { GateDecision, M3ExitGateReport } from "./types.js";
 
 export const M3_EXIT_GATE_REPORT_SCHEMA = "m3-exit-gate-report@1" as const;
 

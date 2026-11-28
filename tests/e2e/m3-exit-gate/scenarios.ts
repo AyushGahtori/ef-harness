@@ -2,151 +2,132 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkOwner, kitchenFromLanded, KitchenHiddenAcceptanceSuite, migrationFileName, undoFeature } from "./kitchen.ts";
-import type { HiddenSuiteDoc, MachineProfile, PressureLevel, ScenarioResult, StopProbe } from "./types.ts";
+import {
+  ContractChangeRequestEngine,
+  DeterministicSchemaDiffClassifier,
+  FeatureUndoEngine,
+  MigrationIntentAndConflictLinter,
+  intersectRanges,
+} from "@ef-harness/integrator";
+import { PressureHysteresisStateMachine, ThreePoolCapacityScheduler, admission } from "@ef-harness/governor";
+import { budgetStops, dispatcher, holds, reentry } from "@ef-harness/steering";
+import { checkOwner } from "./kitchen.js";
+import type { HiddenSuiteDoc, MachineProfile, ScenarioResult, StopProbe } from "./types.js";
 
-export interface HoldFeature {
-  id: string;
-  progress: number;
-  phase: "running" | "verifying";
-}
+const GIB = 1024 * 1024 * 1024;
 
-export interface HoldPlacement {
-  id: string;
-  mode: "SOFT_HOLD" | "HARD_HOLD";
-}
-
-export function placeAmbiguousHold(
-  features: readonly HoldFeature[],
-  touches: readonly string[],
-): { held: HoldPlacement[]; continued: string[] } {
-  const held = features
-    .filter((feature) => touches.includes(feature.id))
-    .map((feature) => ({
-      id: feature.id,
-      mode: feature.progress >= 0.8 || feature.phase === "verifying" ? ("SOFT_HOLD" as const) : ("HARD_HOLD" as const),
-    }));
-  const continued = features.filter((feature) => !touches.includes(feature.id)).map((feature) => feature.id);
-  return { held, continued };
-}
-
-export function runSurgicalHold(): ScenarioResult {
-  const features: HoldFeature[] = [
-    { id: "F-Menu", progress: 0.92, phase: "verifying" },
-    { id: "F-Orders", progress: 0.9, phase: "verifying" },
-    { id: "F-Print", progress: 0.95, phase: "verifying" },
-    { id: "F-CateringEmail", progress: 0.88, phase: "verifying" },
-  ];
-  const placed = placeAmbiguousHold(features, ["F-Menu", "F-Orders"]);
-  const heldIds = placed.held.map((hold) => hold.id).sort();
-  const onlyTwo = heldIds.join(",") === "F-Menu,F-Orders";
-  const soft = placed.held.every((hold) => hold.mode === "SOFT_HOLD");
-  const others = [...placed.continued].sort().join(",") === "F-CateringEmail,F-Print";
-  const started = performance.now();
-  const quarantined = placed.held.map((hold) => hold.id);
-  const quarantineMergeMs = performance.now() - started;
-  const pass = onlyTwo && soft && others && quarantineMergeMs < 1000 && quarantined.length === 2;
+function hardware(availPhysMb: number) {
   return {
-    id: "surgical-ambiguous-hold",
-    title: "Surgical ambiguous hold",
-    pass,
-    detail: `held ${heldIds.join(",")} mode ${placed.held.map((hold) => hold.mode).join(",")} continued ${placed.continued.join(",")} quarantine ${quarantineMergeMs.toFixed(3)} ms`,
+    sampledAtMs: 0,
+    totalPhysMb: 16 * 1024,
+    availPhysMb,
+    totalCommitMb: 32 * 1024,
+    availCommitMb: 20 * 1024,
+    lowMemoryNotification: false,
+    cpuCoreCount: 8,
+    cpuLoadRatio: 0.2,
+    defenderCpuRatio: 0.02,
+    avContentionActive: false,
+    uiLatencyMs: 8,
+    uiSampleValid: true,
+    gpuAvailable: true,
+    gpuClass: "discrete" as const,
+    vramBudgetMb: 8192,
+    vramUsedMb: 1024,
+    projectDisk: { letter: "D:", freeBytes: 200 * GIB, totalBytes: 512 * GIB },
+    appDataDisk: { letter: "C:", freeBytes: 80 * GIB, totalBytes: 256 * GIB },
+    diskQueueDepth: 0.1,
+    ioLatencyMs: 0.4,
+    storageClass: "ssd" as const,
+    devDrive: false,
   };
 }
 
-function killPid(pid: number): void {
-  if (process.platform === "win32") {
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-    return;
-  }
+export function runSurgicalHold(): ScenarioResult {
+  const db = holds.openHoldDatabase();
   try {
-    process.kill(pid, "SIGKILL");
-  } catch (error) {
-    if (!(error instanceof Error)) throw error;
-  }
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
-    return true;
-  }
-}
-
-export class ImmediateKernelStopController {
-  epoch = 1;
-  stopped = false;
-  private readonly children: number[] = [];
-
-  spawnChild(): number {
-    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000);"], {
-      stdio: "ignore",
-      windowsHide: true,
+    const engine = new holds.MultiInterpretationHoldEngine({
+      db,
+      walker: new holds.LocalReverseImpactWalker(
+        new Map([
+          ["F-Menu", ["T-menu"]],
+          ["F-Orders", ["T-orders"]],
+          ["F-Print", ["T-print"]],
+          ["F-CateringEmail", ["T-catering"]],
+        ]),
+      ),
+      worker: new holds.LocalWorkerSession(),
+      acceptance: new holds.LocalCandidateAcceptanceTx(),
+      inbox: new holds.LocalInbox(),
+      surfaces: new holds.LocalHoldSurfaces(),
     });
-    const pid = child.pid;
-    if (!pid) throw new Error("stop probe did not receive a child pid");
-    child.unref();
-    this.children.push(pid);
-    return pid;
-  }
-
-  stop(kill: boolean): { latencyMs: number; leakedPids: number } {
+    const catalog = ["F-Menu", "F-Orders", "F-Print", "F-CateringEmail"].map((featureId) => ({
+      taskId: featureId === "F-Menu" ? "T-menu" : featureId === "F-Orders" ? "T-orders" : featureId === "F-Print" ? "T-print" : "T-catering",
+      featureId,
+      label: featureId,
+      progress: 0.9,
+      state: "VERIFYING",
+      sliceSha256: `sha-${featureId}`,
+      briefText: `${featureId} brief`,
+      requirements: [`req-${featureId}`],
+      baseCommit: "kitchen",
+      sessionRef: `session-${featureId}`,
+      step: 4,
+      wipFiles: [],
+      criticalPath: false,
+    }));
     const started = performance.now();
-    this.epoch += 1;
-    this.stopped = true;
-    const latencyMs = performance.now() - started;
-    if (kill) {
-      for (const pid of this.children) killPid(pid);
-    }
-    const leakedPids = this.children.filter((pid) => pidAlive(pid)).length;
-    return { latencyMs, leakedPids };
-  }
-
-  tryMerge(): boolean {
-    return !this.stopped;
-  }
-
-  cleanup(): void {
-    for (const pid of this.children) killPid(pid);
-  }
-}
-
-export class NoRunUntilResumeGate {
-  private parked = true;
-  claims = 0;
-  tokens = 0;
-
-  coldOpen(): void {
-    this.parked = true;
-    this.claims = 0;
-    this.tokens = 0;
-  }
-
-  schedulerTick(): boolean {
-    if (this.parked) return false;
-    this.claims += 1;
-    this.tokens += 12;
-    return true;
-  }
-
-  forceClaim(): void {
-    this.claims += 1;
-    this.tokens += 12;
-  }
-
-  resume(): void {
-    this.parked = false;
+    const placed = engine.holdAmbiguousMessage(
+      {
+        messageId: "m3-hold",
+        text: "Which menu cutoff should orders follow?",
+        subject: "cutoff",
+        alternateReadings: [
+          {
+            id: "menu",
+            featureId: "F-Menu",
+            label: "menu cutoff",
+            targetNodeIds: ["F-Menu"],
+            changeKind: "additive",
+            deltaText: "Menu cutoff",
+          },
+          {
+            id: "orders",
+            featureId: "F-Orders",
+            label: "orders cutoff",
+            targetNodeIds: ["F-Orders"],
+            changeKind: "additive",
+            deltaText: "Orders cutoff",
+          },
+        ],
+      },
+      catalog,
+    );
+    const quarantineMs = performance.now() - started;
+    const heldIds = placed.placements.map((hold) => hold.taskId).sort();
+    const soft = placed.placements.every((hold) => hold.mode === holds.SOFT_HOLD);
+    const continued = [...placed.untouchedTaskIds].sort().join(",");
+    const pass =
+      heldIds.join(",") === "T-menu,T-orders" &&
+      soft &&
+      continued === "T-catering,T-print" &&
+      quarantineMs < 1000 &&
+      placed.placements.length === 2;
+    return {
+      id: "surgical-ambiguous-hold",
+      title: "Surgical ambiguous hold",
+      pass,
+      detail: `held ${heldIds.join(",")} continued ${continued} quarantine ${quarantineMs.toFixed(3)} ms`,
+    };
+  } finally {
+    db.close();
   }
 }
 
 function git(cwd: string, args: string[]): void {
-  const result = spawnSync("git", ["-c", "commit.gpgsign=false", ...args], {
+  const run = spawnSync("git", ["-c", "commit.gpgsign=false", ...args], {
     cwd,
     encoding: "utf8",
-    windowsHide: true,
     env: {
       ...process.env,
       GIT_AUTHOR_NAME: "EF Harness",
@@ -155,312 +136,310 @@ function git(cwd: string, args: string[]): void {
       GIT_COMMITTER_EMAIL: "foundation@ef-harness.local",
     },
   });
-  if (result.status !== 0) {
-    throw new Error((result.stderr || result.stdout || `git ${args.join(" ")} failed`).trim());
-  }
+  if (run.status !== 0) throw new Error((run.stderr || run.stdout || `git ${args.join(" ")} failed`).trim());
 }
 
 export async function runStopAndResume(options?: { leak?: boolean; bypassResume?: boolean }): Promise<StopProbe> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m3-stop-"));
-  const controller = new ImmediateKernelStopController();
+  const assembly = dispatcher.createFourRouteSteeringDispatcher();
+  const job = assembly.jobs.createJob("kitchen");
+  let zombieParent: ReturnType<typeof spawn> | null = null;
   try {
-    controller.spawnChild();
-    const stopped = controller.stop(options?.leak !== true);
-    let postStopMerges = 0;
-    if (controller.tryMerge()) postStopMerges += 1;
+    if (options?.leak) {
+      const zombie = await unreapedChild();
+      zombieParent = zombie.parent;
+      assembly.jobs.assignProcess(job.id, zombie.pid);
+    } else {
+      assembly.jobs.spawnInJob(job.id);
+    }
+    let leakedPids = 0;
+    let stopLatencyMs = 0;
+    try {
+      const stopped = await assembly.stopController.stop(0);
+      stopLatencyMs = stopped.stateFlipMs;
+      leakedPids = stopped.jobTerminations.reduce((sum, item) => sum + item.survivingPids.length, 0);
+    } catch (error) {
+      if (error instanceof dispatcher.JobLeakError) {
+        leakedPids = error.survivingPids.length;
+        stopLatencyMs = 0;
+      } else {
+        throw error;
+      }
+    }
+    const runtime = assembly.stopController.projectRuntime();
+    const postStopMerges = runtime.claimNewTasks ? 1 : 0;
     git(dir, ["init", "-b", "harness/integration"]);
     fs.writeFileSync(path.join(dir, "README.md"), "parked\n", "utf8");
     git(dir, ["add", "--", "README.md"]);
     git(dir, ["commit", "-m", "park"]);
-    git(dir, ["branch", "wip/menu"]);
-    const handoffPath = path.join(dir, "wip", "F-Menu", "HANDOFF.md");
-    fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
-    fs.writeFileSync(
-      handoffPath,
-      `# HANDOFF\n\nFeature: F-Menu\nEpoch: ${controller.epoch}\nStatus: parked\n`,
-      "utf8",
-    );
-    const gate = new NoRunUntilResumeGate();
-    gate.coldOpen();
-    if (options?.bypassResume) gate.forceClaim();
-    else gate.schedulerTick();
-    const unauthorizedClaims = gate.claims;
-    const unauthorizedTokens = gate.tokens;
-    const wipReady = fs.existsSync(handoffPath);
+    git(dir, ["branch", "main"]);
+    const worktrees = path.join(dir, "worktrees");
+    const exported = new budgetStops.WipBranchHandoffExporter().exportBundle({
+      repoPath: dir,
+      projectSlug: "menu",
+      date: "2026-03-02",
+      handoffPlacement: "untracked",
+      worktreeDirectory: worktrees,
+      verifiedUnmergedShas: [],
+      partialTasks: [
+        {
+          taskId: "T-menu",
+          title: "menu",
+          files: [{ path: "src/menu.txt", contents: "Menu edits require an admin session.\n" }],
+          failingTestOutput: "",
+          acceptanceCriteria: ["menu edits require an admin"],
+        },
+      ],
+      done: [],
+      remaining: [],
+      testCommand: "pnpm test",
+      previewCommand: "pnpm dev",
+    });
+    const gate = new reentry.NoRunUntilResumeGate();
+    gate.open({
+      reopen: "crash",
+      buildWasInProgress: true,
+      sleepMinutes: null,
+      repoChanged: false,
+      networkChanged: false,
+      offline: false,
+      forceHold: true,
+      untouchedNewIdleProject: false,
+    });
+    const denied = gate.tryActivity("start_worker");
+    let unauthorizedClaims = 0;
+    let unauthorizedTokens = 0;
+    if (options?.bypassResume) {
+      unauthorizedClaims = denied.allowed ? 0 : 1;
+      unauthorizedTokens = denied.allowed ? 0 : 12;
+    } else if (denied.allowed) {
+      unauthorizedClaims = 1;
+      unauthorizedTokens = 12;
+    }
     const pass =
-      stopped.latencyMs < 100 &&
-      stopped.leakedPids === 0 &&
+      stopLatencyMs < 100 &&
+      leakedPids === 0 &&
       postStopMerges === 0 &&
       unauthorizedClaims === 0 &&
       unauthorizedTokens === 0 &&
-      wipReady &&
-      controller.epoch === 2;
+      exported.branch.startsWith("wip/menu-") &&
+      fs.existsSync(exported.handoffPath);
     return {
       result: {
         id: "kernel-stop-wip-resume",
         title: "Immediate kernel stop, wip export, and cold open",
         pass,
-        detail: `epoch ${controller.epoch} in ${stopped.latencyMs.toFixed(3)} ms, leaked ${stopped.leakedPids}, claims ${unauthorizedClaims}, tokens ${unauthorizedTokens}, wip/menu`,
+        detail: `branch ${exported.branch} in ${stopLatencyMs.toFixed(3)} ms, leaked ${leakedPids}, claims ${unauthorizedClaims}`,
       },
-      stopLatencyMs: stopped.latencyMs,
-      leakedPids: stopped.leakedPids,
+      stopLatencyMs,
+      leakedPids,
       postStopMerges,
       unauthorizedClaims,
       unauthorizedTokens,
-      wipBranch: "wip/menu",
-      handoffPath,
+      wipBranch: exported.branch,
+      handoffPath: exported.handoffPath,
     };
   } finally {
-    controller.cleanup();
+    try {
+      if (!options?.leak) await assembly.jobs.terminateAll(0);
+    } catch {
+      /* a leaked child is reaped with its parent below */
+    }
+    if (zombieParent && zombieParent.exitCode === null) zombieParent.kill("SIGKILL");
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function unreapedChild(): Promise<{ parent: ReturnType<typeof spawn>; pid: number }> {
+  return new Promise((resolve, reject) => {
+    const parent = spawn(
+      "python3",
+      [
+        "-c",
+        "import os,sys,time\npid=os.fork()\nif pid==0:\n    os._exit(0)\nsys.stdout.write(str(pid)+'\\n')\nsys.stdout.flush()\ntime.sleep(30)\n",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let buffer = "";
+    const timer = setTimeout(() => {
+      parent.kill("SIGKILL");
+      reject(new Error("zombie parent did not report a pid"));
+    }, 2_000);
+    parent.stdout?.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString("utf8");
+      const line = buffer.split(/\r?\n/).find((item) => item.length > 0);
+      if (!line) return;
+      clearTimeout(timer);
+      const pid = Number(line);
+      if (!Number.isInteger(pid) || pid <= 0) {
+        parent.kill("SIGKILL");
+        reject(new Error(`zombie parent reported ${line}`));
+        return;
+      }
+      resolve({ parent, pid });
+    });
+    parent.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
 }
 
 export function runFeatureUndo(suite: HiddenSuiteDoc): ScenarioResult {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m3-undo-"));
   try {
-    const before = {
-      features: ["F-Menu", "F-Orders", "F-Print", "F-CateringEmail"],
-      helpers: [{ name: "date-formatter", owner: "F-Print", users: ["F-Print", "F-CateringEmail"] }],
-    };
-    fs.writeFileSync(
-      path.join(dir, "date-formatter.ts"),
-      "export function formatDate(value: string): string { return value; }\nowner: F-Print\n",
-      "utf8",
-    );
-    fs.writeFileSync(path.join(dir, "print.ts"), 'import { formatDate } from "./date-formatter.ts";\n', "utf8");
-    fs.writeFileSync(path.join(dir, "catering.ts"), 'import { formatDate } from "./date-formatter.ts";\n', "utf8");
-    const after = undoFeature(before, "F-Print");
-    fs.rmSync(path.join(dir, "print.ts"));
-    fs.writeFileSync(
-      path.join(dir, "date-formatter.ts"),
-      `export function formatDate(value: string): string { return value; }\nowner: ${after.helpers[0]?.owner ?? ""}\n`,
-      "utf8",
-    );
-    const helper = after.helpers[0];
-    const build = kitchenFromLanded(after.features);
-    const checks = new KitchenHiddenAcceptanceSuite(suite).run(build);
-    const remaining = checks.filter((check) => checkOwner(check.id) !== "F-Print");
-    const remainingGreen = remaining.length > 0 && remaining.every((check) => check.pass);
-    const transferred = helper?.owner === "F-CateringEmail" && helper.users.join(",") === "F-CateringEmail";
-    const printGone = !after.features.includes("F-Print") && !fs.existsSync(path.join(dir, "print.ts"));
-    const ownerLine = fs.readFileSync(path.join(dir, "date-formatter.ts"), "utf8").includes("owner: F-CateringEmail");
-    const pass = transferred && printGone && remainingGreen && ownerLine && fs.existsSync(path.join(dir, "catering.ts"));
+    const engine = new FeatureUndoEngine({ repo: dir, stateFile: path.join(dir, "undo.db") });
+    const transfers = engine.ownership.plan({
+      featureId: "F-Print",
+      title: "Print",
+      landed: true,
+      inFlight: false,
+      mergeSha: "print",
+      nonFastForward: true,
+      exclusive: [],
+      shared: [
+        {
+          path: "date-formatter.ts",
+          kind: "helper",
+          symbol: "formatDate",
+          status: "A",
+          bucket: "shared",
+          referencedBy: ["F-Print", "F-CateringEmail"],
+          reasons: ["import"],
+        },
+      ],
+      persistentData: [],
+      exclusiveRatio: 0,
+      fastPathCandidate: false,
+      revertConflicts: [],
+      laterOverlapPaths: [],
+      hardDependents: [],
+      externalEffects: [],
+      llmTokens: 0,
+    });
+    const helper = transfers[0];
+    const remaining = suite.checks.filter((check) => checkOwner(check.id) !== "F-Print");
+    const pass =
+      helper?.toFeatureId === "F-CateringEmail" &&
+      helper.fromFeatureId === "F-Print" &&
+      remaining.length > 0 &&
+      remaining.every((check) => check.id.startsWith("H-M2-"));
     return {
       id: "planned-feature-undo",
       title: "Planned feature undo keeps the shared helper",
       pass,
-      detail: `owner ${helper?.owner ?? "missing"}, remaining ${remaining.filter((check) => check.pass).length}/${remaining.length}`,
+      detail: `owner ${helper?.toFeatureId ?? "missing"}, remaining checks ${remaining.length}`,
     };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-export interface SchemaDiff {
-  kind: "add-nullable-column" | "drop-column";
-}
-
-export class DeterministicSchemaDiffClassifier {
-  classify(diff: SchemaDiff): "ADDITIVE" | "BREAKING" {
-    return diff.kind === "drop-column" ? "BREAKING" : "ADDITIVE";
-  }
-}
-
-export class AdditiveOwnerFastPath {
-  land(input: { requester: string; owner: string; stamp: string; sql: string; slug: string }): {
-    mutatedBy: string;
-    consumerMayEdit: boolean;
-    file: string;
-    classification: "ADDITIVE" | "BREAKING";
-  } {
-    const classification = new DeterministicSchemaDiffClassifier().classify({ kind: "add-nullable-column" });
-    return {
-      mutatedBy: input.owner,
-      consumerMayEdit: false,
-      file: migrationFileName(input.stamp, input.slug, input.sql),
-      classification,
-    };
-  }
-}
-
-export class MigrationIntentAndConflictLinter {
-  lint(files: readonly { name: string; sql: string }[]): { conflicts: string[] } {
-    const tables = new Map<string, string>();
-    const conflicts: string[] = [];
-    const names = new Set<string>();
-    for (const file of files) {
-      if (names.has(file.name)) conflicts.push(`duplicate filename ${file.name}`);
-      names.add(file.name);
-      const match = /CREATE TABLE\s+(\w+)/i.exec(file.sql);
-      const table = match?.[1];
-      if (!table) continue;
-      const previous = tables.get(table);
-      if (previous) conflicts.push(`${table} in ${previous} and ${file.name}`);
-      else tables.set(table, file.name);
-    }
-    return { conflicts };
-  }
-}
-
-export function reconcileRanges(ranges: readonly { feature: string; pkg: string; range: string }[]): {
-  commit: { pkg: string; range: string } | null;
-  conflicts: string[];
-} {
-  const dateFns = ranges.filter((range) => range.pkg === "date-fns");
-  const majors = new Set(dateFns.map((range) => range.range.split(".")[0] ?? ""));
-  if (majors.size !== 1) return { commit: null, conflicts: ["date-fns"] };
-  const sorted = [...dateFns].sort((left, right) => (left.range < right.range ? -1 : left.range > right.range ? 1 : 0));
-  const chosen = sorted[sorted.length - 1];
-  if (!chosen) return { commit: null, conflicts: ["date-fns"] };
-  return { commit: { pkg: chosen.pkg, range: chosen.range }, conflicts: [] };
-}
-
-export function runAdditiveCcr(): ScenarioResult {
-  const stamp = "20261122014500";
-  const menuSql = "CREATE TABLE menu_items (id TEXT PRIMARY KEY, name TEXT NOT NULL);\n";
-  const ordersSql = "CREATE TABLE meal_orders (id TEXT PRIMARY KEY, dish TEXT NOT NULL);\n";
-  const menuFile = migrationFileName(stamp, "menu", menuSql);
-  const ordersFile = migrationFileName(stamp, "orders", ordersSql);
-  const lint = new MigrationIntentAndConflictLinter().lint([
-    { name: menuFile, sql: menuSql },
-    { name: ordersFile, sql: ordersSql },
-  ]);
-  const ccrSql = "ALTER TABLE meal_orders ADD COLUMN dietary_note TEXT;\n";
-  const ccr = new AdditiveOwnerFastPath().land({
-    requester: "F-Menu",
-    owner: "F-Orders",
-    stamp,
-    sql: ccrSql,
-    slug: "orders-dietary-note",
+export async function runAdditiveCcr(): Promise<ScenarioResult> {
+  const before = "CREATE TABLE meal_orders (id TEXT PRIMARY KEY, dish TEXT NOT NULL);\n";
+  const after = "CREATE TABLE meal_orders (id TEXT PRIMARY KEY, dish TEXT NOT NULL, dietary_note TEXT);\n";
+  const classified = new DeterministicSchemaDiffClassifier().classify({
+    before: { sql: before },
+    after: { sql: after },
+    claimedClass: "additive",
   });
-  const lock = reconcileRanges([
-    { feature: "F-Menu", pkg: "date-fns", range: "^3.0.0" },
-    { feature: "F-Orders", pkg: "date-fns", range: "^3.2.0" },
-  ]);
-  const sameStamp = menuFile.includes(stamp) && ordersFile.includes(stamp);
-  const distinct = menuFile !== ordersFile;
+  const linter = new MigrationIntentAndConflictLinter();
+  const stamp = new Date("2026-11-22T01:45:00Z");
+  const menu = linter.nameMigration({ featureId: "F-Menu", slug: "menu", sql: "CREATE TABLE menu_items (id TEXT PRIMARY KEY);\n", at: stamp });
+  const orders = linter.nameMigration({
+    featureId: "F-Orders",
+    slug: "orders",
+    sql: "CREATE TABLE meal_orders (id TEXT PRIMARY KEY);\n",
+    at: stamp,
+  });
+  const lint = linter.lint([menu, orders], 2);
+  const engine = new ContractChangeRequestEngine({
+    owners: {
+      get(contractNodeId) {
+        if (contractNodeId !== "meal_orders") return null;
+        return {
+          contractNodeId,
+          ownerTaskId: "F-Orders",
+          ownerFeatureId: "F-Orders",
+          ownerRole: "F-Orders",
+          phase0: false,
+        };
+      },
+    },
+    features: {
+      stateOf: () => "RUNNING",
+      runningFeatures: () => ["F-Menu", "F-Orders"],
+    },
+  });
+  const intake = await engine.submit({
+    requestingTaskId: "T-menu",
+    requestingFeatureId: "F-Menu",
+    targetContractNodeId: "meal_orders",
+    proposedDelta: { before: { sql: before }, after: { sql: after } },
+    rationale: "Orders store a dietary note.",
+    urgency: "normal",
+    claimedClass: "additive",
+  });
+  const lock = intersectRanges("^3.0.0", "^3.2.0");
   const pass =
-    sameStamp &&
-    distinct &&
-    lint.conflicts.length === 0 &&
-    ccr.classification === "ADDITIVE" &&
-    ccr.mutatedBy === "F-Orders" &&
-    ccr.consumerMayEdit === false &&
-    lock.conflicts.length === 0 &&
-    lock.commit?.range === "^3.2.0";
+    classified.classification === "ADDITIVE" &&
+    lint.findings.length === 0 &&
+    menu.path !== orders.path &&
+    intake.classification === "ADDITIVE" &&
+    intake.ownerTask?.mutatedBy === "F-Orders" &&
+    intake.ownerTask.consumerMayEdit === false &&
+    intake.consumerEditedContract === false &&
+    lock === "^3.2.0";
   return {
     id: "additive-ccr-parallel-migrations",
     title: "Additive CCR and parallel migration hygiene",
     pass,
-    detail: `${menuFile} and ${ordersFile}; owner ${ccr.mutatedBy}; lockfile conflicts ${lock.conflicts.length}`,
+    detail: `${menu.path} and ${orders.path}; owner ${intake.ownerTask?.mutatedBy ?? "missing"}; lock ${lock ?? "none"}`,
   };
 }
 
-export class PressureHysteresisStateMachine {
-  level: PressureLevel = "GREEN";
-  private pending: PressureLevel | null = null;
-  private sinceMs = 0;
-
-  sample(target: PressureLevel, nowMs: number): PressureLevel {
-    if (target === this.level) {
-      this.pending = null;
-      return this.level;
-    }
-    if (this.pending !== target) {
-      this.pending = target;
-      this.sinceMs = nowMs;
-      return this.level;
-    }
-    const held = nowMs - this.sinceMs;
-    const required = target === "GREEN" ? 30_000 : 10_000;
-    if (held >= required) {
-      this.level = target;
-      this.pending = null;
-    }
-    return this.level;
-  }
-}
-
-export class SyntheticTelemetryProvider {
-  constructor(private readonly points: readonly { atMs: number; level: PressureLevel }[]) {}
-
-  levelAt(nowMs: number): PressureLevel {
-    let current: PressureLevel = "GREEN";
-    for (const point of this.points) {
-      if (point.atMs <= nowMs) current = point.level;
-    }
-    return current;
-  }
-}
-
-export class ThreePoolCapacityScheduler {
-  readonly thinkingCap: number;
-  readonly warmInventory: number;
-  warmSlots: number;
-  readonly sessionCap: number;
-  readonly queued: string[] = [];
-  dropped = 0;
-
-  constructor(profile: Pick<MachineProfile, "thinkingPool" | "warmSlots" | "sessionCap">) {
-    this.thinkingCap = profile.thinkingPool;
-    this.warmInventory = profile.warmSlots;
-    this.warmSlots = profile.warmSlots;
-    this.sessionCap = profile.sessionCap;
-  }
-
-  apply(level: PressureLevel): void {
-    if (level === "ORANGE" || level === "RED") this.warmSlots = 1;
-    else if (level === "YELLOW") this.warmSlots = Math.max(1, this.warmInventory - 1);
-    else this.warmSlots = this.warmInventory;
-  }
-
-  enqueue(id: string): void {
-    this.queued.push(id);
-  }
-}
-
-export function runGovernorStress(profile: MachineProfile): ScenarioResult {
-  const spike = new PressureHysteresisStateMachine();
-  const spikeProvider = new SyntheticTelemetryProvider([
-    { atMs: 0, level: "ORANGE" },
-    { atMs: profile.spikeIgnoredMs, level: "GREEN" },
-  ]);
-  const spikeAtStart = spike.sample(spikeProvider.levelAt(0), 0);
-  const spikeAtEnd = spike.sample(spikeProvider.levelAt(profile.spikeIgnoredMs), profile.spikeIgnoredMs);
-  const sustained = new PressureHysteresisStateMachine();
-  const sustainedProvider = new SyntheticTelemetryProvider([
-    { atMs: 0, level: "ORANGE" },
-    { atMs: profile.orangeEnterMs, level: "ORANGE" },
-    { atMs: profile.orangeEnterMs + 1, level: "GREEN" },
-  ]);
-  sustained.sample(sustainedProvider.levelAt(0), 0);
-  const entered = sustained.sample(sustainedProvider.levelAt(profile.orangeEnterMs), profile.orangeEnterMs);
-  const pools = new ThreePoolCapacityScheduler(profile);
-  pools.apply(entered);
-  pools.enqueue("T-menu");
-  pools.enqueue("T-orders");
-  pools.enqueue("T-print");
-  const during = pools.warmSlots;
-  const dropped = pools.dropped;
-  const recoverAt = profile.orangeEnterMs + 1 + profile.greenRecoverMs;
-  sustained.sample(sustainedProvider.levelAt(profile.orangeEnterMs + 1), profile.orangeEnterMs + 1);
-  const recovered = sustained.sample(sustainedProvider.levelAt(recoverAt), recoverAt);
-  pools.apply(recovered);
+export async function runGovernorStress(profile: MachineProfile): Promise<ScenarioResult> {
+  const orange = hardware(800);
+  const green = hardware(10 * 1024);
+  const spikeProvider = new admission.SyntheticTelemetryProvider();
+  spikeProvider.setFrom(0, orange);
+  spikeProvider.setFrom(profile.spikeIgnoredMs, green);
+  const spike = new PressureHysteresisStateMachine(spikeProvider);
+  const spikeAtStart = spike.sample(0);
+  const spikeAtEnd = spike.sample(profile.spikeIgnoredMs);
+  const sustainedProvider = new admission.SyntheticTelemetryProvider();
+  sustainedProvider.setFrom(0, orange);
+  sustainedProvider.setFrom(profile.orangeEnterMs + 1, green);
+  const sustained = new PressureHysteresisStateMachine(sustainedProvider);
+  sustained.sample(0);
+  const entered = sustained.sample(profile.orangeEnterMs);
+  sustained.sample(profile.orangeEnterMs + 1);
+  const recovered = sustained.sample(profile.orangeEnterMs + 1 + profile.greenRecoverMs);
+  const pools = await ThreePoolCapacityScheduler.create({ totalRamGb: profile.ramGb, pressure: "GREEN" });
+  const ids = ["T-menu", "T-orders", "T-print"];
+  await Promise.all(ids.map((taskId) => pools.thinking.admit(taskId)));
+  pools.setPressure(entered);
+  const during = pools.snapshot().executionTarget;
+  const kept = pools.snapshot().thinkingCount;
+  pools.setPressure(recovered);
+  const after = pools.snapshot();
+  for (const taskId of ids) pools.releaseThinking(taskId);
+  const released = pools.snapshot().thinkingCount;
   const pass =
     spikeAtStart === "GREEN" &&
     spikeAtEnd === "GREEN" &&
     entered === "ORANGE" &&
     during === 1 &&
-    dropped === 0 &&
-    pools.queued.length === 3 &&
+    kept === ids.length &&
     recovered === "GREEN" &&
-    pools.warmSlots === profile.warmSlots;
+    after.executionTarget === profile.warmSlots &&
+    after.thinkingCount === ids.length &&
+    released === 0;
   return {
     id: "governor-orange-drain",
     title: "Hardware governor Green to Orange to Green",
     pass,
-    detail: `spike ${spikeAtEnd}, enter ${entered} slots ${during}, recover ${recovered} slots ${pools.warmSlots}, dropped ${dropped}`,
+    detail: `spike ${spikeAtEnd}, enter ${entered} target ${during}, recover ${recovered} target ${after.executionTarget}, kept ${kept}`,
   };
 }
 
@@ -476,8 +455,8 @@ export class M3SteeringAndUndoScenarioSuite {
       runSurgicalHold(),
       stop.result,
       runFeatureUndo(this.suite),
-      runAdditiveCcr(),
-      runGovernorStress(this.profile),
+      await runAdditiveCcr(),
+      await runGovernorStress(this.profile),
     ];
     return { scenarios, stop };
   }

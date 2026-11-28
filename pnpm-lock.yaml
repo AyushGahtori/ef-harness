@@ -1059,6 +1059,9 @@ importers:
       '@ef-harness/git-engine':
         specifier: workspace:*
         version: link:../../packages/git-engine
+      '@ef-harness/governor':
+        specifier: workspace:*
+        version: link:../../packages/governor
       '@ef-harness/intake':
         specifier: workspace:*
         version: link:../../packages/intake
@@ -1074,6 +1077,9 @@ importers:
       '@ef-harness/planner':
         specifier: workspace:*
         version: link:../../packages/planner
+      '@ef-harness/renderer':
+        specifier: workspace:*
+        version: link:../../apps/renderer
       '@ef-harness/research-engine':
         specifier: workspace:*
         version: link:../../packages/research-engine
@@ -1089,6 +1095,9 @@ importers:
       '@ef-harness/spec-expansion':
         specifier: workspace:*
         version: link:../../packages/spec-expansion
+      '@ef-harness/steering':
+        specifier: workspace:*
+        version: link:../../packages/steering
       '@ef-harness/test-env':
         specifier: workspace:*
         version: link:../../packages/test-env

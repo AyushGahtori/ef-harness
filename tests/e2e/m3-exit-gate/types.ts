@@ -246,6 +246,7 @@ export interface M3ExitGateReport {
   mergeCommits: MergeCommitRecord[];
   gate: GateDecision;
   claimedCertification: boolean;
+  productExecuted: boolean;
   hostElapsedMs: number;
 }
 

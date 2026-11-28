@@ -23,6 +23,14 @@ export type {
 } from "./m1-viewer/index.js";
 export * from "./presets/index.js";
 export * from "./shell/index.js";
+export { BoardCockpitView } from "./cockpit/board/index.js";
+export type {
+  BoardHealthSignalPort,
+  BoardQuickActionPort,
+  BoardTaskRecord,
+  ThreePoolCapacitySnapshot,
+  WorkerInspectorPort,
+} from "./cockpit/board/index.js";
 export { WelcomeBackScreen, renderWelcomeBack } from "./cockpit/welcome-back/index.js";
 export { DiagnosticsHealthView, renderHealthDocument } from "./diagnostics/index.js";
 export { diagnosticsHealthSlot } from "./diagnostics/mount.js";

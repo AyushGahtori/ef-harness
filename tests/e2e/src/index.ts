@@ -43,3 +43,9 @@ export type {
   SuiteTarget,
   TokenSplit,
 } from "../m2-exit-gate/types.js";
+export {
+  M3ParallelBenchmarkRunner,
+  M3ScaleAndLatencyCertifier,
+  M3SteeringAndUndoScenarioSuite,
+} from "../m3-exit-gate/index.js";
+export { M3_EXIT_GATE_REPORT_SCHEMA } from "../m3-exit-gate/report.js";

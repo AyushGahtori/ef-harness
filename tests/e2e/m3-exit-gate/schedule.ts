@@ -1,190 +1,158 @@
-import type { Assignment, MachineProfile, PressureLevel, ScheduleResult, WorkGraph, WorkTask } from "./types.ts";
+import {
+  DynamicScheduleRebalancer,
+  HeftCriticalPathScheduler,
+  createScheduleState,
+  projectSchedule,
+  projectWithSpeedup,
+} from "@ef-harness/planner";
+import type { LiveScheduleState, ScheduleGraph, ScheduleTask } from "@ef-harness/planner";
+import type { Assignment, MachineProfile, ScheduleResult, WorkGraph, WorkTask } from "./types.js";
 
-export interface WidthInput {
-  dagDisjointWidth: number;
-  hardwarePoolCap: number;
-  providerPacingCap: number;
-  worktreeSlotCap: number;
-  userPresetCap: number;
-  governor: PressureLevel;
+const MS_PER_SEC = 1000;
+
+function slugFor(feature: string): string {
+  const bare = feature.startsWith("F-") ? feature.slice(2) : feature;
+  return bare
+    .replace(/[A-Z]/g, (char, index: number) => (index === 0 ? char.toLowerCase() : `-${char.toLowerCase()}`))
+    .toLowerCase();
 }
 
-export class WaveParallelismCalculator {
-  effective(input: WidthInput): number {
-    const hardware =
-      input.governor === "ORANGE" || input.governor === "RED" ? Math.min(input.hardwarePoolCap, 1) : input.hardwarePoolCap;
-    const width = Math.min(
-      input.dagDisjointWidth,
-      hardware,
-      input.providerPacingCap,
-      input.worktreeSlotCap,
-      input.userPresetCap,
-    );
-    return Math.max(1, Math.floor(width));
-  }
+function execMs(task: WorkTask): number {
+  const ms = Math.round(task.avgExecSec * MS_PER_SEC);
+  if (!Number.isInteger(ms) || ms < 1) throw new Error(`${task.id} has no positive exec time`);
+  return ms;
 }
 
-export function dagDisjointWidth(tasks: readonly WorkTask[]): number {
-  const builds = tasks.filter((task) => task.kind === "model" && task.phase === "wave");
-  return Math.max(1, builds.length);
-}
-
-function successorMap(tasks: readonly WorkTask[]): Map<string, string[]> {
-  const succs = new Map<string, string[]>();
-  for (const task of tasks) {
+export function toScheduleGraph(graph: WorkGraph): ScheduleGraph {
+  const successors = new Map<string, { to: string; commDelayMs: number }[]>();
+  for (const task of graph.tasks) successors.set(task.id, []);
+  for (const task of graph.tasks) {
     for (const dep of task.deps) {
-      const list = succs.get(dep) ?? [];
-      list.push(task.id);
-      succs.set(dep, list);
+      const edges = successors.get(dep);
+      if (!edges) throw new Error(`${task.id} depends on missing ${dep}`);
+      edges.push({ to: task.id, commDelayMs: 0 });
     }
   }
-  return succs;
-}
-
-function upwardRank(tasks: readonly WorkTask[]): Map<string, number> {
-  const byId = new Map(tasks.map((task) => [task.id, task]));
-  const succs = successorMap(tasks);
-  const memo = new Map<string, number>();
-  const visiting = new Set<string>();
-  const rankOf = (id: string): number => {
-    const cached = memo.get(id);
-    if (cached !== undefined) return cached;
-    if (visiting.has(id)) throw new Error(`cycle at ${id}`);
-    visiting.add(id);
-    const task = byId.get(id);
-    if (!task) throw new Error(`missing task ${id}`);
-    let best = 0;
-    for (const succ of succs.get(id) ?? []) {
-      const commDelaySec = 0;
-      best = Math.max(best, commDelaySec + rankOf(succ));
-    }
-    visiting.delete(id);
-    const value = task.avgExecSec + best;
-    memo.set(id, value);
-    return value;
-  };
-  for (const task of tasks) rankOf(task.id);
-  return memo;
-}
-
-function depFinish(task: WorkTask, finish: ReadonlyMap<string, number>): number {
-  let max = 0;
-  for (const dep of task.deps) max = Math.max(max, finish.get(dep) ?? 0);
-  return max;
-}
-
-function earliestWorker(free: readonly number[]): { index: number; at: number } {
-  let index = 0;
-  let at = free[0] ?? 0;
-  for (let i = 1; i < free.length; i += 1) {
-    const candidate = free[i] ?? 0;
-    if (candidate < at) {
-      index = i;
-      at = candidate;
-    }
-  }
-  return { index, at };
-}
-
-function phaseSpan(tasks: readonly WorkTask[], assignments: readonly Assignment[], phase: WorkTask["phase"]): number {
-  const ids = new Set(tasks.filter((task) => task.phase === phase).map((task) => task.id));
-  const rows = assignments.filter((row) => ids.has(row.id));
-  if (rows.length === 0) return 0;
-  let start = rows[0]?.startSec ?? 0;
-  let end = rows[0]?.finishSec ?? 0;
-  for (const row of rows) {
-    start = Math.min(start, row.startSec);
-    end = Math.max(end, row.finishSec);
-  }
-  return end - start;
-}
-
-export class HeftCriticalPathScheduler {
-  schedule(graph: WorkGraph, profile: MachineProfile, governor: PressureLevel = "GREEN"): ScheduleResult {
-    const width = new WaveParallelismCalculator().effective({
-      dagDisjointWidth: dagDisjointWidth(graph.tasks),
-      hardwarePoolCap: profile.thinkingPool,
-      providerPacingCap: profile.pacingCap,
-      worktreeSlotCap: profile.worktreeSlots,
-      userPresetCap: profile.presetCap,
-      governor,
-    });
-    const scheduled = this.scheduleOn(graph, width);
-    return { ...scheduled, preset: profile.preset };
-  }
-
-  scheduleOn(graph: WorkGraph, workers: number): ScheduleResult {
-    if (workers < 1) throw new Error("worker cap must be at least 1");
-    const tasks = graph.tasks;
-    const byId = new Map(tasks.map((task) => [task.id, task]));
-    const rank = upwardRank(tasks);
-    const succs = successorMap(tasks);
-    const indeg = new Map(tasks.map((task) => [task.id, task.deps.length]));
-    const ready = tasks.filter((task) => task.deps.length === 0).map((task) => task.id);
-    const finish = new Map<string, number>();
-    const workerFree = Array.from({ length: workers }, () => 0);
-    let integratorFree = 0;
-    const assignments: Assignment[] = [];
-    let guard = 0;
-    while (ready.length > 0) {
-      guard += 1;
-      if (guard > tasks.length + 1) throw new Error("schedule did not finish");
-      ready.sort((left, right) => {
-        const delta = (rank.get(right) ?? 0) - (rank.get(left) ?? 0);
-        if (delta !== 0) return delta;
-        return left < right ? -1 : left > right ? 1 : 0;
-      });
-      const id = ready.shift();
-      if (!id) break;
-      const task = byId.get(id);
-      if (!task) throw new Error(`missing task ${id}`);
-      const readyAt = depFinish(task, finish);
-      let start = readyAt;
-      let worker = "w0";
-      if (task.kind === "merge") {
-        start = Math.max(readyAt, integratorFree);
-        integratorFree = start + task.avgExecSec;
-        worker = "integrator";
-      } else {
-        const slot = earliestWorker(workerFree);
-        start = Math.max(readyAt, slot.at);
-        workerFree[slot.index] = start + task.avgExecSec;
-        worker = `w${slot.index}`;
-      }
-      const end = start + task.avgExecSec;
-      finish.set(id, end);
-      assignments.push({ id, startSec: start, finishSec: end, worker });
-      for (const succ of succs.get(id) ?? []) {
-        const next = (indeg.get(succ) ?? 1) - 1;
-        indeg.set(succ, next);
-        if (next === 0) ready.push(succ);
-      }
-    }
-    if (finish.size !== tasks.length) throw new Error("schedule missed a task");
-    let makespanSec = 0;
-    for (const value of finish.values()) makespanSec = Math.max(makespanSec, value);
-    const sequentialSec = tasks.reduce((sum, task) => sum + task.avgExecSec, 0);
+  const tasks: ScheduleTask[] = graph.tasks.map((task) => {
+    const slug = slugFor(task.feature);
+    const writeScope = task.kind === "merge" ? ["integration/queue"] : [`${slug}/${task.id}`];
     return {
-      makespanSec,
-      sequentialSec,
-      phase0Sec: phaseSpan(tasks, assignments, "phase0"),
-      waveBuildSec: phaseSpan(tasks, assignments, "wave"),
-      mergeQueueSec: phaseSpan(tasks, assignments, "merge"),
-      completionAuditSec: phaseSpan(tasks, assignments, "audit"),
-      wEff: workers,
-      preset: "Balanced",
-      assignments,
+      id: task.id,
+      featureId: task.feature,
+      featureSlug: slug,
+      waveIndex: task.phase === "phase0" ? 0 : task.phase === "wave" ? 1 : task.phase === "merge" ? 2 : 3,
+      writeScope,
+      avgExecTimeMs: execMs(task),
+      successors: successors.get(task.id) ?? [],
+      explicit: true,
+      optionalPolish: false,
+      difficulty: "standard",
+      riskTags: [],
+      role: null,
+      hintStep: 0,
+      briefVersion: 1,
+      baseCommit: "kitchen",
     };
-  }
+  });
+  return { tasks };
 }
 
-export class DynamicScheduleRebalancer {
-  withRetry(graph: WorkGraph, profile: MachineProfile, taskId: string, extraSec: number): ScheduleResult {
-    const tasks = graph.tasks.map((task) =>
-      task.id === taskId ? { ...task, avgExecSec: task.avgExecSec + extraSec } : task,
-    );
-    return new HeftCriticalPathScheduler().schedule({ ...graph, tasks }, profile);
-  }
+function kitchenState(graph: WorkGraph, profile: MachineProfile, workers?: number): LiveScheduleState {
+  return createScheduleState({
+    graph: toScheduleGraph(graph),
+    preset: profile.preset,
+    hardwarePoolCap: profile.thinkingPool,
+    worktreeSlotCap: profile.worktreeSlots,
+    governorPressure: "GREEN",
+    ...(workers === undefined ? {} : { developerMax: workers }),
+  });
+}
+
+function projectOf(state: LiveScheduleState, workers?: number) {
+  if (workers === undefined) return projectWithSpeedup(state);
+  return projectSchedule(state, { policy: "heft", workerCap: workers });
+}
+
+function toResult(graph: WorkGraph, state: LiveScheduleState, workers: number | undefined, preset: MachineProfile["preset"]): ScheduleResult {
+  const projection = projectOf(state, workers);
+  const kind = new Map(graph.tasks.map((task) => [task.id, task.kind]));
+  const phase = new Map(graph.tasks.map((task) => [task.id, task.phase]));
+  const assignments: Assignment[] = projection.placements.map((placement) => ({
+    id: placement.taskId,
+    startSec: placement.startMs / MS_PER_SEC,
+    finishSec: placement.endMs / MS_PER_SEC,
+    worker: kind.get(placement.taskId) === "merge" ? "integrator" : placement.featureId,
+  }));
+  const span = (name: WorkTask["phase"]): number => {
+    const rows = assignments.filter((row) => phase.get(row.id) === name);
+    if (rows.length === 0) return 0;
+    let start = rows[0]?.startSec ?? 0;
+    let end = rows[0]?.finishSec ?? 0;
+    for (const row of rows) {
+      start = Math.min(start, row.startSec);
+      end = Math.max(end, row.finishSec);
+    }
+    return end - start;
+  };
+  const scheduler = new HeftCriticalPathScheduler();
+  const decided = scheduler.schedule(workers === undefined ? state : { ...state, developerMax: workers });
+  return {
+    makespanSec: projection.parallelMinutes * 60,
+    sequentialSec: (workers === undefined ? projection.sequentialMinutes : projection.parallelMinutes) * 60,
+    phase0Sec: span("phase0"),
+    waveBuildSec: span("wave"),
+    mergeQueueSec: span("merge"),
+    completionAuditSec: span("audit"),
+    wEff: workers ?? decided.parallelism.wEff,
+    preset,
+    assignments,
+  };
+}
+
+export function scheduleKitchen(graph: WorkGraph, profile: MachineProfile): ScheduleResult {
+  const state = kitchenState(graph, profile);
+  return toResult(graph, state, undefined, profile.preset);
+}
+
+export function scheduleKitchenOn(graph: WorkGraph, workers: number): ScheduleResult {
+  if (workers < 1) throw new Error("worker cap must be at least 1");
+  const state = kitchenState(graph, {
+    schema: "inline",
+    ramGb: 64,
+    thinkingPool: workers,
+    warmSlots: 1,
+    sessionCap: workers,
+    pacingCap: workers,
+    worktreeSlots: workers,
+    preset: "Balanced",
+    presetCap: workers,
+    orangeEnterMs: 10_000,
+    greenRecoverMs: 30_000,
+    spikeIgnoredMs: 3_000,
+  }, workers);
+  return toResult(graph, state, workers, "Balanced");
+}
+
+export function scheduleWithRetry(graph: WorkGraph, profile: MachineProfile, taskId: string, extraSec: number): ScheduleResult {
+  const state = kitchenState(graph, profile);
+  const task = graph.tasks.find((item) => item.id === taskId);
+  if (!task) throw new Error(`schedule is missing ${taskId}`);
+  const rebalancer = new DynamicScheduleRebalancer();
+  const rebalanced = rebalancer.rebalance(state, {
+    type: "retry_escalation",
+    taskId,
+    hintStep: 1,
+    execTimeMs: execMs(task) + Math.round(extraSec * MS_PER_SEC),
+    nowMs: state.nowMs,
+  });
+  const cleared: LiveScheduleState = { ...rebalanced.state, inFlight: [], completedTaskIds: [] };
+  return toResult(graph, cleared, undefined, profile.preset);
+}
+
+export function finishOf(schedule: ScheduleResult, id: string): number {
+  const row = schedule.assignments.find((item) => item.id === id);
+  if (!row) throw new Error(`schedule is missing ${id}`);
+  return row.finishSec;
 }
 
 export function speedupAgainst(baselineSec: number, makespanSec: number): number {

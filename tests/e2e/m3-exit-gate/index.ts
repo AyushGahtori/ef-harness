@@ -1,23 +1,26 @@
-export { loadM3Fixtures } from "./fixtures.ts";
-export {
-  KitchenHiddenAcceptanceSuite,
-  M2KitchenE2eBenchmarkRunner,
-  WindowsDpapiSecretsVault,
-} from "./kitchen.ts";
-export { MergeBatchBisector, ProjectMergeQueue } from "./merge-queue.ts";
-export { M3_EXIT_GATE_REPORT_SCHEMA, evaluateM3ExitGate, renderScorecard } from "./report.ts";
-export { M3ParallelBenchmarkRunner, runLiveCertification } from "./runner.ts";
-export { BoardCockpitView, M3ScaleAndLatencyCertifier } from "./scale.ts";
-export {
-  AdditiveOwnerFastPath,
-  DeterministicSchemaDiffClassifier,
-  ImmediateKernelStopController,
-  M3SteeringAndUndoScenarioSuite,
-  MigrationIntentAndConflictLinter,
-  NoRunUntilResumeGate,
-  PressureHysteresisStateMachine,
-  SyntheticTelemetryProvider,
-  ThreePoolCapacityScheduler,
-} from "./scenarios.ts";
-export { DynamicScheduleRebalancer, HeftCriticalPathScheduler, WaveParallelismCalculator } from "./schedule.ts";
-export type { LiveCertification, M3ExitGateReport } from "./types.ts";
+export { harnessRoot, loadM3Fixtures } from "./fixtures.js";
+export { checkOwner, plantNeedle, promptsLeakHidden, scanTreeForSecrets, secretNeedles } from "./kitchen.js";
+export { bisectHalves, landFeatures, trackedViews } from "./merge-queue.js";
+export { evaluateM3ExitGate, M3_EXIT_GATE_REPORT_SCHEMA, renderScorecard, signReport } from "./report.js";
+export { M3ParallelBenchmarkRunner, runLiveCertification } from "./runner.js";
+export { M3ScaleAndLatencyCertifier, certifyBoard, certifyInjectedBoard, certifyInjectedDb, storeWithRealVault } from "./scale.js";
+export { M3SteeringAndUndoScenarioSuite, runAdditiveCcr, runFeatureUndo, runGovernorStress, runStopAndResume, runSurgicalHold } from "./scenarios.js";
+export { mergesOverlap, scheduleKitchen, scheduleKitchenOn, scheduleWithRetry, speedupAgainst } from "./schedule.js";
+export type {
+  BaselineMetrics,
+  BoardCertificate,
+  DbCertificate,
+  HiddenSuiteDoc,
+  LatencyCurve,
+  LiveCertification,
+  M3ExitGateReport,
+  M3RunSlice,
+  MachineProfile,
+  MergeCommitRecord,
+  MergeReport,
+  QueueFeature,
+  ScenarioResult,
+  ScheduleResult,
+  StopProbe,
+  WorkGraph,
+} from "./types.js";

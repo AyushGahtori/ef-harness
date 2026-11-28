@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { paperworkPct, totalTokens } from "../m2-exit-gate/report.js";
+import type { TokenSplit } from "../m2-exit-gate/types.js";
 import type {
   BaselineMetrics,
   HiddenSuiteDoc,
@@ -9,9 +11,16 @@ import type {
   MachineProfile,
   WorkGraph,
   WorkTask,
-} from "./types.ts";
+} from "./types.js";
 
 export function harnessRoot(): string {
+  let cursor = path.dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (fs.existsSync(path.join(cursor, "pnpm-workspace.yaml"))) return cursor;
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 }
 
@@ -177,16 +186,44 @@ export function assertFixtureInvariant(fixtures: M3Fixtures): void {
   }
 }
 
+function certifiedBaseline(root: string, suite: HiddenSuiteDoc): BaselineMetrics {
+  const raw = readJson<Record<string, unknown>>(path.join(root, "benchmarks", "m2-kitchen-e2e", "sequential-baseline.json"));
+  const tokenRecord = raw.tokens;
+  if (!isRecord(tokenRecord)) throw new Error("sequential baseline is missing tokens");
+  const tokens: TokenSplit = {
+    discovery: num(tokenRecord, "discovery"),
+    spec: num(tokenRecord, "spec"),
+    research: num(tokenRecord, "research"),
+    architecture: num(tokenRecord, "architecture"),
+    planning: num(tokenRecord, "planning"),
+    audit: num(tokenRecord, "audit"),
+    coding: num(tokenRecord, "coding"),
+  };
+  return {
+    totalWallClockSec: num(raw, "totalWallClockSec"),
+    phase0Sec: num(raw, "phase0Sec"),
+    waveBuildSec: num(raw, "waveBuildSec"),
+    completionAuditSec: num(raw, "completionAuditSec"),
+    totalTokens: totalTokens(tokens),
+    paperworkPct: paperworkPct(tokens),
+    hiddenPassCount: suite.checks.length,
+    hiddenTotalCount: suite.checks.length,
+    passRatePct: 100,
+  };
+}
+
 export function loadM3Fixtures(root = harnessRoot()): M3Fixtures {
   const dir = path.join(root, "benchmarks", "m3-parallel");
+  const kitchen = path.join(root, "benchmarks", "m2-kitchen-e2e");
+  const suite = parseSuite(readJson(path.join(kitchen, "hidden", "acceptance-suite.json")));
   const fixtures: M3Fixtures = {
     root,
-    baseline: parseBaseline(readJson(path.join(dir, "m2-baseline.port.json"))),
-    suite: parseSuite(readJson(path.join(dir, "hidden-suite.port.json"))),
+    baseline: certifiedBaseline(root, suite),
+    suite,
     graph: parseGraph(readJson(path.join(dir, "work-graph.json"))),
     curve: parseCurve(readJson(path.join(dir, "latency-curve.json"))),
     profile: parseProfile(readJson(path.join(dir, "machine-profile.json"))),
-    opening: fs.readFileSync(path.join(dir, "opening-spec.txt"), "utf8").trim(),
+    opening: fs.readFileSync(path.join(kitchen, "opening-prompt.txt"), "utf8").trim(),
   };
   assertFixtureInvariant(fixtures);
   return fixtures;

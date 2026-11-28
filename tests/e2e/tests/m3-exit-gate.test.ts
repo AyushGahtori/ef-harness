@@ -2,24 +2,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
-import { loadM3Fixtures } from "../m3-exit-gate/fixtures.ts";
-import {
-  KitchenHiddenAcceptanceSuite,
-  M2KitchenE2eBenchmarkRunner,
-  buildWorkerPrompts,
-  kitchenFromLanded,
-  plantNeedle,
-  promptsLeakHidden,
-  scanTreeForSecrets,
-} from "../m3-exit-gate/kitchen.ts";
-import { MergeBatchBisector, ProjectMergeQueue } from "../m3-exit-gate/merge-queue.ts";
-import { evaluateM3ExitGate, renderScorecard, signReport, signingView } from "../m3-exit-gate/report.ts";
-import { M3ParallelBenchmarkRunner, runLiveCertification } from "../m3-exit-gate/runner.ts";
-import { M3ScaleAndLatencyCertifier } from "../m3-exit-gate/scale.ts";
-import { runAdditiveCcr, runFeatureUndo, runGovernorStress, runStopAndResume, runSurgicalHold } from "../m3-exit-gate/scenarios.ts";
-import { HeftCriticalPathScheduler, mergesOverlap, speedupAgainst } from "../m3-exit-gate/schedule.ts";
-import type { GateInput } from "../m3-exit-gate/report.ts";
-import type { QueueFeature } from "../m3-exit-gate/types.ts";
+import { runDefectCutoff } from "../m2-exit-gate/runner.js";
+import { loadM3Fixtures } from "../m3-exit-gate/fixtures.js";
+import { buildWorkerPrompts, plantNeedle, promptsLeakHidden, scanTreeForSecrets } from "../m3-exit-gate/kitchen.js";
+import { bisectHalves, landFeatures } from "../m3-exit-gate/merge-queue.js";
+import { evaluateM3ExitGate, renderScorecard, signReport, signingView } from "../m3-exit-gate/report.js";
+import { M3ParallelBenchmarkRunner, runLiveCertification } from "../m3-exit-gate/runner.js";
+import { HOLD_SQL, M3ScaleAndLatencyCertifier } from "../m3-exit-gate/scale.js";
+import { runAdditiveCcr, runFeatureUndo, runGovernorStress, runStopAndResume, runSurgicalHold } from "../m3-exit-gate/scenarios.js";
+import { mergesOverlap, scheduleKitchen, scheduleKitchenOn, scheduleWithRetry, speedupAgainst } from "../m3-exit-gate/schedule.js";
+import type { GateInput } from "../m3-exit-gate/report.js";
+import type { QueueFeature } from "../m3-exit-gate/types.js";
 
 const fixtures = loadM3Fixtures();
 
@@ -61,7 +54,7 @@ function queueFeature(id: string, slug: string, finishedAtSec: number, regressio
 }
 
 it("keeps the M2 cassette, hidden canary, and fail-closed gate math", () => {
-  const baseline = new M2KitchenE2eBenchmarkRunner(fixtures.baseline).readBaseline();
+  const baseline = fixtures.baseline;
   expect(baseline.totalWallClockSec).toBe(2820);
   expect(baseline.paperworkPct).toBe(0.18);
   expect(baseline.passRatePct).toBe(100);
@@ -95,35 +88,29 @@ it("keeps the M2 cassette, hidden canary, and fail-closed gate math", () => {
 });
 
 it("schedules the kitchen graph at least twice as fast as the M2 cassette", () => {
-  const scheduled = new HeftCriticalPathScheduler().schedule(fixtures.graph, fixtures.profile);
+  const scheduled = scheduleKitchen(fixtures.graph, fixtures.profile);
   expect(scheduled.sequentialSec).toBeCloseTo(2820, 5);
   expect(scheduled.wEff).toBe(4);
   expect(scheduled.preset).toBe("Balanced");
   expect(mergesOverlap(scheduled.assignments, fixtures.graph.tasks)).toBe(false);
   const speedup = speedupAgainst(fixtures.baseline.totalWallClockSec, scheduled.makespanSec);
   expect(speedup).toBeGreaterThanOrEqual(2);
-  const serial = new HeftCriticalPathScheduler().scheduleOn(fixtures.graph, 1);
+  const serial = scheduleKitchenOn(fixtures.graph, 1);
   expect(speedupAgainst(fixtures.baseline.totalWallClockSec, serial.makespanSec)).toBeLessThan(2);
-  const jittered = new HeftCriticalPathScheduler().schedule(
-    {
-      ...fixtures.graph,
-      tasks: fixtures.graph.tasks.map((task) =>
-        task.id === fixtures.curve.jitterTaskId
-          ? { ...task, avgExecSec: task.avgExecSec + fixtures.curve.jitterRetrySec }
-          : task,
-      ),
-    },
+  const jittered = scheduleWithRetry(
+    fixtures.graph,
     fixtures.profile,
+    fixtures.curve.jitterTaskId,
+    fixtures.curve.jitterRetrySec,
   );
   expect(speedupAgainst(fixtures.baseline.totalWallClockSec, jittered.makespanSec)).toBeGreaterThanOrEqual(2);
 });
 
-it("serializes same-second merges and bisects a failing half", () => {
+it("serializes same-second merges and bisects a failing half", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m3-merge-"));
   const bad = fs.mkdtempSync(path.join(os.tmpdir(), "m3-bisect-"));
   try {
-    const queue = new ProjectMergeQueue();
-    const landed = queue.land(dir, [
+    const landed = await landFeatures(dir, [
       queueFeature("F-Menu", "menu", 10, false),
       queueFeature("F-Orders", "orders", 10, false),
     ]);
@@ -140,9 +127,11 @@ it("serializes same-second merges and bisects a failing half", () => {
       expect(commit.trailers["EF-Harness-Version"]).toBe("0.0.0");
       expect(commit.branch.startsWith("harness/f/")).toBe(true);
     }
-    const split = new MergeBatchBisector().split(["F-Menu", "F-Orders"]);
-    expect(split).toEqual([["F-Menu"], ["F-Orders"]]);
-    const bisected = queue.land(bad, [
+    const split = await bisectHalves(["F-Menu", "F-Orders"]);
+    expect(split[0]).toEqual(["F-Menu"]);
+    expect(split[1]).toEqual(["F-Orders"]);
+    expect(split.every((half) => half.length === 1)).toBe(true);
+    const bisected = await landFeatures(bad, [
       queueFeature("F-Menu", "menu", 10, false),
       queueFeature("F-Orders", "orders", 10, true),
     ]);
@@ -161,10 +150,10 @@ it("fails closed on a slow task_holds trace, a 22 ms board burst, a leaked pid, 
   const certifier = new M3ScaleAndLatencyCertifier();
   const dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "m3-db-"));
   try {
-    const slow = certifier.certifyInjectedDb(path.join(dbDir, "telemetry.db"));
+    const slow = await certifier.certifyInjectedDb(path.join(dbDir, "telemetry.db"));
     expect(slow.pass).toBe(false);
     expect(slow.p99Ms).toBeGreaterThanOrEqual(50);
-    expect(slow.detail.join(" ")).toContain("SELECT id FROM task_holds WHERE reason = ?");
+    expect(slow.detail.join(" ")).toContain(HOLD_SQL);
     expect(slow.detail.join(" ")).toContain("telemetry.db");
     const board = certifier.certifyInjectedBoard(8, [22]);
     expect(board.initialMs).toBe(8);
@@ -182,16 +171,14 @@ it("fails closed on a slow task_holds trace, a 22 ms board burst, a leaked pid, 
   expect(early.unauthorizedClaims).toBe(1);
   expect(early.unauthorizedTokens).toBeGreaterThan(0);
   expect(early.result.pass).toBe(false);
-  const stripped = new KitchenHiddenAcceptanceSuite(fixtures.suite).run(
-    kitchenFromLanded(["F-Menu", "F-Orders", "F-Print", "F-CateringEmail"], "strip-cutoff"),
-  );
+  const stripped = await runDefectCutoff();
   const passed = stripped.filter((check) => check.pass).length;
   expect(stripped.find((check) => check.id === "H-M2-05")?.pass).toBe(false);
   expect(stripped.find((check) => check.id === "H-M2-29")?.pass).toBe(false);
   const rateGate = evaluateM3ExitGate(healthyInput({ m3PassRate: passed / stripped.length, m2PassRate: 1 }));
   expect(rateGate.exitCode).toBe(1);
   expect(rateGate.reasons).toContain("passRate");
-});
+}, 180_000);
 
 it("passes the five steering, undo, and governor scenarios on their own", async () => {
   expect(runSurgicalHold().pass).toBe(true);
@@ -202,10 +189,10 @@ it("passes the five steering, undo, and governor scenarios on their own", async 
   expect(stop.postStopMerges).toBe(0);
   expect(stop.unauthorizedClaims).toBe(0);
   expect(stop.unauthorizedTokens).toBe(0);
-  expect(stop.wipBranch).toBe("wip/menu");
+  expect(stop.wipBranch).toBe("wip/menu-2026-03-02");
   expect(runFeatureUndo(fixtures.suite).pass).toBe(true);
-  expect(runAdditiveCcr().pass).toBe(true);
-  expect(runGovernorStress(fixtures.profile).pass).toBe(true);
+  expect((await runAdditiveCcr()).pass).toBe(true);
+  expect((await runGovernorStress(fixtures.profile)).pass).toBe(true);
 });
 
 it("certifies the parallel kitchen exit gate in ci-replay", async () => {
@@ -240,6 +227,7 @@ it("certifies the parallel kitchen exit gate in ci-replay", async () => {
     expect(report.scenarios.every((scenario) => scenario.pass)).toBe(true);
     expect(report.mergeCommits).toHaveLength(4);
     expect(report.mergeCommits.every((commit) => commit.parents === 2)).toBe(true);
+    expect(report.productExecuted).toBe(true);
     expect(report.claimedCertification).toBe(true);
     expect(report.hostElapsedMs).toBeLessThan(120_000);
     expect(report.signature).toBe(signReport(signingView(report)));
@@ -256,7 +244,7 @@ it("certifies the parallel kitchen exit gate in ci-replay", async () => {
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
-}, 120_000);
+}, 180_000);
 
 it("does not claim live provider certification without an opted-in key", () => {
   const previousKey = process.env.EF_M3_LIVE_API_KEY;

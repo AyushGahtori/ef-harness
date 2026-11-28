@@ -148,11 +148,14 @@ export {
   DependencyIntentAggregator,
   MigrationIntentAndConflictLinter,
   ParallelFeatureBranchManager,
+  intersectRanges,
 } from "./feature-branches/index.js";
 export {
   CombinedRegressionGate,
+  MergeBatchBisector,
   ProjectIntegratorEngine,
   ProjectMergeQueue,
 } from "./merge-queue/index.js";
-export { ContractChangeRequestEngine } from "./ccr/index.js";
+export type { DrainReport, LandedFeature, MergeFeatureRequest, QueuedFeature } from "./merge-queue/index.js";
+export { ContractChangeRequestEngine, DeterministicSchemaDiffClassifier } from "./ccr/index.js";
 export { FeatureUndoEngine } from "./undo/index.js";
