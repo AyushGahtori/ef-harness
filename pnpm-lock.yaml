@@ -146,12 +146,21 @@ importers:
       '@ef-harness/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ef-harness/governor':
+        specifier: workspace:*
+        version: link:../../packages/governor
       '@ef-harness/ipc':
         specifier: workspace:*
         version: link:../../packages/ipc
+      '@ef-harness/planner':
+        specifier: workspace:*
+        version: link:../../packages/planner
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
+      '@ef-harness/steering':
+        specifier: workspace:*
+        version: link:../../packages/steering
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

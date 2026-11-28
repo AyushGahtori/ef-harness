@@ -69,7 +69,7 @@ export {
 } from "./money.js";
 
 export { AtomicBudgetReservationLedger } from "./ledger.js";
-export type { LedgerLimits } from "./ledger.js";
+export type { AllowanceWindowPort, LedgerLimits } from "./ledger.js";
 
 export { GitCheckpointStore, InMemoryCheckpointStore } from "./checkpoints.js";
 export type { CheckpointStore } from "./checkpoints.js";
@@ -84,4 +84,4 @@ export type { IntegrationBranch, KernelStopPort } from "./memory.js";
 export { BudgetWindDownController, createBudgetWindDownController } from "./controller.js";
 export type { BudgetWindDownOptions } from "./controller.js";
 
-export { runGit } from "./git-repo.js";
+export { harnessGitRunner, resolveHarnessGitBinary, runGit } from "./git-repo.js";

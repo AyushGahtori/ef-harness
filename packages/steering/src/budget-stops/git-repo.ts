@@ -1,4 +1,12 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import {
+  bundledMinGitPath,
+  createDirectGitRunner,
+  gitVersionAtLeast,
+  parseGitVersion,
+  scrubGitEnv,
+} from "@ef-harness/git-engine";
 
 export interface GitResult {
   readonly status: number;
@@ -11,15 +19,54 @@ const IDENTITY = {
   GIT_AUTHOR_EMAIL: "foundation@ef-harness.local",
   GIT_COMMITTER_NAME: "EF Harness",
   GIT_COMMITTER_EMAIL: "foundation@ef-harness.local",
-  GIT_TERMINAL_PROMPT: "0",
 };
 
-export function runGit(repo: string, args: readonly string[]): GitResult {
-  const result = spawnSync("git", ["-C", repo, ...args], {
+function resourcesRoot(): string | null {
+  const fromEnv = process.env.EF_HARNESS_RESOURCES;
+  if (typeof fromEnv === "string" && fromEnv.trim()) return fromEnv.trim();
+  const electron = process as NodeJS.Process & { resourcesPath?: string };
+  if (typeof electron.resourcesPath === "string" && electron.resourcesPath.trim()) return electron.resourcesPath;
+  return null;
+}
+
+function versionOf(binary: string): string | null {
+  const probed = spawnSync(binary, ["--version"], {
     encoding: "utf8",
     windowsHide: true,
     shell: false,
-    env: { ...process.env, ...IDENTITY },
+    env: scrubGitEnv(process.env),
+  });
+  return parseGitVersion(`${probed.stdout ?? ""}\n${probed.stderr ?? ""}`) ? `${probed.stdout ?? ""}` : null;
+}
+
+/**
+ * Prefer bundled MinGit. Host `PATH` git is only the resolver fallback when no bundle is present.
+ */
+export function resolveHarnessGitBinary(): string {
+  const root = resourcesRoot();
+  if (root) {
+    const bundled = bundledMinGitPath(root);
+    if (fs.existsSync(bundled)) {
+      const text = versionOf(bundled);
+      const version = text ? parseGitVersion(text) : null;
+      if (version && gitVersionAtLeast(version)) return bundled;
+    }
+  }
+  return "git";
+}
+
+/** The ref-layer runner (`039`) bound to the same binary `runGit` executes. */
+export function harnessGitRunner(): ReturnType<typeof createDirectGitRunner> {
+  return createDirectGitRunner({ gitBinary: resolveHarnessGitBinary() });
+}
+
+export function runGit(repo: string, args: readonly string[]): GitResult {
+  const gitPath = resolveHarnessGitBinary();
+  const result = spawnSync(gitPath, ["-C", repo, ...args], {
+    encoding: "utf8",
+    windowsHide: true,
+    shell: false,
+    env: scrubGitEnv({ ...process.env, ...IDENTITY }),
   });
   return {
     status: result.status ?? 1,

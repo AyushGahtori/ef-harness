@@ -502,6 +502,18 @@ export class CalmInboxPanel {
       },
       { optionsVersion, optionId },
     );
+    if (result instanceof Promise) {
+      void result.then((resolved) => this.finishReply(card, optionId, resolved));
+      return;
+    }
+    this.finishReply(card, optionId, result);
+  }
+
+  private finishReply(
+    card: InboxCard,
+    optionId: string,
+    result: { readonly outcome: "fresh" } | { readonly outcome: "needs_choice"; readonly prompt: string },
+  ): void {
     if (result.outcome === "needs_choice") {
       card.inlinePrompt = result.prompt;
       card.pendingOptionId = optionId;

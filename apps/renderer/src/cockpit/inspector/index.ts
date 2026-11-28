@@ -7,6 +7,8 @@ export { collectText, findAll, findByName } from "./elements.js";
 export type { InspectorElement } from "./elements.js";
 export { ResidentLedger } from "./memory.js";
 export { OptInRawStreamTab } from "./raw-stream.js";
+export { daemonBinaryStream, daemonLogReader } from "./daemon-ports.js";
+export type { InspectorRpc } from "./daemon-ports.js";
 export { WorkerInspectorPanel } from "./panel.js";
 export { StructuredAttemptTimeline } from "./timeline.js";
 export type { InspectorDependencies, BinaryStreamClient, SeekableZstdLogReader } from "./ports.js";

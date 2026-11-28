@@ -18,6 +18,8 @@ export {
   MemorySecretIpc,
   MemoryUserMessageStore,
 } from "./memory-ports.js";
+export { daemonHumanStepProbe, daemonSecretIpc, daemonStaleReplyReconciler } from "./daemon-ports.js";
+export type { InboxRpc } from "./daemon-ports.js";
 export { CalmInboxPanel, createLeftRailInboxMount } from "./panel.js";
 export type { CalmInboxPanelOptions } from "./panel.js";
 export type {

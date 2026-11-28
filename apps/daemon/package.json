@@ -19,8 +19,11 @@
   },
   "dependencies": {
     "@ef-harness/db": "workspace:*",
+    "@ef-harness/governor": "workspace:*",
     "@ef-harness/ipc": "workspace:*",
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/planner": "workspace:*",
+    "@ef-harness/shared-contracts": "workspace:*",
+    "@ef-harness/steering": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

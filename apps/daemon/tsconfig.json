@@ -13,10 +13,19 @@
       "path": "../../packages/db"
     },
     {
+      "path": "../../packages/governor"
+    },
+    {
       "path": "../../packages/ipc"
     },
     {
+      "path": "../../packages/planner"
+    },
+    {
       "path": "../../packages/shared-contracts"
+    },
+    {
+      "path": "../../packages/steering"
     }
   ]
 }

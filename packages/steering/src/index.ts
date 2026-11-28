@@ -13,6 +13,16 @@ export * as dispatcher from "./dispatcher/index.js";
 export * as holds from "./holds/index.js";
 export * as questionArbiter from "./question-arbiter/index.js";
 export * as reentry from "./reentry/index.js";
+export * as budgetStops from "./budget-stops/index.js";
+
+export type { AllowanceWindowPort } from "./budget-stops/index.js";
+export {
+  AtomicBudgetReservationLedger,
+  BudgetWindDownController,
+  StopEventStore,
+  WipBranchHandoffExporter,
+  createBudgetWindDownController,
+} from "./budget-stops/index.js";
 
 export {
   createGitEngineInspector,

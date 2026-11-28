@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import { DIFF_CHUNK_BYTES, MAX_VISIBLE_LOG_LINES } from "./constants.js";
 import { el, type InspectorElement } from "./elements.js";
 import { RangeLimitError, isAbortError } from "./errors.js";
@@ -213,7 +212,7 @@ export class OptInRawStreamTab {
     if (chunk.bytes.byteLength > DIFF_CHUNK_BYTES) {
       throw new RangeLimitError("log chunk exceeded 64 KB");
     }
-    const decoded = Buffer.from(chunk.bytes).toString("utf8");
+    const decoded = new TextDecoder().decode(chunk.bytes);
     let lines = decoded.split(/\r?\n/).filter((line) => line.length > 0);
     if (lines.length > MAX_VISIBLE_LOG_LINES) lines = lines.slice(0, MAX_VISIBLE_LOG_LINES);
     const body = lines.join("\n");

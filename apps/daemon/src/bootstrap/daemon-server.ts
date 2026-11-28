@@ -41,6 +41,19 @@ import {
 import { generateSessionToken, timingSafeTokenEqual, writeSessionToken } from "./session-token.js";
 import { explainCockpit } from "../cockpit/explain.js";
 import { readBoardProjection } from "../cockpit/board-projection.js";
+import {
+  InspectorInboxError,
+  fetchDiffRange,
+  fetchLogChunk,
+  fetchScreenshot,
+  locateLineWindow,
+  readResult,
+  reconcileQuestion,
+  runProbe,
+  sliceForTask,
+  storeSecret,
+  type InspectorInboxContext,
+} from "../cockpit/inspector-inbox.js";
 import { recordHealthMetric } from "../cockpit/telemetry.js";
 import { isM1View, sha256, SimulatedTask, type M1View } from "./task-run.js";
 
@@ -313,11 +326,22 @@ export class HarnessDaemon {
     }
     try {
       const result = this.dispatch(conn, method, record.params, id);
+      if (isPromise(result)) {
+        void result.then(
+          (value) => {
+            if (value === DEFERRED) return;
+            this.reply(conn, id, value);
+          },
+          (error: unknown) => {
+            this.replyFailure(conn, id, error);
+          },
+        );
+        return;
+      }
       if (result === DEFERRED) return;
       this.reply(conn, id, result);
     } catch (error) {
-      const coded = error instanceof RpcError ? error : null;
-      this.replyError(conn, id, coded?.code ?? RPC_INTERNAL_ERROR, coded?.message ?? "internal error");
+      this.replyFailure(conn, id, error);
     }
   }
 
@@ -376,6 +400,15 @@ export class HarnessDaemon {
     if (method === "events.subscribe") return this.subscribe(conn, record);
     if (method === "diff.get") return this.diffGet(conn, record);
     if (method === "stream.credit") return this.credit(conn, record);
+    if (method === "fetchDiffRange") return fetchDiffRange(this.inspectorContext(), record);
+    if (method === "fetchLogChunk") return fetchLogChunk(this.inspectorContext(), record);
+    if (method === "fetchScreenshot") return fetchScreenshot(this.inspectorContext(), record);
+    if (method === "locateLineWindow") return locateLineWindow(this.inspectorContext(), record);
+    if (method === "sliceForTask") return sliceForTask(this.inspectorContext(), record);
+    if (method === "readResult") return readResult(this.inspectorContext(), record);
+    if (method === "reconcile") return reconcileQuestion(this.inspectorContext(), record);
+    if (method === "storeSecret") return storeSecret(this.inspectorContext(), record);
+    if (method === "runProbe") return runProbe(this.inspectorContext(), record);
     throw new RpcError(RPC_METHOD_NOT_FOUND, `method not found: ${method}`);
   }
 
@@ -745,6 +778,32 @@ export class HarnessDaemon {
     return this.requireBundle().stateDb;
   }
 
+  private inspectorContext(): InspectorInboxContext {
+    const bundle = this.requireBundle();
+    const diff = this.task.diff();
+    return {
+      state: bundle.stateDb,
+      project: bundle.project,
+      broker: bundle.broker,
+      profileDir: this.opts.profileDir,
+      diffFile: diff.file,
+      diffHunks: diff.hunks,
+    };
+  }
+
+  private replyFailure(conn: Conn, id: unknown, error: unknown): void {
+    if (error instanceof RpcError) {
+      this.replyError(conn, id, error.code, error.message);
+      return;
+    }
+    if (error instanceof InspectorInboxError) {
+      this.replyError(conn, id, RPC_INVALID_REQUEST, error.message);
+      return;
+    }
+    const message = error instanceof Error ? error.message : "internal error";
+    this.replyError(conn, id, RPC_INTERNAL_ERROR, message);
+  }
+
   private requireBundle(): OpenDatabases {
     if (!this.bundle) throw new RpcError(RPC_INTERNAL_ERROR, "state database is closed");
     return this.bundle;
@@ -823,6 +882,10 @@ function pipeAcceptsConnections(pipePath: string): Promise<boolean> {
       resolve(false);
     });
   });
+}
+
+function isPromise(value: unknown): value is Promise<unknown> {
+  return typeof value === "object" && value !== null && typeof (value as Promise<unknown>).then === "function";
 }
 
 function numericParam(params: Record<string, unknown>, primary: string, alias: string): number {

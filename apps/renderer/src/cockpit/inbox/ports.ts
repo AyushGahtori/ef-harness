@@ -64,9 +64,9 @@ export type StaleReplyResult =
       readonly choices: readonly ["keep", "change"];
     };
 
-/** Task 116 `StaleReplyReconciler.receive`. */
+/** Task 116 `StaleReplyReconciler.receive`. A daemon binding may answer asynchronously. */
 export interface StaleReplyReconciler {
-  receive(card: StaleReplyInput, reply: QuestionReply): StaleReplyResult;
+  receive(card: StaleReplyInput, reply: QuestionReply): StaleReplyResult | Promise<StaleReplyResult>;
 }
 
 export interface HumanStepCheck {

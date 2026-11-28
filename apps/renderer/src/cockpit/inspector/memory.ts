@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import { MAX_RENDERER_HEAP_BYTES } from "./constants.js";
 import { InspectorMemoryCeilingError } from "./errors.js";
 
@@ -47,5 +46,5 @@ export class ResidentLedger {
 }
 
 export function utf8Size(text: string): number {
-  return Buffer.byteLength(text, "utf8");
+  return new TextEncoder().encode(text).byteLength;
 }
