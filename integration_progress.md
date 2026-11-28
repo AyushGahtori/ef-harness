@@ -67,7 +67,7 @@
 | C54 | Wave 5 | done | b465bfd | F-057, F-065 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); providers 31 files 158/158, 0 skipped; steering budget-stops 21 files 122/122; planner crew-levels 69 files 377/377; schema 67/67 |
 | C55 | Wave 5 | done | 8f25bca | F-058, F-059, F-060 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); providers 32 files 174/174, 0 skipped; renderer connections command 27 files 135/135; runtime-adapters core command 5 files 25/25, 0 skipped; daemon connections 1 file 3/3; schema 67/67 |
 | C56 | Wave 5 | done | 677564a | F-059, F-060 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); runtime-adapters 13 files 68/68, 0 skipped; schema 67/67 |
-| C57 | Wave 5 | pending | - | F-059, F-060, F-061 | - |
+| C57 | Wave 5 | done | 809997c | F-059, F-060, F-061 | build/typecheck/lint OK (lint heap 4096, 0 errors, 4 pre-existing warnings); runtime-adapters 22 files 116/116, 0 skipped; schema 67/67 |
 | C58 | Wave 5 | pending | - | F-061, F-066 | - |
 | C59 | Wave 5 | pending | - | F-061, F-062 | - |
 | C60 | Wave 6 | pending | - | F-073, F-074 | - |
