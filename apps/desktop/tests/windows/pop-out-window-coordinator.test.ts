@@ -313,3 +313,28 @@ describe("PopOutWindowCoordinator", () => {
     expect(coordinator.isPoppedOut("preview")).toBe(true);
   });
 });
+
+describe("SharedHarnessdStream", () => {
+  it("resets the ring when a new stream epoch restarts at seq 1", () => {
+    const stream = new SharedHarnessdStream();
+    const seen: number[] = [];
+    stream.subscribe((event) => {
+      seen.push(event.seq);
+    });
+    stream.publish({ ...previewEvent(4), streamEpoch: "epoch-1" });
+    stream.publish({ ...previewEvent(1), streamEpoch: "epoch-2" });
+    expect(seen).toEqual([4, 1]);
+    const snap = stream.snapshot();
+    expect(snap.lastSeq).toBe(1);
+    expect(snap.streamEpoch).toBe("epoch-2");
+    expect(snap.events).toHaveLength(1);
+    stream.publish({ ...previewEvent(1), streamEpoch: "epoch-2" });
+    expect(stream.snapshot().events).toHaveLength(1);
+    const filler = Array.from({ length: 300 }, (_, index) => index + 2);
+    for (const seq of filler) {
+      stream.publish({ ...previewEvent(seq), streamEpoch: "epoch-2" });
+    }
+    expect(stream.snapshot().events.length).toBeLessThanOrEqual(256);
+    expect(stream.snapshot().lastSeq).toBe(301);
+  });
+});

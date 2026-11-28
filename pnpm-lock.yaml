@@ -190,10 +190,22 @@ importers:
       '@ef-harness/shared-contracts':
         specifier: workspace:*
         version: link:../../packages/shared-contracts
+      react:
+        specifier: ^19.0.0
+        version: 19.3.1
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.3.1(react@19.3.1)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.3.0(@types/react@19.3.0)
       eslint:
         specifier: 'catalog:'
         version: 9.39.5(jiti@2.7.0)

@@ -21,6 +21,8 @@ export type {
   DomainEvent,
   SyncApply,
 } from "./m1-viewer/index.js";
+export * from "./presets/index.js";
+export * from "./shell/index.js";
 export { WelcomeBackScreen, renderWelcomeBack } from "./cockpit/welcome-back/index.js";
 export type {
   WelcomeActionId,

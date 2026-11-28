@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { SharedHarnessdStream } from "../windows/shared-harnessd-stream.js";
+import type { HarnessdEvent } from "../windows/types.js";
 import { FrameCodec, type DecodedFrame } from "./frame-codec.js";
 
 export interface PortLike {
@@ -26,6 +28,7 @@ export interface PipeClientOptions {
  * does not drop or duplicate the frames that follow it.
  */
 export class PipeClientBridge {
+  readonly stream = new SharedHarnessdStream();
   private readonly windows = new Map<string, PortLike>();
   private socket: net.Socket | null = null;
   private authed = false;
@@ -142,11 +145,26 @@ export class PipeClientBridge {
         }
         continue;
       }
+      if (frame.channel === 0) this.ingestEvents(frame.payload);
       const bytes =
         frame.channel === 0
           ? FrameCodec.encodeJson(frame.payload)
           : FrameCodec.encodeBinary(frame.streamId ?? 0, frame.payload);
       this.forward(bytes);
+    }
+  }
+
+  private ingestEvents(payload: Uint8Array): void {
+    const message = parseJsonRecord(payload);
+    if (!message || message.method !== "events.batch" || !isRecord(message.params)) return;
+    const params = message.params;
+    const batchEpoch = typeof params.stream_epoch === "string" ? params.stream_epoch : undefined;
+    if (!Array.isArray(params.events)) return;
+    for (const item of params.events) {
+      const event = toHarnessdEvent(item, batchEpoch);
+      if (!event) continue;
+      this.stream.publish(event);
+      this.options.parent?.postMessage({ type: "harnessd-event", event });
     }
   }
 
@@ -180,8 +198,8 @@ function nextWindowId(size: number): string {
   return `window-${size + 1}`;
 }
 
-function isRecord(value: unknown): value is { type?: string; windowId?: unknown } {
-  return Boolean(value) && typeof value === "object";
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function log(profile: string, message: string): void {
@@ -243,6 +261,33 @@ function peek(value: unknown): string {
   }
   const size = "byteLength" in value ? String((value as { byteLength?: number }).byteLength ?? "") : "";
   return size.length > 0 ? `${named}{${keys}}:${size}` : `${named}{${keys}}`;
+}
+
+function parseJsonRecord(payload: Uint8Array): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(Buffer.from(payload).toString("utf8"));
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function toHarnessdEvent(value: unknown, batchEpoch: string | undefined): HarnessdEvent | null {
+  if (!isRecord(value) || typeof value.seq !== "number" || !Number.isInteger(value.seq) || value.seq < 0) return null;
+  const epoch =
+    typeof value.streamEpoch === "string"
+      ? value.streamEpoch
+      : typeof value.stream_epoch === "string"
+        ? value.stream_epoch
+        : batchEpoch;
+  const event: HarnessdEvent = {
+    seq: value.seq,
+    type: typeof value.type === "string" ? value.type : "event",
+    projectId: typeof value.projectId === "string" ? value.projectId : "",
+    payload: {},
+  };
+  if (epoch === undefined) return event;
+  return { ...event, streamEpoch: epoch };
 }
 
 function parseJson(payload: Uint8Array): { id?: unknown; result?: unknown } | null {

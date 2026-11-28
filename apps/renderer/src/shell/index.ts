@@ -14,21 +14,19 @@ export {
   BridgeKernelStopController,
   EventStreamSubscriber,
   MemoryLatencySink,
-  MemoryNamedPipeClient,
-  MemoryPreloadBridge,
+  MemoryPreloadPort,
   MemoryPressureHysteresis,
-  PreloadNamedPipeClient,
   defaultProject,
 } from "./ports.js";
 export type {
-  BridgePayload,
   HardwareGovernorLatencySink,
   ImmediateKernelStopController,
   KernelStopRequest,
   KernelStopResult,
-  NamedPipeClient,
-  PreloadBridge,
+  PreloadMessagePort,
   PressureHysteresisStateMachine,
+  ShellDownlink,
+  ShellPortMessage,
   UiLatencySample,
 } from "./ports.js";
 export { DEFAULT_PREFERENCES, MemoryPreferenceStore } from "./preferences.js";
@@ -57,6 +55,7 @@ export {
   TOP_BAR_HEIGHT_PX,
 } from "./types.js";
 export type {
+  CanvasViewportState,
   CenterTabId,
   CenterTabSlot,
   ConnectionState,

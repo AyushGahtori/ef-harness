@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import type { CSSProperties } from "react";
+import type { GovernorPressure } from "@ef-harness/shared-contracts";
+import type { CSSProperties, ReactNode } from "react";
 
 export const TOP_BAR_HEIGHT_PX = 48;
 export const LEFT_RAIL_MIN_PX = 300;
@@ -36,7 +36,14 @@ export type CenterTabId = (typeof CENTER_TABS)[number]["id"];
 
 export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedThemeName = "light" | "dark";
-export type PressureLevel = "green" | "yellow" | "orange" | "red";
+export type PressureLevel = GovernorPressure;
+
+export interface CanvasViewportState {
+  readonly x: number;
+  readonly y: number;
+  readonly zoom: number;
+  readonly filters: readonly string[];
+}
 export type RailFilter = "all" | "needs-you" | "chat";
 export type RunMode = "idle" | "running" | "paused" | "stopped";
 export type ConnectionState = "live" | "reconnecting";

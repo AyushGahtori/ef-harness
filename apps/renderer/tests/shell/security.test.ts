@@ -30,5 +30,7 @@ describe("renderer security", () => {
       return sourceSecurityFindings(text).map((finding) => `${name}: ${finding}`);
     });
     expect(findings).toEqual([]);
+    const pipe = files.filter((name) => fs.readFileSync(path.join(shellDir, name), "utf8").includes("NamedPipeClient"));
+    expect(pipe).toEqual([]);
   });
 });

@@ -1,38 +1,34 @@
+import { JsonRpcRequestSchema, normalizeGovernorPressure, type JsonRpcRequest } from "@ef-harness/shared-contracts";
 import type { AnimationFrameClock } from "./clock.js";
-import type {
-  DaemonEvent,
-  DaemonSnapshot,
-  PressureLevel,
-  PressureSnapshot,
-  ProjectBadge,
-} from "./types.js";
+import type { DaemonEvent, DaemonSnapshot, PressureSnapshot, ProjectBadge } from "./types.js";
 
-export type BridgePayload =
+export type ShellDownlink =
   | {
-      kind: "events.subscribe";
-      projectId: string;
-      sinceSeq: number;
-      streamEpoch: string;
+      jsonrpc: "2.0";
+      method: "events.batch";
+      params: { stream_epoch: string; events: readonly DaemonEvent[] };
     }
-  | { kind: "snapshot.get"; projectId: string }
-  | { kind: "events.batch"; streamEpoch: string; events: readonly DaemonEvent[] }
-  | { kind: "resync_required"; streamEpoch: string; latestSeq: number }
-  | { kind: "snapshot"; snapshot: DaemonSnapshot }
-  | { kind: "disconnected" }
-  | { kind: "rpc"; method: "build.stop" | "build.pause" | "build.resume"; projectId: string };
+  | {
+      jsonrpc: "2.0";
+      method: "resync_required";
+      params: { stream_epoch: string; latest_seq: number };
+    }
+  | {
+      jsonrpc: "2.0";
+      method: "snapshot";
+      params: { snapshot: DaemonSnapshot };
+    }
+  | { jsonrpc: "2.0"; method: "disconnected" };
 
-export interface PreloadBridge {
-  postMessage(message: BridgePayload): void;
-  onMessage(listener: (message: BridgePayload) => void): () => void;
-}
+export type ShellPortMessage = JsonRpcRequest | ShellDownlink;
 
-export interface NamedPipeClient {
-  readonly pipeName: string;
-  readonly connected: boolean;
-  connect(): void;
-  close(): void;
-  send(message: BridgePayload): void;
-  subscribe(listener: (message: BridgePayload) => void): () => void;
+/**
+ * Preload MessagePort handed across by the desktop utility process.
+ * The renderer posts canonical JSON-RPC and never opens a pipe.
+ */
+export interface PreloadMessagePort {
+  postMessage(message: ShellPortMessage): void;
+  onMessage(listener: (message: ShellPortMessage) => void): () => void;
 }
 
 export interface SubscriberHandlers {
@@ -47,6 +43,9 @@ export interface StreamCursor {
   epoch: string;
 }
 
+const SUBSCRIBE_TOPICS = ["worker", "run", "spend", "inbox", "governor"] as const;
+const SNAPSHOT_VIEWS = ["shell"] as const;
+
 export class EventStreamSubscriber {
   ignoredDuplicates = 0;
   resyncCount = 0;
@@ -54,9 +53,10 @@ export class EventStreamSubscriber {
   private epoch: string;
   private lastApplied: number;
   private resyncing = false;
+  private rpcId = 1;
 
   constructor(
-    private readonly client: NamedPipeClient,
+    private readonly port: PreloadMessagePort,
     private readonly projectId: string,
     private readonly handlers: SubscriberHandlers,
     cursor: StreamCursor,
@@ -75,20 +75,32 @@ export class EventStreamSubscriber {
   }
 
   start(): void {
-    this.client.connect();
-    this.client.send({
-      kind: "events.subscribe",
-      projectId: this.projectId,
-      sinceSeq: this.lastApplied,
-      streamEpoch: this.epoch,
-    });
-    this.unsubscribe = this.client.subscribe((message) => {
+    this.port.postMessage(
+      readOnlyRpc(
+        "events.subscribe",
+        {
+          project: this.projectId,
+          topics: [...SUBSCRIBE_TOPICS],
+          since_seq: this.lastApplied,
+        },
+        this.rpcId,
+      ),
+    );
+    this.rpcId += 1;
+    this.unsubscribe = this.port.onMessage((message) => {
       this.onMessage(message);
     });
   }
 
   requestSnapshot(): void {
-    this.client.send({ kind: "snapshot.get", projectId: this.projectId });
+    this.port.postMessage(
+      readOnlyRpc(
+        "snapshot.get",
+        { project: this.projectId, views: [...SNAPSHOT_VIEWS] },
+        this.rpcId,
+      ),
+    );
+    this.rpcId += 1;
   }
 
   dispose(): void {
@@ -96,28 +108,30 @@ export class EventStreamSubscriber {
     this.unsubscribe = null;
   }
 
-  private onMessage(message: BridgePayload): void {
-    if (message.kind === "disconnected") {
+  private onMessage(message: ShellPortMessage): void {
+    if (!isDownlink(message)) return;
+    if (message.method === "disconnected") {
       this.resyncing = true;
       this.handlers.onDisconnect();
       return;
     }
-    if (message.kind === "resync_required") {
-      this.resync(message.streamEpoch, message.latestSeq);
+    if (message.method === "resync_required") {
+      this.resync(message.params.stream_epoch, message.params.latest_seq);
       return;
     }
-    if (message.kind === "snapshot") {
+    if (message.method === "snapshot") {
       this.resyncing = false;
-      this.adopt({ seq: message.snapshot.asOfSeq, epoch: message.snapshot.streamEpoch });
-      this.handlers.onSnapshot(message.snapshot);
+      this.adopt({ seq: message.params.snapshot.asOfSeq, epoch: message.params.snapshot.streamEpoch });
+      this.handlers.onSnapshot(message.params.snapshot);
       return;
     }
-    if (message.kind !== "events.batch" || this.resyncing) return;
-    if (message.streamEpoch !== this.epoch) {
-      this.resync(message.streamEpoch, this.lastApplied);
+    if (this.resyncing) return;
+    if (message.params.stream_epoch !== this.epoch) {
+      const latest = message.params.events.at(-1)?.seq ?? this.lastApplied;
+      this.resync(message.params.stream_epoch, latest);
       return;
     }
-    for (const event of message.events) {
+    for (const event of message.params.events) {
       if (event.streamEpoch !== this.epoch) {
         this.resync(event.streamEpoch, event.seq);
         return;
@@ -144,80 +158,27 @@ export class EventStreamSubscriber {
   }
 }
 
-export class MemoryNamedPipeClient implements NamedPipeClient {
-  readonly pipeName = "\\\\.\\pipe\\efharness-test";
-  connected = false;
-  readonly sent: BridgePayload[] = [];
-  private listeners = new Set<(message: BridgePayload) => void>();
+export class MemoryPreloadPort implements PreloadMessagePort {
+  readonly sent: ShellPortMessage[] = [];
+  private listeners = new Set<(message: ShellPortMessage) => void>();
 
-  connect(): void {
-    this.connected = true;
-  }
-
-  close(): void {
-    this.connected = false;
-    this.emit({ kind: "disconnected" });
-  }
-
-  send(message: BridgePayload): void {
-    this.sent.push(message);
-  }
-
-  emit(message: BridgePayload): void {
-    for (const listener of this.listeners) listener(message);
-  }
-
-  subscribe(listener: (message: BridgePayload) => void): () => void {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-}
-
-export class MemoryPreloadBridge implements PreloadBridge {
-  readonly sent: BridgePayload[] = [];
-  private listeners = new Set<(message: BridgePayload) => void>();
-
-  postMessage(message: BridgePayload): void {
+  postMessage(message: ShellPortMessage): void {
     this.sent.push(structuredClone(message));
   }
 
-  onMessage(listener: (message: BridgePayload) => void): () => void {
+  onMessage(listener: (message: ShellPortMessage) => void): () => void {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   }
 
-  emit(message: BridgePayload): void {
+  deliver(message: ShellDownlink): void {
     for (const listener of this.listeners) listener(message);
-  }
-}
-
-export class PreloadNamedPipeClient implements NamedPipeClient {
-  connected = false;
-
-  constructor(
-    readonly pipeName: string,
-    private readonly bridge: PreloadBridge,
-  ) {}
-
-  connect(): void {
-    this.connected = true;
   }
 
   close(): void {
-    this.connected = false;
-  }
-
-  send(message: BridgePayload): void {
-    if (!this.connected) return;
-    this.bridge.postMessage(message);
-  }
-
-  subscribe(listener: (message: BridgePayload) => void): () => void {
-    return this.bridge.onMessage(listener);
+    this.deliver({ jsonrpc: "2.0", method: "disconnected" });
   }
 }
 
@@ -253,20 +214,18 @@ export interface ImmediateKernelStopController {
 
 export class BridgeKernelStopController implements ImmediateKernelStopController {
   readonly calls: KernelStopRequest[] = [];
+  private rpcId = 1;
+  private opSeq = 0;
 
   constructor(
-    private readonly bridge: PreloadBridge,
+    private readonly port: PreloadMessagePort,
     private readonly clock: AnimationFrameClock,
   ) {}
 
   stopNow(request: KernelStopRequest): KernelStopResult {
     const started = this.clock.now();
     this.calls.push(request);
-    this.bridge.postMessage({
-      kind: "rpc",
-      method: "build.stop",
-      projectId: request.projectId,
-    });
+    this.postMutating("build.stop", "stop", request.projectId, request.requestedAtMs);
     return {
       stopped: true,
       latencyMs: this.clock.now() - started,
@@ -277,21 +236,25 @@ export class BridgeKernelStopController implements ImmediateKernelStopController
   }
 
   pauseAll(request: PauseRequest): { paused: true } {
-    this.bridge.postMessage({
-      kind: "rpc",
-      method: "build.pause",
-      projectId: request.projectId,
-    });
+    this.postMutating("build.pauseAll", "pause", request.projectId, request.requestedAtMs);
     return { paused: true };
   }
 
   resume(request: ResumeRequest): { resumed: true } {
-    this.bridge.postMessage({
-      kind: "rpc",
-      method: "build.resume",
-      projectId: request.projectId,
-    });
+    this.postMutating("build.start", "resume", request.projectId, request.requestedAtMs);
     return { resumed: true };
+  }
+
+  private postMutating(
+    method: "build.stop" | "build.pauseAll" | "build.start",
+    prefix: string,
+    projectId: string,
+    atMs: number,
+  ): void {
+    this.opSeq += 1;
+    const opId = `${prefix}-${atMs}-${this.opSeq}`;
+    this.port.postMessage(mutatingRpc(method, opId, projectId, this.rpcId));
+    this.rpcId += 1;
   }
 }
 
@@ -301,7 +264,7 @@ export interface PressureHysteresisStateMachine {
 }
 
 export class MemoryPressureHysteresis implements PressureHysteresisStateMachine {
-  private current: PressureSnapshot = { level: "green", driver: "Normal" };
+  private current: PressureSnapshot = { level: "GREEN", driver: "Normal" };
   private listeners = new Set<(snapshot: PressureSnapshot) => void>();
 
   snapshot(): PressureSnapshot {
@@ -315,8 +278,10 @@ export class MemoryPressureHysteresis implements PressureHysteresisStateMachine 
     };
   }
 
-  set(level: PressureLevel, driver: string): void {
-    this.current = { level, driver };
+  set(level: string, driver: string): void {
+    const canonical = normalizeGovernorPressure(level);
+    if (!canonical) return;
+    this.current = { level: canonical, driver };
     for (const listener of this.listeners) listener(this.current);
   }
 }
@@ -341,4 +306,36 @@ export class MemoryLatencySink implements HardwareGovernorLatencySink {
 
 export function defaultProject(): ProjectBadge {
   return { id: "kitchen-app", name: "kitchen-app", branch: "harness/integration" };
+}
+
+function readOnlyRpc(
+  method: "events.subscribe" | "snapshot.get",
+  params: { project: string; topics?: readonly string[]; since_seq?: number; views?: readonly string[] },
+  id: number,
+): JsonRpcRequest {
+  return JsonRpcRequestSchema.parse({
+    jsonrpc: "2.0",
+    id,
+    method,
+    params,
+  });
+}
+
+function mutatingRpc(
+  method: "build.stop" | "build.pauseAll" | "build.start",
+  opId: string,
+  projectId: string,
+  id: number,
+): JsonRpcRequest {
+  return JsonRpcRequestSchema.parse({
+    jsonrpc: "2.0",
+    id,
+    method,
+    op_id: opId,
+    params: { project_id: projectId },
+  });
+}
+
+function isDownlink(message: ShellPortMessage): message is ShellDownlink {
+  return message.jsonrpc === "2.0" && !("id" in message);
 }

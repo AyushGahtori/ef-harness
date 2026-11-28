@@ -101,11 +101,13 @@ export interface HarnessdEvent {
   readonly seq: number;
   readonly type: string;
   readonly projectId: string;
+  readonly streamEpoch?: string;
   readonly payload: Readonly<Record<string, string | number | boolean | null>>;
 }
 
 export interface DaemonSnapshot {
   readonly lastSeq: number;
+  readonly streamEpoch: string;
   readonly events: readonly HarnessdEvent[];
 }
 

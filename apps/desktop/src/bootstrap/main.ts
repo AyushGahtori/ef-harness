@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { InMemoryMainShell, InMemoryScreenPort, InMemoryTrayLifecycle } from "../windows/electron-ports.js";
+import { PopOutWindowCoordinator } from "../windows/pop-out-window-coordinator.js";
+import { SharedHarnessdStream } from "../windows/shared-harnessd-stream.js";
+import { MAX_POP_OUT_WINDOWS, type DipRect, type HarnessdEvent, type ManagedWindow, type PopOutResult, type PopOutView, type ThemeName } from "../windows/types.js";
 import { ensureHarnessd, launchDetached } from "./launch.js";
 import { callDaemon, probeDaemon } from "./probe.js";
 import { M1_PRELOAD_CONTRACT, PRELOAD_CJS } from "./preload.js";
@@ -36,11 +40,16 @@ interface BrowserWindowLike {
   loadURL(url: string): Promise<void>;
   focus(): void;
   show(): void;
+  hide(): void;
   restore(): void;
   isMinimized(): boolean;
+  isVisible(): boolean;
   isDestroyed(): boolean;
   close(): void;
   destroy(): void;
+  getBounds(): DipRect;
+  setBounds(bounds: DipRect): void;
+  on(event: "closed", listener: () => void): void;
 }
 
 interface UtilityLike {
@@ -69,6 +78,8 @@ export interface ElectronHost {
     handle(scheme: string, handler: (request: { url: string }) => Response): void;
   };
   BrowserWindow: new (options: {
+    x?: number;
+    y?: number;
     width: number;
     height: number;
     show: boolean;
@@ -93,6 +104,7 @@ export interface DesktopRuntime {
   readonly security: typeof ELECTRON_SECURITY_DEFAULTS;
   focusCount(): number;
   crashRenderer(): void;
+  popOut(view: PopOutView): PopOutResult;
 }
 
 const VIEWER_FILES = new Set(["index.html", "viewer.css", "viewer-client.js"]);
@@ -110,7 +122,18 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
   if (!locked) {
     host.app.quit();
     host.app.exit(0);
-    return { security: ELECTRON_SECURITY_DEFAULTS, focusCount: () => 0, crashRenderer: () => undefined };
+    return {
+      security: ELECTRON_SECURITY_DEFAULTS,
+      focusCount: () => 0,
+      crashRenderer: () => undefined,
+      popOut: (view) => ({
+        ok: false,
+        action: "rejected",
+        reason: "popout-cap",
+        limit: MAX_POP_OUT_WINDOWS,
+        view,
+      }),
+    };
   }
   let focusCount = 0;
   let windowRef: BrowserWindowLike | null = null;
@@ -153,6 +176,8 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
   const restart = () => ensureRunning(options, tokenFile);
   await restart();
   utility = forkUtility(host, options);
+  const stream = new SharedHarnessdStream();
+  let coordinator: PopOutWindowCoordinator | null = null;
   openWindow = async () => {
     const created = new host.BrowserWindow({
       width: 1100,
@@ -204,6 +229,10 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
     if (data && typeof data === "object" && (data as { type?: string }).type === "daemon-down") {
       void restart();
     }
+    if (data && typeof data === "object" && (data as { type?: string }).type === "harnessd-event") {
+      const event = (data as { event?: unknown }).event;
+      if (isHarnessdEvent(event)) stream.publish(event);
+    }
   });
   if (utility.stderr) {
     utility.stderr.on("data", (chunk: string | Buffer) => {
@@ -213,7 +242,49 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
     });
   }
   windowsReady = true;
-  await openWindow();
+  const primary = await openWindow();
+  const screen = new InMemoryScreenPort([
+    {
+      id: 1,
+      bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+      scaleFactor: 1,
+      primary: true,
+    },
+  ]);
+  const managedMain = new ElectronManagedWindow("main", primary);
+  primary.on("closed", () => {
+    coordinator?.onPrimaryWindowClose();
+  });
+  coordinator = new PopOutWindowCoordinator({
+    screen,
+    factory: {
+      create(spec) {
+        const native = new host.BrowserWindow({
+          x: spec.bounds.x,
+          y: spec.bounds.y,
+          width: spec.bounds.width,
+          height: spec.bounds.height,
+          show: true,
+          webPreferences: {
+            ...ELECTRON_SECURITY_DEFAULTS,
+            preload: preloadPath,
+          },
+        });
+        native.webContents.on("did-finish-load", () => {
+          const channel = new host.MessageChannelMain();
+          utility?.postMessage({ type: "renderer-port", windowId: spec.id }, [channel.port1]);
+          native.webContents.postMessage(M1_PRELOAD_CONTRACT.channel, null, [channel.port2]);
+        });
+        void native.loadURL("ef-m1://viewer/index.html");
+        return new ElectronManagedWindow(spec.id, native);
+      },
+    },
+    stream,
+    shell: new InMemoryMainShell(),
+    tray: new InMemoryTrayLifecycle(),
+    main: managedMain,
+  });
   const security = {
     ...ELECTRON_SECURITY_DEFAULTS,
     preload: preloadPath,
@@ -228,6 +299,14 @@ export async function startDesktopMain(host: ElectronHost, options: DesktopOptio
     crashRenderer: () => {
       windowRef?.webContents.forcefullyCrashRenderer?.();
     },
+    popOut: (view) =>
+      coordinator?.popOut(view) ?? {
+        ok: false,
+        action: "rejected",
+        reason: "popout-cap",
+        limit: MAX_POP_OUT_WINDOWS,
+        view,
+      },
   };
 }
 
@@ -306,6 +385,80 @@ function serveViewer(viewerRoot: string, requestUrl: string): Response {
       "content-security-policy": M1_CONTENT_SECURITY_POLICY,
     },
   });
+}
+
+class ElectronManagedWindow implements ManagedWindow {
+  theme: ThemeName = "light";
+  focusMode = false;
+  focusCount = 0;
+
+  constructor(
+    readonly id: string,
+    private readonly native: BrowserWindowLike,
+  ) {}
+
+  focus(): void {
+    this.focusCount += 1;
+    this.native.focus();
+  }
+
+  close(): void {
+    this.native.close();
+  }
+
+  destroy(): void {
+    this.native.destroy();
+  }
+
+  hide(): void {
+    this.native.hide();
+  }
+
+  show(): void {
+    this.native.show();
+  }
+
+  isDestroyed(): boolean {
+    return this.native.isDestroyed();
+  }
+
+  isVisible(): boolean {
+    return this.native.isVisible();
+  }
+
+  getBounds(): DipRect {
+    return this.native.getBounds();
+  }
+
+  setBounds(bounds: DipRect): void {
+    this.native.setBounds(bounds);
+  }
+
+  setTheme(theme: ThemeName): void {
+    this.theme = theme;
+  }
+
+  setFocusMode(enabled: boolean): void {
+    this.focusMode = enabled;
+  }
+
+  on(event: "closed", listener: () => void): void {
+    this.native.on(event, listener);
+  }
+}
+
+function isHarnessdEvent(value: unknown): value is HarnessdEvent {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.seq === "number" &&
+    Number.isInteger(record.seq) &&
+    typeof record.type === "string" &&
+    typeof record.projectId === "string" &&
+    record.payload !== null &&
+    typeof record.payload === "object" &&
+    !Array.isArray(record.payload)
+  );
 }
 
 function messageData(event: unknown): unknown {

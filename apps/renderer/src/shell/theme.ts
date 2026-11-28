@@ -1,5 +1,5 @@
 import { contrastRatio } from "./contrast.js";
-import type { ResolvedThemeName, ThemePreference, ThemeTokens } from "./types.js";
+import type { PressureLevel, ResolvedThemeName, ThemePreference, ThemeTokens } from "./types.js";
 
 export const LIGHT_THEME: ThemeTokens = {
   name: "light",
@@ -101,12 +101,9 @@ export function resolveTheme(
   return name === "dark" ? DARK_THEME : LIGHT_THEME;
 }
 
-export function governorColors(
-  level: "green" | "yellow" | "orange" | "red",
-  tokens: ThemeTokens,
-): { fg: string; bg: string } {
-  if (level === "green") return { fg: tokens.greenFg, bg: tokens.greenBg };
-  if (level === "yellow") return { fg: tokens.yellowFg, bg: tokens.yellowBg };
-  if (level === "orange") return { fg: tokens.orangeFg, bg: tokens.orangeBg };
+export function governorColors(level: PressureLevel, tokens: ThemeTokens): { fg: string; bg: string } {
+  if (level === "GREEN") return { fg: tokens.greenFg, bg: tokens.greenBg };
+  if (level === "YELLOW") return { fg: tokens.yellowFg, bg: tokens.yellowBg };
+  if (level === "ORANGE") return { fg: tokens.orangeFg, bg: tokens.orangeBg };
   return { fg: tokens.redFg, bg: tokens.redBg };
 }

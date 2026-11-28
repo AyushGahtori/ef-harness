@@ -4,9 +4,9 @@ import { governorColors } from "./theme.js";
 import { PHASES, type ShellViewModel } from "./types.js";
 
 function levelLabel(level: ShellViewModel["governor"]["level"]): string {
-  if (level === "green") return "Green";
-  if (level === "yellow") return "Yellow";
-  if (level === "orange") return "Orange";
+  if (level === "GREEN") return "Green";
+  if (level === "YELLOW") return "Yellow";
+  if (level === "ORANGE") return "Orange";
   return "Red";
 }
 

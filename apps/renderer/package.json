@@ -18,10 +18,14 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@ef-harness/shared-contracts": "workspace:*"
+    "@ef-harness/shared-contracts": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "eslint": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

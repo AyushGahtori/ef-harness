@@ -10,15 +10,13 @@ import {
   BridgeKernelStopController,
   EventStreamSubscriber,
   MemoryLatencySink,
-  MemoryNamedPipeClient,
-  MemoryPreloadBridge,
+  MemoryPreloadPort,
   MemoryPressureHysteresis,
   defaultProject,
   type HardwareGovernorLatencySink,
   type ImmediateKernelStopController,
   type KernelStopResult,
-  type NamedPipeClient,
-  type PreloadBridge,
+  type PreloadMessagePort,
   type PressureHysteresisStateMachine,
 } from "./ports.js";
 import {
@@ -29,12 +27,14 @@ import {
 import { commandForKey, type KeyInput } from "./shortcuts.js";
 import { SingleAppShellView } from "./shell-view.js";
 import { resolveTheme } from "./theme.js";
+import type { AppliedPhasePreset, CenterTab, LifecyclePhase } from "../presets/types.js";
 import {
   CENTER_TABS,
   STOP_LATENCY_BUDGET_MS,
   emptyTabScratch,
   isCenterTabId,
   isPhaseId,
+  type CanvasViewportState,
   type CenterTabId,
   type ConnectionState,
   type DaemonSnapshot,
@@ -53,8 +53,8 @@ import {
 export interface SingleAppShellOptions {
   windowId?: string;
   clock: AnimationFrameClock;
-  client: NamedPipeClient;
-  bridge: PreloadBridge;
+  client: PreloadMessagePort;
+  bridge: PreloadMessagePort;
   stop?: ImmediateKernelStopController;
   pressure: PressureHysteresisStateMachine;
   heartbeatSink: HardwareGovernorLatencySink;
@@ -123,6 +123,7 @@ export class SingleAppShell {
   private focusZone: FocusZone = "shell";
   private keyboardModality = false;
   private pendingUiInput: number | null = null;
+  private canvasState: CanvasViewportState = { x: 0, y: 0, zoom: 1, filters: [] };
   private revision = 0;
   private cachedHtml = "";
   private readonly releaseStore: () => void;
@@ -476,6 +477,34 @@ export class SingleAppShell {
     return slot ? slot.hintsFor(this.phase) : null;
   }
 
+  applyLayoutPreset(preset: AppliedPhasePreset): void {
+    if (isPhaseId(preset.phase)) this.phase = preset.phase;
+    const tab = shellTabForPreset(preset.center.primaryTab);
+    if (tab) this.centerTab = tab;
+    this.userLeftCollapsed = preset.leftRail.presentation === "compact";
+    this.userInspectorCollapsed = preset.inspector.collapsed;
+    this.persist();
+    this.refresh();
+  }
+
+  readCanvas(): CanvasViewportState {
+    return {
+      x: this.canvasState.x,
+      y: this.canvasState.y,
+      zoom: this.canvasState.zoom,
+      filters: [...this.canvasState.filters],
+    };
+  }
+
+  writeCanvas(state: CanvasViewportState): void {
+    this.canvasState = {
+      x: state.x,
+      y: state.y,
+      zoom: state.zoom,
+      filters: [...state.filters],
+    };
+  }
+
   focusTablist(): void {
     this.focusZone = "tablist";
     this.focusId = `tab-${this.centerTab}`;
@@ -587,8 +616,54 @@ export class SingleAppShell {
   }
 }
 
+const PRESET_TAB: Readonly<Record<string, CenterTabId>> = {
+  office: "office",
+  board: "board",
+  canvas: "canvas",
+  "architecture-canvas": "canvas",
+  "spec-plan": "spec-plan",
+  "plan-preview": "spec-plan",
+  "spec-tree": "spec-plan",
+  preview: "preview",
+  "live-preview": "preview",
+  ship: "ship",
+  "landing-summary": "ship",
+  "pr-ci-loop": "ship",
+  "deploy-pipeline": "ship",
+  diagnostics: "diagnostics",
+};
+
+function shellTabForPreset(tab: string): CenterTabId | null {
+  return PRESET_TAB[tab] ?? null;
+}
+
 export class ShellLayoutContext {
+  private applied: AppliedPhasePreset | null = null;
+  lastReason: "initial" | "user-switch" | null = null;
+
   constructor(private readonly shell: SingleAppShell) {}
+
+  applyPreset(preset: AppliedPhasePreset, reason: "initial" | "user-switch" = "user-switch"): void {
+    this.applied = preset;
+    this.lastReason = reason;
+    this.shell.applyLayoutPreset(preset);
+  }
+
+  currentPhase(): LifecyclePhase | null {
+    return this.applied?.phase ?? null;
+  }
+
+  currentTab(): CenterTab | null {
+    return this.applied?.center.primaryTab ?? null;
+  }
+
+  readCanvas(): CanvasViewportState {
+    return this.shell.readCanvas();
+  }
+
+  writeCanvas(state: CanvasViewportState): void {
+    this.shell.writeCanvas(state);
+  }
 
   get phase(): PhaseId {
     return this.shell.viewModel().phase;
@@ -654,8 +729,8 @@ export class ShellLayoutContext {
 export interface ConnectedShell {
   shell: SingleAppShell;
   clock: ManualClock;
-  client: MemoryNamedPipeClient;
-  bridge: MemoryPreloadBridge;
+  client: MemoryPreloadPort;
+  bridge: MemoryPreloadPort;
   stop: BridgeKernelStopController;
   pressure: MemoryPressureHysteresis;
   sink: MemoryLatencySink;
@@ -670,8 +745,8 @@ export function createConnectedShell(options?: {
   windowId?: string;
 }): ConnectedShell {
   const clock = new ManualClock();
-  const client = new MemoryNamedPipeClient();
-  const bridge = new MemoryPreloadBridge();
+  const client = new MemoryPreloadPort();
+  const bridge = new MemoryPreloadPort();
   const stop = new BridgeKernelStopController(bridge, clock);
   const pressure = new MemoryPressureHysteresis();
   const sink = new MemoryLatencySink();

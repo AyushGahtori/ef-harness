@@ -29,3 +29,10 @@ export type {
   EnsureHarnessdDeps,
   M1PreloadContract,
 } from "./bootstrap/index.js";
+export {
+  DisconnectedMonitorBoundsGuard,
+  PopOutWindowCoordinator,
+  SharedHarnessdStream,
+  popOutWindowId,
+} from "./windows/index.js";
+export type { HarnessdEvent, PopOutResult, PopOutView } from "./windows/index.js";

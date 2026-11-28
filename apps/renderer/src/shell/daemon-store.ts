@@ -1,3 +1,4 @@
+import { normalizeGovernorPressure } from "@ef-harness/shared-contracts";
 import type { AnimationFrameClock } from "./clock.js";
 import type { UiLatencyHeartbeatMonitor } from "./heartbeat.js";
 import type {
@@ -53,14 +54,11 @@ function isInboxItem(value: unknown): value is InboxItem {
   );
 }
 
-function isPressure(value: unknown): value is PressureSnapshot {
-  if (!isRecord(value) || typeof value.driver !== "string") return false;
-  return (
-    value.level === "green" ||
-    value.level === "yellow" ||
-    value.level === "orange" ||
-    value.level === "red"
-  );
+function readPressure(value: unknown): PressureSnapshot | null {
+  if (!isRecord(value) || typeof value.driver !== "string" || typeof value.level !== "string") return null;
+  const level = normalizeGovernorPressure(value.level);
+  if (!level) return null;
+  return { level, driver: value.driver };
 }
 
 export function createDaemonSnapshot(
@@ -84,7 +82,7 @@ export function createDaemonSnapshot(
     workers: patch.workers ?? [],
     inbox: patch.inbox ?? [],
     spend,
-    governor: patch.governor ?? { level: "green", driver: "Normal" },
+    governor: patch.governor ?? { level: "GREEN", driver: "Normal" },
   };
 }
 
@@ -208,8 +206,9 @@ export class DaemonStore {
       this.viewState = { ...this.viewState, inbox: items };
       return;
     }
-    if (event.type === "governor.updated" && isPressure(payload)) {
-      this.viewState = { ...this.viewState, governor: payload };
+    if (event.type === "governor.updated") {
+      const governor = readPressure(payload);
+      if (governor) this.viewState = { ...this.viewState, governor };
     }
   }
 

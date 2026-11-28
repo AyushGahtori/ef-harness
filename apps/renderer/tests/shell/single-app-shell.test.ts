@@ -4,6 +4,7 @@ import { createDaemonSnapshot } from "../../src/shell/daemon-store.js";
 import { UiLatencyHeartbeatMonitor } from "../../src/shell/heartbeat.js";
 import { layoutHoldsCenter, resolveLayout } from "../../src/shell/layout.js";
 import { MemoryLatencySink } from "../../src/shell/ports.js";
+import { PhaseWorkspaceController } from "../../src/presets/phase-workspace-controller.js";
 import { createConnectedShell } from "../../src/shell/shell.js";
 import type { CenterTabId, DaemonEvent, PhaseId } from "../../src/shell/types.js";
 import { CENTER_TABS, PHASES } from "../../src/shell/types.js";
@@ -91,7 +92,7 @@ describe("single app shell layout", () => {
     const html = shell.renderHtml();
     expect(html).toContain("Orange");
     expect(html).toContain("RAM low (1.8 GB free)");
-    expect(html).toContain('data-level="orange"');
+    expect(html).toContain('data-level="ORANGE"');
     shell.dispose();
   });
 
@@ -224,7 +225,11 @@ describe("daemon stream", () => {
         detail: `tick ${index}`,
       },
     }));
-    client.emit({ kind: "events.batch", streamEpoch: "epoch-1", events });
+    client.deliver({
+      jsonrpc: "2.0",
+      method: "events.batch",
+      params: { stream_epoch: "epoch-1", events },
+    });
     expect(clock.pendingFrames()).toBe(1);
     expect(shell.reactCommitCount).toBe(before);
     clock.flush(15);
@@ -243,32 +248,38 @@ describe("daemon stream", () => {
   it("resyncs on a new stream epoch without dropping the composer draft", () => {
     const { shell, client } = runningShell();
     shell.setComposerDraft("still typing");
-    client.emit({
-      kind: "events.batch",
-      streamEpoch: "epoch-2",
-      events: [
-        {
-          seq: 1,
-          streamEpoch: "epoch-2",
-          topic: "worker",
-          type: "worker.status",
-          payload: { id: "ghost", status: "working", detail: "stale" },
-        },
-      ],
+    client.deliver({
+      jsonrpc: "2.0",
+      method: "events.batch",
+      params: {
+        stream_epoch: "epoch-2",
+        events: [
+          {
+            seq: 1,
+            streamEpoch: "epoch-2",
+            topic: "worker",
+            type: "worker.status",
+            payload: { id: "ghost", status: "working", detail: "stale" },
+          },
+        ],
+      },
     });
     expect(shell.viewModel().connection).toBe("reconnecting");
     expect(shell.renderHtml()).toContain("Reconnecting to harnessd...");
     expect(shell.viewModel().workers.some((worker) => worker.id === "ghost")).toBe(false);
-    expect(client.sent.some((message) => message.kind === "snapshot.get")).toBe(true);
+    expect(client.sent.some((message) => "method" in message && message.method === "snapshot.get")).toBe(true);
     expect(buttonTag(shell.renderHtml(), "Stop")).toContain("disabled");
-    client.emit({
-      kind: "snapshot",
-      snapshot: createDaemonSnapshot({
-        asOfSeq: 8,
-        streamEpoch: "epoch-2",
-        run: "running",
-        workers: [{ id: "kept", status: "working", detail: "synced", updatedSeq: 8 }],
-      }),
+    client.deliver({
+      jsonrpc: "2.0",
+      method: "snapshot",
+      params: {
+        snapshot: createDaemonSnapshot({
+          asOfSeq: 8,
+          streamEpoch: "epoch-2",
+          run: "running",
+          workers: [{ id: "kept", status: "working", detail: "synced", updatedSeq: 8 }],
+        }),
+      },
     });
     const model = shell.viewModel();
     expect(model.connection).toBe("live");
@@ -285,9 +296,12 @@ describe("daemon stream", () => {
     client.close();
     expect(shell.renderHtml()).toContain("Reconnecting to harnessd...");
     expect(buttonTag(shell.renderHtml(), "Pause")).toContain("disabled");
-    client.emit({
-      kind: "snapshot",
-      snapshot: createDaemonSnapshot({ asOfSeq: 3, streamEpoch: "epoch-9", run: "running" }),
+    client.deliver({
+      jsonrpc: "2.0",
+      method: "snapshot",
+      params: {
+        snapshot: createDaemonSnapshot({ asOfSeq: 3, streamEpoch: "epoch-9", run: "running" }),
+      },
     });
     expect(shell.viewModel().connection).toBe("live");
     expect(shell.viewModel().composerDraft).toBe("draft survives");
@@ -329,9 +343,16 @@ describe("stop, pause, and keyboard", () => {
     shell.activate("confirm-stop");
     expect(stop.calls).toHaveLength(1);
     expect(stop.calls[0]?.source).toBe("shortcut-confirm");
-    expect(bridge.sent.some((message) => message.kind === "rpc" && message.method === "build.stop")).toBe(
-      true,
-    );
+    expect(
+      bridge.sent.some(
+        (message) =>
+          "method" in message &&
+          message.method === "build.stop" &&
+          "op_id" in message &&
+          typeof message.op_id === "string" &&
+          message.op_id.length > 0,
+      ),
+    ).toBe(true);
     expect(buttonTag(shell.renderHtml(), "Resume")).not.toContain("disabled");
     shell.activate("resume");
     expect(shell.viewModel().run).toBe("running");
@@ -412,22 +433,81 @@ describe("accessibility, heartbeat, and security", () => {
     const connected = runningShell();
     connected.clock.documentHidden = true;
     connected.shell.daemon.store.noteInput(0);
-    connected.client.emit({
-      kind: "events.batch",
-      streamEpoch: "epoch-1",
-      events: [
-        {
-          seq: 1,
-          streamEpoch: "epoch-1",
-          topic: "worker",
-          type: "worker.status",
-          payload: { id: "w1", status: "working", detail: "hidden" },
-        },
-      ],
+    connected.client.deliver({
+      jsonrpc: "2.0",
+      method: "events.batch",
+      params: {
+        stream_epoch: "epoch-1",
+        events: [
+          {
+            seq: 1,
+            streamEpoch: "epoch-1",
+            topic: "worker",
+            type: "worker.status",
+            payload: { id: "w1", status: "working", detail: "hidden" },
+          },
+        ],
+      },
     });
     connected.clock.flush(15);
     expect(connected.sink.samples).toHaveLength(0);
     expect(connected.shell.viewModel().workerCount).toBe(1);
     connected.shell.dispose();
+  });
+
+  it("stores uppercase governor pressure and shares preset plus canvas state", () => {
+    const { shell, client, clock } = runningShell();
+    const controller = PhaseWorkspaceController.open({
+      shell: shell.context,
+      phase: "plan",
+      environment: () => ({
+        projectId: "kitchen-app",
+        prefersReducedMotion: false,
+        governorLevel: "green",
+        selection: null,
+      }),
+    });
+    expect(shell.context.currentPhase()).toBe("plan");
+    expect(shell.context.phase).toBe("plan");
+    expect(controller.snapshot().phase).toBe("plan");
+    shell.context.writeCanvas({ x: 12, y: 4, zoom: 1.5, filters: ["open"] });
+    expect(shell.context.readCanvas()).toEqual({ x: 12, y: 4, zoom: 1.5, filters: ["open"] });
+    client.deliver({
+      jsonrpc: "2.0",
+      method: "events.batch",
+      params: {
+        stream_epoch: "epoch-1",
+        events: [
+          {
+            seq: 1,
+            streamEpoch: "epoch-1",
+            topic: "governor",
+            type: "governor.updated",
+            payload: { level: "yellow", driver: "CPU" },
+          },
+        ],
+      },
+    });
+    clock.flush(15);
+    expect(shell.viewModel().governor).toEqual({ level: "YELLOW", driver: "CPU" });
+    client.deliver({
+      jsonrpc: "2.0",
+      method: "events.batch",
+      params: {
+        stream_epoch: "epoch-1",
+        events: [
+          {
+            seq: 2,
+            streamEpoch: "epoch-1",
+            topic: "governor",
+            type: "governor.updated",
+            payload: { level: "RED", driver: "Disk" },
+          },
+        ],
+      },
+    });
+    clock.flush(15);
+    expect(shell.viewModel().governor.level).toBe("RED");
+    shell.dispose();
   });
 });
